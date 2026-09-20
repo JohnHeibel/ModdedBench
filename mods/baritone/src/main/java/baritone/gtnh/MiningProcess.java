@@ -4,6 +4,7 @@
 package baritone.gtnh;
 
 import baritone.Baritone;
+import baritone.compat.BlockPos;
 import baritone.gtnh.pathing.*;
 import static baritone.gtnh.pathing.WorkSpec.*;
 import java.util.*;
@@ -29,7 +30,7 @@ final class MiningProcess extends BulkJob {
         var blocks=WorkAccess.selectors(params.get("blocks"));items=WorkAccess.itemSelectors(params.get("items"));
         quantity=integer(params,"quantity",1,1,1000000);
         BlockPos origin=WorkAccess.feet();int radius=integer(params,"radius",24,1,64);
-        Map<String,Object> scan=params.containsKey("bounds")?child(params,"bounds"):Map.of("min",List.of(origin.x()-radius,Math.max(1,origin.y()-16),origin.z()-radius),"max",List.of(origin.x()+radius,Math.min(254,origin.y()+16),origin.z()+radius));
+        Map<String,Object> scan=params.containsKey("bounds")?child(params,"bounds"):Map.of("min",List.of(origin.getX()-radius,Math.max(1,origin.getY()-16),origin.getZ()-radius),"max",List.of(origin.getX()+radius,Math.min(254,origin.getY()+16),origin.getZ()+radius));
         bounds=bounds(scan);if(bounds.volume()>262144)throw new IllegalArgumentException("mining scan exceeds 262144 cells");
         journal.spec.put("bounds",scan);
         baseline=integer(journal.progress,"initialCount",WorkAccess.count(items),0,1000000);journal.progress.put("initialCount",baseline);

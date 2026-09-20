@@ -1,5 +1,21 @@
 # Source port of the Baritone engine
 
+> **Changed in phase 4a (2026-09-19).** The experimental graph and executor this
+> port replaced are now deleted rather than retained: `BaritoneNavigation.Run`,
+> the `baritone-core` A* search, goals, `WorkWorld` and `WorldView` are gone, and
+> the `baritone-core` Gradle project is folded into `mods/baritone`
+> (`baritone.gtnh.pathing` keeps `WorkSpec`, `ConstructionSettings`,
+> `ConstructionMask`, `DeferredClearance`, `TerrainGrid` observation,
+> `CollisionBox`, `LadderFacing`, `FluidPolicy`, `Corridor`, `GoalRange`).
+> Both construction modes run through upstream `BuilderProcess`; the custom
+> strict blueprint process no longer exists. The port's own code uses
+> `baritone.compat.BlockPos`, and `baritone.compat.Registry` is its one
+> registry-name helper. Six pinned imports that nothing referenced were removed
+> from `src/upstream/java` and `UPSTREAM_SOURCES.json`, which now lists 156
+> files: `GoalStrictDirection`, `LinkedListOpenSet`, `Overrideable`,
+> `IElytraProcess`, `CylinderMask`, `SphereMask`. Test and import counts below
+> are historical.
+
 Current checkpoint: [native runtime/API acceptance](../NATIVE_RUNTIME_ACCEPTANCE.md).
 The build passes 183 tests and verifies 162 pinned imports. Native event/API
 acceptance passes 16 checks. Source Explore has observed and persisted a new

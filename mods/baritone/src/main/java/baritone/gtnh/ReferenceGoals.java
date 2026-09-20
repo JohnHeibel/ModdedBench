@@ -30,12 +30,12 @@ final class ReferenceGoals {
             case "run_away" -> {
                 var from=list(s.get("from"));if(from.isEmpty()||from.size()>64)throw new IllegalArgumentException("run_away needs 1..64 positions");
                 yield new GoalRunAway(number(s,"distance",8,1,4096),s.containsKey("maintainY")?integer(s,"maintainY",64,0,255):null,
-                    from.stream().map(value->{var p=pos(value);return new BlockPos(p.x(),p.y(),p.z());}).toArray(BlockPos[]::new));
+                    from.stream().map(value->pos(value)).toArray(BlockPos[]::new));
             }
             default -> throw new IllegalArgumentException("unknown source goal type: "+type);
         };
     }
     @SuppressWarnings("unchecked") private static Map<String,Object> map(Object value){if(!(value instanceof Map<?,?>))throw new IllegalArgumentException("goal must be an object");return (Map<String,Object>)value;}
     private static int coordinate(Map<String,Object> s,String key){if(!s.containsKey(key))throw new IllegalArgumentException(key+" required");return integer(s,key,0,-30000000,30000000);}
-    private static BlockPos position(Map<String,Object> s){var p=pos(s.get("pos"));return new BlockPos(p.x(),p.y(),p.z());}
+    private static BlockPos position(Map<String,Object> s){return pos(s.get("pos"));}
 }

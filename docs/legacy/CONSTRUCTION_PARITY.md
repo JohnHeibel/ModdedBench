@@ -1,5 +1,10 @@
 # Construction port
 
+> **Changed in phase 4a (2026-09-19).** The custom scheduler described here is
+> deleted. Both contracts below run through upstream `BuilderProcess`
+> (`ReferenceConstructionProcess`); `blueprint` is its strict profile. See the
+> note at the top of [WORK_PROCESSES.md](WORK_PROCESSES.md).
+
 **Implementation parity is incomplete.** This document describes the current
 construction surface and fixture coverage. Its scheduler, work goals and native
 execution are custom replacements, not the actual upstream BuilderProcess.
