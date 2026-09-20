@@ -61,7 +61,7 @@ public final class EventTransformer implements IClassTransformer {
                     if(playerApi?match(m,"()V","localOnLivingUpdate"):match(m,"()V","onLivingUpdate","func_70636_d")){
                         int calls=0;
                         for(AbstractInsnNode instruction:m.instructions.toArray())if(instruction instanceof MethodInsnNode c&&c.owner.equals("net/minecraft/client/settings/KeyBinding")&&Set.of("getIsKeyPressed","func_151470_d").contains(c.name)&&c.desc.equals("()Z")){
-                            m.instructions.set(c,new MethodInsnNode(Opcodes.INVOKESTATIC,HOOK,"sprint","(Lnet/minecraft/client/settings/KeyBinding;)Z",false));calls++;
+                            m.instructions.set(c,new MethodInsnNode(Opcodes.INVOKESTATIC,HOOK,"sprint","(Ljava/lang/Object;)Z",false));calls++;
                         }require(calls>0,"missing sprint key reads");edits++;
                     }break;
                 case "net.minecraft.client.entity.EntityClientPlayerMP":
