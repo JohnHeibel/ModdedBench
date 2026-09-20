@@ -61,6 +61,10 @@ the other fixture scripts were not carried over.
 | 09-14 | Engine events, rendering, free-look; single-job scaffold build and clearance | Pass |
 | 09-14 | Natural exploration: frontier chosen, cache persisted | Partial: the player was killed by a mob on the return trip |
 | 09-18 | EBF follow-up regressions (`primitive_regression_smoke.py`) | Pass |
+| 09-20 | First run of the restructured repository (five modules, `core` on both sides, `nav.*`/`obs.*` names, single construction engine), fresh world, no fixtures: `smoke.py --mcp-reload-proof` (19 checks); `nav.goto`; `nav.mine` of dirt by hand; two-cell `nav.build` in `blueprint` mode; `builder` mode pausing on `missing_materials` and finishing through `nav.resume`; `quest.status`, `nei.status`, `obs.tile`; `time.pause` holding at zero ticks and `time.resume` | Pass, after fixing three faults it exposed: server crash on a brand-new world (`WorldIdentity`), `core` loading a client class on the dedicated server (no login possible), and a hung Connecting screen after a refused connection |
+
+Everything dated before 09-20 was run on the pre-restructure code. Of those,
+only the items in the 09-20 row have been repeated since.
 
 ## Agent trials
 

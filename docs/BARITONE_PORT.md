@@ -82,6 +82,10 @@ cancelled and a superseded search cannot install its result into a newer job.
   block and metadata. `allowBreak`/`allowPlace` authorise incidental route
   edits, which may fall outside the scan bounds. Region protection always
   applies; `overrideProtection` is per job.
+- The job does not return the player to where it started. Mining soil-like
+  targets can leave the player at the bottom of a 1x1 shaft it dug under its
+  own feet (seen live 2026-09-20); leaving needs `nav.goto` with `allowBreak`
+  or `allowPlace`, which pillars out with whatever blocks are held.
 - `nav.mine_block` (one block) reports `actualAim` and stops after 20 ticks of
   native target mismatch instead of breaking whatever is in the way.
 
