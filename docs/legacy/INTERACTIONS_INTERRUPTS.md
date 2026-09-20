@@ -1,5 +1,14 @@
 # Native interactions and editable interrupts
 
+> **Changed in the Python-seam phase (2026-09-19).** The supervisor moved to the hot-reloaded
+> module `harness/tools/interrupts.py` (`mbtools_gtnh.interrupts`); the running thread and event
+> journal persist in `mbtool.state["interrupts"]` and armed watch specs are re-armed into the fresh
+> supervisor after a module reload. Transport outages pause polling with backoff (<=10 s) and keep
+> every watch armed; the supervisor follows the kernel factory, so a game restart reconnects it. A
+> failed `interrupt.fire` is retried with the **same** `eventId` (5 attempts, exponential backoff)
+> and, if still undelivered, the watch is re-armed carrying that `eventId` (`pendingEvent` in
+> status) instead of dropping the interrupt. `mb_interrupt` runs on the control lane.
+
 See [layer ownership and conditional self-prompts](LAYERS.md) for returning an
 undecided action to the model with `context.prompt(...)` or a watch `prompt`.
 
