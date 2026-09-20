@@ -587,11 +587,23 @@ def open_client_kernel():
     return Kernel(url=f"ws://127.0.0.1:{CLIENT_PORT}/ws", timeout=10)
 
 
+def game_server_ready(host: str = "127.0.0.1", port: int = 25575) -> bool:
+    """Server-list ping. The port accepts TCP, and FML answers "still starting", long before a login can succeed; one sent then hangs."""
+    try:
+        with socket.create_connection((host, port), 2) as s:
+            s.settimeout(3)
+            hello = b"\x00\x05" + bytes([len(host)]) + host.encode() + port.to_bytes(2, "big") + b"\x01"
+            s.sendall(bytes([len(hello)]) + hello + b"\x01\x00")
+            return b'"version"' in s.recv(4096)
+    except OSError:
+        return False
+
+
 def wait_for_client_join(timeout: float) -> dict[str, Any]:
     """Wait for the title screen, then make the bridge-owned FML connection."""
     deadline = time.monotonic() + timeout
     kernel = None
-    connected = False
+    connected, retry_at = 0, 0.0  # sys.connect attempts
     last_error = "bridge has not accepted a request yet"
     while time.monotonic() < deadline:
         try:
@@ -599,17 +611,21 @@ def wait_for_client_join(timeout: float) -> dict[str, Any]:
                 kernel = open_client_kernel()
             gui = kernel.call("obs.gui")
             screen = str(gui.get("class") or "") if isinstance(gui, dict) else ""
-            # A disconnect screen left over from before this launch (the server was restarted) is a place to connect from.
-            if "GuiError" in screen or connected and "GuiDisconnected" in screen:
+            if "GuiError" in screen:
                 try: kernel.close()
                 except Exception: pass
                 raise RuntimeError_(f"client reached {screen}; inspect the client screen/log, then retry")
-            if not connected:
-                if screen not in MAIN_MENU_SCREENS and "GuiDisconnected" not in screen:
-                    time.sleep(1)
+            # A disconnect screen is a place to connect from: a restarted server leaves one, a booting server refuses, a fresh one can drop its first login.
+            if ("GuiDisconnected" in screen or not connected and screen in MAIN_MENU_SCREENS) and time.monotonic() >= retry_at:
+                if not game_server_ready():
+                    last_error = "the game server is not answering on 127.0.0.1:25575"
+                    time.sleep(2)
                     continue
                 kernel.call("sys.connect", host="127.0.0.1", port=25575)
-                connected = True
+                connected += 1; retry_at = time.monotonic() + 10
+            elif not connected:
+                time.sleep(1)
+                continue
             world = kernel.call("obs.world")
             if isinstance(world, dict) and world.get("inWorld") is True:
                 player = kernel.call("obs.player")
@@ -632,7 +648,7 @@ def wait_for_client_join(timeout: float) -> dict[str, Any]:
                 except Exception: pass
                 kernel = None
             time.sleep(2)
-    phase = "after sys.connect" if connected else "while waiting for the main menu bridge"
+    phase = f"after {connected} connection attempts; is the server up?" if connected else "while waiting for the main menu bridge"
     if kernel is not None:
         try: kernel.close()
         except Exception: pass
