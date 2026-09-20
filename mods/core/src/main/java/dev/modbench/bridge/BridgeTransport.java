@@ -43,8 +43,8 @@ public final class BridgeTransport implements AutoCloseable {
 
     public void start(int defaultPort) throws Exception {
         runtime.seal();
-        int port = Integer.getInteger("modbench.port", defaultPort);
-        if (port < 1 || port > 65535) throw new IllegalArgumentException("invalid modbench.port");
+        int requested = Integer.getInteger("modbench.port", defaultPort);
+        if (requested < 0 || requested > 65535) throw new IllegalArgumentException("invalid modbench.port");
         group = new NioEventLoopGroup(1, new DefaultThreadFactory("modbench-" + runtime.side(), true));
         try {
             listener = new ServerBootstrap().group(group).channel(NioServerSocketChannel.class)
@@ -53,7 +53,8 @@ public final class BridgeTransport implements AutoCloseable {
                         ch.pipeline().addLast(new HttpServerCodec(), new HttpObjectAggregator(1 << 20),
                             new WebSocketServerProtocolHandler("/ws", null, false), new WebSocketFrameAggregator(8 << 20), new Handler());
                     }
-                }).bind(new InetSocketAddress("127.0.0.1", port)).sync().channel();
+                }).bind(new InetSocketAddress("127.0.0.1", requested)).sync().channel();
+            int port = port(); // 0 requested an ephemeral port (tests)
             Path tokenPath = Path.of(System.getProperty("modbench.tokenFile",
                 System.getProperty("user.home") + "/.moddedbench/bridge-" + port + ".token")).toAbsolutePath();
             Files.createDirectories(tokenPath.getParent());
@@ -65,6 +66,9 @@ public final class BridgeTransport implements AutoCloseable {
             System.out.println("[Modbench] " + runtime.side() + " bridge ready at ws://127.0.0.1:" + port + "/ws");
         } catch (Exception e) { close(); throw e; }
     }
+
+    /** Bound port; only meaningful after {@link #start(int)}. */
+    public int port() { return ((InetSocketAddress) listener.localAddress()).getPort(); }
 
     @Override public void close() {
         for (Channel channel : clients) channel.close();
@@ -123,8 +127,8 @@ public final class BridgeTransport implements AutoCloseable {
                     ctx.close();
                     return;
                 }
-                ctx.executor().schedule(() -> request.fail("timeout", "request deadline elapsed"),
-                    Math.max(1L, request.deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+                // Fails the request only while it is still queued; a running handler answers with late=true.
+                ctx.executor().schedule(request::expire, Math.max(1L, request.deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
                 runtime.dispatch(request);
             } catch (Exception e) {
                 ctx.writeAndFlush(new TextWebSocketFrame(Json.object("id", id, "ok", false,
