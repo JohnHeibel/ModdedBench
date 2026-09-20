@@ -53,7 +53,7 @@ final class ClientObservations {
         if(method.equals("obs.nbt"))return params;
         var mc=Minecraft.getMinecraft();if(mc.theWorld==null||mc.thePlayer==null)throw new IllegalArgumentException("player must be in world");
         if(!params.has("pos")&&!params.has("x")) {
-            dev.modbench.control.NativeTargeting.refresh();var hit=mc.objectMouseOver;
+            dev.modbench.api.ControlRegistry.targeting().refresh();var hit=mc.objectMouseOver;
             if(hit==null||hit.typeOfHit!=net.minecraft.util.MovingObjectPosition.MovingObjectType.BLOCK)throw new IllegalArgumentException("block position or block crosshair required");
             params.add("pos",Json.array(hit.blockX,hit.blockY,hit.blockZ));params.addProperty("side",hit.sideHit);
         }

@@ -1,6 +1,10 @@
 # Native mod, Python, and model responsibilities
 
 Updated 2026-09-18. This is the ownership boundary for GTNH development.
+Current module map (the "control" and "clock-hooks" mods below merged into `mods/core`): `mods/api`
+(pure interfaces, bundled into core), `mods/core` (`modbench-core.jar`, the only coremod: hooks,
+clock, transport, input ownership), `mods/client`, `mods/server`, `mods/baritone` (plain Forge mod,
+depends on the api only).
 Use the existing native primitives before adding Python infrastructure.
 
 | Responsibility | Owner | Existing surface |

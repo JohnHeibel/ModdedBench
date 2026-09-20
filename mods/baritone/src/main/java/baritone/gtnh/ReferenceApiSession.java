@@ -3,10 +3,9 @@
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh;
 
+import dev.modbench.api.ControlRegistry;
 import baritone.Baritone;
-import dev.modbench.control.ClientControls;
-import dev.modbench.control.ClientMemory;
-import dev.modbench.control.api.InputArbiter;
+import dev.modbench.api.InputArbiter;
 import java.util.Map;
 import net.minecraft.client.Minecraft;
 
@@ -30,14 +29,14 @@ final class ReferenceApiSession {
     void tick(){
         var mc=Minecraft.getMinecraft();
         if(active()){
-            if(!lease.isActive()||world!=mc.theWorld||player!=mc.thePlayer||!scope.equals(ClientMemory.memory().scope())){stop("world_or_control_changed");return;}
-            if(mc.thePlayer.isDead||mc.thePlayer.getHealth()<=0||mc.currentScreen!=null&&!ClientControls.ownsPlayerInventory(lease)){stop("player_unavailable");return;}
+            if(!lease.isActive()||world!=mc.theWorld||player!=mc.thePlayer||!scope.equals(ControlRegistry.memory().memory().scope())){stop("world_or_control_changed");return;}
+            if(mc.thePlayer.isDead||mc.thePlayer.getHealth()<=0||mc.currentScreen!=null&&!ControlRegistry.controls().ownsPlayerInventory(lease)){stop("player_unavailable");return;}
         }else {
             if(mc.thePlayer==null||mc.theWorld==null||!engine.getPathingControlManager().hasActiveProcess())return;
             // Implicit getter activation must never steal another primitive's input.
-            if(ClientControls.arbiter().current().active()||mc.currentScreen!=null||mc.thePlayer.getHealth()<=0){engine.getPathingBehavior().forceCancel();reason="control_busy";return;}
-            world=mc.theWorld;player=mc.thePlayer;scope=ClientMemory.memory().scope();ticks=0;reason="active";
-            lease=ClientControls.arbiter().acquire("baritone-java-api",this::stop,false,true);
+            if(ControlRegistry.controls().arbiter().current().active()||mc.currentScreen!=null||mc.thePlayer.getHealth()<=0){engine.getPathingBehavior().forceCancel();reason="control_busy";return;}
+            world=mc.theWorld;player=mc.thePlayer;scope=ControlRegistry.memory().memory().scope();ticks=0;reason="active";
+            lease=ControlRegistry.controls().arbiter().acquire("baritone-java-api",this::stop,false,true);
             engine.overrideProtection=false;engine.positionAllowed=p->true;engine.explicitMiningTargets=()->s->false;
             engine.getInputOverrideHandler().attach(lease);
         }

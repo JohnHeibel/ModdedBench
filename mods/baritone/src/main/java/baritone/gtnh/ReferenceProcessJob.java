@@ -2,14 +2,13 @@
 // Copyright (c) 2026 Modbench contributors
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh;
+import dev.modbench.api.ControlRegistry;
 import baritone.Baritone;
 import baritone.api.pathing.goals.Goal;
 import baritone.api.process.IBaritoneProcess;
 import baritone.api.utils.BlockOptionalMeta;
-import dev.modbench.control.ClientControls;
-import dev.modbench.control.ClientMemory;
-import dev.modbench.control.api.InputArbiter;
-import dev.modbench.control.api.Navigation;
+import dev.modbench.api.InputArbiter;
+import dev.modbench.api.Navigation;
 import net.minecraft.client.Minecraft;
 import java.util.*;
 import static baritone.gtnh.pathing.WorkSpec.*;
@@ -19,7 +18,7 @@ final class ReferenceProcessJob implements Navigation.Job {
     private final Minecraft mc=Minecraft.getMinecraft();
     private final Baritone engine;
     private final Object world=mc.theWorld,player=mc.thePlayer;
-    private final String scope=ClientMemory.memory().scope(),kind;
+    private final String scope=ControlRegistry.memory().memory().scope(),kind;
     private final Map<baritone.api.Settings.Setting<?>,Object> saved=new LinkedHashMap<>();
     private final int duration;
     private final IBaritoneProcess process;
@@ -43,7 +42,7 @@ final class ReferenceProcessJob implements Navigation.Job {
         for(var s:List.of(settings.allowBreak,settings.allowPlace,settings.exploreForBlocks,settings.rightClickContainerOnArrival,settings.enterPortal))saved.put(s,s.value);
         engine.getPathingBehavior().forceCancel();
         try{
-            lease=ClientControls.arbiter().acquire("baritone-"+kind,this::cancel,bool(params,"overrideProtection",false),true);
+            lease=ControlRegistry.controls().arbiter().acquire("baritone-"+kind,this::cancel,bool(params,"overrideProtection",false),true);
             settings.allowBreak.value=bool(params,"allowBreak",false);settings.allowPlace.value=bool(params,"allowPlace",false);
             settings.exploreForBlocks.value=bool(params,"exploreForBlocks",true);
             settings.rightClickContainerOnArrival.value=bool(params,"openOnArrival",false);settings.enterPortal.value=bool(params,"enterPortal",false);
@@ -59,9 +58,9 @@ final class ReferenceProcessJob implements Navigation.Job {
     }
     void tick(){
         if(done())return;
-        if(mc.theWorld!=world||mc.thePlayer!=player||!scope.equals(ClientMemory.memory().scope())){cancel("world_changed");return;}
+        if(mc.theWorld!=world||mc.thePlayer!=player||!scope.equals(ControlRegistry.memory().memory().scope())){cancel("world_changed");return;}
         if(!lease.isActive()){cancel("control_lost");return;}
-        if(mc.currentScreen!=null&&!ClientControls.ownsPlayerInventory(lease)){cancel("gui_open");return;}
+        if(mc.currentScreen!=null&&!ControlRegistry.controls().ownsPlayerInventory(lease)){cancel("gui_open");return;}
         if(mc.thePlayer.isDead||mc.thePlayer.getHealth()<=0){cancel("player_unavailable");return;}
         if(ticks++>=duration){finish(kind.equals("farm")||kind.equals("explore")?"succeeded":"failed","duration_complete");return;}
         engine.tickStart();var current=engine.getPathingBehavior().getCurrent();

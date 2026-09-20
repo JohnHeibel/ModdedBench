@@ -16,16 +16,16 @@ import java.util.concurrent.*;
 public final class Baritone implements IBaritone {
     private static final Settings SETTINGS=new Settings();
     private static final ExecutorService EXECUTOR=Executors.newCachedThreadPool(r->{Thread t=new Thread(r,"baritone-reference-search");t.setDaemon(true);return t;});
-    private static Baritone instance;
     private final Minecraft mc=Minecraft.getMinecraft();
     private final GameEventHandler events=new GameEventHandler();
     private final IPlayerContext ctx=new IPlayerContext(){
-        private final LegacyPlayerController controller=new LegacyPlayerController();
+        private final LegacyPlayerController controller=new LegacyPlayerController(Baritone.this);
         public Minecraft minecraft(){return mc;}
         public net.minecraft.client.entity.EntityPlayerSP player(){return mc.thePlayer;}
         public LegacyPlayerController playerController(){return controller;}
         public World world(){return new World(mc.theWorld);}
         public RayTraceResult objectMouseOver(){return RayTraceResult.fromNative(mc.objectMouseOver);}
+        public baritone.api.cache.IWorldData worldData(){return worlds.getCurrentWorld();}
     };
     private final LookBehavior look=new LookBehavior(this);
     private final PathingBehavior pathing=new PathingBehavior(this);
@@ -47,10 +47,11 @@ public final class Baritone implements IBaritone {
     public boolean overrideProtection;
     public java.util.function.Predicate<BlockPos> positionAllowed=p->true;
     public java.util.function.Supplier<java.util.function.Predicate<IBlockState>> explicitMiningTargets=()->s->false;
+    /** The single native inventory swap in flight; acknowledged through the core packet hook. */
+    public LegacyInventorySwap pendingSwap;
     private boolean tickStarted;
     public Baritone(){
-        if(instance!=null)throw new IllegalStateException("one Baritone engine per client");
-        instance=this;
+        BaritoneAPI.getProvider().attach(this);
         events.registerEventListener(look);events.registerEventListener(inventory);events.registerEventListener(pathing);
         processes=new PathingControlManager(this);
         customGoal=new CustomGoalProcess(this);processes.registerProcess(customGoal);
@@ -71,11 +72,11 @@ public final class Baritone implements IBaritone {
         // without adding any wait between blocks while targets remain.
         SETTINGS.mineDropLoiterDurationMSThanksLouca.value=1000L;
     }
-    public static Baritone instance(){if(instance==null)throw new IllegalStateException("Baritone has not been initialized");return instance;}
-    public static boolean initialized(){return instance!=null;}
     public static Settings settings(){return SETTINGS;}
     public static ExecutorService getExecutor(){return EXECUTOR;}
     public IPlayerContext getPlayerContext(){return ctx;}
+    /** The vanilla attack loop and native clicks are owned while a source process holds a lease. */
+    public boolean ownsNativeActions(){return input.hasActiveLease();}
     public LookBehavior getLookBehavior(){return look;}
     public PathingBehavior getPathingBehavior(){return pathing;}
     public InputOverrideHandler getInputOverrideHandler(){return input;}
@@ -98,11 +99,11 @@ public final class Baritone implements IBaritone {
         // The 1.7 render crosshair is interpolated and mods may refresh it with
         // their own partial tick. Source processes need the current native pose
         // for their pre-aim checks, as well as the new ray after applying aim.
-        dev.modbench.control.NativeTargeting.refresh();
+        dev.modbench.api.ControlRegistry.targeting().refresh();
         var event=new baritone.api.event.events.TickEvent(baritone.api.event.events.type.EventState.PRE,baritone.api.event.events.TickEvent.Type.IN,mc.thePlayer.ticksExisted);
         events.onTick(event);
         events.onPlayerUpdate(new baritone.api.event.events.PlayerUpdateEvent(baritone.api.event.events.type.EventState.PRE));
-        dev.modbench.control.NativeTargeting.refresh();
+        dev.modbench.api.ControlRegistry.targeting().refresh();
         input.flush();
         // PathExecutor consumes SPRINT to compute continuity across movements.
         if(pathing.getCurrent()!=null)mc.thePlayer.setSprinting(pathing.getCurrent().isSprinting());

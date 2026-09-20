@@ -1,0 +1,1 @@
+[{"modid":"modbenchcore","name":"Modbench Core","description":"Modbench coremod: game hooks, clock, bridge transport and client input ownership.","version":"${version}","mcversion":"1.7.10","authorList":["Modbench contributors"]}]
