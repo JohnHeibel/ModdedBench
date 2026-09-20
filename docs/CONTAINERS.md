@@ -71,7 +71,24 @@ python harness/launcher/deploy.py serve
 docker compose -f docker/compose.yaml exec agent python3 harness/runner/codex_loop.py --max-turns 200
 ```
 
-## Operating
+## Operator console
+
+```bash
+python harness/console/console.py
+```
+
+opens a page at `http://127.0.0.1:47300` with the state of all of it (containers,
+client bridge, world, player, clock, quest counts, the agent's loop, its log
+tail, its deploy requests) and a button for each routine step: start and stop
+the server, pause and resume time, launch and stop the client, build and
+install the client jars, run the deploy supervisor, start, stop or kill the
+agent's loop, and initialize a run (target quest and chapter, optionally a new
+world and a fresh agent checkout). Every button runs a command from this page
+and shows it in the job log. The console listens on loopback only and each
+request carries a token minted at start, so neither a web page nor the agent
+can drive it.
+
+## Operating by hand
 
 | Task | Command |
 | --- | --- |

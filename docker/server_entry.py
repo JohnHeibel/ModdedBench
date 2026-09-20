@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 # Copyright (c) 2026 ModdedBench contributors
 """Container entry point for the pinned GTNH server: unpack once, pin the jars, exec Java."""
-import json, os, shutil, sys
+import json, os, shutil, sys, types
 from pathlib import Path
 
 sys.path.insert(0, "/opt/modbench")
+# The launcher takes its port constants from the bridge client, which needs websockets; this image never opens a bridge.
+sys.modules["kernel"] = types.SimpleNamespace(bridge_url=lambda side="client": f"ws://127.0.0.1:{47224 if side == 'server' else 47223}/ws")
 import runtime
 
 HOME, DATA = Path("/opt/modbench"), Path("/data")

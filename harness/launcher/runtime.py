@@ -748,7 +748,7 @@ def main(argv: list[str] | None = None) -> int:
     for kind in ("client", "core", "baritone", "server"):
         p = sub.add_parser(f"install-{kind}"); p.add_argument("--side", choices=("client", "server"), default="", help="only this side, e.g. client while the server is a pinned container"); p.set_defaults(func=lambda a, k=kind: print(*install_jar(k, load_config(Path(a.runtime).resolve()), Path(a.runtime).resolve(), a.side), sep="\n"))
         p = sub.add_parser(f"rollback-{kind}"); p.add_argument("--side", choices=("client", "server"), default=""); p.set_defaults(func=lambda a, k=kind: print(*rollback_jar(k, Path(a.runtime).resolve(), a.side), sep="\n"))
-    p = sub.add_parser("launch-client"); p.add_argument("--username"); p.add_argument("--timeout", type=float, default=300); p.set_defaults(func=launch_client)
+    p = sub.add_parser("launch-client"); p.add_argument("--username"); p.add_argument("--timeout", type=float, default=300); p.add_argument("--installed-as-is", action="store_true", help="skip the check that the installed jars match this checkout's build (a supervised deploy installed them)"); p.set_defaults(func=launch_client)
     sub.add_parser("provision-client").set_defaults(func=provision_client)
     args = parser.parse_args(argv)
     try:
