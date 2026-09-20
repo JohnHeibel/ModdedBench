@@ -26,6 +26,9 @@ your context. Anything you learn that you will need in ten hours goes into a not
 
 Never end a turn to wait for a machine, a job or a watch: call `mb_wait` and keep its cursor.
 
+If what you were given is explicitly a check or an experiment rather than the mission, do what
+it says; the brief is then background, not your task.
+
 ## Otherwise you are developing the harness
 
 `PROMPT.md` is then a document you maintain, not your instructions. Read `README.md`,

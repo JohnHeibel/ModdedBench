@@ -437,7 +437,8 @@ shipped: once you start editing tools, `mb_tools_status` (what is loaded) and
 | Go somewhere | `mb_process` (goal, explore, get_to_block) | `mb_route` for a saved corridor; `mb_follow` for entities |
 | Gather blocks or ore | `mb_mine` | `mb_work_status`, `mb_work_resume` when it blocks |
 | Build | `mb_build_preview` | `mb_build`; `mb_copy` and `mb_schematic_build` to repeat a structure |
-| Use a machine, chest or crafting grid | `mb_act` (use_block) to open it, `mb_inventory(container=True)` | `mb_transfer`, `mb_click_slot`, `mb_gui` |
+| Craft by hand | `mb_recipes` for the pattern, then `mb_gui` open_inventory or open a crafting table | `mb_craft` (whole batch in one call) |
+| Use a machine or chest | `mb_act` (use_block) to open it, `mb_inventory(container=True)` | `mb_transfer`, `mb_click_slot`, `mb_gui` |
 | Complete a quest | `mb_quest_detect` | `mb_quest_select_choice`, `mb_quest_claim`, then observe the quest and your inventory |
 | Wait for something | `mb_interrupt` (add a watch with a deadline) | `mb_wait`; `mb_interrupt_events` to replay what you missed |
 | Stop something now | `mb_stop`, `mb_build_pause` | `mb_time` pause when you need to think |
@@ -497,6 +498,7 @@ and list what is loaded, with load errors.
 | `mb_find` | Find actual held/container items by exact {id, meta?, nbt_hash?, nbt?} |
 | `mb_transfer` | Move up to count (1..64) items through native clicks to explicit ordinary slots |
 | `mb_click_slot` | Click an observed slot with explicit stale-stack/cursor guards |
+| `mb_craft` | Craft in the crafting GUI that is OPEN now: your inventory's 2x2 grid (mb_gui open_inventory) or a crafting table's 3x3 |
 
 **`harness/tools/notes.py`**: Durable world notes (SQLite, one file per server world) and their surfacing as a side effect of play.
 

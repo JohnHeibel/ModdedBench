@@ -76,15 +76,28 @@ def mb_quest_select_choice(quest_id: str, reward_id: int, choice_index: int) -> 
 
 @tool(rung=1, coverage=["progression"])
 def mb_quest_claim(quest_id: str, reward_ids: list[int],
-                   choices: dict[str, int] | None = None) -> Any:
+                   choices: dict[str, int] | None = None, wait_s: float = 10.0) -> Any:
     """Request a normal quest-wide claim with explicit reward IDs and choices.
 
     choices maps rewardId strings to observed choice indices and must cover every
-    choice reward. The result is pending synchronization: re-observe quest state and
-    compare inventory deltas before reporting receipt. Never blindly retry a claim.
+    choice reward. The claim itself is only queued: this then watches the quest for up
+    to wait_s seconds (0 disables) and returns claimed true/false with the observed
+    state, so one call usually settles it. claimed false is not a failure: the server
+    has not answered yet (always the case while time is paused). Observe again later;
+    never blindly retry a claim. Check your inventory for the rewards either way.
     """
-    return kernel().call("quest.claim", questId=quest_id, rewardIds=reward_ids,
-                         choices=choices or {})
+    receipt = kernel().call("quest.claim", questId=quest_id, rewardIds=reward_ids, choices=choices or {})
+    deadline, state = time.monotonic() + max(0.0, min(wait_s, 60.0)), None
+    while wait_s > 0:
+        state = kernel().call("quest.observe", questId=quest_id)
+        if _claimed(state) or time.monotonic() >= deadline: break
+        time.sleep(0.5)
+    return receipt if state is None else {"receipt": receipt, "claimed": _claimed(state), "quest": state}
+
+
+def _claimed(value) -> bool:
+    if isinstance(value, dict): return value.get("claimed") is True or any(_claimed(v) for v in value.values())
+    return isinstance(value, list) and any(_claimed(v) for v in value)
 
 
 @tool(lane="read", coverage=["recipes"])
@@ -135,7 +148,8 @@ def mb_recipes(id: str = "", meta: int | None = None, nbt: str | None = None, mo
     item identities. Compare machines, power, ingredients and research against
     observations; no route is selected or declared craftable automatically.
 
-    Pass exact id/meta/nbt for an item, or fluid="water" for a canonical fluid ID
+    Pass exact id AND meta (meta is required with id: 0 for plain items, the variant
+    number from mb_item_search otherwise) and nbt when the item has it, or fluid="water" for a canonical fluid ID
     returned by mb_fluid_search. Uses all NEI handlers, including modded machines and fluid-container
     recipes. handler filters by handler id or machine/category name. Returned handler
     summaries show available categories and counts; nextOffset pages recipes.

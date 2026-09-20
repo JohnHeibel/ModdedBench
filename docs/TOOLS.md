@@ -225,6 +225,7 @@ custom-predicate example.
 | --- | --- | --- |
 | `mb_notes` | read | `capture` an attachment (block, entity, location, region, item type, topic), `search`, `get`, `history`, `status`, `resolve`. |
 | `mb_note_write` | action | Creates or updates a note with a revision guard and an operation id. |
+| `mb_craft` | action | Crafts a shaped pattern `times` times in the open 2x2 or 3x3 grid with guarded clicks, returns ingredients if the pack has no such recipe, and reports the verified gain. |
 | `mb_goal` | action | Reads or updates the goal stack (chapter, quest, sub-goal, serves) kept in the note `goal-stack`; `mb_status` returns it with a stall signal. |
 
 Notes surface as a side effect, under a `notes` key, with at most five compact
