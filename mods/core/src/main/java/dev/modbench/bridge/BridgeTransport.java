@@ -120,7 +120,8 @@ public final class BridgeTransport implements AutoCloseable {
                 if (params == null) throw new IllegalArgumentException("params must be an object");
                 Request request = new Request(id, Json.string(body, "method", ""), params, session, runtime,
                     out -> { if (ctx.channel().isActive()) ctx.writeAndFlush(new TextWebSocketFrame(out.toString())); });
-                if (session.pending.size() >= 128) throw new IllegalArgumentException("too many pending requests");
+                // A full session must still be able to cancel its own work.
+                if (session.pending.size() >= 128 && !"requests.cancel".equals(request.method)) throw new IllegalArgumentException("too many pending requests");
                 if (session.pending.putIfAbsent(id.toString(), request) != null) {
                     // A duplicate ID cannot be answered without impersonating the original request.
                     // Close this invalid session; its pending actions will release their controls.
