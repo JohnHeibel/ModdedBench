@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -117,6 +118,18 @@ def resolve_executable(value: str, candidates: list[str], label: str) -> str:
         if found:
             return str(Path(found))
     raise RuntimeError_(f"no {label} found; set its explicit path in {config_path()}")
+
+
+def require_java17(java: str) -> str:
+    """The Java 17-25 pack dies at once on Java 8 with a misleading class-not-found; refuse it up front."""
+    try:
+        banner = subprocess.run([java, "-version"], capture_output=True, text=True, timeout=20).stderr
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise RuntimeError_(f"cannot run {java}: {e}") from None
+    found = re.search(r'version "(\d+)', banner)
+    if not found or int(found.group(1)) < 17:
+        raise RuntimeError_(f"{java} is not Java 17 or newer; pass prepare --java <path to a JDK 17-25 java>")
+    return java
 
 
 def safe_zip_members(archive: zipfile.ZipFile, strip_root: bool = False) -> list[tuple[zipfile.ZipInfo, PurePosixPath]]:
@@ -277,7 +290,7 @@ def prepare(args: argparse.Namespace) -> None:
             raise RuntimeError_(f"{key} must name an existing ZIP")
     verify_pack_archive(Path(cfg["clientZip"]), "client")
     verify_pack_archive(Path(cfg["serverZip"]), "server")
-    java = resolve_executable(cfg.get("java", ""), cfg.get("javaCandidates", []), "Java executable")
+    java = require_java17(resolve_executable(cfg.get("java", ""), cfg.get("javaCandidates", []), "Java executable"))
     cfg["java"] = java
     prism = resolve_executable(cfg.get("prism", ""), cfg.get("prismCandidates", []), "Prism Launcher executable")
     cfg["prism"] = prism
@@ -493,7 +506,7 @@ def start_server(args: argparse.Namespace) -> None:
     if bridge_is_live(SERVER_PORT): raise RuntimeError_("server bridge port is already occupied")
     if port_is_in_use(25575): raise RuntimeError_("Minecraft server port 25575 is already occupied")
     set_server_properties(server, args.accept_eula)
-    java = resolve_executable(cfg.get("java", ""), cfg.get("javaCandidates", []), "Java executable")
+    java = require_java17(resolve_executable(cfg.get("java", ""), cfg.get("javaCandidates", []), "Java executable"))
     launcher = server / "lwjgl3ify-forgePatches.jar"; args_file = server / "java9args.txt"
     if not launcher.is_file() or not args_file.is_file(): raise RuntimeError_("server pack lacks java9args.txt or lwjgl3ify-forgePatches.jar")
     memory = int(cfg.get("serverMemoryMiB", 4096))
@@ -507,7 +520,7 @@ def start_server(args: argparse.Namespace) -> None:
         proc = subprocess.Popen(command, cwd=server, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, creationflags=flags)
     identity = process_identity(proc.pid)
     if not identity:
-        raise RuntimeError_("server started but its process identity could not be recorded; it was not adopted")
+        raise RuntimeError_(f"the server process exited at once or could not be identified; see {log}")
     save_json(pid_file, {"pid": proc.pid, "identity": identity, "started": time.time(), "log": str(log)})
     print(json.dumps({"pid": proc.pid, "log": str(log)}))
 
