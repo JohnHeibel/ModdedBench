@@ -1,0 +1,815 @@
+{
+  "revision": "d9cb2d91a06501c5bcba2181509d0df80361f413",
+  "files": [
+    {
+      "source": "src/api/java/baritone/api/pathing/calc/IPath.java",
+      "ported": "baritone/api/pathing/calc/IPath.java",
+      "sourceSha256": "768ece656baa1bb27ea4b8e5dd7943e4119d64e3af72fb48c7948b44bbe321a1"
+    },
+    {
+      "source": "src/api/java/baritone/api/pathing/calc/IPathFinder.java",
+      "ported": "baritone/api/pathing/calc/IPathFinder.java",
+      "sourceSha256": "387293d5b5ed4988e0fd8aeca094021fdd685a7c5b7ec39308a147694a782506"
+    },
+    {
+      "source": "src/api/java/baritone/api/pathing/calc/IPathingControlManager.java",
+      "ported": "baritone/api/pathing/calc/IPathingControlManager.java",
+      "sourceSha256": "137690a3f3e17df2fb48d9ad098d97bc70db65896cc836038a776cdb6da5ad5c"
+    },
+    {
+      "source": "src/api/java/baritone/api/pathing/goals/Goal.java",
+      "ported": "baritone/api/pathing/goals/Goal.java",
+      "sourceSha256": "e7b49a00c1b3c9cdef314d6cf6f3a521ae47dc3812eea5cc4073f784837b19a4"
+    },
+    {
+      "source": "src/api/java/baritone/api/pathing/goals/GoalAxis.java",
+      "ported": "baritone/api/pathing/goals/GoalAxis.java",
+      "sourceSha256": "3bee269e3dbc86df9ba98510064ed960ba6cbf32e571d14d398e6b845e45ee05"
+    },
+    {
+      "source": "src/api/java/baritone/api/pathing/goals/GoalBlock.java",
+      "ported": "baritone/api/pathing/goals/GoalBlock.java",
+      "sourceSha256": "11b718437439ef469970ce383c7bccf80e412d48076ca151a0688f3486bdaa27"
+    },
+    {
+      "source": "src/api/java/baritone/api/pathing/goals/GoalComposite.java",
+      "ported": "baritone/api/pathing/goals/GoalComposite.java",
+      "sourceSha256": "fd2fbdefcd34b35ad8a39d17fb988fd85f67a7118ed3ab7b56b7753cf11d01c2"
+    },
+    {
+      "source": "src/api/java/baritone/api/pathing/goals/GoalGetToBlock.java",
+      "ported": "baritone/api/pathing/goals/GoalGetToBlock.java",
+      "sourceSha256": "b30eab46960d030148fc8e1468d789f5502448336e0e7906f67b799fd66b4962"
+    },
+    {
+      "source": "src/api/java/baritone/api/pathing/goals/GoalInverted.java",
+      "ported": "baritone/api/pathing/goals/GoalInverted.java",
+      "sourceSha256": "c05b0fe856d63f9e1b04099eeb76914500abaa7af58c652de3e4fa3ecda38ad3"
+    },
+    {
+      "source": "src/api/java/baritone/api/pathing/goals/GoalNear.java",
+      "ported": "baritone/api/pathing/goals/GoalNear.java",
+      "sourceSha256": "30a385d5326c0c6f28091d434b14412ae81f9cf01fcb49e37207c36252ffd340"
+    },
+    {
+      "source": "src/api/java/baritone/api/pathing/goals/GoalRunAway.java",
+      "ported": "baritone/api/pathing/goals/GoalRunAway.java",
+      "sourceSha256": "e4b6f3d1873bfa244e1ddb54a40fcb6d2a68ab2a98449f3a988636c415bf1f4d"
+    },
+    {
+      "source": "src/api/java/baritone/api/pathing/goals/GoalStrictDirection.java",
+      "ported": "baritone/api/pathing/goals/GoalStrictDirection.java",
+      "sourceSha256": "c3199c1efe175d173423a9a47bfdaef8c9b4242497b86257f947e98bc3885b5f"
+    },
+    {
+      "source": "src/api/java/baritone/api/pathing/goals/GoalTwoBlocks.java",
+      "ported": "baritone/api/pathing/goals/GoalTwoBlocks.java",
+      "sourceSha256": "14a808a81a160d55e99d842140cb73f019c0cdfd696f510d67ac868e79b5fe22"
+    },
+    {
+      "source": "src/api/java/baritone/api/pathing/goals/GoalXZ.java",
+      "ported": "baritone/api/pathing/goals/GoalXZ.java",
+      "sourceSha256": "5f3f0dc1926fe11b01d55437a6be9df1a84e1770df6933698daa39c2f10b576c"
+    },
+    {
+      "source": "src/api/java/baritone/api/pathing/goals/GoalYLevel.java",
+      "ported": "baritone/api/pathing/goals/GoalYLevel.java",
+      "sourceSha256": "d0baa03d13af9bbeeac43388f8563e2148ba199b8ea45aff4835ac1e38eac30d"
+    },
+    {
+      "source": "src/api/java/baritone/api/pathing/movement/ActionCosts.java",
+      "ported": "baritone/api/pathing/movement/ActionCosts.java",
+      "sourceSha256": "afc26e225cc0f40aae866dcf12a2466686b5edce8083792602d7190551412ed6"
+    },
+    {
+      "source": "src/api/java/baritone/api/pathing/movement/IMovement.java",
+      "ported": "baritone/api/pathing/movement/IMovement.java",
+      "sourceSha256": "ab54494fb35e029e5d75802718c572f86d6e75c9d6517f629007195b738920a9"
+    },
+    {
+      "source": "src/api/java/baritone/api/pathing/movement/MovementStatus.java",
+      "ported": "baritone/api/pathing/movement/MovementStatus.java",
+      "sourceSha256": "c83853eca8e3268d2fa256e041c62989661c3c3ecd64cac9b1f3717811a3b018"
+    },
+    {
+      "source": "src/api/java/baritone/api/pathing/path/IPathExecutor.java",
+      "ported": "baritone/api/pathing/path/IPathExecutor.java",
+      "sourceSha256": "a2ca1eb1a0ba83c5167c508d3e5378f036b0132df106c17806d4a5b2a530ed8e"
+    },
+    {
+      "source": "src/api/java/baritone/api/utils/BetterBlockPos.java",
+      "ported": "baritone/api/utils/BetterBlockPos.java",
+      "sourceSha256": "85a1cd9fc3d322263a6e23e7a516b348544a57c69b4a27527d40d74c0c29a916"
+    },
+    {
+      "source": "src/api/java/baritone/api/utils/PathCalculationResult.java",
+      "ported": "baritone/api/utils/PathCalculationResult.java",
+      "sourceSha256": "3b060084a0dff68dee03c0b2ba930ad478cecf3a406ab22478a92c8ed61e0313"
+    },
+    {
+      "source": "src/api/java/baritone/api/utils/RayTraceUtils.java",
+      "ported": "baritone/api/utils/RayTraceUtils.java",
+      "sourceSha256": "09f9c3bf3a707ec9fef152293bd854cabf848869afc7bed568266bb6008853ea"
+    },
+    {
+      "source": "src/api/java/baritone/api/utils/Rotation.java",
+      "ported": "baritone/api/utils/Rotation.java",
+      "sourceSha256": "febe1b9d222fe15456080d267b61076e4466be99d00bbe0a2fd1820bb51b699b"
+    },
+    {
+      "source": "src/api/java/baritone/api/utils/RotationUtils.java",
+      "ported": "baritone/api/utils/RotationUtils.java",
+      "sourceSha256": "f70c884f52e07226db8cb5d824908303bb312f00fc7be41c6d13601af7782508"
+    },
+    {
+      "source": "src/api/java/baritone/api/utils/TypeUtils.java",
+      "ported": "baritone/api/utils/TypeUtils.java",
+      "sourceSha256": "40c20fbc4015307fa632d3ca906cf54946a229b68167adeaff09a0872bf15f26"
+    },
+    {
+      "source": "src/api/java/baritone/api/utils/VecUtils.java",
+      "ported": "baritone/api/utils/VecUtils.java",
+      "sourceSha256": "bbcf302b84d59234a40a4f20c59adf7288e0c99dcbff96dac8e2ea7bbd37acd2"
+    },
+    {
+      "source": "src/api/java/baritone/api/utils/input/Input.java",
+      "ported": "baritone/api/utils/input/Input.java",
+      "sourceSha256": "360f8c06aabff7d21260b0c06f657eaec07c7876d38107e0ed5c755ad8bf8516"
+    },
+    {
+      "source": "src/api/java/baritone/api/utils/interfaces/IGoalRenderPos.java",
+      "ported": "baritone/api/utils/interfaces/IGoalRenderPos.java",
+      "sourceSha256": "2310e3a1a40cd1a7adf6375bb203a740abfeeae6577e0a238d141f47b928f894"
+    },
+    {
+      "source": "src/main/java/baritone/pathing/calc/AStarPathFinder.java",
+      "ported": "baritone/pathing/calc/AStarPathFinder.java",
+      "sourceSha256": "44ee49f2a085a54da75d2649e94cb015e249fcee381e072dee6043250920f4d1"
+    },
+    {
+      "source": "src/main/java/baritone/pathing/calc/AbstractNodeCostSearch.java",
+      "ported": "baritone/pathing/calc/AbstractNodeCostSearch.java",
+      "sourceSha256": "c2071f0e6825effef16958b2fc73d5a6bbb64a2b3f5174e841fdf96105f9e8da"
+    },
+    {
+      "source": "src/main/java/baritone/pathing/calc/Path.java",
+      "ported": "baritone/pathing/calc/Path.java",
+      "sourceSha256": "dbaff6422eb3be932fe242016eea8727e5cae7eaec2637e7b47f5a7bf9adb399"
+    },
+    {
+      "source": "src/main/java/baritone/pathing/calc/PathNode.java",
+      "ported": "baritone/pathing/calc/PathNode.java",
+      "sourceSha256": "b11b2cae8349f96c97689af359c668938bb7c8e102e2d5ab2470004fa49297f3"
+    },
+    {
+      "source": "src/main/java/baritone/pathing/calc/openset/BinaryHeapOpenSet.java",
+      "ported": "baritone/pathing/calc/openset/BinaryHeapOpenSet.java",
+      "sourceSha256": "748dcbccf79d28910ddd521ed073e78f4f36e772ab8e23e1edb3075cf915c120"
+    },
+    {
+      "source": "src/main/java/baritone/pathing/calc/openset/IOpenSet.java",
+      "ported": "baritone/pathing/calc/openset/IOpenSet.java",
+      "sourceSha256": "61e9a890272945e78d4f2fd7783fb149838f3a3aa921f5e9bdb0ab6e15b72ae9"
+    },
+    {
+      "source": "src/main/java/baritone/pathing/calc/openset/LinkedListOpenSet.java",
+      "ported": "baritone/pathing/calc/openset/LinkedListOpenSet.java",
+      "sourceSha256": "83f5622dc9144fa35be02b64262c14604fcc7a31a5a304d1ffe747d0d40fae89"
+    },
+    {
+      "source": "src/main/java/baritone/pathing/movement/CalculationContext.java",
+      "ported": "baritone/pathing/movement/CalculationContext.java",
+      "sourceSha256": "8bc5944e0c1eb6965411fa4949438b8c36de4fcb6568218d7c780067554c6708"
+    },
+    {
+      "source": "src/main/java/baritone/pathing/movement/Movement.java",
+      "ported": "baritone/pathing/movement/Movement.java",
+      "sourceSha256": "f513acb0cdc6e2877fc38d1a12fd9120312efe700f4e8909d5aa99287190ccf2"
+    },
+    {
+      "source": "src/main/java/baritone/pathing/movement/MovementHelper.java",
+      "ported": "baritone/pathing/movement/MovementHelper.java",
+      "sourceSha256": "cd3db77276849cd724e2c2e27ba633c9b23960ac6c81412358cc6a14a89a7c77"
+    },
+    {
+      "source": "src/main/java/baritone/pathing/movement/MovementState.java",
+      "ported": "baritone/pathing/movement/MovementState.java",
+      "sourceSha256": "d39bae5d59a5cf2b0aef9d83a0a7cdc5c69a48869e8dcb381f22df1967ea6126"
+    },
+    {
+      "source": "src/main/java/baritone/pathing/movement/Moves.java",
+      "ported": "baritone/pathing/movement/Moves.java",
+      "sourceSha256": "f81ba5e03ea150ecc472e768fae16079a610dfc953fcd67b90ef27b3340548b4"
+    },
+    {
+      "source": "src/main/java/baritone/pathing/movement/movements/MovementAscend.java",
+      "ported": "baritone/pathing/movement/movements/MovementAscend.java",
+      "sourceSha256": "13aa35e024c07597a6e7a36eaa5a8010f12a92d9ad782eaaf4e885dbdc6308f9"
+    },
+    {
+      "source": "src/main/java/baritone/pathing/movement/movements/MovementDescend.java",
+      "ported": "baritone/pathing/movement/movements/MovementDescend.java",
+      "sourceSha256": "be7c2179f0b3e84b2461ff699451c14ce2806af1d6cafaff8907406dbea357ad"
+    },
+    {
+      "source": "src/main/java/baritone/pathing/movement/movements/MovementDiagonal.java",
+      "ported": "baritone/pathing/movement/movements/MovementDiagonal.java",
+      "sourceSha256": "f6d3e21c4e84e38e67314b6a6dfbf9ec6164da795b85f5103bdce58391af4e3e"
+    },
+    {
+      "source": "src/main/java/baritone/pathing/movement/movements/MovementDownward.java",
+      "ported": "baritone/pathing/movement/movements/MovementDownward.java",
+      "sourceSha256": "29b7254d21d6bcb93d808283e8133c323ec8f3fd4b2f62a6685523a5b472b7d5"
+    },
+    {
+      "source": "src/main/java/baritone/pathing/movement/movements/MovementFall.java",
+      "ported": "baritone/pathing/movement/movements/MovementFall.java",
+      "sourceSha256": "c4c64608dac6d7d53c7923319dba665b27651efec50d56507644a18a7f1fc8ea"
+    },
+    {
+      "source": "src/main/java/baritone/pathing/movement/movements/MovementParkour.java",
+      "ported": "baritone/pathing/movement/movements/MovementParkour.java",
+      "sourceSha256": "571a4cada6a5664a0436307060ece64e520f58a79925708e1fe4bfa0af453819"
+    },
+    {
+      "source": "src/main/java/baritone/pathing/movement/movements/MovementPillar.java",
+      "ported": "baritone/pathing/movement/movements/MovementPillar.java",
+      "sourceSha256": "fb04bee39b0fad5801db58ec35e8fc582cd373f18e9d50b65675eac5115738ab"
+    },
+    {
+      "source": "src/main/java/baritone/pathing/movement/movements/MovementTraverse.java",
+      "ported": "baritone/pathing/movement/movements/MovementTraverse.java",
+      "sourceSha256": "e87779f8b0897031003c0b19814cc65346a22bee9491749600184d4f1efa096b"
+    },
+    {
+      "source": "src/main/java/baritone/pathing/path/CutoffPath.java",
+      "ported": "baritone/pathing/path/CutoffPath.java",
+      "sourceSha256": "194459adb76a8511c2c730e90b2a15c1100f21ae519d3284ef45f353a8de820e"
+    },
+    {
+      "source": "src/main/java/baritone/pathing/path/PathExecutor.java",
+      "ported": "baritone/pathing/path/PathExecutor.java",
+      "sourceSha256": "f14f64517a5760fa3624be5d22264fc652a79156f09f71cac018357e7f9d2b8e"
+    },
+    {
+      "source": "src/main/java/baritone/pathing/path/SplicedPath.java",
+      "ported": "baritone/pathing/path/SplicedPath.java",
+      "sourceSha256": "f3c3400c1ce8eaf1e6505c3196a396a02595eecaddc806f628b49eb2e2a3d43e"
+    },
+    {
+      "source": "src/main/java/baritone/pathing/precompute/PrecomputedData.java",
+      "ported": "baritone/pathing/precompute/PrecomputedData.java",
+      "sourceSha256": "0a9fc5cfd517255f46820438730495b9d0e587fa6d64fce9978486d966e6b7fa"
+    },
+    {
+      "source": "src/main/java/baritone/pathing/precompute/Ternary.java",
+      "ported": "baritone/pathing/precompute/Ternary.java",
+      "sourceSha256": "d49661a2494f3ddca14760c79bd51f8c67e064f2ea011c52cdb6fef29e7adb2a"
+    },
+    {
+      "source": "src/main/java/baritone/utils/PathingCommandContext.java",
+      "ported": "baritone/utils/PathingCommandContext.java",
+      "sourceSha256": "c665594e69fd074c23824660619867ea98902cc896ea7a79d3694dd2d062d256"
+    },
+    {
+      "source": "src/main/java/baritone/utils/pathing/MutableMoveResult.java",
+      "ported": "baritone/utils/pathing/MutableMoveResult.java",
+      "sourceSha256": "7b379130fbb41678ba4828fd8cc267dbc5344049fb6150ce842245e3adbe5f09"
+    },
+    {
+      "source": "src/api/java/baritone/api/Settings.java",
+      "ported": "baritone/api/Settings.java",
+      "sourceSha256": "de3a4de62ec9a4e89611166276c0ee054195f93b6527e26bc31fdf0db0b4befd"
+    },
+    {
+      "source": "src/api/java/baritone/api/behavior/IBehavior.java",
+      "ported": "baritone/api/behavior/IBehavior.java",
+      "sourceSha256": "1b69fc5f0d0cefba9b27cdac87e70acdac6db160e723fb95bb1b2e032c5b4ea9"
+    },
+    {
+      "source": "src/api/java/baritone/api/behavior/ILookBehavior.java",
+      "ported": "baritone/api/behavior/ILookBehavior.java",
+      "sourceSha256": "dd36b05cd15c5744623d82d8c37e1743d55cf7701b95a9ebf1cb3cc40bdcc2ee"
+    },
+    {
+      "source": "src/api/java/baritone/api/behavior/IPathingBehavior.java",
+      "ported": "baritone/api/behavior/IPathingBehavior.java",
+      "sourceSha256": "253a24bc6d40279296274d470afb7789a3302013842a6a187ba1ec4ef785dcb7"
+    },
+    {
+      "source": "src/api/java/baritone/api/behavior/look/IAimProcessor.java",
+      "ported": "baritone/api/behavior/look/IAimProcessor.java",
+      "sourceSha256": "0ca565e9c8c3dfc0f59ed7722fad51c04788b7cad1390de2c747d08ed9e7b0b2"
+    },
+    {
+      "source": "src/api/java/baritone/api/behavior/look/ITickableAimProcessor.java",
+      "ported": "baritone/api/behavior/look/ITickableAimProcessor.java",
+      "sourceSha256": "d70bbe12468e7d9dad8b29a4895c7f1bdb36b73d038b92eca5b07b4fd4e3ad93"
+    },
+    {
+      "source": "src/api/java/baritone/api/event/events/BlockChangeEvent.java",
+      "ported": "baritone/api/event/events/BlockChangeEvent.java",
+      "sourceSha256": "3dff53c38ee8d73db5b9a7a7aac12b156732ff22ee45017323945215799be218"
+    },
+    {
+      "source": "src/api/java/baritone/api/event/events/BlockInteractEvent.java",
+      "ported": "baritone/api/event/events/BlockInteractEvent.java",
+      "sourceSha256": "392c7bae1de37b7db75fbae84be4522ceb11e02100dc76af59d301a37a7ae400"
+    },
+    {
+      "source": "src/api/java/baritone/api/event/events/ChatEvent.java",
+      "ported": "baritone/api/event/events/ChatEvent.java",
+      "sourceSha256": "0211e38f68a462bcc9df1343bfef9cda9f05ec54666ab1ee2b79f09a77009ea4"
+    },
+    {
+      "source": "src/api/java/baritone/api/event/events/ChunkEvent.java",
+      "ported": "baritone/api/event/events/ChunkEvent.java",
+      "sourceSha256": "cd493074e24076bd77dca0a0b24620bddff87fd3ddb7f2a5e4c493be262c3cdc"
+    },
+    {
+      "source": "src/api/java/baritone/api/event/events/PacketEvent.java",
+      "ported": "baritone/api/event/events/PacketEvent.java",
+      "sourceSha256": "55403f8fb157589b293ab0bb2e27b7f01f3264e32582e45abf7ea2ec05d8e5ec"
+    },
+    {
+      "source": "src/api/java/baritone/api/event/events/PathEvent.java",
+      "ported": "baritone/api/event/events/PathEvent.java",
+      "sourceSha256": "f72b5bc0427a8130dbb2b605b2704bd86530db7eaa52fb4c6604f800467575a4"
+    },
+    {
+      "source": "src/api/java/baritone/api/event/events/PlayerUpdateEvent.java",
+      "ported": "baritone/api/event/events/PlayerUpdateEvent.java",
+      "sourceSha256": "3ba621a110568525649765f941b2fafd83253be48bf36f6b32d7e0c99cb31da3"
+    },
+    {
+      "source": "src/api/java/baritone/api/event/events/RenderEvent.java",
+      "ported": "baritone/api/event/events/RenderEvent.java",
+      "sourceSha256": "464375fab18a43625de0d646fd98c8284b1ffabfed913cc3ab70ca183a9ddffd"
+    },
+    {
+      "source": "src/api/java/baritone/api/event/events/RotationMoveEvent.java",
+      "ported": "baritone/api/event/events/RotationMoveEvent.java",
+      "sourceSha256": "427a2813d6a4218973b12e10767c41bd27e431c1f1bad883203bc1e2ea249789"
+    },
+    {
+      "source": "src/api/java/baritone/api/event/events/SprintStateEvent.java",
+      "ported": "baritone/api/event/events/SprintStateEvent.java",
+      "sourceSha256": "ce6110772237488a43ffa34354eeae777a83cd832fa50fdb2a4153016ef3a675"
+    },
+    {
+      "source": "src/api/java/baritone/api/event/events/TabCompleteEvent.java",
+      "ported": "baritone/api/event/events/TabCompleteEvent.java",
+      "sourceSha256": "779e16fa72dc9b7fdd0bf57ac6b65c59578ea357de2e7367319e33d8b6fa6670"
+    },
+    {
+      "source": "src/api/java/baritone/api/event/events/TickEvent.java",
+      "ported": "baritone/api/event/events/TickEvent.java",
+      "sourceSha256": "d62bb7615b4d9f8a4c46f0b022243e1581fc3651c074dedab37b4284b83e76c8"
+    },
+    {
+      "source": "src/api/java/baritone/api/event/events/WorldEvent.java",
+      "ported": "baritone/api/event/events/WorldEvent.java",
+      "sourceSha256": "cb23da3427844d1ef080323d9a17eca901a936be633744ffc9608688c1447fed"
+    },
+    {
+      "source": "src/api/java/baritone/api/event/events/type/Cancellable.java",
+      "ported": "baritone/api/event/events/type/Cancellable.java",
+      "sourceSha256": "ab602180f0b1139c2208d64415a7ce3ef6c5bf66fb0224d17c2fd2d5b500b833"
+    },
+    {
+      "source": "src/api/java/baritone/api/event/events/type/EventState.java",
+      "ported": "baritone/api/event/events/type/EventState.java",
+      "sourceSha256": "79f46450ac73dd04cc931a7a63dccaaee59444d12e3575fbeae396f4ae18cf44"
+    },
+    {
+      "source": "src/api/java/baritone/api/event/events/type/ICancellable.java",
+      "ported": "baritone/api/event/events/type/ICancellable.java",
+      "sourceSha256": "53fde1e7fb83a6c2621095ce9ca7efc88c6d56f916bf5467585bc54cf5771e5c"
+    },
+    {
+      "source": "src/api/java/baritone/api/event/events/type/Overrideable.java",
+      "ported": "baritone/api/event/events/type/Overrideable.java",
+      "sourceSha256": "26f4ba252832656c2219a6a0b041301ccbeb9514422bb97415a06d5cef90af68"
+    },
+    {
+      "source": "src/api/java/baritone/api/event/listener/AbstractGameEventListener.java",
+      "ported": "baritone/api/event/listener/AbstractGameEventListener.java",
+      "sourceSha256": "e14dae56a3fa1a5cf824733ee95efa648fbd7a4e2876c5c27585294e124ef56a"
+    },
+    {
+      "source": "src/api/java/baritone/api/event/listener/IGameEventListener.java",
+      "ported": "baritone/api/event/listener/IGameEventListener.java",
+      "sourceSha256": "9379d1a1bddb096060a231da25d362d81cfb1fa7f3d053a8db943bdfd7552190"
+    },
+    {
+      "source": "src/api/java/baritone/api/process/IBaritoneProcess.java",
+      "ported": "baritone/api/process/IBaritoneProcess.java",
+      "sourceSha256": "29dd90eb24e8af0920a1e9b8ad2c42656888210605885ee8e2922e6324721476"
+    },
+    {
+      "source": "src/api/java/baritone/api/process/IBuilderProcess.java",
+      "ported": "baritone/api/process/IBuilderProcess.java",
+      "sourceSha256": "590ed1de4036b5241f74552ff3a31a46458d04de82f78938eb5f9bdab236dcfb"
+    },
+    {
+      "source": "src/api/java/baritone/api/process/ICustomGoalProcess.java",
+      "ported": "baritone/api/process/ICustomGoalProcess.java",
+      "sourceSha256": "096b7eec1dd0c89e332e430b54cf5fc253a2f62e2bb887d8f4b324fc16cb6a6e"
+    },
+    {
+      "source": "src/api/java/baritone/api/process/IElytraProcess.java",
+      "ported": "baritone/api/process/IElytraProcess.java",
+      "sourceSha256": "6df38e02cfcb2e89621e9a00dc759a91364da02465db44613115209198e0c931"
+    },
+    {
+      "source": "src/api/java/baritone/api/process/IExploreProcess.java",
+      "ported": "baritone/api/process/IExploreProcess.java",
+      "sourceSha256": "93900c0dd06bf09f024c37118f82d40dc0631f3a3e6a2a9745647333c7452d3a"
+    },
+    {
+      "source": "src/api/java/baritone/api/process/IFarmProcess.java",
+      "ported": "baritone/api/process/IFarmProcess.java",
+      "sourceSha256": "efa9261a62c76ed3054d6e2520b64ff24fd8838860445fee2644117cde87bba1"
+    },
+    {
+      "source": "src/api/java/baritone/api/process/IFollowProcess.java",
+      "ported": "baritone/api/process/IFollowProcess.java",
+      "sourceSha256": "3ea3bc9dd7339d43939dbd529f821c51116fc11e4a87869210a0feae73382e93"
+    },
+    {
+      "source": "src/api/java/baritone/api/process/IGetToBlockProcess.java",
+      "ported": "baritone/api/process/IGetToBlockProcess.java",
+      "sourceSha256": "67eb484121a8d1a047baf7f91cd5e4698e39e29409b0c2341b4c1e7baf80bb0f"
+    },
+    {
+      "source": "src/api/java/baritone/api/process/IMineProcess.java",
+      "ported": "baritone/api/process/IMineProcess.java",
+      "sourceSha256": "36d63a29946fd9851defc619885e3923185e2fb7251ea414fc534cf39b2b6325"
+    },
+    {
+      "source": "src/api/java/baritone/api/process/PathingCommand.java",
+      "ported": "baritone/api/process/PathingCommand.java",
+      "sourceSha256": "4a0d829d7b68e3dfdf83fabd115460bd65c022bf480b2edfc3d3f8c07236715f"
+    },
+    {
+      "source": "src/api/java/baritone/api/process/PathingCommandType.java",
+      "ported": "baritone/api/process/PathingCommandType.java",
+      "sourceSha256": "c6b65a95f5e34c04d94caa800f8e9150d678eae1aa8fa324f6a9f9283f17e84a"
+    },
+    {
+      "source": "src/main/java/baritone/behavior/Behavior.java",
+      "ported": "baritone/behavior/Behavior.java",
+      "sourceSha256": "e6d2c82098f5cd2a146b0d9f1434e47a3b72c1fb9248c7a710d323b810ac7032"
+    },
+    {
+      "source": "src/main/java/baritone/behavior/LookBehavior.java",
+      "ported": "baritone/behavior/LookBehavior.java",
+      "sourceSha256": "bbd4239aab27dc7399ea62ac04580d1ddad8dccfb09baaac117ea134cbe40648"
+    },
+    {
+      "source": "src/main/java/baritone/behavior/PathingBehavior.java",
+      "ported": "baritone/behavior/PathingBehavior.java",
+      "sourceSha256": "0a66450e22eb00016649020702ab3524fe45bdec1872f9bfbbcaa7cecd2c314b"
+    },
+    {
+      "source": "src/main/java/baritone/behavior/look/ForkableRandom.java",
+      "ported": "baritone/behavior/look/ForkableRandom.java",
+      "sourceSha256": "3dea3ea98392376edae778efbd367695eb52e0f1886e86f91915968eaaf271e5"
+    },
+    {
+      "source": "src/main/java/baritone/process/CustomGoalProcess.java",
+      "ported": "baritone/process/CustomGoalProcess.java",
+      "sourceSha256": "37547a6478728cf75c07ab4c07c638a69decf30281705d3bf1279bf22479e2a3"
+    },
+    {
+      "source": "src/main/java/baritone/utils/BaritoneProcessHelper.java",
+      "ported": "baritone/utils/BaritoneProcessHelper.java",
+      "sourceSha256": "4ae4cec801c2a023cf43e59b78a05b2fc00cf93881d45abdb6e30622db808793"
+    },
+    {
+      "source": "src/main/java/baritone/utils/PathingControlManager.java",
+      "ported": "baritone/utils/PathingControlManager.java",
+      "sourceSha256": "4fe4a0d8afa8e97614024f97bd72322b37465607ce0fde74bc9777a59b19bfa8"
+    },
+    {
+      "source": "src/main/java/baritone/utils/pathing/Avoidance.java",
+      "ported": "baritone/utils/pathing/Avoidance.java",
+      "sourceSha256": "bd90c9e56a7599925be07fe7f9824ba40daa12148604d7293e022f43202f88a6"
+    },
+    {
+      "source": "src/main/java/baritone/utils/pathing/Favoring.java",
+      "ported": "baritone/utils/pathing/Favoring.java",
+      "sourceSha256": "95fbff0c68b75a6cc7eb9bece885fce974c9f5164adedf548900df864486437d"
+    },
+    {
+      "source": "src/main/java/baritone/utils/pathing/PathBase.java",
+      "ported": "baritone/utils/pathing/PathBase.java",
+      "sourceSha256": "d947c4b9e356be7a70af0d9072a5d49f1fae0974beebd303c54540aaf299eb0e"
+    },
+    {
+      "source": "src/api/java/baritone/api/utils/Pair.java",
+      "ported": "baritone/api/utils/Pair.java",
+      "sourceSha256": "95e195428109eb5f12900badf43e30225462e83a300bf303ac31b64a06f80a5a"
+    },
+    {
+      "source": "src/api/java/baritone/api/schematic/ISchematic.java",
+      "ported": "baritone/api/schematic/ISchematic.java",
+      "sourceSha256": "f36481638a41479b535fe8264e5dcaeba81eed37d1097abf515f9391f0889e3a"
+    },
+    {
+      "source": "src/main/java/baritone/process/MineProcess.java",
+      "ported": "baritone/process/MineProcess.java",
+      "sourceSha256": "8c6dd24728667e9af1c74a5d6a6fbe637047ad3d025f5db3b0f6824228177d4a"
+    },
+    {
+      "source": "src/api/java/baritone/api/utils/IInputOverrideHandler.java",
+      "ported": "baritone/api/utils/IInputOverrideHandler.java",
+      "sourceSha256": "e25af9c8895e2bfe36cdde5f4f9cd22cd11bb496ec9371e0d4a5031541aa65b3"
+    },
+    {
+      "source": "src/main/java/baritone/behavior/InventoryBehavior.java",
+      "ported": "baritone/behavior/InventoryBehavior.java",
+      "sourceSha256": "ab4d6c845b673459c68d34d5f7fc1f04aeb6dd939e79d6e3a0a96e9cf620de89"
+    },
+    {
+      "source": "src/main/java/baritone/process/InventoryPauserProcess.java",
+      "ported": "baritone/process/InventoryPauserProcess.java",
+      "sourceSha256": "9b745c5c599e7db8937ad802b69de6718edc0d762a90dcb3845d6154c8fedca3"
+    },
+    {
+      "source": "src/main/java/baritone/utils/BlockBreakHelper.java",
+      "ported": "baritone/utils/BlockBreakHelper.java",
+      "sourceSha256": "208aa11944f7f2159b014d046688411da579450f72fec10097f1e47b68c4b27d"
+    },
+    {
+      "source": "src/main/java/baritone/utils/BlockPlaceHelper.java",
+      "ported": "baritone/utils/BlockPlaceHelper.java",
+      "sourceSha256": "6b495b91fd62634292f71e44e6c12b2e8dc8a0eb9c65751a47c2dc7be340222f"
+    },
+    {
+      "source": "src/main/java/baritone/utils/InputOverrideHandler.java",
+      "ported": "baritone/utils/InputOverrideHandler.java",
+      "sourceSha256": "41afa1da3f2f5537d205851368224c22cad69709a3e24be80e3b1468662c2a19"
+    },
+    {
+      "source": "src/api/java/baritone/api/schematic/AbstractSchematic.java",
+      "ported": "baritone/api/schematic/AbstractSchematic.java",
+      "sourceSha256": "2febaae4491d3dc598cc35b7c28d69b3ae53abe9a04d9389db125cc3f8fb9d77"
+    },
+    {
+      "source": "src/api/java/baritone/api/schematic/FillSchematic.java",
+      "ported": "baritone/api/schematic/FillSchematic.java",
+      "sourceSha256": "82b76ee56041199fe2fcda620ba80fca0d0204141cfd986a8a0202fd0bf16124"
+    },
+    {
+      "source": "src/api/java/baritone/api/schematic/IStaticSchematic.java",
+      "ported": "baritone/api/schematic/IStaticSchematic.java",
+      "sourceSha256": "b9e3cb3058e68daf8cfa3e042ad7facb37b51fe92c44e6711f93fbbdb27f029c"
+    },
+    {
+      "source": "src/api/java/baritone/api/schematic/SubstituteSchematic.java",
+      "ported": "baritone/api/schematic/SubstituteSchematic.java",
+      "sourceSha256": "969c489a0dd88a8aad968975be40d6d11b69266964bf40d98d5c5ee3ddbe8989"
+    },
+    {
+      "source": "src/main/java/baritone/process/BuilderProcess.java",
+      "ported": "baritone/process/BuilderProcess.java",
+      "sourceSha256": "6208897879528c047c81e51bbe2b0167285fb5e6bae56f9e4abf1424ef346d67"
+    },
+    {
+      "source": "src/main/java/baritone/utils/schematic/MapArtSchematic.java",
+      "ported": "baritone/utils/schematic/MapArtSchematic.java",
+      "sourceSha256": "ea399796a19ebb21ab72eb78607052ffe924a0e968487ae29f2c2454bba5712b"
+    },
+    {
+      "source": "src/api/java/baritone/api/schematic/MaskSchematic.java",
+      "ported": "baritone/api/schematic/MaskSchematic.java",
+      "sourceSha256": "35fa9eb90f7e05fe78d2db2095bd0cf9504ae0739ee194c9df7181afc3bcfa6c"
+    },
+    {
+      "source": "src/api/java/baritone/api/schematic/mask/AbstractMask.java",
+      "ported": "baritone/api/schematic/mask/AbstractMask.java",
+      "sourceSha256": "f06ca69cc4428a2a3a2239c1d2dfa5671aeebcf12b924ad21cd41c26dc01920e"
+    },
+    {
+      "source": "src/api/java/baritone/api/schematic/mask/Mask.java",
+      "ported": "baritone/api/schematic/mask/Mask.java",
+      "sourceSha256": "9bf0316638cdf33f7386053f8480f9ff9780c19ec8efebd443c4b5530716ad39"
+    },
+    {
+      "source": "src/api/java/baritone/api/schematic/mask/PreComputedMask.java",
+      "ported": "baritone/api/schematic/mask/PreComputedMask.java",
+      "sourceSha256": "b4aafbfb3b7f2e58a6cd7c300415cf08df443d047c301722904bcf30ff85ff35"
+    },
+    {
+      "source": "src/api/java/baritone/api/schematic/mask/StaticMask.java",
+      "ported": "baritone/api/schematic/mask/StaticMask.java",
+      "sourceSha256": "e97a29436b5f93b4350ba42dda6999ce69b84bdbcc62f599ca517603ed871e0d"
+    },
+    {
+      "source": "src/api/java/baritone/api/schematic/mask/operator/BinaryOperatorMask.java",
+      "ported": "baritone/api/schematic/mask/operator/BinaryOperatorMask.java",
+      "sourceSha256": "560e5ec89776a4e7b8a390fcd19a93c8af9b1beb63e8e34e52fcf2f3b23afc59"
+    },
+    {
+      "source": "src/api/java/baritone/api/schematic/mask/operator/NotMask.java",
+      "ported": "baritone/api/schematic/mask/operator/NotMask.java",
+      "sourceSha256": "648f1c1127c1419a141d8dc2b26c159fb2c3c00b1ffe2c246f74ddabf4754298"
+    },
+    {
+      "source": "src/api/java/baritone/api/schematic/mask/shape/CylinderMask.java",
+      "ported": "baritone/api/schematic/mask/shape/CylinderMask.java",
+      "sourceSha256": "b286bb4842e382e9a92b425e3308ef46e7af06ba97d1a3208e3782278f4f4c91"
+    },
+    {
+      "source": "src/api/java/baritone/api/schematic/mask/shape/SphereMask.java",
+      "ported": "baritone/api/schematic/mask/shape/SphereMask.java",
+      "sourceSha256": "75bbcd4dd8471958f5a1b2dd6c67ecc4bf771b92d486c7d1abc7352f8983f3d0"
+    },
+    {
+      "source": "src/api/java/baritone/api/selection/ISelection.java",
+      "ported": "baritone/api/selection/ISelection.java",
+      "sourceSha256": "6457b092da7f6a1a33f4120332c75036d54166f99723f377371516e3130a1f2d"
+    },
+    {
+      "source": "src/api/java/baritone/api/selection/ISelectionManager.java",
+      "ported": "baritone/api/selection/ISelectionManager.java",
+      "sourceSha256": "772df7268391b4769d597e84336af04a66eb3feb9f52e14d3604fe49f6ecda80"
+    },
+    {
+      "source": "src/api/java/baritone/api/utils/BooleanBinaryOperators.java",
+      "ported": "baritone/api/utils/BooleanBinaryOperators.java",
+      "sourceSha256": "edfaaf6ee2f8a1fa0f207588dcfb6bba14e41d088c72108dbece1e66f2c03d1d"
+    },
+    {
+      "source": "src/main/java/baritone/selection/Selection.java",
+      "ported": "baritone/selection/Selection.java",
+      "sourceSha256": "a6a1e43c59ee0067b74bdd4f12179e6d6abb2a3716a97b8b6912958bc359feb4"
+    },
+    {
+      "source": "src/main/java/baritone/selection/SelectionManager.java",
+      "ported": "baritone/selection/SelectionManager.java",
+      "sourceSha256": "113260f186a451dfe85a24b4025d50b7a333492c65d6fca0c89efb64b5f6c804"
+    },
+    {
+      "source": "src/main/java/baritone/selection/SelectionRenderer.java",
+      "ported": "baritone/selection/SelectionRenderer.java",
+      "sourceSha256": "f428b8437642f76bedc4ca77ca5adc411fe389408aab2dd2fb0dd2cb62e45b5b"
+    },
+    {
+      "source": "src/main/java/baritone/utils/schematic/SelectionSchematic.java",
+      "ported": "baritone/utils/schematic/SelectionSchematic.java",
+      "sourceSha256": "231a35b9578894df3d9fa3530c30ed540c5ed1fdfa363e6ea6f810eff632a0dd"
+    },
+    {
+      "source": "src/api/java/baritone/api/utils/BooleanBinaryOperator.java",
+      "ported": "baritone/api/utils/BooleanBinaryOperator.java",
+      "sourceSha256": "d099b1a2d58762ff7ea928d335de20b3b62d054d26fd50375493f3172503beb0"
+    },
+    {
+      "source": "src/api/java/baritone/api/utils/SettingsUtil.java",
+      "ported": "baritone/api/utils/SettingsUtil.java",
+      "sourceSha256": "ca3975fd24e7d3e787cc1cc30422eda58bf56db431ea4861ae08b2d33f9fa7d2"
+    },
+    {
+      "source": "src/main/java/baritone/process/FollowProcess.java",
+      "ported": "baritone/process/FollowProcess.java",
+      "sourceSha256": "c096482707efab6ea2a986f9bc1f7d35247374332951782e07c192252f4d65b6"
+    },
+    {
+      "source": "src/api/java/baritone/api/cache/IBlockTypeAccess.java",
+      "ported": "baritone/api/cache/IBlockTypeAccess.java",
+      "sourceSha256": "4bba06345d9e5afba1fc151583afe3388525c010771aedc5022fc2e03c7df73f"
+    },
+    {
+      "source": "src/api/java/baritone/api/cache/ICachedRegion.java",
+      "ported": "baritone/api/cache/ICachedRegion.java",
+      "sourceSha256": "39217c0cdedcc8c557428d7d50e0f73861121106e07138a567e22481db87fbde"
+    },
+    {
+      "source": "src/api/java/baritone/api/cache/ICachedWorld.java",
+      "ported": "baritone/api/cache/ICachedWorld.java",
+      "sourceSha256": "a4e44a24f17b60dcf626998eb0f6ab7b84234a2e66574fa271e5693f5be1cdb6"
+    },
+    {
+      "source": "src/api/java/baritone/api/cache/IWaypoint.java",
+      "ported": "baritone/api/cache/IWaypoint.java",
+      "sourceSha256": "5eeb534e841b076f5c51494e78bd6ec9178d1929a895cad6f37cd364ec19e127"
+    },
+    {
+      "source": "src/api/java/baritone/api/cache/IWaypointCollection.java",
+      "ported": "baritone/api/cache/IWaypointCollection.java",
+      "sourceSha256": "d8a306a85a46beb9a67a9585462f071f991d90ec85e4a775434833cf79b7afbf"
+    },
+    {
+      "source": "src/api/java/baritone/api/cache/IWorldData.java",
+      "ported": "baritone/api/cache/IWorldData.java",
+      "sourceSha256": "2bab5110533dbabeaecef893fe12f51534d48d98e332e46565aceb27b78e6d47"
+    },
+    {
+      "source": "src/api/java/baritone/api/cache/IWorldProvider.java",
+      "ported": "baritone/api/cache/IWorldProvider.java",
+      "sourceSha256": "a17bc2db953a76993d63cc0b7a20bd9a164a8ac8d6ac309fb5bd7b8ee59de385"
+    },
+    {
+      "source": "src/api/java/baritone/api/cache/IWorldScanner.java",
+      "ported": "baritone/api/cache/IWorldScanner.java",
+      "sourceSha256": "228738ef77f79120baf52e32fb7d56cd1505f3d27a0ccbfaab40601e894d887b"
+    },
+    {
+      "source": "src/api/java/baritone/api/cache/Waypoint.java",
+      "ported": "baritone/api/cache/Waypoint.java",
+      "sourceSha256": "cf80fd802f4e8b2d74430937fdfcbb5f5a528f9a2707cb92e710376ed0fbfd40"
+    },
+    {
+      "source": "src/main/java/baritone/cache/CachedChunk.java",
+      "ported": "baritone/cache/CachedChunk.java",
+      "sourceSha256": "f420792c1a72786bb1213837cac9e7f9fc1665764b3f8b5c4000db8cf2300c8d"
+    },
+    {
+      "source": "src/main/java/baritone/cache/CachedRegion.java",
+      "ported": "baritone/cache/CachedRegion.java",
+      "sourceSha256": "0f23f5060859af2781f34fea582f8b39cdde4c020443d272f81394f6626db205"
+    },
+    {
+      "source": "src/main/java/baritone/cache/CachedWorld.java",
+      "ported": "baritone/cache/CachedWorld.java",
+      "sourceSha256": "70156228b6d141fd0541e6853fe1f8751a846892984b484ec539c58599b294b2"
+    },
+    {
+      "source": "src/main/java/baritone/cache/ChunkPacker.java",
+      "ported": "baritone/cache/ChunkPacker.java",
+      "sourceSha256": "c1f30917266135f08a2fb178366df3ef48cb973a25d2f0125c366d6e1f105d0f"
+    },
+    {
+      "source": "src/main/java/baritone/cache/WaypointCollection.java",
+      "ported": "baritone/cache/WaypointCollection.java",
+      "sourceSha256": "cad29418155a21b0ba88534ce2084c6e2955cdf23f08212e1dec8b6b2757f622"
+    },
+    {
+      "source": "src/main/java/baritone/cache/WorldData.java",
+      "ported": "baritone/cache/WorldData.java",
+      "sourceSha256": "3ba72b737e1029a664d5d1cc2b303cabefc86909c11105aa5aff3e43ac09d259"
+    },
+    {
+      "source": "src/main/java/baritone/cache/WorldProvider.java",
+      "ported": "baritone/cache/WorldProvider.java",
+      "sourceSha256": "d02e4e2903c5e63333c35904bba9e3cc99ebf94eed279efcfdb2f54ca02dff86"
+    },
+    {
+      "source": "src/main/java/baritone/cache/WorldScanner.java",
+      "ported": "baritone/cache/WorldScanner.java",
+      "sourceSha256": "4cca04d11aa919c1d178d6ab3d3f067e1136963be88c0fb0deebf8aca0e78b70"
+    },
+    {
+      "source": "src/main/java/baritone/utils/pathing/PathingBlockType.java",
+      "ported": "baritone/utils/pathing/PathingBlockType.java",
+      "sourceSha256": "2ad6e04f65390ca05a5ae83f69c9c99f43a97c85c49432aaf068ee630964b4cd"
+    },
+    {
+      "source": "src/api/java/baritone/api/utils/BlockUtils.java",
+      "ported": "baritone/api/utils/BlockUtils.java",
+      "sourceSha256": "a126e96ab724f96a6cf7e754adedfe555dfaddb1a9609db3c8f1c07081b6acf8"
+    },
+    {
+      "source": "src/main/java/baritone/process/BackfillProcess.java",
+      "ported": "baritone/process/BackfillProcess.java",
+      "sourceSha256": "189c23dba3466e3eb17d1ceb606fc6ac79f3f689da6e5b6517842f40dec6b295"
+    },
+    {
+      "source": "src/main/java/baritone/process/ExploreProcess.java",
+      "ported": "baritone/process/ExploreProcess.java",
+      "sourceSha256": "043cb779d90587c5d0875b87deb8c2b78e2c3906187d1d1fe9724b7ea442313d"
+    },
+    {
+      "source": "src/main/java/baritone/process/FarmProcess.java",
+      "ported": "baritone/process/FarmProcess.java",
+      "sourceSha256": "d5d1fe6347e711d0fcc2fb31480a98ffa19b353d5b1a37f23fb4b23f9f3c861c"
+    },
+    {
+      "source": "src/main/java/baritone/process/GetToBlockProcess.java",
+      "ported": "baritone/process/GetToBlockProcess.java",
+      "sourceSha256": "be7646d7c5df97475788d3289e47b97ff84dff1822f78fd1d1cdce7a01f5f91e"
+    },
+    {
+      "source": "src/api/java/baritone/api/utils/MyChunkPos.java",
+      "ported": "baritone/api/utils/MyChunkPos.java",
+      "sourceSha256": "eb55cbe59cb7273f1c1d52d7d518cbd44a92933f6f98785a073b491009fbb756"
+    },
+    {
+      "source": "src/api/java/baritone/api/event/listener/IEventBus.java",
+      "ported": "baritone/api/event/listener/IEventBus.java",
+      "sourceSha256": "722a297a77f6ab152d76f3bdd41f8d65f751c40dee930c2c4668bb65a43e9ab4"
+    },
+    {
+      "source": "src/main/java/baritone/utils/IRenderer.java",
+      "ported": "baritone/utils/IRenderer.java",
+      "sourceSha256": "348a90f3dfc74801d96106527eba46203cf1a261d1be321d0b4fa5824aea4d71"
+    },
+    {
+      "source": "src/main/java/baritone/utils/PathRenderer.java",
+      "ported": "baritone/utils/PathRenderer.java",
+      "sourceSha256": "c248e4ce1a6d38ca772cf8cd6f94bc234fd166640e5fee28c42b4d023341c89f"
+    }
+  ]
+}

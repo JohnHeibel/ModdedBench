@@ -1,0 +1,170 @@
+/*
+ * This file is part of Baritone.
+ *
+ * Baritone is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Baritone is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * Modified by the Modbench project (2026) for Minecraft 1.7.10 / GT New Horizons.
+ * The original file and its SHA-256 are recorded in META-INF/modbench/UPSTREAM_SOURCES.json.
+ */
+
+package baritone.cache;
+
+import baritone.api.utils.BlockUtils;
+import baritone.pathing.movement.MovementHelper;
+import baritone.utils.pathing.PathingBlockType;
+import net.minecraft.block.*;
+import baritone.compat.IBlockState;
+import baritone.compat.Blocks;
+import baritone.compat.BlockPos;
+import baritone.compat.NativeChunkSnapshot;
+import net.minecraft.world.chunk.Chunk;
+import net.minecraft.world.chunk.storage.ExtendedBlockStorage;
+
+import java.util.*;
+
+/**
+ * @author Brady
+ * @since 8/3/2018
+ */
+public final class ChunkPacker {
+
+    private ChunkPacker() {}
+
+    public static CachedChunk pack(NativeChunkSnapshot chunk) {
+        //long start = System.nanoTime() / 1000000L;
+
+        Map<String, List<BlockPos>> specialBlocks = new HashMap<>();
+        BitSet bitSet = new BitSet(CachedChunk.SIZE);
+        {
+            for (int y0 = 0; y0 < 16; y0++) {
+                if (!chunk.sectionPresent(y0)) {
+                    // any 16x16x16 area that's all air will have null storage
+                    // for example, in an ocean biome, with air from y=64 to y=256
+                    // the first 4 extended blocks storages will be full
+                    // and the remaining 12 will be null
+
+                    // since the index into the bitset is calculated from the x y and z
+                    // and doesn't function as an append, we can entirely skip the scanning
+                    // since a bitset is initialized to all zero, and air is saved as zeros
+                    continue;
+                }
+                int yReal = y0 << 4;
+                // the mapping of BlockStateContainer.getIndex from xyz to index is y << 8 | z << 4 | x;
+                // for better cache locality, iterate in that order
+                for (int y1 = 0; y1 < 16; y1++) {
+                    int y = y1 | yReal;
+                    for (int z = 0; z < 16; z++) {
+                        for (int x = 0; x < 16; x++) {
+                            int index = CachedChunk.getPositionIndex(x, y, z);
+                            IBlockState state = chunk.getBlockState(x, y, z);
+                            boolean[] bits = getPathingBlockType(state, chunk, x, y, z).getBits();
+                            bitSet.set(index, bits[0]);
+                            bitSet.set(index + 1, bits[1]);
+                            Block block = state.getBlock();
+                            if (chunk.tracked.contains(block)) {
+                                String name = baritone.compat.CacheStateCodec.encode(state);
+                                specialBlocks.computeIfAbsent(name, b -> new ArrayList<>()).add(new BlockPos(x, y, z));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        //long end = System.nanoTime() / 1000000L;
+        //System.out.println("Chunk packing took " + (end - start) + "ms for " + chunk.x + "," + chunk.z);
+        IBlockState[] blocks = new IBlockState[256];
+
+        // @formatter:off
+        for (int z = 0; z < 16; z++) {
+            https://www.ibm.com/developerworks/library/j-perry-writing-good-java-code/index.html
+            for (int x = 0; x < 16; x++) {
+                for (int y = 255; y >= 0; y--) {
+                    int index = CachedChunk.getPositionIndex(x, y, z);
+                    if (bitSet.get(index) || bitSet.get(index + 1)) {
+                        blocks[z << 4 | x] = chunk.getBlockState(x, y, z);
+                        continue https;
+                    }
+                }
+                blocks[z << 4 | x] = IBlockState.of(Blocks.AIR,0);
+            }
+        }
+        // @formatter:on
+        return new CachedChunk(chunk.x, chunk.z, bitSet, blocks, specialBlocks, System.currentTimeMillis());
+    }
+
+
+    private static PathingBlockType getPathingBlockType(IBlockState state, NativeChunkSnapshot chunk, int x, int y, int z) {
+        Block block = state.getBlock();
+        if (baritone.compat.LegacyFluids.unsupportedForSwimming(block)) return PathingBlockType.AVOID;
+        if (block == Blocks.WATER || block == Blocks.FLOWING_WATER) {
+            // only water source blocks are plausibly usable, flowing water should be avoid
+            // FLOWING_WATER is a waterfall, it doesn't really matter and caching it as AVOID just makes it look wrong
+            if (MovementHelper.possiblyFlowing(state)) {
+                return PathingBlockType.AVOID;
+            }
+            if (
+                    (x != 15 && MovementHelper.possiblyFlowing(chunk.getBlockState(x + 1, y, z)))
+                            || (x != 0 && MovementHelper.possiblyFlowing(chunk.getBlockState(x - 1, y, z)))
+                            || (z != 15 && MovementHelper.possiblyFlowing(chunk.getBlockState(x, y, z + 1)))
+                            || (z != 0 && MovementHelper.possiblyFlowing(chunk.getBlockState(x, y, z - 1)))
+            ) {
+                return PathingBlockType.AVOID;
+            }
+            if (x == 0 || x == 15 || z == 0 || z == 15) {
+                if (chunk.stillBoundaryWater(x,y,z)) {
+                    return PathingBlockType.WATER;
+                }
+                return PathingBlockType.AVOID;
+            }
+            return PathingBlockType.WATER;
+        }
+
+        if (MovementHelper.avoidWalkingInto(block) || MovementHelper.isBottomSlab(state)) {
+            return PathingBlockType.AVOID;
+        }
+        // We used to do an AABB check here
+        // however, this failed in the nether when you were near a nether fortress
+        // because fences check their adjacent blocks in the world for their fence connection status to determine AABB shape
+        // this caused a nullpointerexception when we saved chunks on unload, because they were unable to check their neighbors
+        if (block == Blocks.AIR || block instanceof BlockTallGrass || block instanceof BlockDoublePlant || block instanceof BlockFlower) {
+            return PathingBlockType.AIR;
+        }
+
+        return PathingBlockType.SOLID;
+    }
+
+    public static IBlockState pathingTypeToBlock(PathingBlockType type, int dimension) {
+        switch (type) {
+            case AIR:
+                return IBlockState.of(Blocks.AIR,0);
+            case WATER:
+                return IBlockState.of(Blocks.WATER,0);
+            case AVOID:
+                return IBlockState.of(Blocks.LAVA,0);
+            case SOLID:
+                // Dimension solid types
+                switch (dimension) {
+                    case -1:
+                        return IBlockState.of(Blocks.NETHERRACK,0);
+                    case 0:
+                    default: // The fallback solid type
+                        return IBlockState.of(Blocks.STONE,0);
+                    case 1:
+                        return IBlockState.of(Blocks.END_STONE,0);
+                }
+            default:
+                return null;
+        }
+    }
+}

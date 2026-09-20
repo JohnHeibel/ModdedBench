@@ -1,0 +1,5 @@
+This jar bundles the unmodified it.unimi.dsi.fastutil classes from fastutil 8.5.15.
+Project: https://github.com/vigna/fastutil
+Developer named by the published artifact: Sebastiano Vigna.
+License: Apache License, Version 2.0 (fastutil-Apache-2.0.txt).
+Artifact: it.unimi.dsi:fastutil:8.5.15 from Maven Central.
