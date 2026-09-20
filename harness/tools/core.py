@@ -181,8 +181,10 @@ def mb_time(method: str = "status", params: dict | None = None, timeout_s: float
     or pause_error; a timed-out pause leaves simulation gated. Resume explicitly
     before executing game actions. Screenshots, observations and cancellation remain
     available during pause. Exact stepping is not supported yet.
-    Configure optional healthDrop, healthBelow, airBelow, foodBelow, burning, actionFailed and
-    pauseOnDisconnect conditions. Threshold -1 disables it. Conditions pause globally
+    configure params: healthDrop, burning, actionFailed, pauseOnDisconnect are booleans;
+    healthBelow (health points), airBelow (air ticks, 300 is full) and foodBelow (food
+    points) are numeric thresholds, and -1 disables one. A usual set: {healthDrop:true,
+    healthBelow:8,airBelow:60,foodBelow:6,burning:true,pauseOnDisconnect:true}. Conditions pause globally
     and report a reason. Baritone terminal failures signal actionFailed automatically;
     agent-written tools can call report_failure to signal their own failures.
     pauseOnDisconnect defaults true; set false for a planned

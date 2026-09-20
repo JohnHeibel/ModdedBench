@@ -157,3 +157,62 @@ class ContainerSession:
             if remaining <= 0:
                 raise ProcedureStopped("postcondition timed out; inspect before retrying", self.receipts)
             time.sleep(min(poll_s, remaining))
+
+
+def _matches(stack, want):
+    return bool(stack) and stack["id"] == want["id"] and want.get("meta") in (None, stack.get("meta"))
+
+
+@tool(coverage=["inventory"])
+def mb_craft(pattern: list[list[dict | None]], times: int = 1) -> Any:
+    """Craft in the crafting GUI that is OPEN now: your inventory's 2x2 grid (mb_gui open_inventory) or a crafting table's 3x3.
+
+    pattern is rows of cells, each {id, meta?} or null, laid out exactly as mb_recipes shows
+    the shaped recipe, e.g. sticks: [[{"id":"minecraft:planks"}],[{"id":"minecraft:planks"}]].
+    times (1..64) is how many crafts; batch instead of calling this repeatedly. It moves the
+    ingredients from your inventory with guarded native clicks, checks that the game shows an
+    output, shift-clicks it out, and returns the verified inventory gain. If no output appears
+    the pattern is not a recipe in this pack (GTNH changes many vanilla recipes and often needs
+    tools in the grid): the ingredients are returned and the error says so. The grid and the
+    cursor must be empty first. It never retries; on a stop, read the receipts and observe.
+    """
+    if not 1 <= times <= 64 or not pattern or not all(isinstance(row, list) and row for row in pattern):
+        raise ValueError("pattern is a non-empty list of rows; times is 1..64")
+    session = ContainerSession(kernel())
+    view = session.observe()
+    out = next((s for s in view["slots"] if s["slotClass"].endswith("SlotCrafting")), None)
+    grid = sorted((s for s in view["slots"] if out and s["kind"] == "container" and s["i"] != out["i"] and s["i"] <= 9), key=lambda s: s["i"])
+    width = {4: 2, 9: 3}.get(len(grid))
+    if out is None or width is None:
+        raise ValueError("no crafting grid in the open GUI: open your inventory (2x2) or a crafting table (3x3) first")
+    if len(pattern) > width or max(map(len, pattern)) > width:
+        raise ValueError(f"pattern does not fit this {width}x{width} grid; use a crafting table for 3x3 recipes")
+    if view.get("cursor") or any(s.get("stack") for s in grid):
+        raise ValueError("the crafting grid and the cursor must be empty before mb_craft")
+    have = {s["i"]: s["stack"]["count"] for s in view["slots"] if s["kind"] not in ("container", "armor") and s.get("stack")}
+    stacks = {s["i"]: s["stack"] for s in view["slots"] if s["i"] in have}
+    try:
+        for r, row in enumerate(pattern):
+            for c, want in enumerate(row):
+                need = times if want else 0
+                while need:
+                    source = next((i for i, st in stacks.items() if have[i] and _matches(st, want)), None)
+                    if source is None:
+                        raise ProcedureStopped(f"not enough {want['id']} in your inventory for {times} craft(s)", session.receipts)
+                    moved = min(need, have[source])
+                    session.transfer(source, [grid[r * width + c]["i"]], moved)
+                    have[source] -= moved; need -= moved
+        result = next(s for s in session.observe()["slots"] if s["i"] == out["i"]).get("stack")
+        if not result:
+            raise ProcedureStopped("the game shows no output for this pattern: it is not a recipe in this pack as laid out; check mb_recipes", session.receipts)
+        session.click(out["i"], "quick_move")
+    except ProcedureStopped:
+        for s in session.observe()["slots"]:  # put the ingredients back so the next attempt starts clean
+            if s["i"] in {g["i"] for g in grid} and s.get("stack"): session.click(s["i"], "quick_move")
+        raise
+    after = session.observe()
+    gained = sum(s["stack"]["count"] for s in after["slots"] if s["kind"] not in ("container", "armor") and _matches(s.get("stack"), result))
+    gained -= sum(st["count"] for st in stacks.values() if _matches(st, result))
+    return notes.with_item_notes({"crafted": result, "gained": gained, "gridEmpty": not any(s.get("stack") for s in after["slots"] if s["i"] in {g["i"] for g in grid}),
+                                  "clicks": len(session.receipts)})
+
