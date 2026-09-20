@@ -551,7 +551,7 @@ and list what is loaded, with load errors.
 | `mb_schematic_import` | Import a file under the game's schematics/ directory without building: MCEdit .schematic or a canonical JSON plan |
 | `mb_schematic_build` | Import a schematic, then preview (default) or build it with the strict build contract |
 | `mb_copy` | Copy loaded blocks inside inclusive bounds {min,max} into a build plan; optionally rebuild it elsewhere |
-| `mb_scan` | Paged native scan of loaded blocks using block/meta/ore/item selectors |
+| `mb_scan` | Scan loaded blocks in bounds {min:[x,y,z],max:[x,y,z]} for selectors {id, meta?} / {ore:"oreIron"} / {item:{...}} |
 | `mb_build_pause` | Pause active build work and return its terminal receipt for this request |
 | `mb_build_materials` | Read approximate placeable states in current inventory without changing work |
 | `mb_work_status` | Read a bounded durable mining/build summary, progress and last receipt |

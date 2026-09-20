@@ -8,6 +8,7 @@ pass through ``notes.tracked`` so nearby world notes surface and important outco
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from mbtool import kernel, tool
@@ -109,7 +110,10 @@ def mb_process(process: str, duration_ticks: int = 1200, goal: dict | None = Non
     """Run one bounded source process: goal, explore, get_to_block, or farm.
 
     goal needs a structured source goal for process='goal': block, near, adjacent,
-    two_blocks, xz, y, axis, inverted, composite, or run_away. get_to_block needs
+    two_blocks, xz, y, axis, inverted, composite, or run_away. Positions are arrays:
+    {type:"block",pos:[x,y,z]}, {type:"near",pos:[x,y,z],radius:2}, {type:"xz",x:10,z:-20},
+    {type:"y",y:64}. An xz goal ends wherever that column is reachable, which can be in
+    water or a hole: prefer near/block with a y you have seen on the map or in a scan. get_to_block needs
     block {id,meta?}; explore uses center (defaults to player feet) with no
     radius bound. Farm uses center and radius 1..64. duration_ticks is simulation time, whereas timeout_s is the real RPC
     wait. Goal/get_to_block report success only when source completion reaches their
@@ -320,19 +324,38 @@ def mb_copy(bounds: dict, origin: list[int] | None = None, include_air: bool = F
 
 
 @tool(lane="read", coverage=["move", "machine"])
-def mb_scan(blocks: list[dict] | None = None, bounds: dict | None = None, cursor: int = 0,
-            limit: int = 256, budget: int = 4096) -> Any:
-    """Paged native scan of loaded blocks using block/meta/ore/item selectors.
+def mb_scan(blocks: list[dict] | None = None, bounds: dict | None = None, cursor: list[int] | None = None,
+            limit: int = 256, max_s: float = 20.0) -> Any:
+    """Scan loaded blocks in bounds {min:[x,y,z],max:[x,y,z]} for selectors {id, meta?} / {ore:"oreIron"} / {item:{...}}.
 
-    budget is the cells examined per call, 1..4096: a larger volume is not an error,
-    it just takes more pages, so keep following the returned cursor until it ends.
-    The bounded scan reports unloaded cells and does
-    not generate or load terrain. Scan results are observations, not mining success.
+    One call covers the whole volume: it is split into layers and paged for you, and stops at
+    limit matches (1..256), at the end (done:true), or after max_s seconds. If done is false,
+    call again with the returned cursor and the same bounds. The footprint may be at most
+    512x512 blocks. Selectors are exact: {ore:...} takes a full ore-dictionary name, not a
+    prefix. GregTech ore that is still buried reports meta 0 and a placeholder name: the
+    pack does not tell the client what an ore is until it is exposed, so scan for the block
+    id "gregtech:gt.blockores" to learn THAT ore is there and prospect to learn WHAT it is.
+    Unloaded cells are counted, never loaded or generated. Matches are observations, not
+    proof that mining will succeed (you may lack the tool to harvest them).
     """
     if bounds is None: raise ValueError("bounds are required")
-    params = dict(bounds=bounds, cursor=cursor, limit=limit, budget=budget)
-    if blocks is not None: params["blocks"] = blocks
-    return kernel().call("obs.scan", **params)
+    lo, hi = bounds["min"], bounds["max"]
+    area = (hi[0] - lo[0] + 1) * (hi[2] - lo[2] + 1)
+    if area > 262144: raise ValueError("scan footprint exceeds 512x512 blocks; scan a smaller area")
+    height = max(1, 262144 // area)  # the bridge caps one scan at 262144 cells, so taller volumes go layer by layer
+    layers = [(y, min(y + height - 1, hi[1])) for y in range(lo[1], hi[1] + 1, height)]
+    layer, inner = cursor or [0, 0]
+    limit, deadline = max(1, min(limit, 256)), time.monotonic() + max(1.0, min(max_s, 120.0))
+    out = {"matches": [], "scanned": 0, "unloaded": 0, "volume": area * (hi[1] - lo[1] + 1), "done": False}
+    while layer < len(layers) and len(out["matches"]) < limit and time.monotonic() < deadline:
+        box = {"min": [lo[0], layers[layer][0], lo[2]], "max": [hi[0], layers[layer][1], hi[2]]}
+        page = kernel().call("obs.scan", bounds=box, cursor=inner, limit=limit - len(out["matches"]), budget=4096,
+                             **({"blocks": blocks} if blocks is not None else {}))
+        out["matches"] += page["matches"]; out["scanned"] += page["scanned"]; out["unloaded"] += page["unloaded"]
+        layer, inner = (layer + 1, 0) if page["done"] else (layer, page["cursor"])
+    out["done"] = layer >= len(layers)
+    if not out["done"]: out["cursor"] = [layer, inner]
+    return out
 
 
 @tool(rung=1, lane="control", coverage=["machine"])
