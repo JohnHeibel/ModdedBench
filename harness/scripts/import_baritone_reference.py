@@ -13,7 +13,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
 REVISION = "d9cb2d91a06501c5bcba2181509d0df80361f413"
-DEST = ROOT / "gtnh/baritone/src/upstream/java"
+DEST = ROOT / "mods/baritone/src/upstream/java"
 TREES = [
     "src/main/java/baritone/pathing/calc",
     "src/main/java/baritone/pathing/movement",
@@ -31,12 +31,12 @@ FILES = [
     "src/main/java/baritone/utils/PathingCommandContext.java",
 ]
 REPLACEMENTS = {
-    "net.minecraft.util.math.": "baritone.compat.",
-    "net.minecraft.util.EnumFacing": "baritone.compat.EnumFacing",
-    "net.minecraft.block.state.IBlockState": "baritone.compat.IBlockState",
-    "net.minecraft.util.Tuple": "baritone.compat.Tuple",
-    "net.minecraft.util.EnumHand": "baritone.compat.EnumHand",
-    "net.minecraft.util.EnumActionResult": "baritone.compat.EnumActionResult",
+    "net.minecraft.util.math.": "nav.compat.",
+    "net.minecraft.util.EnumFacing": "nav.compat.EnumFacing",
+    "net.minecraft.block.state.IBlockState": "nav.compat.IBlockState",
+    "net.minecraft.util.Tuple": "nav.compat.Tuple",
+    "net.minecraft.util.EnumHand": "nav.compat.EnumHand",
+    "net.minecraft.util.EnumActionResult": "nav.compat.EnumActionResult",
 }
 
 def main():

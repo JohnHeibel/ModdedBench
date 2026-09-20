@@ -181,7 +181,7 @@ class Game:
         if method == "memory.context": return dict(worldId=self.world, dimension=0, pos=list(self.pos))
         if method == "obs.player": return dict(pos=list(self.pos), dimension=0, health=20)
         if method == "obs.block": return dict(id="minecraft:stone", meta=0, pos=[params["x"], params["y"], params["z"]])
-        if method.startswith("baritone."): return dict(self.receipt)
+        if method.startswith("nav."): return dict(self.receipt)
         raise AssertionError(method)
     def close(self): pass
 
@@ -244,39 +244,39 @@ class NotesSurfacingTests(unittest.TestCase):
         self.assertNotIn("notes", notes.after("obs.entity", {}, {"found": True, "uuid": entity, "uuidScope": "client_session"}))
         self.assertEqual(notes.after("obs.player", {}, "not an object"), "not an object")
         self.put("camp", self.at(150, 64, 150)); self.game.pos = [200, 64, 200]
-        arrived = notes.after("baritone.goto", {}, {"state": "succeeded", "arrival": {"pos": [152, 64, 150]}})
+        arrived = notes.after("nav.goto", {}, {"state": "succeeded", "arrival": {"pos": [152, 64, 150]}})
         self.assertEqual([(n["id"], n["why"], n["distance"]) for n in arrived["notes"]], [("camp", "arrival", 2.0)])
-        self.assertNotIn("notes", notes.after("baritone.goto", {}, {"state": "succeeded", "arrival": {"pos": [152, 64, 150]}}))  # shown already
+        self.assertNotIn("notes", notes.after("nav.goto", {}, {"state": "succeeded", "arrival": {"pos": [152, 64, 150]}}))  # shown already
 
     def test_auto_journal_keys_by_location_and_records_failures(self):
         mbtool.state["kernel"] = self.game
-        done = notes.journal(self.game, "baritone.build", {"state": "succeeded", "origin": [3, 5, 7], "blocksPlaced": 10, "ticks": 40})
+        done = notes.journal(self.game, "nav.build", {"state": "succeeded", "origin": [3, 5, 7], "blocksPlaced": 10, "ticks": 40})
         self.assertEqual((done["id"], done["tags"], done["status"], done["revision"]), ("auto-build-0-0-4-4", ["auto", "build", "done"], "done", 1))
         self.assertEqual(done["attachments"][0]["pos"], [3, 5, 7]); self.assertIn("build done at 3,5,7", done["title"])
         self.assertEqual(json.loads(done["text"])["blocksPlaced"], 10)
-        again = notes.journal(self.game, "baritone.build", {"state": "succeeded", "origin": [2, 6, 5], "blocksPlaced": 3})
+        again = notes.journal(self.game, "nav.build", {"state": "succeeded", "origin": [2, 6, 5], "blocksPlaced": 3})
         self.assertEqual((again["id"], again["revision"]), ("auto-build-0-0-4-4", 2))                    # same 4-block cell: updated, not duplicated
         self.assertEqual(len(self.store.search(tags=["auto"], status="all")["notes"]), 1)
-        self.assertIsNone(notes.journal(self.game, "baritone.build", {"state": "failed"}))                 # failures arrive as BridgeError
-        self.assertIsNone(notes.journal(self.game, "baritone.goto", {"state": "succeeded", "arrival": {"pos": [1, 1, 1]}}))
+        self.assertIsNone(notes.journal(self.game, "nav.build", {"state": "failed"}))                 # failures arrive as BridgeError
+        self.assertIsNone(notes.journal(self.game, "nav.goto", {"state": "succeeded", "arrival": {"pos": [1, 1, 1]}}))
         self.assertIsNone(notes.journal(self.game, "obs.block", {"state": "succeeded"}))
-        error = BridgeError("action_failed", "no path", "baritone.route", {"error": {"receipt": {"state": "failed", "reason": "stuck", "goal": [9, 9, 9], "jobId": "j1"}}})
-        failed = notes.journal(self.game, "baritone.route", None, error=error)
+        error = BridgeError("action_failed", "no path", "nav.route", {"error": {"receipt": {"state": "failed", "reason": "stuck", "goal": [9, 9, 9], "jobId": "j1"}}})
+        failed = notes.journal(self.game, "nav.route", None, error=error)
         self.assertEqual((failed["id"], failed["status"], failed["tags"]), ("auto-route-0-8-8-8", "open", ["auto", "failed", "route"]))
         self.assertIn("stuck", failed["title"]); self.assertEqual(json.loads(failed["text"])["jobId"], "j1")
-        self.assertIsNone(notes.journal(self.game, "baritone.mine", None, error=BridgeError("cancelled", "stopped", "baritone.mine", {})))
+        self.assertIsNone(notes.journal(self.game, "nav.mine", None, error=BridgeError("cancelled", "stopped", "nav.mine", {})))
         # tracked() wires it together: the receipt is journaled, then the fresh auto note surfaces at the arrival position.
         self.game.receipt = {"state": "succeeded", "goal": [40, 64, 40], "blocksMined": 5}
-        result = notes.tracked("baritone.mine", 30, blocks=[{"id": "a:b"}])
+        result = notes.tracked("nav.mine", 30, blocks=[{"id": "a:b"}])
         self.assertEqual(result["blocksMined"], 5); self.assertEqual([n["id"] for n in result["notes"]], ["auto-mine-0-40-64-40"])
         self.game.receipt = {"state": "running"}
-        self.assertNotIn("notes", notes.tracked("baritone.mine", 30, blocks=[]))
+        self.assertNotIn("notes", notes.tracked("nav.mine", 30, blocks=[]))
         class Failing(Game):
             def call(self, method, **params):
-                if method.startswith("baritone."): raise error
+                if method.startswith("nav."): raise error
                 return super().call(method, **params)
         mbtool.state["kernel"] = Failing(self.world)
-        with self.assertRaises(BridgeError): notes.tracked("baritone.route", 30, name="x")
+        with self.assertRaises(BridgeError): notes.tracked("nav.route", 30, name="x")
         self.assertEqual(self.store.get("auto-route-0-8-8-8")["revision"], 2)
 
 

@@ -285,7 +285,7 @@ are blocked. Snapshots extend 24 blocks horizontally from the player; partial
 paths trigger bounded recapture/replanning. Goals are limited to 4096 horizontal
 blocks from the starting player.
 
-Use `mb_call("baritone.goto", {"x": X, "y": Y, "z": Z})` to navigate to a feet
+Use `mb_call("nav.goto", {"x": X, "y": Y, "z": Z})` to navigate to a feet
 block. The request remains active until arrival, cancellation or failure.
 `baritone.status` reports state, path, exact `pathFeetY` heights, movement kinds,
 cost and replan count.
@@ -298,7 +298,7 @@ Repeated segment endpoints and action deadlines bound attempts that make no prog
 Long routes need both a sufficient game-tick budget and caller deadline. For example:
 
 ```python
-mb_call("baritone.goto", {"x": X, "y": Y, "z": Z, "timeoutTicks": 16000}, timeout_s=900)
+mb_call("nav.goto", {"x": X, "y": Y, "z": Z, "timeoutTicks": 16000}, timeout_s=900)
 ```
 
 Navigation accepts up to 72,000 ticks and the bridge accepts deadlines up to one

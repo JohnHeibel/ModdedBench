@@ -67,7 +67,7 @@ def mb_status() -> Any:
 def mb_call(method: str, params: dict | None = None, timeout_s: float = 60.0) -> Any:
     """Call any advertised bridge method with JSON parameters.
 
-    Long baritone.goto routes need both timeout_s and params.timeoutTicks raised;
+    Long nav.goto routes need both timeout_s and params.timeoutTicks raised;
     for example timeout_s=900 and timeoutTicks=16000 for a sustained journey.
     """
     return notes.tracked(method, timeout_s, **(params or {}))
@@ -78,7 +78,7 @@ def mb_obs(method: str, params: dict | None = None) -> Any:
     """Call an obs.* capability by short or full method name.
 
     First-class machine reads include tile {pos|x,y,z,detail:'full',hwyla?},
-    nbt {handle,path,offset?,limit?}, waila/hwyla {pos}, and mixed batch
+    nbt {handle,path,offset?,limit?}, waila {pos}, and mixed batch
     {queries:{alias:{method,params}}}. Tile data and NBT provenance come from the
     authoritative server; server aliases in a batch share serverTick. Missing
     tanks do not prove no fluid, and reported side views may overlap.
@@ -106,10 +106,16 @@ def mb_act(method: str, params: dict | None = None, timeout_s: float = 60.0) -> 
     return kernel().call(method_name("act", method), timeout=timeout_s, **(params or {}))
 
 
-@tool(lane=lane_by_method("keys"), coverage=["meta"])
+KEYS = {"list": "obs.keys", "press": "act.press_key"}
+
+
+@tool(lane=lambda kw: lane_for(KEYS.get(kw.get("method", ""), kw.get("method", "") or "")), coverage=["meta"])
 def mb_keys(method: str, params: dict | None = None) -> Any:
-    """Call a keys.* capability by short or full method name (list, press)."""
-    return kernel().call(method_name("keys", method), **(params or {}))
+    """Key bindings: list (obs.keys) or press {name,ticks:1..200,overrideProtection?} (act.press_key)."""
+    name = KEYS.get(method, method)
+    if name not in KEYS.values():
+        raise ValueError("method must be list or press")
+    return kernel().call(name, **(params or {}))
 
 
 @tool(lane="read", coverage=["meta"])

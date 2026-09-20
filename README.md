@@ -29,8 +29,8 @@ any MCP client, and every tool module is hot-reloaded when the model edits it.
 ```
 mb_obs("player")                          where am I, health, food, held item
 mb_quest_status()                         what the quest book wants next
-mb_recipes(target="minecraft:furnace")    how to make it, per NEI handler
-mb_mine({"blocks":[{"id":"minecraft:log"}], "quantity": 8, "radius": 48})
+mb_recipes(id="minecraft:furnace", meta=0)  how to make it, per NEI handler
+mb_mine(blocks=[{"id":"minecraft:log"}], items=[{"id":"minecraft:log"}], quantity=8, radius=48)
 mb_build(cells=[{"pos":[0,0,0],"id":"minecraft:cobblestone"}], origin=[100,64,100])
 mb_notes("search", {"query": "furnace"})  what past sessions left behind
 ```

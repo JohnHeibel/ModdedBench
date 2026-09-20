@@ -55,7 +55,7 @@ def reload_proof(result: dict) -> None:
     import mbtool
     import server
 
-    srv = server.Server(profile="gtnh")
+    srv = server.Server()
     try:
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "temporary.py"
@@ -80,7 +80,7 @@ def reload_proof(result: dict) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--evidence-dir", type=Path, default=ROOT / "gtnh" / ".runtime" / "evidence")
+    parser.add_argument("--evidence-dir", type=Path, default=ROOT / ".runtime" / "evidence")
     parser.add_argument("--mcp-reload-proof", action="store_true", help="also prove isolated GTNH MCP hot reload")
     parser.add_argument("--expect-baritone", action="store_true", help="require the optional standalone navigation mod")
     args = parser.parse_args()

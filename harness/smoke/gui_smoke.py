@@ -101,7 +101,7 @@ def main():
             transfer(a,[2],2)
             result=transfer(b,[2],1)
             check('nbt_variants_do_not_merge',result['transfer']['moved']==0 and not result['attempted'],result)
-            exact=c.call('inv.find',selector={'id':'minecraft:paper','nbt_hash':slot(view(),a)['stack']['nbt_hash']},scope='container')
+            exact=c.call('obs.find',selector={'id':'minecraft:paper','nbt_hash':slot(view(),a)['stack']['nbt_hash']},scope='container')
             check('exact_nbt_selector',len(exact['matches'])==2,exact)
             check('native_tooltip',bool(c.call('obs.tooltip',slot=2)['lines']))
             w1=source(view(),'minecraft:wool',1);w2=source(view(),'minecraft:wool',2)
@@ -231,7 +231,7 @@ def main():
                 # Explicit fixture restoration recovers the journaled inventory even after cursor failures.
                 evidence['restore']=s.call('dev.fluid_fixture.restore',timeout=30)
             evidence['time']=c.call('time.pause',timeout=30)
-            path=ROOT/'gtnh/.runtime/gui-smoke.json'
+            path=ROOT/'.runtime/gui-smoke.json'
             path.write_text(json.dumps(evidence,indent=2),encoding='utf-8')
             print(path,flush=True)
 

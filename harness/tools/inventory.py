@@ -46,9 +46,9 @@ def mb_inventory(detail: str = "full", container: bool = False) -> Any:
 def mb_find(selector: dict, scope: str = "player") -> Any:
     """Find actual held/container items by exact {id, meta?, nbt_hash?, nbt?}.
     Scope player returns player inventory indices; container returns current slot
-    indices. Metadata and NBT variants remain separate. Use mb_search for NEI catalogue.
+    indices. Metadata and NBT variants remain separate. Use mb_item_search for the NEI catalogue.
     """
-    return kernel().call("inv.find", selector=selector, scope=scope)
+    return kernel().call("obs.find", selector=selector, scope=scope)
 
 
 @tool(coverage=["inventory"])

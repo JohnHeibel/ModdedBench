@@ -22,14 +22,15 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 REPO = Path(__file__).resolve().parents[2]
-RUNTIME = REPO / "gtnh" / ".runtime"
+RUNTIME = REPO / ".runtime"
 INSTANCE_NAME = "Modbench-GTNH-Dev"
 MARKER = ".modbench-gtnh.json"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "mcp"))
 from kernel import bridge_url  # noqa: E402
 from urllib.parse import urlparse  # noqa: E402
 CLIENT_PORT, SERVER_PORT = urlparse(bridge_url()).port, urlparse(bridge_url("server")).port  # one source: MB_BRIDGE_URL
-CLIENT_COMPONENTS = {"client", "control", "baritone"}
+CLIENT_COMPONENTS = {"client", "core", "baritone"}   # jars the managed Prism instance carries
+SERVER_COMPONENTS = {"server", "core"}              # jars the managed dedicated server carries; core is the coremod both need
 MAIN_MENU_SCREENS = {
     "net.minecraft.client.gui.GuiMainMenu",
     "lumien.custommainmenu.gui.GuiCustom",
@@ -91,7 +92,7 @@ def sha256_file(path: Path) -> str:
 
 def verify_pack_archive(path: Path, side: str, lock_path: Path | None = None) -> None:
     """Require the checked-in pack lock before accepting a large archive."""
-    lock_path = lock_path or REPO / "gtnh" / "pack.lock.json"
+    lock_path = lock_path or REPO / "pack.lock.json"
     try:
         archives = json.loads(lock_path.read_text(encoding="utf-8"))["archives"]
         expected = next(item for item in archives if item.get("side") == side)
@@ -298,9 +299,9 @@ def prepare(args: argparse.Namespace) -> None:
 
 
 def artifact(kind: str) -> Path:
-    path = REPO / "gtnh" / kind / "build" / "libs" / f"modbench-{kind}-0.1.0.jar"
+    path = REPO / "mods" / kind / "build" / "libs" / f"modbench-{kind}-0.1.0.jar"
     if not path.is_file():
-        raise RuntimeError_(f"build artifact missing: {path}; run gtnh\\gradlew.bat :{kind}:build")
+        raise RuntimeError_(f"build artifact missing: {path}; run gradlew.bat :{kind}:build")
     return path
 
 
@@ -367,67 +368,88 @@ def client_instance_is_running(instance: Path) -> bool:
         return True
 
 
-def assert_component_stopped(kind: str, runtime: Path, cfg: dict[str, Any]) -> None:
-    if kind not in CLIENT_COMPONENTS | {"server"}:
+def component_sides(kind: str) -> list[str]:
+    """Which managed installations carry this jar: client, server, or both for the coremod."""
+    sides = [side for side, members in (("client", CLIENT_COMPONENTS), ("server", SERVER_COMPONENTS)) if kind in members]
+    if not sides:
         raise RuntimeError_(f"unknown managed component: {kind}")
-    port = CLIENT_PORT if kind in CLIENT_COMPONENTS else SERVER_PORT
-    if bridge_is_live(port):
-        raise RuntimeError_(f"refusing to replace {kind} jar while its bridge port {port} is occupied")
-    if kind in CLIENT_COMPONENTS:
-        instance = instance_dir(cfg)
-        assert_managed_instance(instance)
-        if client_instance_is_running(instance):
-            raise RuntimeError_("refusing to replace client jar while the managed Prism instance is running")
-    else:
-        record = load_json(runtime / "server-process.json")
-        if recorded_process_is_running(record):
+    return sides
+
+
+def assert_component_stopped(kind: str, runtime: Path, cfg: dict[str, Any]) -> None:
+    for side in component_sides(kind):
+        port = CLIENT_PORT if side == "client" else SERVER_PORT
+        if bridge_is_live(port):
+            raise RuntimeError_(f"refusing to replace {kind} jar while its bridge port {port} is occupied")
+        if side == "client":
+            instance = instance_dir(cfg)
+            assert_managed_instance(instance)
+            if client_instance_is_running(instance):
+                raise RuntimeError_("refusing to replace client jar while the managed Prism instance is running")
+        elif recorded_process_is_running(load_json(runtime / "server-process.json")):
             raise RuntimeError_("refusing to replace server jar while the managed server process is running")
 
 
-def install_jar(kind: str, cfg: dict[str, Any], runtime: Path) -> Path:
+def managed_mods_dir(side: str, runtime: Path, cfg: dict[str, Any]) -> Path:
+    if side == "client":
+        instance = instance_dir(cfg)
+        assert_managed_instance(instance)
+        return client_game_dir(instance) / "mods"
+    server = runtime / "server"
+    if not (server / MARKER).is_file():
+        raise RuntimeError_(f"refusing to modify unmarked server directory: {server}")
+    return server / "mods"
+
+
+def managed_jar_target(kind: str, side: str, runtime: Path, cfg: dict[str, Any]) -> Path:
+    return managed_mods_dir(side, runtime, cfg) / f"modbench-{kind}.jar"
+
+
+def backup_path(kind: str, side: str, runtime: Path) -> Path:
+    return runtime / "backups" / side / f"modbench-{kind}.previous.jar"
+
+
+def install_jar(kind: str, cfg: dict[str, Any], runtime: Path) -> list[Path]:
+    """Copy the built jar into every managed side that carries it, keeping each side's previous jar for rollback."""
     assert_component_stopped(kind, runtime, cfg)
-    base = instance_dir(cfg) if kind in CLIENT_COMPONENTS else runtime / "server"
-    if kind in CLIENT_COMPONENTS:
-        assert_managed_instance(base)
-    elif not (base / MARKER).is_file():
-        raise RuntimeError_(f"refusing to modify unmarked server directory: {base}")
-    mods = client_game_dir(base) / "mods" if kind in CLIENT_COMPONENTS else base / "mods"
-    mods.mkdir(parents=True, exist_ok=True)
-    target = mods / f"modbench-{kind}.jar"
-    backup = runtime / "backups" / f"modbench-{kind}.previous.jar"
     source = artifact(kind)
-    temp = target.with_suffix(".jar.new")
-    shutil.copy2(source, temp)
-    if target.exists():
-        backup.parent.mkdir(parents=True, exist_ok=True)
-        backup_new = backup.with_suffix(".jar.new")
-        shutil.copy2(target, backup_new)
-        os.replace(backup_new, backup)
-    os.replace(temp, target)
     installed = load_json(runtime / "installed.json")
-    installed[kind] = {"target": str(target), "backup": str(backup), "source": str(source)}
+    targets = []
+    for side in component_sides(kind):
+        target = managed_jar_target(kind, side, runtime, cfg)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        backup = backup_path(kind, side, runtime)
+        temp = target.with_suffix(".jar.new")
+        shutil.copy2(source, temp)
+        if target.exists():
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            backup_new = backup.with_suffix(".jar.new")
+            shutil.copy2(target, backup_new)
+            os.replace(backup_new, backup)
+        os.replace(temp, target)
+        installed.setdefault(kind, {})[side] = {"target": str(target), "backup": str(backup), "source": str(source)}
+        targets.append(target)
     save_json(runtime / "installed.json", installed)
-    return target
+    return targets
 
 
-def managed_jar_target(kind: str, runtime: Path, cfg: dict[str, Any]) -> Path:
-    base = client_game_dir(instance_dir(cfg)) if kind in CLIENT_COMPONENTS else runtime / "server"
-    return base / "mods" / f"modbench-{kind}.jar"
-
-
-def rollback_jar(kind: str, runtime: Path) -> Path:
-    cfg = load_config(runtime) if kind in CLIENT_COMPONENTS else {}
+def rollback_jar(kind: str, runtime: Path) -> list[Path]:
+    """Restore the previous jar on every side; nothing moves unless every side has a valid backup."""
+    sides = component_sides(kind)
+    cfg = load_config(runtime) if "client" in sides else {}
     assert_component_stopped(kind, runtime, cfg)
-    installed = load_json(runtime / "installed.json")
-    details = installed.get(kind, {})
-    target, backup = Path(details.get("target", "")), Path(details.get("backup", ""))
-    expected_target = managed_jar_target(kind, runtime, cfg)
-    expected_backup = runtime / "backups" / f"modbench-{kind}.previous.jar"
-    if (not target or not backup.is_file() or target.resolve() != expected_target.resolve()
-            or backup.resolve() != expected_backup.resolve()):
-        raise RuntimeError_(f"no managed {kind} backup is available")
-    os.replace(backup, target)
-    return target
+    installed = load_json(runtime / "installed.json").get(kind, {})
+    moves = []
+    for side in sides:
+        details = installed.get(side, {}) if isinstance(installed, dict) else {}
+        target, backup = Path(details.get("target", "")), Path(details.get("backup", ""))
+        if (not details.get("target") or not backup.is_file() or target.resolve() != managed_jar_target(kind, side, runtime, cfg).resolve()
+                or backup.resolve() != backup_path(kind, side, runtime).resolve()):
+            raise RuntimeError_(f"no managed {kind} backup is available for the {side}")
+        moves.append((backup, target))
+    for backup, target in moves:
+        os.replace(backup, target)
+    return [target for _, target in moves]
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -525,12 +547,12 @@ def stop_client(args: argparse.Namespace) -> None:
 def build(args: argparse.Namespace) -> None:
     runtime = Path(args.runtime).resolve(); cfg = load_config(runtime)
     java = resolve_executable(cfg.get("java", ""), cfg.get("javaCandidates", []), "Java executable")
-    gradlew = REPO / "gtnh" / ("gradlew.bat" if os.name == "nt" else "gradlew")
+    gradlew = REPO / ("gradlew.bat" if os.name == "nt" else "gradlew")
     if not gradlew.is_file(): raise RuntimeError_(f"missing Gradle wrapper: {gradlew}")
     log = runtime / "logs" / "build.log"; log.parent.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy(); env["JAVA_HOME"] = str(Path(java).resolve().parents[1])
     with log.open("ab") as output:
-        result = subprocess.run([str(gradlew), "-p", str(REPO / "gtnh"), "build"], cwd=REPO, env=env, stdout=output, stderr=subprocess.STDOUT)
+        result = subprocess.run([str(gradlew), "build"], cwd=REPO, env=env, stdout=output, stderr=subprocess.STDOUT)
     if result.returncode: raise RuntimeError_(f"GTNH build failed; see {log}")
     print("GTNH build completed")
 
@@ -593,10 +615,10 @@ def wait_for_client_join(timeout: float) -> dict[str, Any]:
 
 
 def managed_client_hashes(cfg: dict[str, Any]) -> tuple[dict[str, str], list[str]]:
-    """Hash only the fixed managed targets; client and control are mandatory."""
+    """Hash only the fixed managed targets; client and core are mandatory."""
     mods = client_game_dir(instance_dir(cfg)) / "mods"
     hashes, missing = {}, []
-    for kind in ("client", "control"):
+    for kind in ("client", "core"):
         target = mods / f"modbench-{kind}.jar"
         if not target.is_file():
             missing.append(kind)
@@ -612,7 +634,7 @@ def managed_client_hashes(cfg: dict[str, Any]) -> tuple[dict[str, str], list[str
 
 
 def valid_client_hash_set(value: Any) -> dict[str, str] | None:
-    if not isinstance(value, dict) or set(value) - CLIENT_COMPONENTS or not {"client", "control"} <= set(value):
+    if not isinstance(value, dict) or set(value) - CLIENT_COMPONENTS or not {"client", "core"} <= set(value):
         return None
     if not all(isinstance(digest, str) and len(digest) == 64 and all(c in "0123456789abcdef" for c in digest)
                for digest in value.values()):
@@ -698,10 +720,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("stop-server"); p.add_argument("--timeout", type=float, default=30); p.set_defaults(func=stop_server)
     p = sub.add_parser("stop-client"); p.add_argument("--timeout", type=float, default=30); p.set_defaults(func=stop_client)
     sub.add_parser("build").set_defaults(func=build)
-    for command, kind in (("install-client", "client"), ("install-control", "control"), ("install-baritone", "baritone"), ("install-server", "server")):
-        p = sub.add_parser(command); p.set_defaults(func=lambda a, k=kind: print(install_jar(k, load_config(Path(a.runtime).resolve()), Path(a.runtime).resolve())))
-    for command, kind in (("rollback-client", "client"), ("rollback-control", "control"), ("rollback-baritone", "baritone"), ("rollback-server", "server")):
-        p = sub.add_parser(command); p.set_defaults(func=lambda a, k=kind: print(rollback_jar(k, Path(a.runtime).resolve())))
+    for kind in ("client", "core", "baritone", "server"):
+        p = sub.add_parser(f"install-{kind}"); p.set_defaults(func=lambda a, k=kind: print(*install_jar(k, load_config(Path(a.runtime).resolve()), Path(a.runtime).resolve()), sep="\n"))
+        p = sub.add_parser(f"rollback-{kind}"); p.set_defaults(func=lambda a, k=kind: print(*rollback_jar(k, Path(a.runtime).resolve()), sep="\n"))
     p = sub.add_parser("launch-client"); p.add_argument("--username"); p.add_argument("--timeout", type=float, default=300); p.set_defaults(func=launch_client)
     sub.add_parser("provision-client").set_defaults(func=provision_client)
     args = parser.parse_args(argv)

@@ -93,11 +93,11 @@ class RunnerTests(unittest.TestCase):
                 raise RuntimeError("new client did not join")
         deploy = ManagedDeploy(Path("runtime"), command=command, launch_timeout=9)
         with self.assertRaisesRegex(RuntimeError, "prior jars were restored"):
-            deploy.deploy(["client", "control", "baritone"])
-        self.assertEqual(calls, [
-            ["stop-client"], ["build"], ["install-control"], ["install-baritone"],
-            ["install-client"], ["launch-client", "--timeout", "9"], ["stop-client"],
-            ["rollback-client"], ["rollback-baritone"], ["rollback-control"],
+            deploy.deploy(["client", "core", "baritone"])
+        self.assertEqual(calls, [   # core is a coremod on both sides: the server stops and restarts around it
+            ["stop-client"], ["stop-server"], ["build"], ["install-core"], ["install-baritone"],
+            ["install-client"], ["start-server"], ["launch-client", "--timeout", "9"], ["stop-client"], ["stop-server"],
+            ["rollback-client"], ["rollback-baritone"], ["rollback-core"], ["start-server"],
             ["launch-client", "--timeout", "9"]])
 
     def test_build_failure_does_not_attempt_rollback(self):
@@ -165,8 +165,8 @@ class RunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             runner=AutonomousRunner(None,Journal(Path(directory)),'x',{})
             kernel=Kernel()
-            runner._apply(kernel,{'calls':[{'method':'baritone.build'},{'method':'act.use_item'}]})
-            self.assertEqual(['baritone.build'],kernel.calls)
+            runner._apply(kernel,{'calls':[{'method':'nav.build'},{'method':'act.use_item'}]})
+            self.assertEqual(['nav.build'],kernel.calls)
             self.assertEqual('path_failed',runner.state.last_result[0]['error'])
             self.assertIsNone(runner.state.uncertain_effect)
 
