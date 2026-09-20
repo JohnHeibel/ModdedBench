@@ -58,7 +58,11 @@ public final class ModbenchCore {
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public void guiOpening(GuiOpenEvent event) {
-        if (event.gui != null && !ClientControls.ownsInventoryScreen(event.gui)) {
+        if (event.gui == null) return;
+        // The server connector thread opens GuiDisconnected itself; throwing here would strand the player on GuiConnecting.
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getMinecraft();
+        if (!mc.func_152345_ab()) { mc.func_152344_a(() -> ClientControls.revoke("gui_open")); return; }
+        if (!ClientControls.ownsInventoryScreen(event.gui)) {
             ClientControls.revoke(ClientControls.heldRegisteredGuiKey() ? "registered_gui_open" : "gui_open");
         }
     }
