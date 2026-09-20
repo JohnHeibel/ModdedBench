@@ -50,20 +50,26 @@ classes, and a test scans the built jars to prove it.
 
 ## Bridge protocol
 
-JSON-RPC 2.0 over a websocket. Each request is `{id, method, params}`; replies
-carry `result` or `error {code, message, data}`. Notifications from the game
-(`event` frames) are bounded per session. Requests are queued, run on the
-client thread in order, and answered once; a deadline produces a `timeout`
-error only for a request that never started running, so an action can never
-run twice because the model retried a timeout. Long jobs (mining, building,
-routing) keep their request open until a terminal receipt and expose a
-`jobId` that survives a client restart. Cancellation is a separate
-`act.stop` call (or `nav.build_pause` for a resumable build), and MCP cancellation reaches the
-bridge.
+JSON over a loopback websocket; the first frame presents the token. Each
+request is `{id, method, params}` and gets exactly one reply:
+`{id, ok, data | error {code, msg}, tick, seq, src, worldEpoch, cost_ms}`.
+Notifications from the game (`event` frames) are bounded per session, and a
+session may hold at most 128 pending requests (`requests.cancel` is exempt).
+
+A request is QUEUED, then RUNNING on the game thread, then DONE. The deadline
+(`_timeout_ms`) answers `timeout` only while the request is still queued, and
+a request that timed out in the queue is never executed. A handler that is
+already running always reports its real outcome, marked `late: true` if the
+deadline passed meanwhile, so a `timeout` never hides an action that happened.
+Long jobs (mining, building, routing) hand the request back to the deadline
+timer, keep working, and expose a `jobId` that survives a client restart.
+Cancellation is `requests.cancel` (what MCP cancellation sends), `act.stop`,
+or `nav.build_pause` for a resumable build. If Python gives up waiting before
+a late reply arrives, the outcome is unknown: observe before retrying.
 
 Every method is registered with a name, a description and an *effect*
-(`read`, `act`, `control`), which `mb_methods` reports and the Python lanes
-use.
+(`read`, `interaction`, `privileged`), which `mb_methods` reports and the
+Python lanes use.
 
 ## Time control
 

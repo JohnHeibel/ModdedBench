@@ -193,7 +193,8 @@ class Kernel:
                 self.ws.send(json.dumps(req, allow_nan=False))
             return future.result(timeout=timeout)
         except FutureTimeout:
-            raise TimeoutError(f"no bridge reply within {timeout}s for {req.get('method', 'auth')}") from None
+            raise TimeoutError(f"no bridge reply within {timeout}s for {req.get('method', 'auth')}; "
+                "the outcome is unknown, observe before retrying") from None
         finally:
             if scope is not None:
                 scope.remove(self, rid)
