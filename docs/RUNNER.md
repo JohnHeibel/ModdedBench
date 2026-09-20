@@ -84,6 +84,30 @@ refuses further interactions until the model returns `reviewed: true`. For
 long work this is the expected path: inspect `nav.work_status` and the world,
 find the surviving `jobId`, then `nav.resume` it.
 
+## Coding agents (Codex, Claude Code)
+
+A chat-style coding agent talks to the MCP server directly and needs no
+adapter, but MCP cannot push: once its turn ends, nothing wakes it. Two pieces
+cover that. Inside a turn the agent calls `mb_wait(after, timeout_s)` instead
+of finishing; it blocks until a watch triggers, faults, stalls or loses its
+context, and returns the waking events and a cursor. The host's MCP tool
+timeout must exceed `timeout_s` (Codex: `tool_timeout_sec` under
+`[mcp_servers.<name>]`, default 60). When a turn ends anyway,
+`harness/runner/codex_loop.py` starts the next one:
+
+```bash
+python harness/runner/codex_loop.py --max-turns 50 -- -m <model> -s workspace-write
+```
+
+The first turn is `codex exec --json` with `PROMPT.md` on stdin; the thread id
+from the `thread.started` event is saved in `.state/codex-loop.json` and every
+later turn is `codex exec resume <id>` with a short continue prompt. The loop
+ends on a `MISSION COMPLETE` line in a turn's last message, on
+`.state/STOP`, after `--max-turns`, or after three failed turns in a row (30 s
+back-off). Output is appended to `.state/codex-loop.log`. Claude Code needs
+only `mb_wait`; the same loop shape works with `claude -p` and `--resume`.
+The autonomous runner above remains the provider-neutral path for API models.
+
 ## File adapter (operator in the loop)
 
 `harness/runner/file_model_adapter.py` needs no provider. The runner points its

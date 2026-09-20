@@ -185,9 +185,13 @@ reward.
 | --- | --- | --- |
 | `mb_interrupt` | control | `add`, `remove`, `reload`, `status`, `ack` watches. A watch is declarative (`queries`, `conditions`, `effects`, `prompt`) or a Python file with `evaluate(context)`; effects are `notify`, `cancel`, `pause`. |
 | `mb_interrupt_events` | read | Replays the durable event journal after a cursor; a host uses it to give the model a turn. |
+| `mb_wait` | read | Blocks (1 to 900 s) until an event after the cursor needs the model: trigger, fault, stall, failed delivery or context change. Returns `woke`, `cursor`, the waking `events` and `gap`. A chat-style agent calls it instead of ending its turn. |
 
 Fires are retried with the same event id and the watch is re-armed if the
-bridge cannot be reached; watches survive reconnects. `_examples/` holds a
+bridge cannot be reached; watches survive reconnects, and armed or undelivered
+watches are persisted next to the journal and re-armed after an MCP server
+restart. While a latch is set, the refusal (`interrupt_latched: ...`) names
+each latched event's reason and prompt. `_examples/` holds a
 custom-predicate example.
 
 ```json
