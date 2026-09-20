@@ -20,7 +20,7 @@ import net.minecraft.world.World;
 final class PlacingJob implements Navigation.Job {
     private final Minecraft mc=Minecraft.getMinecraft();
     private final BlockPos target,footing;
-    private final boolean ownsLease,overrideProtection,automatedEdits;
+    private final boolean overrideProtection;
     private final Block expected;
     private final float health;
     private final int initialCount;
@@ -33,13 +33,8 @@ final class PlacingJob implements Navigation.Job {
     private int ticks,remaining,settling;
     private boolean selectedReady;
     private record Face(BlockPos block,int side,Vec3 point) {}
-    PlacingJob(BlockPos target,int timeoutTicks,InputArbiter.Lease parent) {
-        this(target,timeoutTicks,parent,false);
-    }
-    PlacingJob(BlockPos target,int timeoutTicks,InputArbiter.Lease parent,boolean overrideProtection) {
-        this.target=target;remaining=timeoutTicks;ownsLease=parent==null;
-        this.overrideProtection=overrideProtection || parent!=null&&parent.overrideProtection();
-        this.automatedEdits=parent!=null&&parent.automatedEdits();
+    PlacingJob(BlockPos target,int timeoutTicks,boolean overrideProtection) {
+        this.target=target;remaining=timeoutTicks;this.overrideProtection=overrideProtection;
         if(world==null || mc.thePlayer==null || mc.currentScreen!=null) throw new IllegalArgumentException("placement requires player with GUI closed");
         if(timeoutTicks<1 || timeoutTicks>6000) throw new IllegalArgumentException("timeoutTicks must be 1..6000");
         int x=(int)Math.floor(mc.thePlayer.posX),y=(int)Math.floor(mc.thePlayer.boundingBox.minY+.001),z=(int)Math.floor(mc.thePlayer.posZ);
@@ -50,7 +45,7 @@ final class PlacingJob implements Navigation.Job {
         int slot=PlacementItems.slot();if(slot<0) throw new IllegalArgumentException("no_placement_material");
         selection=new InventorySelection(slot);selected=selection.status();expected=Block.getBlockFromItem(selection.expected.getItem());initialCount=selection.expected.stackSize;
         String unsafe=unsafe();if(unsafe!=null) throw new IllegalArgumentException(unsafe);
-        lease=parent==null?ControlRegistry.controls().arbiter().acquire("baritone_placing",this::cancel,this.overrideProtection,automatedEdits):parent;
+        lease=ControlRegistry.controls().arbiter().acquire("baritone_placing",this::cancel,overrideProtection,false);
         if(!lease.isActive()) finish("cancelled","input_unavailable");
     }
     void tick() {
@@ -93,7 +88,7 @@ final class PlacingJob implements Navigation.Job {
         lease.setKeys(keys);
     }
     private String unsafe() {
-        String protectedRegion=dev.modbench.api.ControlRegistry.memory().editProblem(target.getX(),target.getY(),target.getZ(),overrideProtection,automatedEdits);
+        String protectedRegion=dev.modbench.api.ControlRegistry.memory().editProblem(target.getX(),target.getY(),target.getZ(),overrideProtection,false);
         if(protectedRegion!=null) return protectedRegion;
         if(mc.thePlayer.getHealth()<health || mc.thePlayer.isBurning()) return "damage_or_fire";
         if(!mc.thePlayer.onGround || Math.abs(mc.thePlayer.boundingBox.minY-(footing.getY()+1))>.01) return "footing_changed";
@@ -124,7 +119,7 @@ final class PlacingJob implements Navigation.Job {
     private void finish(String state,String reason) {
         if(done()) return;this.state=state;this.reason=reason;
         selection.close();
-        if(lease!=null) {if(ownsLease) lease.close();else lease.setKeys(Set.of());}
+        if(lease!=null) lease.close();
         world=null;player=null;
     }
     @Override public void cancel(String reason) {finish("cancelled",reason);}

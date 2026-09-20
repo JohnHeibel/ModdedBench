@@ -21,7 +21,7 @@ import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.util.Vec3;
 import net.minecraft.world.World;
 
-/** One survival block, with optional automatic tools and a reusable parent control lease. */
+/** One survival block, with optional automatic tools. */
 final class MiningJob implements Navigation.Job {
     private final Minecraft mc;
     private final BlockPos target;
@@ -32,18 +32,16 @@ final class MiningJob implements Navigation.Job {
     private final float health;
     private final double startX,startZ;
     private InputArbiter.Lease lease;
-    private final boolean autoTool,strict,ownsLease,overrideProtection,automatedEdits;
+    private final boolean autoTool,overrideProtection;
     private InventorySelection selection;
     private final List<Map<String,Object>> toolsUsed=new ArrayList<>();
     private String state="mining",reason="";
     private int remaining,ticks,settling,aimMismatchTicks;
     private Map<String,Object> actualAim=Map.of();
 
-    MiningJob(Minecraft mc,BlockPos target,int timeoutTicks,boolean autoTool,boolean strict,InputArbiter.Lease parent,boolean overrideProtection) {
+    MiningJob(Minecraft mc,BlockPos target,int timeoutTicks,boolean autoTool,boolean overrideProtection) {
         this.mc=mc; this.target=target;
-        this.overrideProtection=overrideProtection || parent!=null&&parent.overrideProtection();
-        this.automatedEdits=parent!=null&&parent.automatedEdits();
-        this.autoTool=autoTool;this.strict=strict;ownsLease=parent==null;
+        this.overrideProtection=overrideProtection;this.autoTool=autoTool;
         if(mc.theWorld==null||mc.thePlayer==null||mc.currentScreen!=null) throw new IllegalArgumentException("mining needs a player with GUI closed");
         if(timeoutTicks<1||timeoutTicks>6000) throw new IllegalArgumentException("timeoutTicks must be 1..6000");
         world=mc.theWorld;player=mc.thePlayer;remaining=timeoutTicks;
@@ -57,7 +55,7 @@ final class MiningJob implements Navigation.Job {
         if(unsafe!=null) throw new IllegalArgumentException(unsafe);
         if(aim()==null) throw new IllegalArgumentException("target is occluded or outside normal reach");
         if(autoTool) selectTool();
-        lease=parent==null?ControlRegistry.controls().arbiter().acquire("baritone_mining",this::cancel,this.overrideProtection,automatedEdits):parent;
+        lease=ControlRegistry.controls().arbiter().acquire("baritone_mining",this::cancel,overrideProtection,false);
         if(!lease.isActive()) finish("cancelled","input_unavailable");
     }
 
@@ -112,7 +110,7 @@ final class MiningJob implements Navigation.Job {
     }
 
     private String unsafe() {
-        String protectedRegion=dev.modbench.api.ControlRegistry.memory().editProblem(target.getX(),target.getY(),target.getZ(),overrideProtection,automatedEdits);
+        String protectedRegion=dev.modbench.api.ControlRegistry.memory().editProblem(target.getX(),target.getY(),target.getZ(),overrideProtection,false);
         if(protectedRegion!=null) return protectedRegion;
         if(mc.thePlayer.getHealth()<health||mc.thePlayer.isBurning()) return "damage_or_fire";
         if(mc.thePlayer.getAir()<160) return "insufficient_air";
@@ -129,12 +127,10 @@ final class MiningJob implements Navigation.Job {
         }
         if(!exit) return "dry_escape_step_required";
         if(world.getBlock(target.getX(),target.getY()+1,target.getZ()) instanceof BlockFalling) return "falling_block_above_target";
-        if(strict && !MiningTools.automaticBlock(world,target)) return "protected_or_unsupported_route_block";
         for(int[] d:new int[][]{{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}}) {
             int x=target.getX()+d[0],y=target.getY()+d[1],z=target.getZ()+d[2];
             byte cell=ForgeSnapshot.classify(world,x,y,z);
             if(cell==TerrainGrid.UNKNOWN) return "unknown_mining_neighbor";
-            if(strict && (cell==TerrainGrid.WATER || cell==TerrainGrid.HAZARD)) return "route_mining_would_expose_fluid_or_hazard";
             if(cell==TerrainGrid.HAZARD && y>=fy-1) return "hazard_would_be_exposed_near_feet";
         }
         return null;
@@ -171,7 +167,7 @@ final class MiningJob implements Navigation.Job {
         if(done()) return;
         this.state=state;this.reason=reason;
         if(selection!=null) selection.close();
-        if(lease!=null) {if(ownsLease) lease.close();else lease.setKeys(Set.of());}
+        if(lease!=null) lease.close();
         if(mc.thePlayer==player && mc.playerController!=null) mc.playerController.resetBlockRemoving();
         world=null;player=null;
     }
