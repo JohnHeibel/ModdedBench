@@ -80,6 +80,17 @@ Key facts about the runtime:
 - **World memory** (`mb_memory`) stores waypoints, corridor routes and protected
   regions in Java. Protect your base early; navigation will not dig through a
   protected region by accident.
+- **The map** (`mb_map`) is JourneyMap, the pack's map mod, as a picture: every
+  chunk this client has had loaded, one pixel per block, north up, with
+  labelled x/z grid lines so you can read coordinates straight off it. Black is
+  unexplored, not empty. Look at it before travelling, when choosing a base
+  site, when hunting for water, sand, forest or a village, and when deciding
+  which direction is still unknown; the `cave` layer shows the 16-block slice
+  you are standing in, which is how you read a mine. JourneyMap drops a red
+  death point where you die, and that is where your items are. Your `mb_memory`
+  waypoints are drawn on it too, so a saved waypoint is also a map label. The
+  picture is a survey, not an observation: confirm a block with `mb_obs` before
+  you act on it.
 
 ## 3. The tools are imperfect. Improving them is part of the job.
 
