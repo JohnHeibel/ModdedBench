@@ -16,49 +16,19 @@ public final class ServerRuntime extends BridgeRuntime {
     public final ServerClock clock;
     final TileObservations observations=new TileObservations(this);
 
+    /** Registration entry for {@code DevFixtures}; the fixture classes are outside this jar's shipped source set. */
+    void fixture(String name,String description,String effect,Handler handler) {register(name,description,effect,handler);}
     public ServerRuntime(MinecraftServer server) {
         super("server"); this.server = server;
         clock=new ServerClock(server,this);
         for(String method:new String[]{"time.status","time.pause","time.resume","time.configure","time.report_failure"})
             register(method,"Dedicated simulation clock; configure {healthDrop,healthBelow,airBelow,foodBelow,burning,actionFailed,pauseOnDisconnect}",
                 method.equals("time.status")?"read":"interaction",r->clock.command(r));
-        if(Boolean.getBoolean("modbench.devFixtures")) {
-            InteractionFixture interactions=new InteractionFixture(server);
-            register("dev.interaction_fixture.create","Journalled survival interaction/combat arena","privileged",r->interactions.create());
-            register("dev.interaction_fixture.position","Position/load targets {target:chest|fluid|entity|combat|occluded}","privileged",r->interactions.position(Json.string(r.params,"target","chest")));
-            register("dev.interaction_fixture.status","Authoritative interaction fixture state","privileged",r->interactions.status());
-            register("dev.interaction_fixture.hurt","Deterministic interrupt stimulus {amount:1..19}","privileged",r->interactions.hurt(Json.integer(r.params,"amount",1,1,19)));
-            register("dev.interaction_fixture.stack","Journalled fixture-only loadout {slot,id,meta,count,nbt}; select identities through NEI","privileged",r->interactions.stack(r.params));
-            register("dev.interaction_fixture.restore","Restore original player and remove journalled arena/entities","privileged",r->interactions.restore());
-            TimeFixture time=new TimeFixture(server);
-            register("dev.time_fixture.create","Create journaled furnace, fluid and entity clock fixture","privileged",r->time.create());
-            register("dev.time_fixture.run","Run a development workload for {ticks:1..2000} server ticks, then pause","privileged",r->{clock.runForFixture(Json.integer(r.params,"ticks",200,1,2000));return clock.status();});
-            register("dev.time_fixture.status","Observe fixture world time, furnace, fluid and entity state","privileged",r->time.status());
-            register("dev.time_fixture.hurt","Development-only deterministic damage {amount:1..19}","privileged",r->time.hurt(Json.integer(r.params,"amount",1,1,19)));
-            register("dev.time_fixture.restore","Restore clock fixture and original player","privileged",r->time.restore());
-            FluidFixture fixture=new FluidFixture(server);
-            register("dev.gui_fixture.create","Create journaled native vanilla, Tinkers, GT, AE2 and Forestry UI fixture","privileged",r->fixture.createUi());
-            register("dev.gui_fixture.position","Close container and position at named GUI fixture {name}","privileged",r->fixture.positionUi(Json.string(r.params,"name","chest")));
-            register("dev.gui_fixture.status","Authoritative fixture container slots and cursor","privileged",r->fixture.statusUi());
-            register("dev.fluid_fixture.create","Create isolated fluid test basin and journal player state", "privileged",r->fixture.create());
-            register("dev.fluid_fixture.position","Position development player in a named test case {name}","privileged",r->fixture.position(Json.string(r.params,"name","pool_start")));
-            register("dev.fluid_fixture.restore","Remove test basin and restore journaled player state","privileged",r->fixture.restore());
-            register("dev.geometry_fixture.create","Create journaled collision/ladder test terrain","privileged",r->fixture.createGeometry());
-            register("dev.long_route_fixture.create","Create journaled 416-block route and 48-block descent; loads server chunks","privileged",r->fixture.createLongRoute());
-            register("dev.geometry_fixture.change","Named terrain change during a geometry regression {name}","privileged",r->fixture.changeGeometry(Json.string(r.params,"name","")));
-            register("dev.work_fixture.create","Create journaled bounded mining, bridging, hazard, and inventory fixture","privileged",r->fixture.createWork());
-            register("dev.work_fixture.position","Position development player in a named work-fixture case {name}","privileged",r->fixture.positionWork(Json.string(r.params,"name","work_start")));
-            register("dev.work_fixture.change","Named obstacle or loadout change during a work regression {name}","privileged",r->fixture.changeWork(Json.string(r.params,"name","")));
-            WorkProcessFixture processes=new WorkProcessFixture(server);
-            register("dev.work_process_fixture.create","Create journalled bounded mining/building course with native ToolBuilder loadout","privileged",r->processes.create());
-            register("dev.work_process_fixture.position","Position development player {name:ore_line|selection|build|descend_start|descend_step_1|descend_step_2|descend_goal}","privileged",r->processes.position(Json.string(r.params,"name","ore_line")));
-            register("dev.work_process_fixture.status","Authoritative targets, exact metadata, inventory and selected hotbar slot","privileged",r->processes.status());
-            register("dev.work_process_fixture.set_block","Fixture-only bounded block setter {x,y,z,id,meta}; exact registry ID required","privileged",r->processes.setBlock(r.params));
-            register("dev.work_process_fixture.set_stack","Fixture-only inventory setter {slot,id,meta,count,nbt}; exact registry ID required","privileged",r->processes.setStack(r.params));
-            register("dev.work_process_fixture.inspect_block","Independent fixture evidence: authoritative tile NBT, inventory and fluids {x,y,z}","read",r->processes.inspectBlock(r.params));
-            register("dev.work_process_fixture.supply_energy","Supply bounded fixture EU input {x,y,z,eu<=32768}; does not configure faces, connections or modes","privileged",r->processes.supplyEnergy(r.params));
-            register("dev.work_process_fixture.restore","Restore original player/inventory/health and remove journalled course","privileged",r->processes.restore());
-        }
+        if(Boolean.getBoolean("modbench.devFixtures")) try {
+            var fixtures=Class.forName("dev.modbench.server.DevFixtures").getDeclaredMethod("register",ServerRuntime.class,MinecraftServer.class);
+            fixtures.setAccessible(true);fixtures.invoke(null,this,server);
+        } catch(ClassNotFoundException absent) {throw new IllegalStateException("modbench.devFixtures requested but this server jar was built without -PdevFixtures");}
+        catch(ReflectiveOperationException error) {throw new IllegalStateException(error);}
         register("obs.world", "Dedicated server worlds, game time and player count", "read", r -> {
             JsonArray dimensions = new JsonArray();
             for (WorldServer world : server.worldServers) if (world != null) dimensions.add(Json.object(
