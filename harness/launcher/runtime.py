@@ -599,12 +599,13 @@ def wait_for_client_join(timeout: float) -> dict[str, Any]:
                 kernel = open_client_kernel()
             gui = kernel.call("obs.gui")
             screen = str(gui.get("class") or "") if isinstance(gui, dict) else ""
-            if "GuiDisconnected" in screen or "GuiError" in screen:
+            # A disconnect screen left over from before this launch (the server was restarted) is a place to connect from.
+            if "GuiError" in screen or connected and "GuiDisconnected" in screen:
                 try: kernel.close()
                 except Exception: pass
                 raise RuntimeError_(f"client reached {screen}; inspect the client screen/log, then retry")
             if not connected:
-                if screen not in MAIN_MENU_SCREENS:
+                if screen not in MAIN_MENU_SCREENS and "GuiDisconnected" not in screen:
                     time.sleep(1)
                     continue
                 kernel.call("sys.connect", host="127.0.0.1", port=25575)

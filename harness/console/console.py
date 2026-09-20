@@ -133,12 +133,12 @@ class Console:
             loop = "rm -f .state/STOP; p=PROMPT.md; [ -f .state/run-prompt.md ] && p=.state/run-prompt.md; exec python3 harness/runner/codex_loop.py --prompt $p --max-turns \"$0\" \"$@\" >/dev/null 2>&1"
             self.run_job(name, [[*COMPOSE, "up", "-d", "gateway", "agent"], [*COMPOSE, "exec", "-d", "agent", "sh", "-c", loop, turns, *extra]])
         elif name == "agent.stop": self.run_job(name, [[*agent, "sh", "-c", "mkdir -p .state && touch .state/STOP"]])
-        elif name == "agent.kill": self.run_job(name, [[*agent, "sh", "-c", "pkill -f codex_loop.py; pkill -x codex; pkill -f harness/mcp/server.py; true"]])
+        elif name == "agent.kill": self.run_job(name, [[*agent, "sh", "-c", "pkill -f '[c]odex_loop.py'; pkill -x codex; pkill -f '[h]arness/mcp/server.py'; true"]])
         elif name == "agent.down": self.run_job(name, [[*COMPOSE, "stop", "agent", "gateway"]])
         elif name == "run.init":
             prompt = fill_prompt((REPO / "PROMPT.md").read_text(encoding="utf-8"), str(a.get("targetQuest", "")).strip(), str(a.get("targetChapter", "")).strip())
             up = "agent" in sh([*COMPOSE, "ps", "--services", "--status", "running"]).stdout.split()
-            steps = [[*agent, "sh", "-c", "pkill -f codex_loop.py; pkill -x codex; true"]] if up else []
+            steps = [[*agent, "sh", "-c", "pkill -f '[c]odex_loop.py'; pkill -x codex; true"]] if up else []
             if a.get("freshWorld"): steps += [[*COMPOSE, "rm", "-sf", "server"], [DOCKER, "volume", "rm", "-f", "moddedbench_server-data"]]
             if a.get("freshAgent"): steps += [[*COMPOSE, "rm", "-sf", "agent"], [DOCKER, "volume", "rm", "-f", "moddedbench_agent-work"]]
             steps += [[*COMPOSE, "up", "-d"], ([*agent, "sh", "-c", "mkdir -p .state && rm -f .state/STOP .state/codex-loop.json && cat > .state/run-prompt.md"], prompt)]

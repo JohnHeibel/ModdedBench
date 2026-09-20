@@ -88,6 +88,13 @@ and shows it in the job log. The console listens on loopback only and each
 request carries a token minted at start, so neither a web page nor the agent
 can drive it.
 
+Pause is an operator hold, not a bridge call: the console creates
+`modbench-hold` in the server's directory, the server pauses within a tick and
+refuses every `time.resume` until the file is gone. The agent has no path to
+that directory, so it can neither block the hold nor undo it. Resume removes
+the file and the server resumes by itself; it also takes over a pause that the
+agent or a disconnect left behind.
+
 ## Operating by hand
 
 | Task | Command |
@@ -97,6 +104,7 @@ can drive it.
 | Stop the agent after its current turn | create `.state/STOP` in the agent's checkout: `docker compose ... exec agent touch .state/STOP` |
 | See what the agent asked the network for | `docker compose ... logs gateway` |
 | Take the agent's commits out | `docker compose ... exec agent git bundle create /outbox/run.bundle modbench-base..HEAD`, then `git fetch .runtime/outbox/run.bundle` on the host |
+| Hold the world paused / release | `docker compose ... exec server touch /data/modbench-hold` / `... rm -f /data/modbench-hold` |
 | New world | `docker compose ... down`, `docker volume rm moddedbench_server-data` |
 
 Recording: OBS window capture matched on the window title picks the client up
