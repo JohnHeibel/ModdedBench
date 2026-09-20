@@ -25,7 +25,10 @@ REPO = Path(__file__).resolve().parents[2]
 RUNTIME = REPO / "gtnh" / ".runtime"
 INSTANCE_NAME = "Modbench-GTNH-Dev"
 MARKER = ".modbench-gtnh.json"
-CLIENT_PORT, SERVER_PORT = 47223, 47224
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "mcp"))
+from kernel import bridge_url  # noqa: E402
+from urllib.parse import urlparse  # noqa: E402
+CLIENT_PORT, SERVER_PORT = urlparse(bridge_url()).port, urlparse(bridge_url("server")).port  # one source: MB_BRIDGE_URL
 CLIENT_COMPONENTS = {"client", "control", "baritone"}
 MAIN_MENU_SCREENS = {
     "net.minecraft.client.gui.GuiMainMenu",

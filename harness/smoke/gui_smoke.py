@@ -10,8 +10,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'harness' / 'mcp'))
-from kernel import Kernel, BridgeError
-from gtnh_ui import ContainerSession
+from kernel import Kernel, BridgeError, bridge_url
+import mbtool  # noqa: F401  (installs the mbtools_gtnh package)
+from mbtools_gtnh.inventory import ContainerSession
 
 
 def main():
@@ -23,7 +24,7 @@ def main():
         evidence['checks'].append(name)
         print(name, flush=True)
 
-    with Kernel(url='ws://127.0.0.1:47223/ws') as c, Kernel(url='ws://127.0.0.1:47224/ws') as s:
+    with Kernel() as c, Kernel(url=bridge_url('server')) as s:
         def view(): return c.call('obs.container', detail='full')
         def slot(v, index): return next(e for e in v['slots'] if e['i'] == index)
         def count(v, index): return (slot(v, index).get('stack') or {}).get('count', 0)

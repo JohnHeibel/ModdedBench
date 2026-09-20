@@ -20,10 +20,10 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "harness" / "mcp"))
-from kernel import BridgeError, Kernel  # noqa: E402
+from kernel import BridgeError, Kernel, bridge_url  # noqa: E402
 
-CLIENT_URL = "ws://127.0.0.1:47223/ws"
-SERVER_URL = "ws://127.0.0.1:47224/ws"
+CLIENT_URL = bridge_url()
+SERVER_URL = bridge_url("server")
 
 
 def fail(result: dict, name: str, exc: BaseException | str) -> None:
