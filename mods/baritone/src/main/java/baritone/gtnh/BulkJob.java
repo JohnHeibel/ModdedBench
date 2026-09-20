@@ -3,10 +3,9 @@
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh;
 
-import dev.modbench.control.ClientControls;
-import dev.modbench.control.ClientMemory;
-import dev.modbench.control.api.InputArbiter;
-import dev.modbench.control.api.Navigation;
+import dev.modbench.api.ControlRegistry;
+import dev.modbench.api.InputArbiter;
+import dev.modbench.api.Navigation;
 import baritone.gtnh.pathing.*;
 import static baritone.gtnh.pathing.WorkSpec.*;
 import java.util.*;
@@ -34,15 +33,15 @@ abstract class BulkJob implements Navigation.Job {
         remaining=integer(params,"timeoutTicks",12000,1,72000);
     }
     void begin() {
-        lease=ClientControls.arbiter().acquire("baritone_"+journal.kind,this::cancel,override,true);
+        lease=ControlRegistry.controls().arbiter().acquire("baritone_"+journal.kind,this::cancel,override,true);
         journal.save(status());
     }
     final void tick() {
         if(done())return;
         try {
-            if(mc.theWorld!=world||mc.thePlayer!=player||!journal.scope.equals(ClientMemory.memory().scope())){cancel("world_or_player_changed");return;}
+            if(mc.theWorld!=world||mc.thePlayer!=player||!journal.scope.equals(ControlRegistry.memory().memory().scope())){cancel("world_or_player_changed");return;}
             if(!lease.isActive()){cancel("superseded");return;}
-            if(mc.currentScreen!=null&&!ClientControls.ownsPlayerInventory(lease)||mc.thePlayer.getHealth()<=0){cancel("gui_or_death");return;}
+            if(mc.currentScreen!=null&&!ControlRegistry.controls().ownsPlayerInventory(lease)||mc.thePlayer.getHealth()<=0){cancel("gui_or_death");return;}
             if(--remaining<=0){finish("failed","timeout");return;}ticks++;
             if(mc.thePlayer.getHealth()<health||mc.thePlayer.isBurning()||mc.thePlayer.getAir()<120){finish("failed","damage_fire_or_low_air");return;}
             boolean tickedChild=false;

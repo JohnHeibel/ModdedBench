@@ -11,11 +11,11 @@ import java.util.*;
 /** Structured access to the pinned parser. Changes are atomic and idle-only. */
 final class ReferenceSettings {
     private ReferenceSettings(){}
-    static Map<String,Object> call(Map<String,Object> params){
+    static Map<String,Object> call(Baritone engine,Map<String,Object> params){
         String operation=String.valueOf(params.getOrDefault("operation","get"));
         Settings actual=Baritone.settings();
         if(operation.equals("set")||operation.equals("reset")){
-            if(Baritone.instance().getInputOverrideHandler().hasActiveLease())throw new IllegalArgumentException("stop the current source process before changing settings");
+            if(engine.getInputOverrideHandler().hasActiveLease())throw new IllegalArgumentException("stop the current source process before changing settings");
             Map<?,?> values=params.get("values") instanceof Map<?,?> map?map:Map.of();
             Settings candidate=new Settings();
             for(var setting:actual.allSettings)copy(candidate.byLowerName.get(setting.getName().toLowerCase(Locale.ROOT)),setting.value);

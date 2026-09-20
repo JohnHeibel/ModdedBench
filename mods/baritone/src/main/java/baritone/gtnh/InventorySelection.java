@@ -16,7 +16,7 @@ final class InventorySelection {
     final ItemStack expected;
     private final ItemStack displaced;
     private boolean started;
-    private dev.modbench.control.ClientControls.InventorySession screen;
+    private dev.modbench.api.Controls.InventorySession screen;
     private boolean opened;
     private int wait;
     InventorySelection(int source) {
@@ -34,12 +34,12 @@ final class InventorySelection {
         for(int i=0;i<9;i++)if(mc.thePlayer.inventory.getStackInSlot(i)==null)return i;
         return current;
     }
-    boolean tick(dev.modbench.control.api.InputArbiter.Lease lease) {
+    boolean tick(dev.modbench.api.InputArbiter.Lease lease) {
         if(!started&&source<9&&mc.thePlayer.inventory.currentItem==source&&mc.currentScreen==null&&mc.thePlayer.inventory.getItemStack()==null&&ItemStack.areItemStacksEqual(expected,mc.thePlayer.getHeldItem())) {
             started=true;return true;
         }
         if(source>=9 && !opened) {
-            screen=dev.modbench.control.ClientControls.beginPlayerInventory(lease);opened=true;wait=2;return false;
+            screen=dev.modbench.api.ControlRegistry.controls().beginPlayerInventory(lease);opened=true;wait=2;return false;
         }
         if(screen!=null && !screen.isOpen()) throw new IllegalArgumentException("inventory_screen_changed");
         if(!started && wait>0) {wait--;return false;}

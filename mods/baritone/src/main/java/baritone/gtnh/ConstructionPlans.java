@@ -3,9 +3,9 @@
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh;
 
+import dev.modbench.api.ControlRegistry;
 import static baritone.gtnh.pathing.WorkSpec.*;
 import baritone.gtnh.pathing.WorkSpec;
-import dev.modbench.control.ClientMemory;
 import net.minecraft.client.Minecraft;
 import java.nio.file.*;
 import java.nio.charset.StandardCharsets;
@@ -20,7 +20,7 @@ final class ConstructionPlans {
             String operation=string(params,"operation","");
             if(operation.equals("begin")) {
                 Map<String,Object> spec=child(params,"spec");if(spec.containsKey("cells")||spec.containsKey("selection")||spec.containsKey("planId"))throw new IllegalArgumentException("stage spec must omit cells/selection/planId");
-                String id=UUID.randomUUID().toString();Map<String,Object> manifest=new LinkedHashMap<>();manifest.put("scope",ClientMemory.memory().scope());manifest.put("spec",spec);manifest.put("count",0);manifest.put("parts",List.of());
+                String id=UUID.randomUUID().toString();Map<String,Object> manifest=new LinkedHashMap<>();manifest.put("scope",ControlRegistry.memory().memory().scope());manifest.put("spec",spec);manifest.put("count",0);manifest.put("parts",List.of());
                 write(path(id,".stage.json"),manifest);return Map.of("stageId",id,"count",0);
             }
             String id=string(params,"stageId","");Map<String,Object> manifest=read(path(id,".stage.json"));checkScope(manifest);
@@ -59,7 +59,7 @@ final class ConstructionPlans {
         for(Object row:list(manifest.get("parts"))){String name=(String)row;if(!name.matches("[0-9a-f-]{36}\\.\\d+\\.cells\\.json"))throw new IllegalArgumentException("invalid schematic part");Path file=root().resolve(name);if(Files.size(file)>8*1024*1024)throw new IllegalArgumentException("schematic part too large");cells.addAll(list(WorkJournal.JSON.fromJson(Files.readString(file,StandardCharsets.UTF_8),List.class)));}
         if(cells.size()!=integer(manifest,"count",0,1,1048576))throw new IllegalArgumentException("incomplete staged plan");spec.put("cells",cells);return spec;
     }
-    private static void checkScope(Map<String,Object> manifest){if(!Objects.equals(manifest.get("scope"),ClientMemory.memory().scope()))throw new IllegalArgumentException("plan belongs to another world/dimension");}
+    private static void checkScope(Map<String,Object> manifest){if(!Objects.equals(manifest.get("scope"),ControlRegistry.memory().memory().scope()))throw new IllegalArgumentException("plan belongs to another world/dimension");}
     private static Map<String,Object> read(Path file) throws java.io.IOException {if(Files.size(file)>8*1024*1024)throw new IllegalArgumentException("manifest too large");return object(WorkJournal.JSON.fromJson(Files.readString(file,StandardCharsets.UTF_8),Map.class));}
     private static void write(Path file,Object data) throws java.io.IOException {
         Files.createDirectories(file.getParent());Path temporary=file.resolveSibling(file.getFileName()+".tmp");byte[] bytes=WorkJournal.JSON.toJson(data).getBytes(StandardCharsets.UTF_8);if(bytes.length>8*1024*1024)throw new IllegalArgumentException("schematic part too large");

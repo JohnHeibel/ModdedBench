@@ -3,11 +3,11 @@
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh;
 
+import dev.modbench.api.ControlRegistry;
 import baritone.gtnh.pathing.BlockPos;
 import baritone.gtnh.pathing.TerrainGrid;
-import dev.modbench.control.ClientControls;
-import dev.modbench.control.api.InputArbiter;
-import dev.modbench.control.api.Navigation;
+import dev.modbench.api.InputArbiter;
+import dev.modbench.api.Navigation;
 import java.util.*;
 import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
@@ -50,12 +50,12 @@ final class PlacingJob implements Navigation.Job {
         int slot=PlacementItems.slot();if(slot<0) throw new IllegalArgumentException("no_placement_material");
         selection=new InventorySelection(slot);selected=selection.status();expected=Block.getBlockFromItem(selection.expected.getItem());initialCount=selection.expected.stackSize;
         String unsafe=unsafe();if(unsafe!=null) throw new IllegalArgumentException(unsafe);
-        lease=parent==null?ClientControls.arbiter().acquire("baritone_placing",this::cancel,this.overrideProtection,automatedEdits):parent;
+        lease=parent==null?ControlRegistry.controls().arbiter().acquire("baritone_placing",this::cancel,this.overrideProtection,automatedEdits):parent;
         if(!lease.isActive()) finish("cancelled","input_unavailable");
     }
     void tick() {
         if(done()) return;ticks++;
-        if(mc.theWorld!=world || mc.thePlayer!=player || mc.currentScreen!=null&&!ClientControls.ownsPlayerInventory(lease)) {cancel("world_or_gui_changed");return;}
+        if(mc.theWorld!=world || mc.thePlayer!=player || mc.currentScreen!=null&&!ControlRegistry.controls().ownsPlayerInventory(lease)) {cancel("world_or_gui_changed");return;}
         if(!lease.isActive()) {cancel("superseded");return;}
         if(--remaining<=0) {finish("failed","timeout");return;}
         String unsafe=unsafe();if(unsafe!=null) {finish("failed",unsafe);return;}
@@ -93,7 +93,7 @@ final class PlacingJob implements Navigation.Job {
         lease.setKeys(keys);
     }
     private String unsafe() {
-        String protectedRegion=dev.modbench.control.ClientMemory.editProblem(target.x(),target.y(),target.z(),overrideProtection,automatedEdits);
+        String protectedRegion=dev.modbench.api.ControlRegistry.memory().editProblem(target.x(),target.y(),target.z(),overrideProtection,automatedEdits);
         if(protectedRegion!=null) return protectedRegion;
         if(mc.thePlayer.getHealth()<health || mc.thePlayer.isBurning()) return "damage_or_fire";
         if(!mc.thePlayer.onGround || Math.abs(mc.thePlayer.boundingBox.minY-(footing.y()+1))>.01) return "footing_changed";
@@ -114,7 +114,7 @@ final class PlacingJob implements Navigation.Job {
             if(ForgeSnapshot.classify(world,support.x(),support.y(),support.z())!=TerrainGrid.SUPPORT || world.getTileEntity(support.x(),support.y(),support.z())!=null) continue;
             Vec3 point=Vec3.createVectorHelper(support.x()+.5-d[0]*.499,support.y()+.5-d[1]*.499,support.z()+.5-d[2]*.499);
             Face face=new Face(support,d[3],point);
-            if(eye.distanceTo(point)<=mc.playerController.getBlockReachDistance()-.1 && matches(dev.modbench.control.NativeTargeting.trace(world,eye,point,false,true,false),face)) return face;
+            if(eye.distanceTo(point)<=mc.playerController.getBlockReachDistance()-.1 && matches((net.minecraft.util.MovingObjectPosition)dev.modbench.api.ControlRegistry.targeting().trace(world,eye,point,false,true,false),face)) return face;
         }
         return null;
     }

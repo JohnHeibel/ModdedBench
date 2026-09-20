@@ -5,7 +5,7 @@ package baritone.gtnh;
 
 import baritone.gtnh.pathing.*;
 import static baritone.gtnh.pathing.WorkSpec.*;
-import dev.modbench.control.api.*;
+import dev.modbench.api.*;
 import java.util.*;
 import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
@@ -81,7 +81,7 @@ final class ExactPlacementJob implements Navigation.Job {
         // proposed face and this input tick. Keep the native ray aimed at the
         // same face point instead of needlessly rejecting a valid work pose.
         aim(face.point);
-        dev.modbench.control.NativeTargeting.refresh();
+        dev.modbench.api.ControlRegistry.targeting().refresh();
         if(!matches(mc.objectMouseOver,face)){finish("failed","placement_raycast_changed");return;}
         if(!ItemStack.areItemStacksEqual(selection.expected,mc.thePlayer.getHeldItem())){finish("failed","material_changed_before_click");return;}
         if(!mc.thePlayer.isSneaking()){lease.setKeys(Set.of(mc.gameSettings.keyBindSneak.getKeyCode()));return;}
@@ -115,7 +115,7 @@ final class ExactPlacementJob implements Navigation.Job {
             // it does not place in our intended adjacent cell. Such a support
             // could edit outside the blueprint even when its ray is visible.
             if(block.isAir(world,support.x(),support.y(),support.z())||block.isReplaceable(world,support.x(),support.y(),support.z())||ForgeFluids.fluid(block))continue;
-            block.setBlockBoundsBasedOnState(world,support.x(),support.y(),support.z());var box=dev.modbench.control.NativeTargeting.withContext(()->block.getSelectedBoundingBoxFromPool(world,support.x(),support.y(),support.z()));if(box==null)continue;
+            block.setBlockBoundsBasedOnState(world,support.x(),support.y(),support.z());var box=dev.modbench.api.ControlRegistry.targeting().withContext(()->block.getSelectedBoundingBoxFromPool(world,support.x(),support.y(),support.z()));if(box==null)continue;
             // Retain BuilderProcess's bounding-box face sampling; unit-cube
             // points are insufficient for slabs and modded collision geometry.
             for(double a:new double[]{.5,.2,.8})for(double b:new double[]{.5,.2,.8}) {
@@ -128,12 +128,12 @@ final class ExactPlacementJob implements Navigation.Job {
                     double pitch=Math.toRadians(number(cell.placement(),"pitch",-Math.toDegrees(Math.atan2(point.yCoord-eye.yCoord,Math.hypot(point.xCoord-eye.xCoord,point.zCoord-eye.zCoord))),-90,90));
                     double reach=mc.playerController.getBlockReachDistance();
                     Vec3 end=eye.addVector(-Math.sin(yaw)*Math.cos(pitch)*reach,-Math.sin(pitch)*reach,Math.cos(yaw)*Math.cos(pitch)*reach);
-                    var hit=dev.modbench.control.NativeTargeting.trace(world,Vec3.createVectorHelper(eye.xCoord,eye.yCoord,eye.zCoord),end,false,false,true);
+                    var hit=(net.minecraft.util.MovingObjectPosition)dev.modbench.api.ControlRegistry.targeting().trace(world,Vec3.createVectorHelper(eye.xCoord,eye.yCoord,eye.zCoord),end,false,false,true);
                     if(hit==null||hit.typeOfHit!=MovingObjectPosition.MovingObjectType.BLOCK||hit.blockX!=support.x()||hit.blockY!=support.y()||hit.blockZ!=support.z()||hit.sideHit!=side)continue;
                     if(cell.placement().containsKey("hit")&&hit.hitVec.distanceTo(point)>.03)continue;
                     point=hit.hitVec;xyz=new double[]{point.xCoord,point.yCoord,point.zCoord};
                 }
-                int meta=expected.onBlockPlaced(world,cell.pos().x(),cell.pos().y(),cell.pos().z(),side,(float)(xyz[0]-support.x()),(float)(xyz[1]-support.y()),(float)(xyz[2]-support.z()),dev.modbench.control.NativePlacement.initialMetadata(held));
+                int meta=expected.onBlockPlaced(world,cell.pos().x(),cell.pos().y(),cell.pos().z(),side,(float)(xyz[0]-support.x()),(float)(xyz[1]-support.y()),(float)(xyz[2]-support.z()),dev.modbench.api.ControlRegistry.placement().initialMetadata(held));
                 float yaw=(float)number(cell.placement(),"yaw",Math.toDegrees(Math.atan2(eye.xCoord-point.xCoord,point.zCoord-eye.zCoord)),-360000,360000);
                 meta=PlacementStateAdapters.predict(expected,world,cell.pos(),meta,yaw,eye);
                 // 1.7.10 also has onBlockPlacedBy, unlike the 1.12 state-for-
@@ -144,7 +144,7 @@ final class ExactPlacementJob implements Navigation.Job {
                 Vec3 end=point.addVector(d[0]*-.001,d[1]*-.001,d[2]*-.001);
                 // Same selectable-block ray as vanilla input and Baritone's
                 // RayTraceUtils, including blocks without collision boxes.
-                if(matches(dev.modbench.control.NativeTargeting.trace(world,Vec3.createVectorHelper(eye.xCoord,eye.yCoord,eye.zCoord),end,false,false,true),candidate))return candidate;
+                if(matches((net.minecraft.util.MovingObjectPosition)dev.modbench.api.ControlRegistry.targeting().trace(world,Vec3.createVectorHelper(eye.xCoord,eye.yCoord,eye.zCoord),end,false,false,true),candidate))return candidate;
             }
         }return null;
     }

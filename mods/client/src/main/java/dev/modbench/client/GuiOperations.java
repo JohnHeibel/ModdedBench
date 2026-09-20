@@ -2,10 +2,10 @@
 // Copyright (c) 2026 Modbench contributors
 package dev.modbench.client;
 
+import dev.modbench.api.ControlRegistry;
 import com.google.gson.*;
 import dev.modbench.bridge.*;
-import dev.modbench.control.ClientControls;
-import dev.modbench.control.api.*;
+import dev.modbench.api.*;
 import java.util.*;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.*;
@@ -92,11 +92,11 @@ final class GuiOperations {
         }
         void begin() throws Exception {
             Json.integer(p,"settleTicks",3,1,100);Json.integer(p,"ackTimeoutTicks",100,1,1200);
-            lease=ClientControls.arbiter().acquire("gui:"+method,reason->{
+            lease=ControlRegistry.controls().arbiter().acquire("gui:"+method,reason->{
                 UiInput.clear();
                 if(reason.contains("gui")) screenChanged=true;else fail("cancelled",reason);
             });
-            ClientControls.ownGui(lease,screen);UiInput.clear();
+            ControlRegistry.controls().ownGui(lease,screen);UiInput.clear();
             UiInput.modifier(Keyboard.KEY_LSHIFT,Json.bool(p,"shift",false));
             UiInput.modifier(Keyboard.KEY_LCONTROL,Json.bool(p,"ctrl",false));
             UiInput.modifier(Keyboard.KEY_LMENU,Json.bool(p,"alt",false));
@@ -317,7 +317,7 @@ final class GuiOperations {
             if(held&&mc.currentScreen==screen) try {
                 UiInput.postMouse(releaseX,releaseY,mouseButton,false,0);UiInput.nextMouse();screen.handleMouseInput();
             } catch(Exception failure) {error+="; release_failed:"+failure;}finally {UiInput.clear();}
-            ClientControls.releaseGui(lease);if(lease!=null) lease.close();
+            ControlRegistry.controls().releaseGui(lease);if(lease!=null) lease.close();
         }
     }
     private static int room(Slot slot,ItemStack stack) {

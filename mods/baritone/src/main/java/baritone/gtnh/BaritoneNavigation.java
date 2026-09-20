@@ -3,12 +3,11 @@
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh;
 
+import dev.modbench.api.ControlRegistry;
 import baritone.gtnh.pathing.*;
-import dev.modbench.control.ClientControls;
-import dev.modbench.control.ClientMemory;
-import dev.modbench.control.api.WorldMemory;
-import dev.modbench.control.api.InputArbiter;
-import dev.modbench.control.api.Navigation;
+import dev.modbench.api.WorldMemory;
+import dev.modbench.api.InputArbiter;
+import dev.modbench.api.Navigation;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -85,7 +84,7 @@ public final class BaritoneNavigation implements Navigation {
         return active;
     }
     @Override public Job route(String name,boolean reverse,int startIndex,int timeoutTicks,boolean allowBreak,boolean allowPlace,boolean overrideProtection) {
-        var route=ClientMemory.memory().snapshot().routes().get(name);
+        var route=ControlRegistry.memory().memory().snapshot().routes().get(name);
         if(route==null) throw new IllegalArgumentException("unknown saved route");
         if(mc.thePlayer==null || mc.currentScreen!=null || mc.thePlayer.getHealth()<=0) throw new IllegalArgumentException("route needs a living player with GUI closed");
         if(timeoutTicks<1||timeoutTicks>72000) throw new IllegalArgumentException("timeoutTicks must be 1..72000");
@@ -104,8 +103,8 @@ public final class BaritoneNavigation implements Navigation {
     void runApi(java.util.function.Consumer<baritone.api.IBaritone> activation){
         WorkAccess.player();stop();activation.accept(reference);
     }
-    @Override public Map<String,Object> settings(Map<String,Object> params){return ReferenceSettings.call(params);}
-    @Override public Map<String,Object> cache(Map<String,Object> params){return ReferenceCache.call(params);}
+    @Override public Map<String,Object> settings(Map<String,Object> params){return ReferenceSettings.call(reference,params);}
+    @Override public Map<String,Object> cache(Map<String,Object> params){return ReferenceCache.call(reference,params);}
     @Override public Job follow(Map<String,Object> params){
         WorkAccess.player();
         if(active!=null&&!active.done())active.cancel("superseded");
@@ -125,7 +124,7 @@ public final class BaritoneNavigation implements Navigation {
     @Override public Map<String,Object> buildMaterials() {
         WorkAccess.player();List<Map<String,Object>> stacks=new ArrayList<>();
         for(int i=0;i<36;i++){var stack=mc.thePlayer.inventory.mainInventory[i];if(stack==null||!(stack.getItem() instanceof net.minecraft.item.ItemBlock))continue;
-            var row=new LinkedHashMap<>(InventorySelection.describe(stack));row.put("slot",i);row.put("hotbar",i<9);row.put("blockId",net.minecraft.block.Block.blockRegistry.getNameForObject(net.minecraft.block.Block.getBlockFromItem(stack.getItem())));row.put("initialItemMeta",stack.getItem().getMetadata(stack.getItemDamage()));row.put("placement",dev.modbench.control.NativePlacement.describe(stack));stacks.add(row);}
+            var row=new LinkedHashMap<>(InventorySelection.describe(stack));row.put("slot",i);row.put("hotbar",i<9);row.put("blockId",net.minecraft.block.Block.blockRegistry.getNameForObject(net.minecraft.block.Block.getBlockFromItem(stack.getItem())));row.put("initialItemMeta",stack.getItem().getMetadata(stack.getItemDamage()));row.put("placement",dev.modbench.api.ControlRegistry.placement().describe(stack));stacks.add(row);}
         return Map.of("approxPlaceable",stacks,"meaning","native ItemBlock mappings and initial metadata; final state depends on placement side, hit, pose and native callbacks");
     }
     @Override public Job resume(String jobId,Map<String,Object> options) {
@@ -139,8 +138,10 @@ public final class BaritoneNavigation implements Navigation {
         if(job==null)throw new IllegalArgumentException("unknown journal work kind");
         active=job;try{job.begin();}catch(Exception error){job.cancel("start_failed");throw error;}return job;
     }
-    @Override public Map<String,Object> workStatus(String id) {var data=WorkJournal.status(id);if(!Objects.equals(data.get("scope"),ClientMemory.memory().scope()))throw new IllegalArgumentException("work belongs to another world/dimension");return data;}
+    @Override public Map<String,Object> workStatus(String id) {var data=WorkJournal.status(id);if(!Objects.equals(data.get("scope"),ControlRegistry.memory().memory().scope()))throw new IllegalArgumentException("work belongs to another world/dimension");return data;}
     @Override public Map<String,Object> previewBuild(Map<String,Object> params){params=ConstructionPlans.resolve(params);if(!"builder".equals(params.get("mode")))return BuildingProcess.preview(params);WorkAccess.player();var process=new ConstructionProcess(this,new WorkJournal("build",params),params);var pending=process.cells.stream().filter(c->!process.correct(c)).map(process::desired).toList();var out=BuildingProcess.inspect(pending,true,process.override);out.put("mode","builder");out.put("selected",process.cells.size());out.put("acceptedBySchematic",process.cells.size()-pending.size());out.put("settings",process.settings.values);return out;}
+    @Override public Map<String,Object> importSchematic(Map<String,Object> params){try{return PlanImport.schematic(params);}catch(java.io.IOException error){throw new IllegalArgumentException("schematic: "+error.getMessage(),error);}}
+    @Override public Map<String,Object> copy(Map<String,Object> params){WorkAccess.player();return PlanImport.copy(mc.theWorld,params);}
     @Override public Map<String,Object> scan(Map<String,Object> params) {
         WorkAccess.player();var bounds=WorkSpec.bounds(WorkSpec.child(params,"bounds"));if(bounds.volume()>262144)throw new IllegalArgumentException("scan volume exceeds 262144");
         var selectors=params.containsKey("blocks")?WorkAccess.selectors(params.get("blocks")):null;int cursor=WorkSpec.integer(params,"cursor",0,0,(int)bounds.volume()),limit=WorkSpec.integer(params,"limit",64,1,256),budget=WorkSpec.integer(params,"budget",2048,1,4096);
@@ -192,7 +193,7 @@ public final class BaritoneNavigation implements Navigation {
 
     /** Ordered reusable route; each leg still plans and revalidates actual terrain. */
     private final class RouteRun implements Job {
-        final String name,scope=ClientMemory.memory().scope();
+        final String name,scope=ControlRegistry.memory().memory().scope();
         final List<WorldMemory.Pos> points;
         final double radius;
         final boolean allowBreak,allowPlace,overrideProtection;
@@ -206,7 +207,7 @@ public final class BaritoneNavigation implements Navigation {
         }
         void tick() {
             if(done()) return;
-            if(!scope.equals(ClientMemory.memory().scope())) {cancel("world_or_dimension_changed");return;}
+            if(!scope.equals(ControlRegistry.memory().memory().scope())) {cancel("world_or_dimension_changed");return;}
             if(--remaining<=0) {finish("failed","timeout");return;}ticks++;
             if(leg==null) {
                 if(next>=points.size()) {finish("succeeded","route_complete");return;}
@@ -279,7 +280,7 @@ public final class BaritoneNavigation implements Navigation {
             this.goals=List.copyOf(goals);this.searchGoal=construction==null?new GoalComposite(goals.stream().map(p->new GoalBlock(p.x(),p.y(),p.z())).toList()):construction.searchGoal();
             this.allowBreak=allowBreak;this.allowPlace=allowPlace;this.overrideProtection=overrideProtection;this.corridorStart=corridorStart;this.corridorRadius=corridorRadius;
             this.goal=goals.get(0); remaining=timeoutTicks;
-            ownsLease=parent==null;lease=ownsLease?ClientControls.arbiter().acquire("baritone",this::cancel,overrideProtection,true):parent;
+            ownsLease=parent==null;lease=ownsLease?ControlRegistry.controls().arbiter().acquire("baritone",this::cancel,overrideProtection,true):parent;
             if(!lease.isActive()) {finish("cancelled","input_unavailable");return;}
             recalculate();
         }
@@ -292,7 +293,7 @@ public final class BaritoneNavigation implements Navigation {
             age++;
             if(mc.theWorld!=world || mc.thePlayer!=player) { cancel("world_changed"); return; }
             if(!lease.isActive()) { cancel("superseded"); return; }
-            if(mc.currentScreen!=null&&!ClientControls.ownsPlayerInventory(lease) || mc.thePlayer.getHealth()<=0) { cancel("gui_or_death"); return; }
+            if(mc.currentScreen!=null&&!ControlRegistry.controls().ownsPlayerInventory(lease) || mc.thePlayer.getHealth()<=0) { cancel("gui_or_death"); return; }
             if(--remaining<=0) { finish("failed","timeout");return; }
             if(mc.thePlayer.getHealth()<initialHealth || mc.thePlayer.isBurning()) {finish("failed","damage_or_fire");return;}
             if(!ForgeSnapshot.safeBody(world,mc.thePlayer.posX,mc.thePlayer.boundingBox.minY,mc.thePlayer.posZ,true)) {finish("failed","hazard_contact");return;}
@@ -319,7 +320,7 @@ public final class BaritoneNavigation implements Navigation {
                 if(!capture.captureSlice()) return;
                 capturedCells+=capture.cellsCaptured();
                 TerrainGrid snapshot=capture.finish();planned=snapshot; BlockPos start=feet();
-                WorldMemory.Snapshot protection=allowBreak||allowPlace?ClientMemory.memory().snapshot():null;
+                WorldMemory.Snapshot protection=allowBreak||allowPlace?ControlRegistry.memory().memory().snapshot():null;
                 workWorld=new WorkWorld(snapshot,capture.breakCosts(),allowPlace?(construction==null?PlacementItems.count():construction.placementBudget()):0,
                     p->p.y()>=1&&p.y()<=254&&(overrideProtection||protection==null||protection.protectedAt(new WorldMemory.Pos(p.x(),p.y(),p.z())).isEmpty()),construction==null?null:construction.costs(snapshot));
                 if(!snapshot.traversable(start.x(),start.y(),start.z())) {finish("failed","unsupported_start");return;}

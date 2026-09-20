@@ -3,11 +3,10 @@
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh;
 
+import dev.modbench.api.ControlRegistry;
 import baritone.Baritone;
-import dev.modbench.control.ClientControls;
-import dev.modbench.control.ClientMemory;
-import dev.modbench.control.api.InputArbiter;
-import dev.modbench.control.api.Navigation;
+import dev.modbench.api.InputArbiter;
+import dev.modbench.api.Navigation;
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.Entity;
 import java.util.*;
@@ -19,7 +18,7 @@ final class ReferenceFollowJob implements Navigation.Job {
     private final Minecraft mc=Minecraft.getMinecraft();
     private final Baritone engine;
     private final Object world=mc.theWorld,player=mc.thePlayer;
-    private final String scope=ClientMemory.memory().scope();
+    private final String scope=ControlRegistry.memory().memory().scope();
     private final Map<baritone.api.Settings.Setting<?>,Object> saved=new LinkedHashMap<>();
     private final int duration;
     private final InputArbiter.Lease lease;
@@ -38,7 +37,7 @@ final class ReferenceFollowJob implements Navigation.Job {
         var settings=Baritone.settings();
         for(var s:List.of(settings.allowBreak,settings.allowPlace,settings.followRadius,settings.followOffsetDistance,settings.followOffsetDirection))saved.put(s,s.value);
         engine.getPathingBehavior().forceCancel();
-        lease=ClientControls.arbiter().acquire("baritone-follow",this::cancel,override,true);
+        lease=ControlRegistry.controls().arbiter().acquire("baritone-follow",this::cancel,override,true);
         settings.allowBreak.value=bool(params,"allowBreak",false);settings.allowPlace.value=bool(params,"allowPlace",false);
         settings.followRadius.value=radius;settings.followOffsetDistance.value=offset;settings.followOffsetDirection.value=direction;
         engine.overrideProtection=override;engine.positionAllowed=p->true;engine.explicitMiningTargets=()->s->false;
@@ -55,9 +54,9 @@ final class ReferenceFollowJob implements Navigation.Job {
     }
     void tick(){
         if(done())return;
-        if(mc.theWorld!=world||mc.thePlayer!=player||!scope.equals(ClientMemory.memory().scope())){cancel("world_changed");return;}
+        if(mc.theWorld!=world||mc.thePlayer!=player||!scope.equals(ControlRegistry.memory().memory().scope())){cancel("world_changed");return;}
         if(!lease.isActive()){cancel("control_lost");return;}
-        if(mc.currentScreen!=null&&!ClientControls.ownsPlayerInventory(lease)){cancel("gui_open");return;}
+        if(mc.currentScreen!=null&&!ControlRegistry.controls().ownsPlayerInventory(lease)){cancel("gui_open");return;}
         if(mc.thePlayer.isDead||mc.thePlayer.getHealth()<=0){cancel("player_unavailable");return;}
         if(!engine.getFollowProcess().isActive()){finish("failed","no_loaded_matching_entity");return;}
         targets=engine.getFollowProcess().following().stream().map(Entity::getEntityId).toList();

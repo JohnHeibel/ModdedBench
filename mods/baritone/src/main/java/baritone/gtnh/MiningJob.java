@@ -3,11 +3,11 @@
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh;
 
+import dev.modbench.api.ControlRegistry;
 import baritone.gtnh.pathing.BlockPos;
 import baritone.gtnh.pathing.TerrainGrid;
-import dev.modbench.control.ClientControls;
-import dev.modbench.control.api.InputArbiter;
-import dev.modbench.control.api.Navigation;
+import dev.modbench.api.InputArbiter;
+import dev.modbench.api.Navigation;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -68,14 +68,14 @@ final class MiningJob implements Navigation.Job {
         if(unsafe!=null) throw new IllegalArgumentException(unsafe);
         if(aim()==null) throw new IllegalArgumentException("target is occluded or outside normal reach");
         if(autoTool) selectTool();
-        lease=parent==null?ClientControls.arbiter().acquire("baritone_mining",this::cancel,this.overrideProtection,automatedEdits):parent;
+        lease=parent==null?ControlRegistry.controls().arbiter().acquire("baritone_mining",this::cancel,this.overrideProtection,automatedEdits):parent;
         if(!lease.isActive()) finish("cancelled","input_unavailable");
     }
 
     void tick() {
         if(done()) return;
         ticks++;
-        if(mc.theWorld!=world||mc.thePlayer!=player||mc.currentScreen!=null&&!ClientControls.ownsPlayerInventory(lease)) {cancel("world_or_gui_changed");return;}
+        if(mc.theWorld!=world||mc.thePlayer!=player||mc.currentScreen!=null&&!ControlRegistry.controls().ownsPlayerInventory(lease)) {cancel("world_or_gui_changed");return;}
         if(!lease.isActive()) {cancel("superseded");return;}
         if(--remaining<=0) {finish("failed","timeout");return;}
         // A real released-input tick is required when focus was just restored:
@@ -111,7 +111,7 @@ final class MiningJob implements Navigation.Job {
         keys.add(mc.gameSettings.keyBindSneak.getKeyCode());
         // The regular client pipeline raycasts and sends the survival digging packets.
         // Wait for that raycast to match; never hold attack on an intervening block/entity.
-        dev.modbench.control.NativeTargeting.refresh();
+        dev.modbench.api.ControlRegistry.targeting().refresh();
         var hit=mc.objectMouseOver;
         actualAim=hit==null?Map.of("type","MISS"):hit.typeOfHit==MovingObjectPosition.MovingObjectType.BLOCK
             ?Map.of("type","BLOCK","pos",List.of(hit.blockX,hit.blockY,hit.blockZ))
@@ -123,7 +123,7 @@ final class MiningJob implements Navigation.Job {
     }
 
     private String unsafe() {
-        String protectedRegion=dev.modbench.control.ClientMemory.editProblem(target.x(),target.y(),target.z(),overrideProtection,automatedEdits);
+        String protectedRegion=dev.modbench.api.ControlRegistry.memory().editProblem(target.x(),target.y(),target.z(),overrideProtection,automatedEdits);
         if(protectedRegion!=null) return protectedRegion;
         if(mc.thePlayer.getHealth()<health||mc.thePlayer.isBurning()) return "damage_or_fire";
         if(mc.thePlayer.getAir()<160) return "insufficient_air";
@@ -179,7 +179,7 @@ final class MiningJob implements Navigation.Job {
             // Match vanilla targeting and upstream RayTraceUtils: selectable
             // blocks can have no collision box. Ignoring them invents a line of
             // sight through plants and other modded non-colliding blocks.
-            var hit=dev.modbench.control.NativeTargeting.trace(world,Vec3.createVectorHelper(eye.xCoord,eye.yCoord,eye.zCoord),point,false,false,true);
+            var hit=(net.minecraft.util.MovingObjectPosition)dev.modbench.api.ControlRegistry.targeting().trace(world,Vec3.createVectorHelper(eye.xCoord,eye.yCoord,eye.zCoord),point,false,false,true);
             if(hit!=null&&hit.typeOfHit==MovingObjectPosition.MovingObjectType.BLOCK&&hit.blockX==target.x()&&hit.blockY==target.y()&&hit.blockZ==target.z()) return point;
         }
         return null;

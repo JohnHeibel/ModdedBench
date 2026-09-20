@@ -13,10 +13,10 @@ import static baritone.gtnh.pathing.WorkSpec.*;
 final class ReferenceCache {
     private record Task(String scope,CompletableFuture<Map<String,Object>> result){}
     private static final Map<String,Task> tasks=new LinkedHashMap<>();
-    static Map<String,Object> call(Map<String,Object> params){
-        WorkAccess.player();var data=Baritone.instance().getWorldProvider().getCurrentWorld();
+    static Map<String,Object> call(Baritone engine,Map<String,Object> params){
+        WorkAccess.player();var data=engine.getWorldProvider().getCurrentWorld();
         if(data==null)throw new IllegalArgumentException("server world identity required for cache");
-        String scope=dev.modbench.control.ClientMemory.memory().scope();
+        String scope=dev.modbench.api.ControlRegistry.memory().memory().scope();
         String operation=String.valueOf(params.getOrDefault("operation","status"));
         if(operation.equals("result")){
             String id=String.valueOf(params.get("id"));Task task=tasks.get(id);
@@ -31,14 +31,14 @@ final class ReferenceCache {
             var out=new LinkedHashMap<String,Object>();out.put("cached",state!=null);out.put("approximate",true);
             if(state!=null){out.put("id",net.minecraft.block.Block.blockRegistry.getNameForObject(state.getBlock()));out.put("meta",state.meta);}return out;
         }
-        if(operation.equals("repack"))return Map.of("capturedChunks",baritone.cache.WorldScanner.INSTANCE.repack(Baritone.instance().getPlayerContext(),integer(params,"range",2,0,16)),"cache",data.cache.diagnostics());
+        if(operation.equals("repack"))return Map.of("capturedChunks",baritone.cache.WorldScanner.INSTANCE.repack(engine.getPlayerContext(),integer(params,"range",2,0,16)),"cache",data.cache.diagnostics());
         if(!Set.of("save","reload","locations").contains(operation))throw new IllegalArgumentException("cache operation must be status, block, repack, save, reload, locations or result");
         String block=null;
         if(operation.equals("locations")){
             block=BlockUtils.blockToString(BlockUtils.stringToBlockRequired(String.valueOf(params.get("block"))));
             if(params.containsKey("meta"))block+="@"+integer(params,"meta",0,0,15);
         }
-        var feet=Baritone.instance().getPlayerContext().playerFeet();String requestedBlock=block;
+        var feet=engine.getPlayerContext().playerFeet();String requestedBlock=block;
         int maximum=integer(params,"limit",64,1,4096),distance=integer(params,"regionDistanceSquared",2,0,64);
         tasks.entrySet().removeIf(e->e.getValue().result.isDone()&&tasks.size()>=64);
         if(tasks.size()>=64)throw new IllegalStateException("too many cache operations in progress");

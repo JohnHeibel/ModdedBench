@@ -83,7 +83,7 @@ public class CalculationContext {
     public final BetterWorldBorder worldBorder;
 
     public final PrecomputedData precomputedData;
-    private final dev.modbench.control.api.WorldMemory.Snapshot protectedRegions;
+    private final dev.modbench.api.WorldMemory.Snapshot protectedRegions;
     private final boolean overrideProtection;
     public final java.util.function.Predicate<BlockPos> positionAllowed;
     private final java.util.function.Predicate<IBlockState> explicitMiningTargets;
@@ -191,6 +191,6 @@ public class CalculationContext {
 
     public boolean isPossiblyProtected(int x, int y, int z) {
         if (y < 0 || y > 255 || !worldBorder.canPlaceAt(x,z)) return true;
-        return !overrideProtection && !protectedRegions.protectedAt(new dev.modbench.control.api.WorldMemory.Pos(x,y,z), true).isEmpty();
+        return !overrideProtection && !protectedRegions.protectedAt(new dev.modbench.api.WorldMemory.Pos(x,y,z), true).isEmpty();
     }
 }

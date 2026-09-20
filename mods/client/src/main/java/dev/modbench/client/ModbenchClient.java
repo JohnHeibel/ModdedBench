@@ -7,7 +7,7 @@ import cpw.mods.fml.common.event.FMLInitializationEvent;
 import dev.modbench.bridge.BridgeTransport;
 import net.minecraft.client.Minecraft;
 
-@Mod(modid = "modbenchclient", name = "Modbench Client", version = "0.1.0", dependencies = "required-after:modbenchcontrol", acceptableRemoteVersions = "*")
+@Mod(modid = "modbenchclient", name = "Modbench Client", version = "0.1.0", dependencies = "required-after:modbenchcore", acceptableRemoteVersions = "*")
 public final class ModbenchClient {
     private ClientRuntime runtime;
     private BridgeTransport transport;

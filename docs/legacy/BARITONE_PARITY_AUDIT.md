@@ -213,7 +213,7 @@ Reference: [goal family](../src/api/java/baritone/api/pathing/goals),
 [process family](../src/main/java/baritone/process),
 [cache family](../src/main/java/baritone/cache),
 [BlockStateInterface](../src/main/java/baritone/utils/BlockStateInterface.java).
-Current: [Navigation API](control-api/src/main/java/dev/modbench/control/api/Navigation.java),
+Current: [Navigation API](api/src/main/java/dev/modbench/api/Navigation.java),
 [MiningProcess](baritone/src/main/java/baritone/gtnh/MiningProcess.java),
 [WorkAccess](baritone/src/main/java/baritone/gtnh/WorkAccess.java).
 
@@ -263,7 +263,7 @@ Reference: [PathingControlManager](../src/main/java/baritone/utils/PathingContro
 [LookBehavior](../src/main/java/baritone/behavior/LookBehavior.java),
 [Settings](../src/api/java/baritone/api/Settings.java),
 [default commands](../src/main/java/baritone/command/defaults/DefaultCommands.java).
-Current: [InputArbiter](control-api/src/main/java/dev/modbench/control/api/InputArbiter.java),
+Current: [InputArbiter](api/src/main/java/dev/modbench/api/InputArbiter.java),
 [BaritoneMod](baritone/src/main/java/baritone/gtnh/BaritoneMod.java),
 [BaritoneCommand](baritone/src/main/java/baritone/gtnh/BaritoneCommand.java),
 [build settings](baritone-core/src/main/java/baritone/gtnh/pathing/ConstructionSettings.java).
