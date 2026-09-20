@@ -5,6 +5,11 @@ default. `time.pause` stops complete server ticks, `time.resume` returns to
 real time, and there is no stepping or client/server lockstep. The tool is
 `mb_time` (`status`, `pause`, `resume`, `configure`, `report_failure`).
 
+Two rules sit above the agent. Time control belongs to the bridge session that
+last used it, and losing that session pauses the world (`agent_disconnected`).
+An operator hold (the file `modbench-hold` in the server directory, status
+`held`) pauses the world and refuses `time.resume` until the file is removed.
+
 ## Contract
 
 | While paused | Behaviour |

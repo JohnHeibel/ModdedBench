@@ -124,7 +124,8 @@ public final class ServerClock implements ClockHooks.Driver, PauseCoordinator.Ho
             if(!connected()) clock.pause("client_disconnected");
             else if(System.nanoTime()-lastHeartbeat>15_000_000_000L) clock.pause("client_unresponsive");
         }
-        coordinator.hold(HOLD.exists());
+        // Pack mods (AmunRa) build world data on their first server tick and fail every join without it: a held server still warms up.
+        coordinator.hold(clock.ticks()>=20 && HOLD.exists());
         if(!coordinator.before()) return false;
         runtime.simulationTick();return true;
     }

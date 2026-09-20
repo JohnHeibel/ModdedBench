@@ -134,6 +134,8 @@ public final class ClientClock implements ClockHooks.Driver {
             state=Json.object("mode","unavailable","paused",false);
             if(connection!=null) send(Json.object("type","hello"));
         }
+        // Vanilla notices a dead connection only inside a tick: a server that went away while paused must reopen the gate.
+        if(paused && connection!=null && !connection.isChannelOpen()) paused=false;
         if(paused && connection!=null) connection.processReceivedPackets();
         receive();
         if(connection!=null && System.nanoTime()-lastHeartbeat>1_000_000_000L) {

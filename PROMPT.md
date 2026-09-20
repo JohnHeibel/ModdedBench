@@ -154,7 +154,10 @@ that keep the harness healthy:
   not the server, which runs pinned code for the whole run. Edits to
   `mods/server` have no effect, and a `mods/core` change must stay compatible
   with the pinned core on the server. Every deploy is archived with its source
-  patch for review.
+  patch for review. The world pauses while the client is away
+  (`client_disconnected`): resume it after a deploy. A pause whose status says
+  `held` is the operator's; resume is refused until they release it, so wait
+  with `mb_wait` and do not work around it.
 
 ## 4. How to work
 
