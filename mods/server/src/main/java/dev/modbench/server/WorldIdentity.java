@@ -24,6 +24,14 @@ public final class WorldIdentity extends WorldSavedData {
         }
         if(data.id==null) throw new IllegalStateException("saved Modbench world identity is invalid");
         if(!data.verified) {
+            try {
+                // The pack may defer MapStorage writes, so a new world has no file yet; write the same NBT MapStorage will.
+                if(!file.exists()) {
+                    NBTTagCompound root=new NBTTagCompound(),body=new NBTTagCompound();data.writeToNBT(body);root.setTag("data",body);
+                    file.getParentFile().mkdirs();
+                    try(java.io.FileOutputStream out=new java.io.FileOutputStream(file)){net.minecraft.nbt.CompressedStreamTools.writeCompressed(root,out);}
+                }
+            } catch(java.io.IOException error) {throw new IllegalStateException("world identity could not be persisted",error);}
             try(java.io.FileInputStream in=new java.io.FileInputStream(file)) {
                 String saved=net.minecraft.nbt.CompressedStreamTools.readCompressed(in).getCompoundTag("data").getString("id");
                 if(!data.id.equals(saved)) throw new IllegalStateException("world identity persistence mismatch");
