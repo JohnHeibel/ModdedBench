@@ -1,0 +1,13 @@
+# Codex inside the agent container. The container is the sandbox, so Codex's own is off here and only here.
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+
+[mcp_servers.moddedbench]
+command = "python3"
+args = ["-u", "/work/modbench/harness/mcp/server.py"]
+startup_timeout_sec = 30
+tool_timeout_sec = 1200
+
+[mcp_servers.moddedbench.env]
+MB_BRIDGE_URL = "ws://gateway:47223/ws"
+MB_BRIDGE_TOKEN_FILE = "/run/bridge/bridge-47223.token"

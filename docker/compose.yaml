@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+# docker compose -f docker/compose.yaml --env-file docker/.env up -d
+# The client runs on the host. See docs/CONTAINERS.md.
+name: moddedbench
+services:
+  server:
+    build: {context: .., dockerfile: docker/Dockerfile, target: server}
+    environment: {EULA: "${EULA:-false}", SERVER_MEMORY_MIB: "${SERVER_MEMORY_MIB:-6144}"}
+    ports: ["127.0.0.1:25575:25575"]      # the host client; the agent has no route here
+    volumes: ["server-data:/data", "${PACK_DIR:?folder holding the GTNH server zip}:/pack:ro"]
+    networks: [game]
+    stop_grace_period: 2m                 # SIGTERM runs the server's own save-and-stop hook
+    stdin_open: true
+    tty: true
+
+  gateway:
+    build: {context: .., dockerfile: docker/Dockerfile, target: gateway}
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    networks: [agent, egress]
+
+  agent:
+    build: {context: .., dockerfile: docker/Dockerfile, target: dev}
+    depends_on: [gateway]
+    networks: [agent]                     # internal: no gateway, no DNS beyond this network
+    volumes:
+      - agent-work:/work                  # the agent's checkout and its commits
+      - agent-home:/home/agent/.codex     # Codex login and sessions
+      - ${OUTBOX:-../.runtime/outbox}:/outbox
+      - ${BRIDGE_TOKENS:?folder holding bridge-47223.token, normally %USERPROFILE%/.moddedbench}:/run/bridge:ro
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 8g
+    pids_limit: 2048
+
+networks:
+  game: {}
+  egress: {}
+  agent: {internal: true}
+volumes: {server-data: {}, agent-work: {}, agent-home: {}}

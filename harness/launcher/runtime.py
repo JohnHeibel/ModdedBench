@@ -387,16 +387,17 @@ def client_instance_is_running(instance: Path) -> bool:
         return True
 
 
-def component_sides(kind: str) -> list[str]:
-    """Which managed installations carry this jar: client, server, or both for the coremod."""
-    sides = [side for side, members in (("client", CLIENT_COMPONENTS), ("server", SERVER_COMPONENTS)) if kind in members]
+def component_sides(kind: str, only: str = "") -> list[str]:
+    """Which managed installations carry this jar: client, server, or both for the coremod. ``only`` narrows it to
+    one side, for a server that is pinned elsewhere (a container) while the client keeps changing."""
+    sides = [side for side, members in (("client", CLIENT_COMPONENTS), ("server", SERVER_COMPONENTS)) if kind in members and only in ("", side)]
     if not sides:
         raise RuntimeError_(f"unknown managed component: {kind}")
     return sides
 
 
-def assert_component_stopped(kind: str, runtime: Path, cfg: dict[str, Any]) -> None:
-    for side in component_sides(kind):
+def assert_component_stopped(kind: str, runtime: Path, cfg: dict[str, Any], only: str = "") -> None:
+    for side in component_sides(kind, only):
         port = CLIENT_PORT if side == "client" else SERVER_PORT
         if bridge_is_live(port):
             raise RuntimeError_(f"refusing to replace {kind} jar while its bridge port {port} is occupied")
@@ -428,13 +429,13 @@ def backup_path(kind: str, side: str, runtime: Path) -> Path:
     return runtime / "backups" / side / f"modbench-{kind}.previous.jar"
 
 
-def install_jar(kind: str, cfg: dict[str, Any], runtime: Path) -> list[Path]:
+def install_jar(kind: str, cfg: dict[str, Any], runtime: Path, only: str = "", source: Path | None = None) -> list[Path]:
     """Copy the built jar into every managed side that carries it, keeping each side's previous jar for rollback."""
-    assert_component_stopped(kind, runtime, cfg)
-    source = artifact(kind)
+    assert_component_stopped(kind, runtime, cfg, only)
+    source = source or artifact(kind)
     installed = load_json(runtime / "installed.json")
     targets = []
-    for side in component_sides(kind):
+    for side in component_sides(kind, only):
         target = managed_jar_target(kind, side, runtime, cfg)
         target.parent.mkdir(parents=True, exist_ok=True)
         backup = backup_path(kind, side, runtime)
@@ -456,11 +457,11 @@ def install_jar(kind: str, cfg: dict[str, Any], runtime: Path) -> list[Path]:
     return targets
 
 
-def rollback_jar(kind: str, runtime: Path) -> list[Path]:
+def rollback_jar(kind: str, runtime: Path, only: str = "") -> list[Path]:
     """Restore the previous jar on every side; nothing moves unless every side has a valid backup."""
-    sides = component_sides(kind)
+    sides = component_sides(kind, only)
     cfg = load_config(runtime) if "client" in sides else {}
-    assert_component_stopped(kind, runtime, cfg)
+    assert_component_stopped(kind, runtime, cfg, only)
     installed = load_json(runtime / "installed.json").get(kind, {})
     moves = []
     for side in sides:
@@ -481,7 +482,7 @@ def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def set_server_properties(server: Path, accept_eula: bool) -> None:
+def set_server_properties(server: Path, accept_eula: bool, server_ip: str = "127.0.0.1") -> None:
     eula = server / "eula.txt"
     if not eula.is_file() or "eula=true" not in eula.read_text(encoding="utf-8", errors="replace").lower():
         if not accept_eula:
@@ -489,7 +490,7 @@ def set_server_properties(server: Path, accept_eula: bool) -> None:
         eula.write_text("# Accepted explicitly by modbench runtime\neula=true\n", encoding="utf-8")
     properties = server / "server.properties"
     lines = properties.read_text(encoding="utf-8", errors="replace").splitlines() if properties.is_file() else []
-    wanted = {"server-ip": "127.0.0.1", "server-port": "25575", "online-mode": "false", "white-list": "false", "enable-rcon": "false"}
+    wanted = {"server-ip": server_ip, "server-port": "25575", "online-mode": "false", "white-list": "false", "enable-rcon": "false"}
     seen: set[str] = set()
     out = []
     for line in lines:
@@ -701,7 +702,8 @@ def verify_client_build(cfg: dict[str, Any], runtime: Path = RUNTIME) -> None:
 
 def launch_client(args: argparse.Namespace) -> None:
     runtime = Path(args.runtime).resolve(); cfg = load_config(runtime); path = instance_dir(cfg); assert_managed_instance(path)
-    verify_client_build(cfg, runtime)
+    if not getattr(args, "installed_as_is", False):  # a supervised deploy installs jars this checkout did not build
+        verify_client_build(cfg, runtime)
     prism = resolve_executable(cfg.get("prism", ""), cfg.get("prismCandidates", []), "Prism Launcher executable")
     username = args.username or cfg.get("username", "ModbenchDev")
     if not username:
@@ -744,8 +746,8 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("stop-client"); p.add_argument("--timeout", type=float, default=30); p.set_defaults(func=stop_client)
     sub.add_parser("build").set_defaults(func=build)
     for kind in ("client", "core", "baritone", "server"):
-        p = sub.add_parser(f"install-{kind}"); p.set_defaults(func=lambda a, k=kind: print(*install_jar(k, load_config(Path(a.runtime).resolve()), Path(a.runtime).resolve()), sep="\n"))
-        p = sub.add_parser(f"rollback-{kind}"); p.set_defaults(func=lambda a, k=kind: print(*rollback_jar(k, Path(a.runtime).resolve()), sep="\n"))
+        p = sub.add_parser(f"install-{kind}"); p.add_argument("--side", choices=("client", "server"), default="", help="only this side, e.g. client while the server is a pinned container"); p.set_defaults(func=lambda a, k=kind: print(*install_jar(k, load_config(Path(a.runtime).resolve()), Path(a.runtime).resolve(), a.side), sep="\n"))
+        p = sub.add_parser(f"rollback-{kind}"); p.add_argument("--side", choices=("client", "server"), default=""); p.set_defaults(func=lambda a, k=kind: print(*rollback_jar(k, Path(a.runtime).resolve(), a.side), sep="\n"))
     p = sub.add_parser("launch-client"); p.add_argument("--username"); p.add_argument("--timeout", type=float, default=300); p.set_defaults(func=launch_client)
     sub.add_parser("provision-client").set_defaults(func=provision_client)
     args = parser.parse_args(argv)

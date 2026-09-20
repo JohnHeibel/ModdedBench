@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable
 from urllib.parse import urlparse
+from websockets.exceptions import InvalidHandshake
 from websockets.sync.client import connect
 
 cancel_scope = contextvars.ContextVar("bridge_cancel_scope", default=None)
@@ -103,7 +104,7 @@ class Kernel:
             try:
                 self.ws = connect(url, open_timeout=10, max_size=16 * 1024 * 1024)
                 break
-            except OSError as e:
+            except (OSError, InvalidHandshake) as e:  # a forwarder accepts, then drops, while the game is down
                 last = e
                 if attempt + 1 < connect_retries:
                     time.sleep(retry_delay)
@@ -111,10 +112,11 @@ class Kernel:
             raise ConnectionError(f"bridge not reachable at {url}: {last}")
         self._reader = threading.Thread(target=self._receive, name="mb-replies", daemon=True)
         self._reader.start()
-        # Only discover local credentials for a loopback endpoint.
-        endpoint = urlparse(url)
-        if token is None and endpoint.hostname in ("127.0.0.1", "localhost", "::1"):
-            path = Path(os.environ.get("MB_BRIDGE_TOKEN_FILE", str(Path.home() / ".moddedbench" / f"bridge-{endpoint.port}.token")))
+        # Only discover local credentials for a loopback endpoint; a token file the operator names is sent wherever
+        # MB_BRIDGE_URL points (the agent container reaches the host's bridge through its gateway).
+        endpoint = urlparse(url); named = os.environ.get("MB_BRIDGE_TOKEN_FILE")
+        if token is None and (named or endpoint.hostname in ("127.0.0.1", "localhost", "::1")):
+            path = Path(named or Path.home() / ".moddedbench" / f"bridge-{endpoint.port}.token")
             if path.is_file():
                 token = path.read_text().strip()
         if token:

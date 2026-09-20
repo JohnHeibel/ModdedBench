@@ -25,3 +25,4 @@ Thumbs.db
 
 # Modpack archives: download yourself; sha256 pinned in pack.lock.json
 GT_New_Horizons_*.zip
+docker/.env
