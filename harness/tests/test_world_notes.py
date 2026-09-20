@@ -182,7 +182,7 @@ class Game:
         if method == "obs.player": return dict(pos=list(self.pos), dimension=0, health=20)
         if method == "obs.block": return dict(id="minecraft:stone", meta=0, pos=[params["x"], params["y"], params["z"]])
         if method.startswith("nav."): return dict(self.receipt)
-        if method == "time.state": return dict(simulationTicks=self.ticks)
+        if method == "time.status": return dict(state=dict(simulationTicks=self.ticks))
         if method == "obs.inventory": return dict(self.inventory)
         raise AssertionError(method)
     ticks, inventory = 0, {"counts": {}}
