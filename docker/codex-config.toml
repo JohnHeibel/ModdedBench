@@ -11,3 +11,4 @@ tool_timeout_sec = 1200
 [mcp_servers.moddedbench.env]
 MB_BRIDGE_URL = "ws://gateway:47223/ws"
 MB_BRIDGE_TOKEN_FILE = "/run/bridge/bridge-47223.token"
+MB_WIKI_DB = "/wiki/gtnh-wiki.sqlite"

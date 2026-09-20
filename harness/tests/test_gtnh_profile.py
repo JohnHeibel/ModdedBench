@@ -23,7 +23,7 @@ from kernel import bridge_url
 from mcp.types import ImageContent
 
 TOOLS = {
-    "mb_interrupt", "mb_interrupt_events", "mb_wait",
+    "mb_interrupt", "mb_interrupt_events", "mb_wait", "mb_wiki_search", "mb_wiki_read",
     "mb_act", "mb_call", "mb_gui", "mb_keys", "mb_map", "mb_methods", "mb_obs", "mb_screenshot", "mb_status", "mb_stop", "mb_time",
     "mb_recipe_status", "mb_item_search", "mb_item_info", "mb_recipes", "mb_fluid_search", "mb_recipe_handlers", "mb_recipe_view", "mb_recipe_inspect",
     "mb_memory", "mb_route", "mb_inventory", "mb_find", "mb_transfer", "mb_click_slot", "mb_notes", "mb_note_write",
@@ -95,9 +95,9 @@ class GTNHProfileTests(unittest.TestCase):
     def test_tool_set_lanes_and_metadata(self):
         srv = self.loaded()
         self.assertEqual(set(srv.name_owner), TOOLS)
-        self.assertEqual(len(srv.modules), 6)
+        self.assertEqual(len(srv.modules), 7)
         self.assertEqual({os.path.basename(p) for p in srv.modules},
-                         {"core.py", "inventory.py", "work.py", "recipes_quests.py", "interrupts.py", "notes.py"})
+                         {"core.py", "inventory.py", "work.py", "recipes_quests.py", "interrupts.py", "notes.py", "wiki.py"})
         for name in ("mb_selection", "mb_selection_build", "mb_coverage", "mb_load_inputs"):
             self.assertNotIn(name, srv.name_owner)
         lanes = {n: tm.tools[n]["lane"] for tm in srv.modules.values() for n in tm.tools}
@@ -110,7 +110,7 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertTrue(registered.annotations.readOnlyHint)
         self.assertFalse(srv._tool_manager._tools["mb_build"].annotations.readOnlyHint)
         status = srv._tool_manager._tools["mb_tools_status"].fn()
-        self.assertEqual(sum(len(m["tools"]) for m in status["modules"]), 53)
+        self.assertEqual(sum(len(m["tools"]) for m in status["modules"]), 55)
         json.dumps(status)
 
     def test_worker_picks_pool_from_lane_metadata(self):
