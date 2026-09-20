@@ -242,6 +242,8 @@ public final class ClientRuntime extends BridgeRuntime {
         register("sys.screenshot", "Capture client framebuffer as base64 PNG", "read", r -> screenshot());
         register("sys.connect", "Join a server {host,port}; completion means connection initiated", "interaction", r -> {
             if (mc.theWorld != null) throw new IllegalArgumentException("disconnect before connecting");
+            // Two launchers once asked at the same moment; two concurrent FML handshakes both remap the registries and the join crashes.
+            if (mc.currentScreen instanceof net.minecraft.client.multiplayer.GuiConnecting) throw new IllegalArgumentException("already connecting");
             String host = Json.string(r.params, "host", "127.0.0.1");
             int port = Json.integer(r.params, "port", 25575, 1, 65535);
             if (host.isBlank()) throw new IllegalArgumentException("host must not be blank");
