@@ -42,7 +42,7 @@ python -m unittest discover -s harness/tests -p "test_*.py"
 | `mods/core/build/libs/modbench-core-<v>.jar` | client `mods/` and server `mods/` | The only coremod: class transformers for the simulation clock and GUI input, the input arbiter and control leases, the websocket JSON-RPC transport, the API classes. Required by every other jar. |
 | `mods/client/build/libs/modbench-client-<v>.jar` | client `mods/` | The observation, action, GUI, inventory, NEI and Better Questing RPC surface on port 47223. |
 | `mods/server/build/libs/modbench-server-<v>.jar` | dedicated server `mods/` | Authoritative tile, NBT and Waila observations, the simulation-tick gate and its guards, on port 47224. |
-| `mods/baritone/build/libs/modbench-baritone-<v>.jar` | client `mods/` | Navigation, mining, construction and work journals. A plain Forge mod that depends only on the API; optional, but the `baritone.*` methods need it. |
+| `mods/baritone/build/libs/modbench-baritone-<v>.jar` | client `mods/` | Navigation, mining, construction and work journals. A plain Forge mod that depends only on the API; optional, but the `nav.*` methods and `obs.scan`/`terrain`/`fluid`/`tools` need it. |
 
 The server jar is not needed in a client-only install, and the client works
 without a dedicated server when the game hosts its own world, but time control
@@ -105,6 +105,10 @@ Then install and start:
 python harness/launcher/runtime.py install-core
 ```
 
+`install-core` copies the coremod into both the managed client instance's
+`mods/` and the managed server's `mods/`, so both must be stopped; the other
+`install-*` commands touch one side each.
+
 ```bash
 python harness/launcher/runtime.py install-client
 ```
@@ -125,8 +129,11 @@ The first client launch must be `provision-client` (downloads libraries and
 assets through the signed-in account); wait for the main menu, `stop-client`,
 then use `launch-client` for every later start. `launch-client` waits for the
 player to join the local server (up to 300 seconds). `status` prints what is
-running and which jars are installed; each `install-*` keeps the previous jar
-for `rollback-*`.
+running; each `install-*` keeps the previous jar (per side, under
+`.runtime/backups/<client|server>/`) for `rollback-*`, and `rollback-core`
+restores both sides or neither. `launch-client` refuses to start unless the
+installed `client` and `core` jars match the local build or a set that joined
+before.
 
 The managed server is bound to `127.0.0.1:25575`, offline mode, no RCON, 4 GiB
 heap; the client gets 6 GiB, pause-on-focus-loss disabled. Full pack startup
@@ -142,9 +149,9 @@ python harness/launcher/runtime.py stop-client
 python harness/launcher/runtime.py build
 ```
 
-Install the jars that changed (`install-core`, `install-client`,
-`install-baritone`; `stop-server`, `install-server`, `start-server` for the
-server jar), then:
+Install the jars that changed (`install-client`, `install-baritone`;
+`stop-server`, then `install-server` and/or `install-core`, then
+`start-server`, because the core jar also lives on the server), then:
 
 ```bash
 python harness/launcher/runtime.py launch-client

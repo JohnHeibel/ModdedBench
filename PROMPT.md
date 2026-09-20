@@ -42,7 +42,9 @@ Modbench is two layers with a deliberate seam between them:
 
 The tools you are given are named `mb_*`. `mb_methods` lists every raw Java RPC
 method with its description; `mb_call(method, params)` invokes any of them
-directly when no `mb_*` wrapper fits. Read `docs/TOOLS.md` and
+directly when no `mb_*` wrapper fits. Raw namespaces: `obs.*` reads, `act.*`
+input and interaction, `gui.*`, `nav.*` navigation/mining/building, `nei.*`,
+`quest.*`, `memory.*`, `time.*`, `interrupt.*`, `sys.*`. Read `docs/TOOLS.md` and
 `docs/ARCHITECTURE.md` once at the start of a session and again whenever you
 are about to change the harness.
 
@@ -132,9 +134,10 @@ that keep the harness healthy:
   a place or a machine. Add a line to `docs/HISTORY.md` for anything a future
   session should know exists.
 - Rebuild and restart procedure: `python harness/launcher/runtime.py build`,
-  then `install-client` / `install-baritone` / `install-server` as needed,
-  `stop-client`, `launch-client`, and if the server jar changed
-  `stop-server` / `start-server`. Wait for the bridge (`mb_status`), then
+  `stop-client`, then `install-client` / `install-baritone` as needed,
+  `launch-client`; if the server jar or `mods/core` changed, also
+  `stop-server`, `install-server` / `install-core` (core goes to both
+  sides), `start-server`. Wait for the bridge (`mb_status`), then
   continue. Do not edit files under `mods/*/src/upstream` (pinned upstream
   Baritone) unless there is no alternative, and say so in the commit.
 
@@ -157,7 +160,7 @@ are gated by machines; the plan is mostly a build order.
 
 1. Observe the quest: tasks, task progress, prerequisites, reward choices.
 2. Resolve every task into concrete items or actions. Use NEI (`mb_recipes`,
-   `mb_item`, `mb_recipe_view`) for recipes; GT recipes carry voltage, duration,
+   `mb_item_search`, `mb_item_info`, `mb_recipe_view`) for recipes; GT recipes carry voltage, duration,
    circuit and fluid requirements. Trust the recipe view over memory.
 3. Check what you already have (`mb_inventory`, `mb_find`, storage notes).
 4. Gather, craft, process. Use durable jobs for mining and building; use
