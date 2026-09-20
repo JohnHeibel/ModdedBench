@@ -45,6 +45,8 @@ def mb_wiki_search(query: str, limit: int = 8) -> Any:
         rows = db.execute("select title, snippet(search, 1, '', '', ' … ', 24) from search where search match ? order by bm25(search, 8.0, 1.0) limit ?",
                           (" ".join(f'"{w}"' for w in words), max(1, min(limit, 25)))).fetchall()
         alias = db.execute("select title from alias where name = ?", (query.strip(),)).fetchone()
+        exact = db.execute("select title, substr(text, 1, 160) from page where title = ? collate nocase", (query.strip(),)).fetchone()
+    if exact: rows = [exact, *(r for r in rows if r[0] != exact[0])]  # a page named exactly like the query comes first
     return {"results": [{"title": t, "snippet": s} for t, s in rows], **({"redirect": alias[0]} if alias else {})}
 
 

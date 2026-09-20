@@ -654,7 +654,7 @@ def goal(kernel, changes=None):
     if not data:
         return {"unset": "no goal stack yet: call mb_goal(chapter=..., quest=..., subgoal=..., serves=...)"}
     watch = state.setdefault("goal", {})
-    ticks = kernel.call("time.state", timeout=5).get("simulationTicks", 0)
+    ticks = kernel.call("time.status", timeout=5).get("state", {}).get("simulationTicks", 0)
     mark = hashlib.sha256(_json([data.get("subgoal"), kernel.call("obs.inventory", detail="counts", timeout=5)]).encode()).hexdigest()
     if mark != watch.get("mark"):
         watch.update(mark=mark, quiet=0)

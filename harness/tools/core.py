@@ -66,7 +66,9 @@ def mb_status() -> Any:
     Call it at the start of every session and after every compaction: it is the heartbeat.
     """
     k, brief = kernel(), os.environ.get("MB_BRIEF", "")
-    out = dict(k.call("sys.capabilities"), brief=f"Your standing brief is {brief if os.path.isfile(brief) else 'PROMPT.md at the repository root'}. If you cannot recall its mission and rules, re-read it now.")
+    out = k.call("sys.capabilities")
+    if isinstance(out.get("methods"), list): out["methods"] = f"{len(out['methods'])} raw methods; list them with mb_methods"  # the heartbeat must stay small
+    out = dict(out, brief=f"Your standing brief is {brief if os.path.isfile(brief) else 'PROMPT.md at the repository root'}. If you cannot recall its mission and rules, re-read it now.")
     try:
         out["goal"] = notes.goal(k)
     except Exception as e:  # not in a world yet, or the clock is unreachable: status must still answer
