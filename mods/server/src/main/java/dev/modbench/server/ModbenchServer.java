@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Copyright (c) 2026 Modbench contributors
+// Copyright (c) 2026 ModdedBench contributors
 package dev.modbench.server;
 
 import cpw.mods.fml.common.Mod;
@@ -13,7 +13,7 @@ import net.minecraft.server.MinecraftServer;
  * every posted machine-update task. Sorting before gregtech makes {@link #stopping} resume the AsyncPause
  * barrier first, so tasks blocked by a pause finish instead of stalling the shutdown.
  */
-@Mod(modid = "modbenchserver", name = "Modbench Server", version = "0.1.0", acceptableRemoteVersions = "*",
+@Mod(modid = "modbenchserver", name = "ModdedBench Server", version = "0.1.0", acceptableRemoteVersions = "*",
     dependencies = "before:gregtech")
 public final class ModbenchServer {
     private ServerRuntime runtime;

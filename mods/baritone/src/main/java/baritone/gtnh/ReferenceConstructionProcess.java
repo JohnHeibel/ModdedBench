@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Copyright (c) 2026 Modbench contributors
+// Copyright (c) 2026 ModdedBench contributors
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh;
 
@@ -324,7 +324,7 @@ final class ReferenceConstructionProcess extends BulkJob {
             }
         };
         engine.bsi=new baritone.utils.BlockStateInterface(engine.getPlayerContext());
-        engine.getBuilderProcess().build(String.valueOf(params.getOrDefault("name","Modbench schematic")),schematic,new baritone.compat.Vec3i(minX,minY,minZ));
+        engine.getBuilderProcess().build(String.valueOf(params.getOrDefault("name","ModdedBench schematic")),schematic,new baritone.compat.Vec3i(minX,minY,minZ));
         engine.getBuilderProcess().restoreProgress(layer,0);started=true;
     }
     @Override String phase(){return "reference_build";}

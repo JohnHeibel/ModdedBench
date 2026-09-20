@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-# Copyright (c) 2026 Modbench contributors
+# Copyright (c) 2026 ModdedBench contributors
 """Batched native survival interactions and autonomous interrupt acceptance."""
 from __future__ import annotations
 import asyncio, json, os, sys, tempfile, time, uuid

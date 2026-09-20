@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Copyright (c) 2026 Modbench contributors
+// Copyright (c) 2026 ModdedBench contributors
 package dev.modbench.control;
 
 import cpw.mods.fml.common.FMLCommonHandler;
@@ -14,7 +14,7 @@ import net.minecraftforge.client.event.GuiOpenEvent;
 import net.minecraftforge.common.MinecraftForge;
 
 /** Mod container of the core coremod: registers the control providers and owns the input arbiter's tick side. */
-@Mod(modid = "modbenchcore", name = "Modbench Core", version = "0.1.0", acceptableRemoteVersions = "*")
+@Mod(modid = "modbenchcore", name = "ModdedBench Core", version = "0.1.0", acceptableRemoteVersions = "*")
 public final class ModbenchCore {
     private Object world;
     private Object player;

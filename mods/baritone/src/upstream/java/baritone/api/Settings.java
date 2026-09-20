@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
  *
- * Modified by the Modbench project (2026) for Minecraft 1.7.10 / GT New Horizons.
+ * Modified by the ModdedBench project (2026) for Minecraft 1.7.10 / GT New Horizons.
  * The original file and its SHA-256 are recorded in META-INF/modbench/UPSTREAM_SOURCES.json.
  */
 
@@ -48,7 +48,7 @@ import java.util.function.Consumer;
  * @author leijurv
  */
 public final class Settings {
-    /** DJ2 extension: additional modded blocks retained in the terrain index. */
+    /** ModdedBench extension: additional modded blocks retained in the terrain index. */
     public final Setting<java.util.List<net.minecraft.block.Block>> blocksToTrackInCache = new Setting<>(new java.util.ArrayList<>());
 
     /**

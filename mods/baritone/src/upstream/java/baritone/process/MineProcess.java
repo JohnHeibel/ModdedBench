@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
  *
- * Modified by the Modbench project (2026) for Minecraft 1.7.10 / GT New Horizons.
+ * Modified by the ModdedBench project (2026) for Minecraft 1.7.10 / GT New Horizons.
  * The original file and its SHA-256 are recorded in META-INF/modbench/UPSTREAM_SOURCES.json.
  */
 
@@ -505,7 +505,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
 
     public static boolean plausibleToBreak(CalculationContext ctx, BlockPos pos) {
-        // Preserve DJ2's harvestability requirement for requested resources.
+        // Requested resources must be harvestable with the tools at hand.
         // Destroying an unharvestable target cannot satisfy an inventory goal.
         if (!(ctx.get(pos).getBlock() instanceof BlockAir) && !ctx.toolSet.canHarvest(ctx.get(pos))) return false;
         if (MovementHelper.getMiningDurationTicks(ctx, pos.getX(), pos.getY(), pos.getZ(), ctx.bsi.get0(pos), true) >= COST_INF) {

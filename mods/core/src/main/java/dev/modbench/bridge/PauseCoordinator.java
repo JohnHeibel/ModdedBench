@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Copyright (c) 2026 Modbench contributors
+// Copyright (c) 2026 ModdedBench contributors
 package dev.modbench.bridge;
 
 import com.google.gson.JsonObject;
@@ -35,7 +35,7 @@ public final class PauseCoordinator {
         boolean clientConnected();
         void send(JsonObject message);
         default void decorate(JsonObject status) {}
-        default void warn(String message) { System.err.println("[Modbench] "+message); }
+        default void warn(String message) { System.err.println("[ModdedBench] "+message); }
         default long nanos() { return System.nanoTime(); }
     }
     public final SimulationClock clock;

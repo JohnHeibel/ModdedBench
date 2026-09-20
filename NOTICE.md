@@ -1,6 +1,6 @@
 # Notices
 
-Modbench is licensed under the GNU Lesser General Public License v3.0 or later (see `LICENSE`).
+ModdedBench is licensed under the GNU Lesser General Public License v3.0 or later (see `LICENSE`).
 
 ## Third-party code
 

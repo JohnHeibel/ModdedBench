@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-# Copyright (c) 2026 Modbench contributors
+# Copyright (c) 2026 ModdedBench contributors
 """ModdedBench MCP server: exposes the in-game bridge to a coding agent over stdio.
 
 Start (from the repository root)::

@@ -1,7 +1,7 @@
 # Operating prompt: play GT New Horizons through the quest book
 
 You are an autonomous agent playing GT New Horizons 2.8.4 (Minecraft 1.7.10) in
-survival through the Modbench harness. Copy this file into your system or
+survival through the ModdedBench harness. Copy this file into your system or
 first-turn prompt, replace the placeholders in the first section, and start.
 
 ## 1. Mission
@@ -33,7 +33,7 @@ goes away, wait, reconnect, and continue from your journal.
 
 ## 2. What you are working with
 
-Modbench is two layers with a deliberate seam between them:
+ModdedBench is two layers with a deliberate seam between them:
 
 | Layer | Where | How it changes | Role |
 | --- | --- | --- | --- |

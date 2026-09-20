@@ -12,7 +12,7 @@ without it; only `nav.*` and `obs.scan`/`terrain`/`fluid`/`tools` need it.
 | --- | --- |
 | `src/upstream/java` | 156 upstream files, adapted in place. `UPSTREAM_SOURCES.json` records each file's original path and SHA-256; the Gradle build verifies them. Modified files carry a notice. The hash pins provenance, not text identity after adaptation. |
 | `src/main/java/baritone/compat` | Version boundary: coordinates, vectors, block state as registry id plus metadata, loaded-chunk index, native placement, inventory swaps, events, rendering. No fake `net.minecraft` classes. |
-| `src/main/java/baritone/gtnh` | Modbench side: `BaritoneNavigation` (the `Navigation` implementation the client registers), job wrappers (`Reference*Job`, `MiningProcess`, `ReferenceConstructionProcess`), the validated build plan (`ConstructionPlan`), `PlanImport`, `WorkJournal`, tool and placement adapters. |
+| `src/main/java/baritone/gtnh` | ModdedBench side: `BaritoneNavigation` (the `Navigation` implementation the client registers), job wrappers (`Reference*Job`, `MiningProcess`, `ReferenceConstructionProcess`), the validated build plan (`ConstructionPlan`), `PlanImport`, `WorkJournal`, tool and placement adapters. |
 | package `baritone.gtnh.pathing` | Minecraft-free code written for this project and unit tested without a game: work and construction spec validation (`WorkSpec`, `ConstructionSettings`, `ConstructionMask`), `DeferredClearance`, the corridor constraint (`Corridor`), `GoalRange`, and terrain observation helpers (`TerrainGrid`, `CollisionBox`, `LadderFacing`, `FluidPolicy`). There is no second path search; all routing is upstream's. |
 
 The GUI input transformer and widget inspection in `mods/core` and
@@ -30,7 +30,7 @@ dependency on the Baritone jar.
 | `nav.follow`, `nav.cache`, `nav.settings` | `FollowProcess`; cached world and regions; `SettingsUtil` behind a structured endpoint that applies typed edits atomically while the engine is idle. |
 | In game | Path, goal and selection rendering, the event bus, free-look (visible aim is the default), a local `/baritone` command. |
 
-Modbench wraps every job in the shared input lease, protected-region checks,
+ModdedBench wraps every job in the shared input lease, protected-region checks,
 a tick budget and, for mining and building, a durable journal. Input changes
 are staged until a movement finishes its update. A cancelled search stays
 cancelled and a superseded search cannot install its result into a newer job.

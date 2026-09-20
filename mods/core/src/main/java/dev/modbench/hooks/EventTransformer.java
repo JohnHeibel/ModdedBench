@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Copyright (c) 2026 Modbench contributors
+// Copyright (c) 2026 ModdedBench contributors
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package dev.modbench.hooks;
 
@@ -80,7 +80,7 @@ public final class EventTransformer implements IClassTransformer {
         ClassWriter writer=new ClassWriter(ClassWriter.COMPUTE_MAXS);node.accept(writer);return writer.toByteArray();
     }
     private static boolean match(MethodNode m,String desc,String... names){return m.desc.equals(desc)&&Set.of(names).contains(m.name);}
-    private static void require(boolean condition,String detail){if(!condition)throw new IllegalStateException("Modbench event hook: "+detail);}
+    private static void require(boolean condition,String detail){if(!condition)throw new IllegalStateException("ModdedBench event hook: "+detail);}
     private static void load(InsnList l,int opcode,int slot){l.add(new VarInsnNode(opcode,slot));}
     private static void flag(InsnList l,boolean value){l.add(new InsnNode(value?Opcodes.ICONST_1:Opcodes.ICONST_0));}
     private static void call(InsnList l,String name,String desc){l.add(new MethodInsnNode(Opcodes.INVOKESTATIC,HOOK,name,desc,false));}

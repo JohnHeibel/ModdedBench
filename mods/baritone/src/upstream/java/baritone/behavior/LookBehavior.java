@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
  *
- * Modified by the Modbench project (2026) for Minecraft 1.7.10 / GT New Horizons.
+ * Modified by the ModdedBench project (2026) for Minecraft 1.7.10 / GT New Horizons.
  * The original file and its SHA-256 are recorded in META-INF/modbench/UPSTREAM_SOURCES.json.
  */
 

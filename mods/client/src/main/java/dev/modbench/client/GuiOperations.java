@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Copyright (c) 2026 Modbench contributors
+// Copyright (c) 2026 ModdedBench contributors
 package dev.modbench.client;
 
 import dev.modbench.api.ControlRegistry;
@@ -16,7 +16,7 @@ import net.minecraft.network.play.client.C0EPacketClickWindow;
 import net.minecraft.network.play.server.S32PacketConfirmTransaction;
 import org.lwjgl.input.Keyboard;
 
-/** General native GUI actions and DJ2 exact-count transfer semantics, independent of recipe/container type. */
+/** General native GUI actions and exact-count transfers, independent of recipe/container type. */
 final class GuiOperations {
     static final List<String> METHODS=List.of("click_slot","transfer","return_cursor","click","click_at","drag","scroll","key","type","button","container_button","text_field");
     private final Minecraft mc=Minecraft.getMinecraft();

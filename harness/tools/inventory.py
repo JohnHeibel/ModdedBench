@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-# Copyright (c) 2026 Modbench contributors
+# Copyright (c) 2026 ModdedBench contributors
 """GUI and inventory tools plus ContainerSession, the guarded composition helper for model-written routines.
 
 Each ContainerSession mutation is guarded by the observed screen epoch and cursor/stack. A session

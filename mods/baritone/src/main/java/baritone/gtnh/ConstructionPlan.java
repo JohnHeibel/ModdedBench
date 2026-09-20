@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Copyright (c) 2026 Modbench contributors
+// Copyright (c) 2026 ModdedBench contributors
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 /* BuilderProcess construction semantics adapted to native Forge 1.7.10. LGPL-3.0-or-later. */
 package baritone.gtnh;

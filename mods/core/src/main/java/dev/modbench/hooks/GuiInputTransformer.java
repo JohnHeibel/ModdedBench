@@ -21,7 +21,7 @@ import net.minecraft.launchwrapper.IClassTransformer;
 import org.objectweb.asm.*;
 import java.nio.charset.StandardCharsets;
 
-/** DJ2 input call-site port, including GTNH's lwjgl3ify owners and native keyboard events. */
+/** Rewrites input call sites, including GTNH's lwjgl3ify owners and native keyboard events. */
 public final class GuiInputTransformer implements IClassTransformer {
     private static final String HOOKS="dev/modbench/hooks/UiHooks";
     private static final byte[] NEEDLE="org/lwjgl/input/".getBytes(StandardCharsets.US_ASCII);
@@ -76,11 +76,11 @@ public final class GuiInputTransformer implements IClassTransformer {
             Registry.patched(sites[0]);
             if (logged < 8) {
                 logged++;
-                System.out.println("[Modbench/input] patched " + sites[0] + " input call site(s) in " + transformedName);
+                System.out.println("[ModdedBench/input] patched " + sites[0] + " input call site(s) in " + transformedName);
             }
             return writer.toByteArray();
         } catch (Throwable t) {
-            System.out.println("[Modbench/input] failed to patch " + transformedName + ": " + t);
+            System.out.println("[ModdedBench/input] failed to patch " + transformedName + ": " + t);
             return bytes;
         }
     }

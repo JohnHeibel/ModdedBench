@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "modbench": {
+    "moddedbench": {
       "command": "python",
       "args": [
         "harness/mcp/server.py"

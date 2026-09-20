@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-# Copyright (c) 2026 Modbench contributors
+# Copyright (c) 2026 ModdedBench contributors
 """Offline interrupt supervisor regressions; no bridge or game is required."""
 from __future__ import annotations
 import asyncio, sys, tempfile, threading, time, unittest

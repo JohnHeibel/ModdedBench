@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Copyright (c) 2026 Modbench contributors
+// Copyright (c) 2026 ModdedBench contributors
 package dev.modbench.client;
 
 import dev.modbench.api.ControlRegistry;
@@ -14,7 +14,7 @@ import net.minecraft.world.World;
 import java.util.*;
 import java.lang.reflect.*;
 
-/** DJ2's off-HUD Hwyla provider traversal adapted to GTNH's Waila 1.7 APIs.
+/** Off-HUD traversal of the Waila 1.7 providers GTNH ships.
  * Uses an isolated accessor/TipLists so observations don't replace the HUD target.
  */
 final class WailaObservation {
