@@ -56,7 +56,9 @@ def mb_find(selector: dict, scope: str = "player") -> Any:
 def mb_transfer(window_id: int, epoch: int, source: int, expected: dict,
                 destinations: list[int], count: int, destination_policy: str = "passive") -> Any:
     """Move up to count (1..64) items through native clicks to explicit ordinary slots.
-    Pass observed source stack, windowId and epoch. Requires empty cursor; source
+    Pass windowId, epoch and expected = the source slot's stack object exactly as
+    mb_inventory returned it (every field, not just id/meta/count): a shortened object
+    fails with stale_stack. Requires empty cursor; source
     must accept its remainder (output/ghost slots require event clicks instead).
     Capacity may produce a partial move: inspect transfer.moved. Passive destinations
     must retain items; consuming allows fuel/machine processing without assuming

@@ -5,7 +5,7 @@ name: moddedbench
 services:
   server:
     build: {context: .., dockerfile: docker/Dockerfile, target: server}
-    environment: {EULA: "${EULA:-false}", SERVER_MEMORY_MIB: "${SERVER_MEMORY_MIB:-6144}"}
+    environment: {EULA: "${EULA:-false}", SERVER_MEMORY_MIB: "${SERVER_MEMORY_MIB:-6144}", BRIGHT_NIGHTS: "${BRIGHT_NIGHTS:-false}"}
     ports: ["127.0.0.1:25575:25575"]      # the host client; the agent has no route here
     volumes: ["server-data:/data", "${PACK_DIR:?folder holding the GTNH server zip}:/pack:ro"]
     networks: [game]

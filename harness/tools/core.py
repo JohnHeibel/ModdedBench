@@ -61,7 +61,7 @@ def mb_methods() -> Any:
 
 @tool(lane="read", coverage=["meta"])
 def mb_status() -> Any:
-    """Bridge capabilities and connection status, your goal stack (mb_goal) with its stall signal, and world notes near the player.
+    """Bridge status, the clock (paused, why, operator hold), your goal stack (mb_goal) with its stall signal, and world notes near you.
 
     Call it at the start of every session and after every compaction: it is the heartbeat.
     """
@@ -70,6 +70,8 @@ def mb_status() -> Any:
     if isinstance(out.get("methods"), list): out["methods"] = f"{len(out['methods'])} raw methods; list them with mb_methods"  # the heartbeat must stay small
     out = dict(out, brief=f"Your standing brief is {brief if os.path.isfile(brief) else 'PROMPT.md at the repository root'}. If you cannot recall its mission and rules, re-read it now.")
     try:
+        clock = k.call("time.status", timeout=5).get("state", {})
+        out["clock"] = {key: clock.get(key) for key in ("mode", "paused", "reason", "held", "simulationTicks")}
         out["goal"] = notes.goal(k)
     except Exception as e:  # not in a world yet, or the clock is unreachable: status must still answer
         out["goal"] = {"unavailable": str(e)}
