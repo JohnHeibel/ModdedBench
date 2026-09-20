@@ -26,6 +26,7 @@ services:
       - agent-work:/work                  # the agent's checkout and its commits
       - agent-home:/home/agent/.codex     # Codex login and sessions
       - ${OUTBOX:-../.runtime/outbox}:/outbox
+      - ${BRIEF:-../.runtime/brief}:/brief:ro  # the run's PROMPT.md: mission and rules the agent can read but not rewrite
       - ${WIKI:-../.runtime/wiki}:/wiki:ro  # harness/wiki/fetch.py makes the snapshot on the host
       - ${BRIDGE_TOKENS:?folder holding bridge-47223.token, normally %USERPROFILE%/.moddedbench}:/run/bridge:ro
     cap_drop: [ALL]

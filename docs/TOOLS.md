@@ -36,7 +36,7 @@ Conventions that hold across all tools:
 | `mb_memory` | action | Waypoints, corridor routes, protected regions, recording; `status`/`get` are reads. |
 | `mb_screenshot` | read | PNG of the client view, works while paused. |
 | `mb_wiki_search`, `mb_wiki_read` | read | Offline snapshot of the GTNH wiki (`harness/wiki/fetch.py`): ranked full-text search, then pages or single sections as wikitext with source URL and revision. |
-| `mb_map` | read | JourneyMap overhead picture of explored terrain: labelled x/z grid, player, death points, `mb_memory` waypoints; day, night, topo and cave layers. |
+| `mb_map` | read | JourneyMap overhead picture of explored terrain: labelled x/z grid, player, death points, `mb_memory` waypoints, the ore veins this player has prospected (VisualProspecting's client log, also under `veins`); day, night, topo and cave layers. |
 
 Actions (`mb_act`) need running time, so resume first:
 
@@ -223,8 +223,9 @@ custom-predicate example.
 
 | Tool | Effect | What it does |
 | --- | --- | --- |
-| `mb_notes` | read | `capture` an attachment (block, entity, location, region), `search`, `get`, `history`, `status`, `resolve`. |
+| `mb_notes` | read | `capture` an attachment (block, entity, location, region, item type, topic), `search`, `get`, `history`, `status`, `resolve`. |
 | `mb_note_write` | action | Creates or updates a note with a revision guard and an operation id. |
+| `mb_goal` | action | Reads or updates the goal stack (chapter, quest, sub-goal, serves) kept in the note `goal-stack`; `mb_status` returns it with a stall signal. |
 
 Notes surface as a side effect, under a `notes` key, with at most five compact
 entries `{id, kind, title, revision, status, at, distance, excerpt?, tags?,

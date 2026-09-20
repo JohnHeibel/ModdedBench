@@ -115,6 +115,40 @@ agent or a disconnect left behind.
 | Take the agent's commits out | `docker compose ... exec agent git bundle create /outbox/run.bundle modbench-base..HEAD`, then `git fetch .runtime/outbox/run.bundle` on the host |
 | Hold the world paused / release | `docker compose ... exec server touch /data/modbench-hold` / `... rm -f /data/modbench-hold` |
 | New world | `docker compose ... down`, `docker volume rm moddedbench_server-data` |
+| Start a run without the console | fill the four placeholders in a copy of `PROMPT.md`, save it as `.runtime/brief/PROMPT.md`, then `docker compose ... exec agent python3 harness/runner/codex_loop.py --prompt /brief/PROMPT.md`, or paste it into an interactive `codex` in that container |
+| Snapshot the world and the notes | `python harness/launcher/backup.py once`, or `loop --every 30` in a terminal you leave open |
+
+## The brief and the heartbeat
+
+A run outlives the agent's context many times over, so what it must never lose
+is kept where it cannot damage it. The filled `PROMPT.md` for the run lives on
+the host in `.runtime/brief` and is mounted read-only at `/brief` (the console's
+Initialize writes it; by hand, copy it there). `AGENTS.md` is the heartbeat:
+Codex reads `~/.codex/AGENTS.md` at the start of every session, and the agent
+container restores that file from a root-owned copy in the image at every
+start. It tells a freshly started or freshly compacted agent to re-read the
+brief, call `mb_status` (which returns the goal stack and names the brief
+again) and read its notes. `CLAUDE.md` imports the same file for Claude Code.
+The agent may edit everything else in its checkout, including the repository's
+copies of these files, but not the mounted brief.
+
+## Backups
+
+`harness/launcher/backup.py` is for the operator only. Each snapshot holds the
+world (operator hold: no ticks, so nothing is being saved), streams the
+server's data folder without the pack's own files to
+`.runtime/snapshots/<time>/world.tar.gz`, copies the agent's notes databases
+through SQLite's backup API to `notes.tar.gz` beside it so the two always
+match, and releases the hold unless one was already in force. The world on
+disk is the last autosave, at most 45 seconds of game time old. It keeps the
+newest 48 snapshots and the first of each day.
+
+No container mounts `.runtime/snapshots`, and the agent's brief does not mention
+backups: from inside the run every mistake is permanent. Restoring is a manual
+operator decision for a corrupted world or a lost disk. To restore: stop the
+stack, `docker run --rm -v moddedbench_server-data:/data -v <snapshot folder>:/b alpine sh -c "cd /data && tar -xzf /b/world.tar.gz"`,
+unpack `notes.tar.gz` over `.state/notes` in the agent's checkout the same
+way, start the stack, and record the restore in the run's log.
 
 Recording: OBS window capture matched on the window title picks the client up
 again after a deploy restarts it; record to `.mkv` and split by time. With

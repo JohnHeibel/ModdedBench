@@ -22,12 +22,13 @@ DOCKER = shutil.which("docker") or "C:/Program Files/Docker/Docker/resources/bin
 COMPOSE = [DOCKER, "compose", "-f", str(REPO / "docker" / "compose.yaml"), "--env-file", str(REPO / "docker" / ".env")]
 PY = [sys.executable, "-u"]
 LAUNCHER, DEPLOY = str(REPO / "harness" / "launcher" / "runtime.py"), str(REPO / "harness" / "launcher" / "deploy.py")
+BRIEF = REPO / ".runtime" / "brief"
 TOKEN = secrets.token_urlsafe(24)
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 # One line of JSON about the loop, produced inside the agent container.
 AGENT_PROBE = ("import json,subprocess,pathlib;s=pathlib.Path('.state');r=lambda n:(s/n).read_text(errors='replace') if (s/n).exists() else '';"
                "print(json.dumps({'running':subprocess.run(['pgrep','-f','[c]odex_loop.py'],capture_output=True).returncode==0,"
-               "'stopRequested':(s/'STOP').exists(),'thread':r('codex-loop.json'),'prompt':(s/'run-prompt.md').exists(),"
+               "'stopRequested':(s/'STOP').exists(),'thread':r('codex-loop.json'),'prompt':pathlib.Path('/brief/PROMPT.md').exists(),"
                "'commits':subprocess.run(['git','rev-list','--count','modbench-base..HEAD'],capture_output=True,text=True).stdout.strip(),"
                "'log':r('codex-loop.log')[-6000:]}))")
 
@@ -130,7 +131,7 @@ class Console:
         elif name == "agent.start":
             extra = ["--", "-m", a["model"]] if re.fullmatch(r"[\w.\-]{1,64}", a.get("model") or "") else []
             turns = str(max(1, min(int(a.get("maxTurns") or 200), 10000)))
-            loop = "rm -f .state/STOP; p=PROMPT.md; [ -f .state/run-prompt.md ] && p=.state/run-prompt.md; exec python3 harness/runner/codex_loop.py --prompt $p --max-turns \"$0\" \"$@\" >/dev/null 2>&1"
+            loop = "rm -f .state/STOP; p=PROMPT.md; [ -f /brief/PROMPT.md ] && p=/brief/PROMPT.md; exec python3 harness/runner/codex_loop.py --prompt $p --max-turns \"$0\" \"$@\" >/dev/null 2>&1"
             self.run_job(name, [[*COMPOSE, "up", "-d", "gateway", "agent"], [*COMPOSE, "exec", "-d", "agent", "sh", "-c", loop, turns, *extra]])
         elif name == "agent.stop": self.run_job(name, [[*agent, "sh", "-c", "mkdir -p .state && touch .state/STOP"]])
         elif name == "agent.kill": self.run_job(name, [[*agent, "sh", "-c", "pkill -f '[c]odex_loop.py'; pkill -x codex; pkill -f '[h]arness/mcp/server.py'; true"]])
@@ -141,7 +142,9 @@ class Console:
             steps = [[*agent, "sh", "-c", "pkill -f '[c]odex_loop.py'; pkill -x codex; true"]] if up else []
             if a.get("freshWorld"): steps += [[*COMPOSE, "rm", "-sf", "server"], [DOCKER, "volume", "rm", "-f", "moddedbench_server-data"]]
             if a.get("freshAgent"): steps += [[*COMPOSE, "rm", "-sf", "agent"], [DOCKER, "volume", "rm", "-f", "moddedbench_agent-work"]]
-            steps += [[*COMPOSE, "up", "-d"], ([*agent, "sh", "-c", "mkdir -p .state && rm -f .state/STOP .state/codex-loop.json && cat > .state/run-prompt.md"], prompt)]
+            # The brief lives on the host and is mounted read-only at /brief: the agent can read its mission and rules but not rewrite them.
+            BRIEF.mkdir(parents=True, exist_ok=True); (BRIEF / "PROMPT.md").write_text(prompt, encoding="utf-8", newline="")
+            steps += [[*COMPOSE, "up", "-d"], [*agent, "sh", "-c", "mkdir -p .state && rm -f .state/STOP .state/codex-loop.json .state/run-prompt.md"]]
             self.run_job(name, steps)
         else: raise ValueError(f"unknown action {name}")
         return {"accepted": name}
