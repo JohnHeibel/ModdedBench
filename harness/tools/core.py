@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from typing import Any
 
 from mcp.server.fastmcp import Image
@@ -64,8 +65,8 @@ def mb_status() -> Any:
 
     Call it at the start of every session and after every compaction: it is the heartbeat.
     """
-    k = kernel()
-    out = dict(k.call("sys.capabilities"), brief="Your standing brief is PROMPT.md at the repository root. If you cannot recall its rules, re-read it now.")
+    k, brief = kernel(), os.environ.get("MB_BRIEF", "")
+    out = dict(k.call("sys.capabilities"), brief=f"Your standing brief is {brief if os.path.isfile(brief) else 'PROMPT.md at the repository root'}. If you cannot recall its mission and rules, re-read it now.")
     try:
         out["goal"] = notes.goal(k)
     except Exception as e:  # not in a world yet, or the clock is unreachable: status must still answer
@@ -145,7 +146,9 @@ def mb_map(center: list[int] | None = None, radius: int = 128, layer: str = "day
     center [x,z] defaults to you; radius 16..2048 blocks. The 768 px image has labelled
     x/z grid lines (north up, x right, z down), you as the yellow dot with a facing
     line, red squares for JourneyMap death points (your dropped items) and cyan for
-    mb_memory waypoints. layer: day, night, topo, cave (the 16-block slice you stand
+    mb_memory waypoints. Orange dots (grey when depleted) are the ore veins you have
+    prospected, from VisualProspecting's own log; veins lists each with its ores, centre
+    [x,z] and y range. It holds only what this player has found. layer: day, night, topo, cave (the 16-block slice you stand
     in) or a slice number y//16. Black is unexplored: mappedFraction says how much of
     the window is known, and only chunks that were loaded near you are ever mapped.
     JourneyMap starts a world's map only once time has run after you joined, so a
