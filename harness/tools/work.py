@@ -324,7 +324,9 @@ def mb_scan(blocks: list[dict] | None = None, bounds: dict | None = None, cursor
             limit: int = 256, budget: int = 4096) -> Any:
     """Paged native scan of loaded blocks using block/meta/ore/item selectors.
 
-    Continue with returned cursor. The bounded scan reports unloaded cells and does
+    budget is the cells examined per call, 1..4096: a larger volume is not an error,
+    it just takes more pages, so keep following the returned cursor until it ends.
+    The bounded scan reports unloaded cells and does
     not generate or load terrain. Scan results are observations, not mining success.
     """
     if bounds is None: raise ValueError("bounds are required")

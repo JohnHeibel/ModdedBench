@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 # Copyright (c) 2026 ModdedBench contributors
 """Container entry point for the pinned GTNH server: unpack once, pin the jars, exec Java."""
-import json, os, shutil, sys, types
+import json, os, re, shutil, sys, types
 from pathlib import Path
 
 sys.path.insert(0, "/opt/modbench")
@@ -17,6 +17,11 @@ if not (DATA / runtime.MARKER).is_file():
     runtime.save_json(DATA / runtime.MARKER, {"managedBy": "modbench", "kind": "server"})
 # The port is published to the host's loopback only; inside the container the server must listen on every interface.
 runtime.set_server_properties(DATA, os.environ.get("EULA", "").lower() == "true", server_ip="")
+# Darkerer (pitch-black nights) syncs its config from the server on join, so a client-side edit does nothing. It only changes
+# rendering: light levels and mob spawning are untouched, and the agent does not look at pixels to see in the dark.
+dark = DATA / "config" / "darkerer.cfg"
+if os.environ.get("BRIGHT_NIGHTS", "").lower() == "true" and dark.is_file():
+    dark.write_text(re.sub(r"(I:dimBlocklist <)[^>]*>", r"\1\n        7\n        0\n        -1\n        1\n     >", dark.read_text()))
 for jar in ("modbench-server.jar", "modbench-core.jar"):
     shutil.copyfile(HOME / jar, DATA / "mods" / jar)
 os.chdir(DATA)

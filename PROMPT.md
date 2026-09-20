@@ -432,7 +432,7 @@ shipped: once you start editing tools, `mb_tools_status` (what is loaded) and
 | Know what to do next | `mb_quest_lines`, `mb_quest_observe` | `mb_quest_search` when you know a title |
 | Turn a quest task into a plan | `mb_recipes` (overview, then one handler) | `mb_item_search`, `mb_item_info`, `mb_recipe_view` when the summary is not enough; `mb_wiki_read` for the why |
 | Know what you have | `mb_inventory`, `mb_find` | storage notes; `mb_scan` for blocks around you |
-| See around you | `mb_obs` (player, block, tile, entities, look) | `mb_screenshot` when the structured view is not enough |
+| See around you | `mb_obs` (player, world, block, tile, entities, terrain, waila) | `mb_screenshot` when the structured view is not enough |
 | See the region, choose a direction, find a vein you prospected | `mb_map` | `mb_memory` waypoints, location notes |
 | Go somewhere | `mb_process` (goal, explore, get_to_block) | `mb_route` for a saved corridor; `mb_follow` for entities |
 | Gather blocks or ore | `mb_mine` | `mb_work_status`, `mb_work_resume` when it blocks |
@@ -469,7 +469,7 @@ and list what is loaded, with load errors.
 | Tool | What it does |
 | --- | --- |
 | `mb_methods` | List bridge methods advertised by the GTNH profile; also caches their effects for lane routing of mb_call |
-| `mb_status` | Bridge capabilities and connection status, your goal stack (mb_goal) with its stall signal, and world notes near the player |
+| `mb_status` | Bridge status, the clock (paused, why, operator hold), your goal stack (mb_goal) with its stall signal, and world notes near you |
 | `mb_call` | Call any advertised bridge method with JSON parameters |
 | `mb_obs` | Call an obs.* capability by short or full method name |
 | `mb_act` | Native act.* input/look/stop, use_block, use_entity, attack_entity, use_item, eat, select_hotbar, combat and status |
