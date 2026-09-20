@@ -142,6 +142,6 @@ a job failing at a location), tagged `auto`.
 `mods/baritone/src/upstream/java` contains files from Baritone v1.2.19
 (commit `d9cb2d91`) under LGPL-3.0-or-later, listed with their original path
 and SHA-256 in `mods/baritone/UPSTREAM_SOURCES.json`; modified files carry a
-notice. `mods/baritone-core/PORT_ORIGIN.md` describes the pathing package that
+notice. `mods/baritone/PORT_ORIGIN.md` describes the pathing package that
 was written for this project. Everything else is original and released under
 the same licence. See `NOTICE.md`.
