@@ -194,6 +194,18 @@ public class BridgeTransportTest {
         assertTrue("a freed slot admits new work", client.next().get("ok").getAsBoolean());
     }
 
+    @Test public void aFullSessionCanStillCancelItsOwnWork() throws Exception {
+        Client client = connect(true);
+        for (int id = 1; id <= 128; id++) client.call(id, "act.hold");
+        awaitHeld(128);
+        client.call(129, "requests.cancel", "requestId", 1);
+        JsonObject first = client.next(), second = client.next();
+        JsonObject ack = first.get("id").getAsInt() == 129 ? first : second, cancelled = ack == first ? second : first;
+        assertTrue(ack.getAsJsonObject("data").get("cancelled").getAsBoolean());
+        assertEquals("cancelled", code(cancelled));
+        awaitHeld(127);
+    }
+
     @Test public void handlerRunningAcrossTheDeadlineAnswersOnceWithItsRealOutcomeMarkedLate() throws Exception {
         Client client = connect(true);
         client.call(14, "act.sleep", "ms", 400, "_timeout_ms", 100);
