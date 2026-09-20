@@ -211,9 +211,12 @@ class RuntimeTests(unittest.TestCase):
                 for kind in ("core", "baritone"):
                     libs = root / "mods" / kind / "build/libs"; libs.mkdir(parents=True, exist_ok=True)
                     (libs / f"modbench-{kind}-0.1.0.jar").write_bytes(kind.encode())
+                (instance / ".minecraft/mods/modbench-control.jar").write_bytes(b"legacy coremod")
                 with patch.object(runtime, "instance_dir", return_value=instance), patch.object(runtime, "bridge_is_live", return_value=False), patch.object(runtime, "client_instance_is_running", return_value=False):
                     self.assertEqual(runtime.install_jar("baritone", {}, root), [instance / ".minecraft/mods/modbench-baritone.jar"])
                     self.assertEqual(runtime.install_jar("core", {}, root), [instance / ".minecraft/mods/modbench-core.jar", server / "mods/modbench-core.jar"])
+                self.assertFalse((instance / ".minecraft/mods/modbench-control.jar").exists())
+                self.assertEqual((root / "backups/client/modbench-control.legacy.jar").read_bytes(), b"legacy coremod")
                 with patch.object(runtime, "instance_dir", return_value=instance), patch.object(runtime, "bridge_is_live", return_value=False), patch.object(runtime, "client_instance_is_running", return_value=True):
                     with self.assertRaises(runtime.RuntimeError_): runtime.install_jar("core", {}, root)
                 with patch.object(runtime, "instance_dir", return_value=instance), patch.object(runtime, "bridge_is_live", return_value=False), patch.object(runtime, "client_instance_is_running", return_value=False), patch.object(runtime, "recorded_process_is_running", return_value=True):

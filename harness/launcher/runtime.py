@@ -427,6 +427,10 @@ def install_jar(kind: str, cfg: dict[str, Any], runtime: Path) -> list[Path]:
             shutil.copy2(target, backup_new)
             os.replace(backup_new, backup)
         os.replace(temp, target)
+        legacy = target.with_name("modbench-control.jar")  # the coremod's name before it became core; two coremods crash FML
+        if kind == "core" and legacy.is_file():
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(legacy, backup.with_name("modbench-control.legacy.jar"))
         installed.setdefault(kind, {})[side] = {"target": str(target), "backup": str(backup), "source": str(source)}
         targets.append(target)
     save_json(runtime / "installed.json", installed)
