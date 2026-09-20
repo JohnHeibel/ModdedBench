@@ -33,24 +33,13 @@ final class MiningJob implements Navigation.Job {
     private final double startX,startZ;
     private InputArbiter.Lease lease;
     private final boolean autoTool,strict,ownsLease,overrideProtection,automatedEdits;
-    private final boolean constructionFooting;
     private InventorySelection selection;
     private final List<Map<String,Object>> toolsUsed=new ArrayList<>();
     private String state="mining",reason="";
     private int remaining,ticks,settling,aimMismatchTicks;
     private Map<String,Object> actualAim=Map.of();
 
-    MiningJob(Minecraft mc,BlockPos target,int timeoutTicks) {
-        this(mc,target,timeoutTicks,true,false,null);
-    }
-    MiningJob(Minecraft mc,BlockPos target,int timeoutTicks,boolean autoTool,boolean strict,InputArbiter.Lease parent) {
-        this(mc,target,timeoutTicks,autoTool,strict,parent,false);
-    }
     MiningJob(Minecraft mc,BlockPos target,int timeoutTicks,boolean autoTool,boolean strict,InputArbiter.Lease parent,boolean overrideProtection) {
-        this(mc,target,timeoutTicks,autoTool,strict,parent,overrideProtection,false);
-    }
-    MiningJob(Minecraft mc,BlockPos target,int timeoutTicks,boolean autoTool,boolean strict,InputArbiter.Lease parent,boolean overrideProtection,boolean constructionFooting) {
-        this.constructionFooting=constructionFooting;
         this.mc=mc; this.target=target;
         this.overrideProtection=overrideProtection || parent!=null&&parent.overrideProtection();
         this.automatedEdits=parent!=null&&parent.automatedEdits();
@@ -129,22 +118,16 @@ final class MiningJob implements Navigation.Job {
         if(mc.thePlayer.getAir()<160) return "insufficient_air";
         if(Math.hypot(mc.thePlayer.posX-startX,mc.thePlayer.posZ-startZ)>.35) return "footing_drifted";
         int fx=(int)Math.floor(mc.thePlayer.posX),fy=(int)Math.floor(mc.thePlayer.boundingBox.minY+.001),fz=(int)Math.floor(mc.thePlayer.posZ);
-        if(!mc.thePlayer.onGround || (constructionFooting?!Double.isFinite(ForgeSnapshot.local(world,new BlockPos(fx,fy,fz),new BlockPos(fx,fy,fz)).standingY(new BlockPos(fx,fy,fz))):ForgeSnapshot.classify(world,fx,fy-1,fz)!=TerrainGrid.SUPPORT)) return "stable_footing_required";
+        if(!mc.thePlayer.onGround || ForgeSnapshot.classify(world,fx,fy-1,fz)!=TerrainGrid.SUPPORT) return "stable_footing_required";
         // Reject any overlap with the supporting footprint, even at a block boundary.
         if(target.y()<mc.thePlayer.boundingBox.minY+.001 && target.y()+1>=mc.thePlayer.boundingBox.minY-.001 && Math.abs(target.x()+.5-mc.thePlayer.posX)<.81 && Math.abs(target.z()+.5-mc.thePlayer.posZ)<.81) return "would_remove_footing";
-        if(constructionFooting) {
-            List<net.minecraft.util.AxisAlignedBB> supportBoxes=new ArrayList<>();
-            var probe=mc.thePlayer.boundingBox.getOffsetBoundingBox(0,-.02,0);
-            world.getBlock(target.x(),target.y(),target.z()).addCollisionBoxesToList(world,target.x(),target.y(),target.z(),probe,supportBoxes,mc.thePlayer);
-            if(!supportBoxes.isEmpty())return "would_remove_footing";
-        }
         if(!ForgeSnapshot.safeBody(world,mc.thePlayer.posX,mc.thePlayer.boundingBox.minY,mc.thePlayer.posZ,true)) return "hazard_contact";
         boolean exit=false;
         for(int[] d:new int[][]{{1,0},{-1,0},{0,1},{0,-1}}) {
             BlockPos p=new BlockPos(fx+d[0],fy,fz+d[1]);
             if(ForgeSnapshot.liveStandable(world,p) && !(target.x()==p.x()&&target.z()==p.z()&&target.y()==p.y()-1)) exit=true;
         }
-        if(!exit&&!constructionFooting) return "dry_escape_step_required";
+        if(!exit) return "dry_escape_step_required";
         if(world.getBlock(target.x(),target.y()+1,target.z()) instanceof BlockFalling) return "falling_block_above_target";
         if(strict && !MiningTools.automaticBlock(world,target)) return "protected_or_unsupported_route_block";
         for(int[] d:new int[][]{{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}}) {

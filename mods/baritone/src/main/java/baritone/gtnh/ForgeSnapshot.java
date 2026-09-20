@@ -18,7 +18,7 @@ import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.world.World;
 import net.minecraft.util.Vec3;
 
-/** Captures Forge collision shapes on the game thread; search never reads a live world. */
+/** Bounded game-thread capture of Forge collision shapes for terrain inspection and work poses. */
 final class ForgeSnapshot {
     final World world;
     final int minX,minY,minZ,width,height,depth;
@@ -26,40 +26,14 @@ final class ForgeSnapshot {
     private final float[] flows;
     private final Map<BlockPos,List<CollisionBox>> shapes=new HashMap<>();
     private final Map<BlockPos,LadderFacing> ladders=new HashMap<>();
-    private final Map<BlockPos,Double> breakCosts=new HashMap<>();
-    private MiningTools.Costs tools;
     private final double stepHeight=Minecraft.getMinecraft().thePlayer.stepHeight;
     private int cursor;
-    final boolean localPlan;
-    ForgeSnapshot(World world, BlockPos center) {
-        this(world,center.x()-24,Math.max(0,center.y()-8),center.z()-24,49,Math.min(256,Math.max(0,center.y()-8)+20)-Math.max(0,center.y()-8),49);
-    }
-    ForgeSnapshot(World world,BlockPos center,boolean allowBreak) {
-        this(world,center);if(allowBreak) tools=new MiningTools.Costs();
-    }
     private ForgeSnapshot(World world,int x,int y,int z,int w,int h,int d) {
         this.world=world;minX=x;minY=y;minZ=z;width=w;height=h;depth=d;
-        localPlan=w<49 || d<49;
         cells=new byte[width*height*depth];
         flows=new float[cells.length*3];
     }
-    static ForgeSnapshot forGoal(World world,BlockPos start,BlockPos goal,boolean allowBreak,boolean wide) {
-        if(wide||Math.abs(start.x()-goal.x())>16||Math.abs(start.z()-goal.z())>16||Math.abs(start.y()-goal.y())>8)return new ForgeSnapshot(world,start,allowBreak);
-        int x=Math.min(start.x(),goal.x())-4,z=Math.min(start.z(),goal.z())-4,y=Math.max(0,Math.min(start.y(),goal.y())-3);
-        ForgeSnapshot snapshot=new ForgeSnapshot(world,x,y,z,Math.abs(start.x()-goal.x())+9,Math.min(256,Math.max(start.y(),goal.y())+5)-y,Math.abs(start.z()-goal.z())+9);
-        if(allowBreak)snapshot.tools=new MiningTools.Costs();return snapshot;
-    }
-    int cellsCaptured(){return cursor;}
-    static ForgeSnapshot forGoals(World world,BlockPos start,List<BlockPos> goals,boolean allowBreak,boolean wide) {
-        if(goals.size()==1)return forGoal(world,start,goals.get(0),allowBreak,wide);
-        int x=start.x(),y=start.y(),z=start.z(),maxX=x,maxY=y,maxZ=z;
-        for(BlockPos p:goals){x=Math.min(x,p.x());y=Math.min(y,p.y());z=Math.min(z,p.z());maxX=Math.max(maxX,p.x());maxY=Math.max(maxY,p.y());maxZ=Math.max(maxZ,p.z());}
-        if(wide||maxX-x>40||maxZ-z>40||maxY-y>16)return new ForgeSnapshot(world,start,allowBreak);
-        int bottom=Math.max(0,y-3);
-        ForgeSnapshot snapshot=new ForgeSnapshot(world,x-4,bottom,z-4,maxX-x+9,Math.min(256,maxY+5)-bottom,maxZ-z+9);
-        if(allowBreak)snapshot.tools=new MiningTools.Costs();return snapshot;
-    }
-    boolean captureSlice() {
+    private boolean captureSlice() {
         long end=System.nanoTime()+3_000_000L;
         int count=0;
         while(cursor<cells.length && count++<2048 && System.nanoTime()<end) {
@@ -68,9 +42,6 @@ final class ForgeSnapshot {
             BlockPos p=new BlockPos(x,y,z);
             if(cell.kind()==TerrainGrid.PARTIAL || cell.kind()==TerrainGrid.BLOCKED || cell.kind()==TerrainGrid.LADDER) shapes.put(p,cell.boxes());
             if(cell.ladder()!=LadderFacing.NONE) ladders.put(p,cell.ladder());
-            if(tools!=null && cell.kind()==TerrainGrid.SUPPORT) {
-                double ticks=tools.at(world,p);if(Double.isFinite(ticks)) breakCosts.put(p,ticks);
-            }
             if(cells[cursor]==TerrainGrid.WATER) {
                 Vec3 f=ForgeFluids.flow(world,x,y,z);
                 if(f==null) cells[cursor]=TerrainGrid.UNKNOWN;
@@ -80,8 +51,7 @@ final class ForgeSnapshot {
         }
         return cursor==cells.length;
     }
-    TerrainGrid finish() { return new TerrainGrid(minX,minY,minZ,width,height,depth,cells,flows,shapes,ladders,stepHeight); }
-    Map<BlockPos,Double> breakCosts() {return Map.copyOf(breakCosts);}
+    private TerrainGrid finish() { return new TerrainGrid(minX,minY,minZ,width,height,depth,cells,flows,shapes,ladders,stepHeight); }
     static TerrainGrid local(World world,BlockPos a,BlockPos b) {
         int x=Math.min(a.x(),b.x())-1,z=Math.min(a.z(),b.z())-1,y=Math.max(0,Math.min(a.y(),b.y())-2);
         ForgeSnapshot snapshot=new ForgeSnapshot(world,x,y,z,Math.abs(a.x()-b.x())+3,Math.min(256,Math.max(a.y(),b.y())+5)-y,Math.abs(a.z()-b.z())+3);
@@ -134,21 +104,6 @@ final class ForgeSnapshot {
             && liveClear(world,p.x()+.5,p.y(),p.z()+.5,p.y()+1.8);
     }
     static boolean water(World world,BlockPos p) {return classify(world,p.x(),p.y(),p.z())==TerrainGrid.WATER;}
-    static boolean passable(World world,int x,int y,int z) {
-        byte c=classify(world,x,y,z); return c==TerrainGrid.CLEAR||c==TerrainGrid.WATER||c==TerrainGrid.LADDER;
-    }
-    static boolean liveSwimmable(World world,BlockPos p) {
-        int x=p.x(),y=p.y(),z=p.z();
-        if(!water(world,p)||!passable(world,x,y+1,z)||!passable(world,x,y+2,z)) return false;
-        Vec3 flow=ForgeFluids.flow(world,x,y,z);
-        if(flow==null || (flow.yCoord<-.5 && classify(world,x,y-1,z)!=TerrainGrid.SUPPORT)) return false;
-        for(int[] d:new int[][]{{1,0},{-1,0},{0,1},{0,-1}}) for(int h=-1;h<=1;h++) {
-            byte c=classify(world,x+d[0],y+h,z+d[1]);
-            if(c==TerrainGrid.HAZARD || c==TerrainGrid.UNKNOWN) return false;
-        }
-        return liveClear(world,x+.5,y,z+.5,y+2.3);
-    }
-    static boolean liveTraversable(World world,BlockPos p) {return liveStandable(world,p)||liveSwimmable(world,p);}
 
     /** Check the swept body volume, including liquids whose collision box is empty. */
     static boolean safeBody(World world,double x,double y,double z,boolean allowWater) {

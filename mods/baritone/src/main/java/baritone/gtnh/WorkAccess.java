@@ -18,7 +18,6 @@ import net.minecraftforge.oredict.OreDictionary;
 /** Native registry, ore-dictionary and NBT selectors shared by bulk work. */
 final class WorkAccess {
     static final Minecraft MC=Minecraft.getMinecraft();
-    static final int[][] SIDES={{0,-1,0},{0,1,0},{0,0,-1},{0,0,1},{-1,0,0},{1,0,0}};
     static BlockPos feet(){return new BlockPos((int)Math.floor(MC.thePlayer.posX),(int)Math.floor(MC.thePlayer.boundingBox.minY+.001),(int)Math.floor(MC.thePlayer.posZ));}
     static void player(){if(MC.theWorld==null||MC.thePlayer==null||MC.thePlayer.getHealth()<=0||MC.currentScreen!=null)throw new IllegalArgumentException("living player with closed GUI required");}
     static boolean item(ItemStack stack,Map<String,Object> selector) {
@@ -120,17 +119,6 @@ final class WorkAccess {
         if(!ForgeSnapshot.loaded(world,p.x(),p.y(),p.z()))return Map.of("pos",point(p),"loaded",false);
         Map<String,Object> out=new LinkedHashMap<>();out.put("pos",point(p));out.put("loaded",true);out.put("id",Block.blockRegistry.getNameForObject(world.getBlock(p.x(),p.y(),p.z())));out.put("meta",world.getBlockMetadata(p.x(),p.y(),p.z()));
         var tile=world.getTileEntity(p.x(),p.y(),p.z());out.put("tileClass",tile==null?null:tile.getClass().getName());return out;
-    }
-    static List<BlockPos> approaches(World world,BlockPos target,boolean allowBreak) {
-        List<BlockPos> out=new ArrayList<>();BlockPos here=feet();
-        if(ForgeSnapshot.liveStandable(world,here)&&!target.equals(new BlockPos(here.x(),here.y()-1,here.z())))out.add(here);
-        for(int y=Math.max(1,target.y()-2);y<=Math.min(254,target.y()+1);y++)for(int dx=-2;dx<=2;dx++)for(int dz=-2;dz<=2;dz++) {
-            if(Math.abs(dx)+Math.abs(dz)==0||Math.abs(dx)+Math.abs(dz)>3)continue;
-            BlockPos p=new BlockPos(target.x()+dx,y,target.z()+dz);
-            if(!ForgeSnapshot.loaded(world,p.x(),p.y(),p.z())||!ForgeSnapshot.loaded(world,p.x(),p.y()-1,p.z()))continue;
-            if(ForgeSnapshot.liveStandable(world,p)||allowBreak&&ForgeSnapshot.classify(world,p.x(),p.y()-1,p.z())==TerrainGrid.SUPPORT&&MiningTools.automaticBlock(world,p)&&MiningTools.automaticBlock(world,new BlockPos(p.x(),p.y()+1,p.z())))out.add(p);
-        }
-        out.sort(Comparator.comparingDouble(WorkAccess::distance));return out.stream().distinct().limit(40).toList();
     }
     static String protection(BlockPos p,boolean override){return ControlRegistry.memory().editProblem(p.x(),p.y(),p.z(),override,true);}
 }

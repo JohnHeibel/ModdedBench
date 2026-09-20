@@ -12,10 +12,10 @@ import baritone.gtnh.pathing.*;
 import static baritone.gtnh.pathing.WorkSpec.*;
 import java.util.*;
 
-/** Native cell identity and durable intent around upstream BuilderProcess scheduling. */
+/** The construction engine: native cell identity, preflight and durable intent around upstream BuilderProcess scheduling. */
 final class ReferenceConstructionProcess extends BulkJob {
     private final Baritone engine;
-    private final ConstructionProcess plan;
+    private final ConstructionPlan plan;
     private final Map<Settings.Setting<?>,Object> savedSettings=new LinkedHashMap<>();
     private Map<BlockPos,Cell> desired=Map.of();
     private Map<BlockPos,Boolean> correct=Map.of();
@@ -41,11 +41,17 @@ final class ReferenceConstructionProcess extends BulkJob {
     private final Map<BlockPos,baritone.api.pathing.goals.Goal> cleanupGoals=new HashMap<>();
     ReferenceConstructionProcess(BaritoneNavigation navigation,WorkJournal journal,Map<String,Object> options){
         super(navigation,journal,options);engine=navigation.reference();
-        plan=new ConstructionProcess(navigation,journal,options);repeat=plan.repeat;layer=plan.layer;
+        plan=new ConstructionPlan(params,journal.progress,world);repeat=plan.repeat;layer=plan.layer;
         attempts=plan.attempts;
     }
     @Override void begin(){
-        super.begin();engine.getPathingBehavior().forceCancel();
+        super.begin();
+        if(plan.strict){
+            // Blueprint preflight: refuse before any input rather than discover a conflict mid-build.
+            inspection=ConstructionPlan.inspect(plan.cells,plan.replace(),override);
+            for(String key:List.of("unloaded","conflicts","protected","unsupported","missingItems"))if(((Number)inspection.get(key)).intValue()>0){finish("failed","preflight_"+key);return;}
+        }
+        engine.getPathingBehavior().forceCancel();
         for(var setting:Baritone.settings().allSettings)savedSettings.put(setting,setting.value);
         initializeClearance();configure();engine.overrideProtection=override;engine.positionAllowed=p->true;
         engine.getInputOverrideHandler().attach(lease);
@@ -111,11 +117,11 @@ final class ReferenceConstructionProcess extends BulkJob {
         Map<BlockPos,IBlockState> states=new HashMap<>();Map<net.minecraft.block.Block,Integer> masks=new HashMap<>();
         for(Cell source:plan.cells){
             Cell cell=plan.desired(source);BlockPos p=cell.pos();cells.put(p,cell);
-            var block=cell.clear()?net.minecraft.init.Blocks.air:BuildingProcess.block(cell);
+            var block=cell.clear()?net.minecraft.init.Blocks.air:ConstructionPlan.block(cell);
             states.put(p,new IBlockState(block,cell.meta(),null,p.x(),p.y(),p.z()));
             masks.put(block,plan.settings.metadataMask(cell.id()));
             if(!cell.clear()){
-                var selector=Map.copyOf(BuildingProcess.material(cell));selectors.put(p,selector);
+                var selector=Map.copyOf(ConstructionPlan.material(cell));selectors.put(p,selector);
                 materials.put(p,matchingInventory.computeIfAbsent(selector,key->{
                     Set<StackIdentity> eligible=new HashSet<>();
                     for(var stack:mc.thePlayer.inventory.mainInventory)if(stack!=null&&WorkAccess.item(stack,key))eligible.add(StackIdentity.capture(stack));
@@ -126,7 +132,7 @@ final class ReferenceConstructionProcess extends BulkJob {
                 boolean now=plan.correct(source);matches.put(p,now);
                 IBlockState.StateKey state=new IBlockState.StateKey(world.getBlock(p.x(),p.y(),p.z()),world.getBlockMetadata(p.x(),p.y(),p.z()));
                 var previous=previousObserved.put(p,state);
-                if(!now&&!state.block().isAir(world,p.x(),p.y(),p.z())&&!plan.settings.bool("repairPlaced",true)&&attempts.containsKey(BuildingProcess.key(cell)))pending.add(p);
+                if(!now&&!state.block().isAir(world,p.x(),p.y(),p.z())&&!plan.repairPlaced()&&attempts.containsKey(ConstructionPlan.key(cell)))pending.add(p);
                 if(now&&pending.remove(p)){if(cell.clear())removedObserved.add(p);else placedObserved.add(p);}
                 // Explicit-air cells may start empty, receive an autonomous
                 // scaffold, then be cleared again. Count that observed removal
@@ -137,7 +143,7 @@ final class ReferenceConstructionProcess extends BulkJob {
         desired=Map.copyOf(cells);correct=Map.copyOf(matches);schematicStates=Map.copyOf(states);materialSelectors=Map.copyOf(selectors);
         var snapshot=desired;var verified=correct;var pendingSnapshot=Set.copyOf(pending);
         var materialSnapshot=Map.copyOf(materials);var masksSnapshot=Map.copyOf(masks);
-        boolean restricted=plan.settings.bool("restricted",false),replace=bool(params,"replaceExisting",true),clearing=cleanupPhase;
+        boolean restricted=plan.restricted(),replace=plan.replace(),clearing=cleanupPhase;
         var deferredSnapshot=deferredAir;
         engine.getBuilderProcess().stateValidator=(current,wanted,itemVerify)->{
             Cell cell=snapshot.get(new BlockPos(wanted.x,wanted.y,wanted.z));
@@ -165,7 +171,7 @@ final class ReferenceConstructionProcess extends BulkJob {
         };
         engine.getBuilderProcess().mayPlace=p->!restricted||snapshot.containsKey(new BlockPos(p.getX(),p.getY(),p.getZ()));
         Set<BlockPos> poseSensitive=new HashSet<>();
-        for(Cell cell:snapshot.values())if(!cell.clear()&&(!cell.placement().isEmpty()||baritone.compat.LegacyStateProperties.hasOrientation(BuildingProcess.block(cell))))poseSensitive.add(cell.pos());
+        for(Cell cell:snapshot.values())if(!cell.clear()&&(!cell.placement().isEmpty()||baritone.compat.LegacyStateProperties.hasOrientation(ConstructionPlan.block(cell))))poseSensitive.add(cell.pos());
         var sensitive=Set.copyOf(poseSensitive);
         // Movement placement has no final-facing state contract. Let the source
         // builder place these from a verified pose before treating them as terrain.
@@ -267,7 +273,7 @@ final class ReferenceConstructionProcess extends BulkJob {
         engine.getBuilderProcess().beforePlace=p->{
             BlockPos pos=new BlockPos(p.getX(),p.getY(),p.getZ());Cell cell=desired.get(pos);
             if(cell==null||cell.clear()){
-                if(cell==null&&plan.settings.bool("restricted",false))throw new IllegalStateException("placement outside restricted schematic");
+                if(cell==null&&plan.restricted())throw new IllegalStateException("placement outside restricted schematic");
                 // Source BuilderCalculationContext deliberately permits temporary
                 // supports where the final schematic wants air. Validate the
                 // selected throwaway, not the finished cell's material selector.
@@ -286,8 +292,8 @@ final class ReferenceConstructionProcess extends BulkJob {
             if(!engine.getBuilderProcess().placementFace.test(wanted,hit.sideHit)||!bool(cell.placement(),"verifyAfterPlacement",false)&&!engine.getBuilderProcess().stateComparison.test(predicted,wanted)){
                 finish("paused","native_placement_prediction_changed");return;
             }
-            String key=BuildingProcess.key(cell);int count=((Number)attempts.getOrDefault(key,0)).intValue();
-            if(count>=8){finish("paused","placement_attempt_limit_inspect_block_adapter");return;}
+            String key=ConstructionPlan.key(cell);int count=((Number)attempts.getOrDefault(key,0)).intValue();
+            if(count>=plan.attemptLimit()){finish("paused","placement_attempt_limit_inspect_block_adapter");return;}
             journal.recordAttempt(key,count+1);attempts.put(key,count+1);pending.add(pos);
             placementGoals.clear();
         };
@@ -351,7 +357,7 @@ final class ReferenceConstructionProcess extends BulkJob {
         }
         if(builder.isPaused()){
             var missing=desired.values().stream().filter(c->!correct.getOrDefault(c.pos(),false)).toList();
-            inspection=BuildingProcess.inspect(missing,true,override);
+            inspection=ConstructionPlan.inspect(missing,true,override);
             boolean unavailable=missing.stream().filter(c->!c.clear()&&!plan.occupied(c.pos())).allMatch(c->plan.slot(c)<0);
             finish("paused",!pending.isEmpty()?"placement_not_verified_inspect_before_retry":unavailable?"missing_materials":"source_builder_requires_materials_or_access");return;
         }
@@ -393,7 +399,7 @@ final class ReferenceConstructionProcess extends BulkJob {
         for(var entry:savedSettings.entrySet())ReferenceSettings.copy(entry.getKey(),entry.getValue());
     }
     @Override public Map<String,Object> status(){
-        var out=super.status();out.put("engine","baritone-1.2.19-source-port");out.put("process","BuilderProcess");out.put("mode","builder");
+        var out=super.status();out.put("engine","baritone-1.2.19-source-port");out.put("process","BuilderProcess");out.put("mode",plan==null?null:plan.mode());
         out.put("buildPhase",clearanceEgress?"clearance_egress":cleanupPhase?"clearance":"construction");out.put("deferredAirCells",deferredAir.size());
         out.put("placed",placedObserved.size());out.put("removed",removedObserved.size());out.put("layer",layer);out.put("repeat",repeat);out.put("incorrect",incorrect);
         out.put("selected",plan==null?0:plan.cells.size());out.put("pendingPlacementVerification",pending.size());out.put("movementTypes",List.copyOf(movements));out.put("inspection",inspection);return out;
