@@ -52,7 +52,7 @@ mb_notes("search", {"query": "furnace"})  what past sessions left behind
 | `harness/launcher` | Managed local runtime (Prism instance, server, jar install/rollback) | |
 | `harness/runner` | Provider-neutral autonomous loop with a file adapter | |
 | `harness/smoke` | Live-game probes | |
-| `docs/` | [ARCHITECTURE](docs/ARCHITECTURE.md), [BUILD](docs/BUILD.md), [TOOLS](docs/TOOLS.md), [VALIDATION](docs/VALIDATION.md), [HISTORY](docs/HISTORY.md); older notes in `docs/legacy/` | |
+| `docs/` | [ARCHITECTURE](docs/ARCHITECTURE.md), [BUILD](docs/BUILD.md), [TOOLS](docs/TOOLS.md), [TIME_CONTROL](docs/TIME_CONTROL.md), [BARITONE_PORT](docs/BARITONE_PORT.md), [RUNNER](docs/RUNNER.md), [VALIDATION](docs/VALIDATION.md), [HISTORY](docs/HISTORY.md) | |
 
 ## Design rules
 

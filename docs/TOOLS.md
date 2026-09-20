@@ -36,6 +36,37 @@ Conventions that hold across all tools:
 | `mb_memory` | action | Waypoints, corridor routes, protected regions, recording; `status`/`get` are reads. |
 | `mb_screenshot` | read | PNG of the client view, works while paused. |
 
+Actions (`mb_act`) need running time, so resume first:
+
+- `use_block {x,y,z,face,hit?,sneak?,expected?,expectedHeld?}` checks reach,
+  face and obstruction by ray and never falls back to plain item use.
+  `use_entity` and `attack_entity` take `entityId` plus the `expectedHandle`
+  from `obs.entities`; attack range is 3 blocks and players need
+  `allowPlayers: true`.
+- `eat` succeeds only after the held stack or hunger changes, and fails at
+  once with `native_use_duration_exceeds_budget` when the pack's food-history
+  penalty makes the item slower than the budget (default 400 ticks).
+- `combat` is a stationary, bounded attack loop on visible hostiles.
+  `pursue` is rejected: compose movement separately. A vanished entity is not
+  a confirmed kill.
+- A raw attack hold locks block edits to the block first under the crosshair
+  and ends with `attack_target_changed`; `allowRetarget: true` lifts that.
+- Receipts carry `nativeReturn` (not a success flag) and `serverAcknowledged`
+  (only eating has one). An item may change NBT, metadata or slot, or drop an
+  entity, so check the whole inventory. `overrideProtection` is per operation.
+
+Tile reads (`mb_obs` with `tile`, `nbt`, `waila`) come from the server:
+
+- Loaded blocks within 128 blocks in the current dimension; no position means
+  the crosshair. A plain block returns `hasTile: false`; unloaded is an error.
+- `nbt.handle` names an immutable snapshot that `obs.nbt {handle, path,
+  offset, limit, budget, depth}` drills into. Handles expire after ten
+  minutes, so put values worth keeping in a note.
+- `fluids.views` has one view per side plus `UNKNOWN`. **Do not add side views
+  together**; they may describe the same tank. `energy` covers GregTech EU,
+  IC2 and RF; an unsupported system is absent, not zero.
+- Pass `hwyla: false` to skip the Waila text when polling.
+
 ## inventory.py: containers and items
 
 | Tool | Effect | What it does |
@@ -48,6 +79,21 @@ Conventions that hold across all tools:
 
 `ContainerSession` in the same file is the helper for model-written
 procedures: observe, act, and poll a postcondition with a bounded timeout.
+
+- Inventory indices and container slot indices are different namespaces.
+  Stacks keep id, metadata, count and full SNBT; `nbt_hash` fingerprints the
+  observed SNBT. Pass an explicit `null` to guard an empty slot or cursor.
+- Guarded clicks take `windowId`, `epoch`, `slot`, `expected`,
+  `expectedCursor`. `transfer` needs an empty cursor and returns the remainder
+  to its source. Virtual, ghost and ME slots need native clicks instead.
+  `mb_obs("container", {"probeSlot": n})` reports which slots would accept the
+  stack in slot `n`.
+- `destinationPolicy: "consuming"` lets a machine take the moved items,
+  reported as `consumed_routed_or_corrected_unproven`, never as processed.
+  Custom-packet GUIs report `client_event_delivery_only`. Nothing retries
+  because a slot looks unchanged; do not replay a multi-step procedure after
+  an uncertain step.
+- `close` refuses an occupied cursor unless `allowCursorDrop: true`.
 
 ## work.py: navigation, mining, construction
 
@@ -74,7 +120,22 @@ queries are `obs.scan`, `obs.terrain`, `obs.fluid` and `obs.tools`.
 | `mb_cache` | action | Inspects or administers the terrain cache. |
 
 Work completions and failures write a small `auto`-tagged note at the job's
-location, so the next session finds where things stopped.
+location, so the next session finds where things stopped. Selectors,
+net-gain completion, the two build modes, their settings and limits are in
+[BARITONE_PORT.md](BARITONE_PORT.md).
+
+`mb_memory` (defined in `core.py`):
+
+- `protect {name, min, max, mode?}`: `automation` (default) keeps navigation
+  and automatic excavation out but allows deliberate work and machine use;
+  `all_edits` also rejects deliberate edits. Changing a region needs
+  `overrideProtection: true`. It guards against accidents, not explosions,
+  other players or mod area effects.
+- `waypoint`, `route {name, points, radius}` (2 to 4,096 anchors, radius 1 to
+  16, coordinates copied at save time), `record`; `replace: true` overwrites.
+  Put anchors at turns and height changes. Per world: 1,024 waypoints, 128
+  routes, 256 regions.
+- For long `mb_route` trips raise both `timeout_s` and `timeout_ticks`.
 
 ## recipes_quests.py: NEI and Better Questing
 
@@ -97,6 +158,27 @@ location, so the next session finds where things stopped.
 | `mb_quest_select_choice` | action | Selects a reward option. |
 | `mb_quest_claim` | action | Claims rewards; verify by re-observing the quest and inventory. |
 
+Recipe workflow: `mb_item_search` (keep `id`, `meta`, `nbt` together), then
+`mb_recipes` with the default `limit=0` for the per-category overview, again
+with `handler=<handlerKey>` and a small `limit` to compare options, then
+`detail="full", index=<n>, limit=1` for the chosen one, then `mb_recipe_view`
+and `mb_recipe_inspect` for whatever the handler only draws.
+
+- Many GT categories share one handler id, so reuse the complete `handlerKey`.
+  NEI order is not progression order; nothing is declared craftable for you.
+- Ingredient positions keep all alternatives (`alternatives_offset`). Compact
+  previews omit NBT and are not item identities.
+- GT power and duration are base values before overclocking; some entries are
+  informational `fakeRecipe` records; a zero-count input (circuit, tool) is
+  retained. An empty ingredient list is not proof of no requirement: aspects,
+  research and mutation conditions are only drawn, so open the page.
+- `mb_item_info` gives `placement.blockId` and `placement.initialBlockMeta`,
+  which for GT machines differs from the item metadata.
+
+Quest actions only send Better Questing's normal packets and return
+`serverAcknowledged: false`. A claim needs a valid choice for every choice
+reward.
+
 ## interrupts.py: watches that wake the model
 
 | Tool | Effect | What it does |
@@ -107,6 +189,29 @@ location, so the next session finds where things stopped.
 Fires are retried with the same event id and the watch is re-armed if the
 bridge cannot be reached; watches survive reconnects. `_examples/` holds a
 custom-predicate example.
+
+```json
+{"queries": {"player": {"method": "obs.player"},
+             "nearby": {"method": "obs.entities", "params": {"radius": 8}}},
+ "condition": {"all": [{"lt": ["player.health", 8]},
+                       {"any": {"path": "nearby.entities", "where": {"eq": ["$.hostile", true]}}}]},
+ "effects": ["notify", "cancel", "pause"],
+ "prompt": "Low health with a hostile nearby. Decide how to recover."}
+```
+
+- Operators: `all`, `any`, `not`, `eq`/`ne`/`lt`/`lte`/`gt`/`gte`, `exists`,
+  `changed`/`increased`/`decreased`, and `any`/`all` over a collection.
+  Operands are `[path, literal]`; a missing observation is a fault, not false.
+  Also `consecutive`, `edge`, `cooldown` (seconds), `oneShot` (default true).
+- At most 64 watches, polled about every 100 ms through `obs.batch` (16
+  watchable reads). The guards in `mb_time` are faster for fixed emergencies.
+- A custom file's `evaluate(context)` has `context.values`, `context.read`,
+  `context.previous`, `context.state`, and may return
+  `context.prompt(text, **observations)` to hand the decision to the model
+  (8,192 characters, payload 64 KiB). Watch files are trusted, not sandboxed.
+- `cancel` and `pause` latch further actions until `ack`, which neither
+  resumes time nor retries anything. Re-arm a one-shot watch after recovery.
+- The journal is SQLite under `.state/interrupts` (`MODBENCH_INTERRUPTS_DIR`).
 
 ## notes.py: durable world notes
 
@@ -121,6 +226,21 @@ why}`: on `mb_status` (session start), when a block, tile or entity with a
 note is observed, when a position read enters a noted region or comes near a
 note, and when a work call arrives somewhere. A note is not repeated within
 ten minutes unless the player has moved far away.
+
+- `mb_notes("capture", {"kind": "block", "pos": [x, y, z]})` returns the
+  `worldId` and `attachment` that `mb_note_write` needs. Entity attachments
+  use the server UUID and match spatially on the stored last-seen position.
+- `expected_revision=0` creates; otherwise pass the revision you read. Only
+  fields in `patch` change. Retry a lost reply with the same `operation_id`
+  (the original receipt is replayed). `status` is `open`, `done` or
+  `archived`; there is no delete.
+- Search is AND-combined, defaults to the current dimension and returns
+  excerpts; `get` returns the full text. `resolve` re-observes loaded
+  attachments; `not_observed` does not mean destroyed.
+- Limits: title 256 characters, text 32,768, 32 tags, 32 attachments, `data`
+  16 KiB. One SQLite file per world UUID under `.state/notes`
+  (`MODBENCH_NOTES_DIR`); keep it when moving the harness. Notes protect
+  nothing: use `mb_memory("protect")`.
 
 ## Server-side tools
 
