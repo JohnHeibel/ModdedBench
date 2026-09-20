@@ -57,11 +57,6 @@
       "sourceSha256": "e4b6f3d1873bfa244e1ddb54a40fcb6d2a68ab2a98449f3a988636c415bf1f4d"
     },
     {
-      "source": "src/api/java/baritone/api/pathing/goals/GoalStrictDirection.java",
-      "ported": "baritone/api/pathing/goals/GoalStrictDirection.java",
-      "sourceSha256": "c3199c1efe175d173423a9a47bfdaef8c9b4242497b86257f947e98bc3885b5f"
-    },
-    {
       "source": "src/api/java/baritone/api/pathing/goals/GoalTwoBlocks.java",
       "ported": "baritone/api/pathing/goals/GoalTwoBlocks.java",
       "sourceSha256": "14a808a81a160d55e99d842140cb73f019c0cdfd696f510d67ac868e79b5fe22"
@@ -170,11 +165,6 @@
       "source": "src/main/java/baritone/pathing/calc/openset/IOpenSet.java",
       "ported": "baritone/pathing/calc/openset/IOpenSet.java",
       "sourceSha256": "61e9a890272945e78d4f2fd7783fb149838f3a3aa921f5e9bdb0ab6e15b72ae9"
-    },
-    {
-      "source": "src/main/java/baritone/pathing/calc/openset/LinkedListOpenSet.java",
-      "ported": "baritone/pathing/calc/openset/LinkedListOpenSet.java",
-      "sourceSha256": "83f5622dc9144fa35be02b64262c14604fcc7a31a5a304d1ffe747d0d40fae89"
     },
     {
       "source": "src/main/java/baritone/pathing/movement/CalculationContext.java",
@@ -387,11 +377,6 @@
       "sourceSha256": "53fde1e7fb83a6c2621095ce9ca7efc88c6d56f916bf5467585bc54cf5771e5c"
     },
     {
-      "source": "src/api/java/baritone/api/event/events/type/Overrideable.java",
-      "ported": "baritone/api/event/events/type/Overrideable.java",
-      "sourceSha256": "26f4ba252832656c2219a6a0b041301ccbeb9514422bb97415a06d5cef90af68"
-    },
-    {
       "source": "src/api/java/baritone/api/event/listener/AbstractGameEventListener.java",
       "ported": "baritone/api/event/listener/AbstractGameEventListener.java",
       "sourceSha256": "e14dae56a3fa1a5cf824733ee95efa648fbd7a4e2876c5c27585294e124ef56a"
@@ -415,11 +400,6 @@
       "source": "src/api/java/baritone/api/process/ICustomGoalProcess.java",
       "ported": "baritone/api/process/ICustomGoalProcess.java",
       "sourceSha256": "096b7eec1dd0c89e332e430b54cf5fc253a2f62e2bb887d8f4b324fc16cb6a6e"
-    },
-    {
-      "source": "src/api/java/baritone/api/process/IElytraProcess.java",
-      "ported": "baritone/api/process/IElytraProcess.java",
-      "sourceSha256": "6df38e02cfcb2e89621e9a00dc759a91364da02465db44613115209198e0c931"
     },
     {
       "source": "src/api/java/baritone/api/process/IExploreProcess.java",
@@ -615,16 +595,6 @@
       "source": "src/api/java/baritone/api/schematic/mask/operator/NotMask.java",
       "ported": "baritone/api/schematic/mask/operator/NotMask.java",
       "sourceSha256": "648f1c1127c1419a141d8dc2b26c159fb2c3c00b1ffe2c246f74ddabf4754298"
-    },
-    {
-      "source": "src/api/java/baritone/api/schematic/mask/shape/CylinderMask.java",
-      "ported": "baritone/api/schematic/mask/shape/CylinderMask.java",
-      "sourceSha256": "b286bb4842e382e9a92b425e3308ef46e7af06ba97d1a3208e3782278f4f4c91"
-    },
-    {
-      "source": "src/api/java/baritone/api/schematic/mask/shape/SphereMask.java",
-      "ported": "baritone/api/schematic/mask/shape/SphereMask.java",
-      "sourceSha256": "75bbcd4dd8471958f5a1b2dd6c67ecc4bf771b92d486c7d1abc7352f8983f3d0"
     },
     {
       "source": "src/api/java/baritone/api/selection/ISelection.java",

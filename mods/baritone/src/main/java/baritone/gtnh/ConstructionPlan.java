@@ -76,11 +76,6 @@ final class ConstructionPlan {
         maxY=params.containsKey("size")?origin.getY()+(int)dy+size[1]-1:source.stream().mapToInt(c->c.pos().getY()).max().orElse(minY)+(int)dy;
     }
     static Cell at(Cell c,BlockPos p){return new Cell(p,c.id(),c.meta(),c.clear(),c.item(),c.placement(),c.replace(),c.verify());}
-    boolean inLayer(Cell c) {
-        if(!settings.bool("buildInLayers",false))return true;
-        int height=layer*settings.integer("layerHeight",1);
-        return settings.bool("layerOrder",false)?c.pos().getY()>maxY-height:c.pos().getY()<minY+height;
-    }
     int slot(Cell cell) {
         if(cell.clear())return -1;
         int slot=inventorySlot(cell);return slot>=9&&!settings.bool("allowInventory",true)?-1:slot;

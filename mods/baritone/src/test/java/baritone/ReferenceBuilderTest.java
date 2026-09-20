@@ -4,7 +4,6 @@
 package baritone;
 
 import baritone.api.schematic.*;
-import baritone.api.schematic.mask.shape.*;
 import baritone.api.utils.*;
 import baritone.compat.*;
 import baritone.process.BuilderProcess;

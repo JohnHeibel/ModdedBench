@@ -7,7 +7,6 @@ import baritone.compat.Registry;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import net.minecraft.client.Minecraft;
-import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 
 /** Normal hotbar selection or player-container clicks, preserving the complete stack. */

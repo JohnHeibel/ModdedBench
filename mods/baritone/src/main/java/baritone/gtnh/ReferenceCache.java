@@ -5,7 +5,6 @@ package baritone.gtnh;
 import baritone.compat.Registry;
 import baritone.Baritone;
 import baritone.api.utils.BlockUtils;
-import baritone.compat.BlockPos;
 import java.util.*;
 import java.util.concurrent.*;
 import static baritone.gtnh.pathing.WorkSpec.*;

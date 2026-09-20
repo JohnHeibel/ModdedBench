@@ -6,7 +6,6 @@ package baritone.gtnh;
 import baritone.compat.BlockPos;
 import java.util.*;
 import net.minecraft.block.Block;
-import net.minecraft.block.BlockFalling;
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.Item;
@@ -66,13 +65,6 @@ final class MiningTools {
             if(maximum-damage<=Math.max(1,cost))return "durability_reserve";
             return null;
         }catch(ReflectiveOperationException|LinkageError error){return "gregtech_tool_api_unavailable";}
-    }
-    static boolean automaticBlock(World world,BlockPos p) {
-        if(!ForgeSnapshot.loaded(world,p.getX(),p.getY(),p.getZ()) || !ForgeSnapshot.loaded(world,p.getX(),p.getY()+1,p.getZ())) return false;
-        Block block=world.getBlock(p.getX(),p.getY(),p.getZ());int meta=world.getBlockMetadata(p.getX(),p.getY(),p.getZ());
-        return !block.hasTileEntity(meta) && world.getTileEntity(p.getX(),p.getY(),p.getZ())==null
-            && !(block instanceof BlockFalling) && !(world.getBlock(p.getX(),p.getY()+1,p.getZ()) instanceof BlockFalling)
-            && !ForgeFluids.fluid(block) && block.getBlockHardness(world,p.getX(),p.getY(),p.getZ())>=0;
     }
     static Choice best(World world,BlockPos p,List<Map<String,Object>> observations) {
         Minecraft mc=Minecraft.getMinecraft();Block block=world.getBlock(p.getX(),p.getY(),p.getZ());int meta=world.getBlockMetadata(p.getX(),p.getY(),p.getZ());

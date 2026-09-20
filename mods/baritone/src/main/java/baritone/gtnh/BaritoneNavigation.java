@@ -8,7 +8,6 @@ import dev.modbench.api.ControlRegistry;
 import baritone.compat.BlockPos;
 import baritone.gtnh.pathing.*;
 import dev.modbench.api.WorldMemory;
-import dev.modbench.api.InputArbiter;
 import dev.modbench.api.Navigation;
 import java.util.*;
 import net.minecraft.client.Minecraft;
@@ -46,7 +45,7 @@ public final class BaritoneNavigation implements Navigation {
     }
     @Override public Job mineBlock(int x,int y,int z,int timeoutTicks,boolean autoTool,boolean overrideProtection) {
         if(active!=null && !active.done()) active.cancel("superseded");
-        active=new MiningJob(mc,new BlockPos(x,y,z),timeoutTicks,autoTool,false,null,overrideProtection);
+        active=new MiningJob(mc,new BlockPos(x,y,z),timeoutTicks,autoTool,overrideProtection);
         return active;
     }
     @Override public Job placeBlock(int x,int y,int z,int timeoutTicks) {
@@ -54,7 +53,7 @@ public final class BaritoneNavigation implements Navigation {
     }
     @Override public Job placeBlock(int x,int y,int z,int timeoutTicks,boolean overrideProtection) {
         if(active!=null && !active.done()) active.cancel("superseded");
-        active=new PlacingJob(new BlockPos(x,y,z),timeoutTicks,null,overrideProtection);return active;
+        active=new PlacingJob(new BlockPos(x,y,z),timeoutTicks,overrideProtection);return active;
     }
     @Override public Map<String,Object> inspectTools(int x,int y,int z) {
         if(mc.theWorld==null||mc.thePlayer==null) throw new IllegalArgumentException("player required");
