@@ -27,10 +27,10 @@ REPO = Path(__file__).resolve().parents[2]
 MCP = REPO / "harness" / "mcp"
 if str(MCP) not in sys.path:
     sys.path.insert(0, str(MCP))
-from gtnh_interrupts import InterruptSupervisor, race_interrupt  # noqa: E402
+import mbtool  # noqa: E402,F401  (installs the mbtools_gtnh package)
+from mbtools_gtnh.interrupts import InterruptSupervisor, race_interrupt  # noqa: E402
 from kernel import Kernel, BridgeError  # noqa: E402
 
-CLIENT_URL = "ws://127.0.0.1:47223/ws"
 WAKE_KINDS = {"triggered", "reaction_error", "fault", "stalled"}
 
 
@@ -176,7 +176,7 @@ class AutonomousRunner:
                  max_calls: int = 200, max_deploys: int = 1, max_wakeups: int = 100,
                  max_reconnects: int = 20, reconnect_delay: float = 2):
         self.adapter, self.journal, self.watch_specs = adapter, journal, watch_specs
-        self.kernel_factory = kernel_factory or (lambda: Kernel(url=CLIENT_URL, connect_retries=3, retry_delay=1))
+        self.kernel_factory = kernel_factory or (lambda: Kernel(connect_retries=3, retry_delay=1))
         self.supervisor_factory = supervisor_factory or (lambda k: InterruptSupervisor(k, path=self.journal.directory / 'interrupts'))
         self.deployer = deployer
         self.max_iterations, self.max_calls, self.max_deploys = max_iterations, max_calls, max_deploys

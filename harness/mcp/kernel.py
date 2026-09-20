@@ -20,10 +20,21 @@ from typing import Any, Callable, Iterable
 from urllib.parse import urlparse
 from websockets.sync.client import connect
 
-DEFAULT_URL = os.environ.get("MB_BRIDGE_URL", "ws://127.0.0.1:47223/ws")
-DEFAULT_TOKEN = os.environ.get("MB_BRIDGE_TOKEN")
 cancel_scope = contextvars.ContextVar("bridge_cancel_scope", default=None)
 reply_trace = contextvars.ContextVar("bridge_reply_trace", default=None)
+
+
+def bridge_url(side: str = "client") -> str:
+    """The one place the bridge endpoint is defined: MB_BRIDGE_URL (default client port 47223).
+
+    ``side="server"`` is the dedicated server's bridge: MB_SERVER_BRIDGE_URL, default client port + 1.
+    """
+    client = os.environ.get("MB_BRIDGE_URL", "ws://127.0.0.1:47223/ws")
+    if side == "client":
+        return client
+    u = urlparse(client)
+    return os.environ.get("MB_SERVER_BRIDGE_URL", u._replace(netloc=f"{u.hostname}:{(u.port or 47223) + 1}").geturl())
+
 
 class CancellationScope:
     """All RPCs in one MCP call, including compositions, inherit cancellation."""
@@ -70,11 +81,14 @@ class Reply:
     raw: dict = field(default_factory=dict)
 
 class Kernel:
-    def __init__(self, url: str = DEFAULT_URL, token: str | None = DEFAULT_TOKEN, timeout: float = 60.0,
+    def __init__(self, url: str | None = None, token: str | None = None, timeout: float = 60.0,
                  on_event: Callable[[dict], None] | None = None, connect_retries: int = 1, retry_delay: float = 2.0,
                  event_capacity: int = 1024):
         if timeout <= 0 or event_capacity < 1:
             raise ValueError("timeout and event_capacity must be positive")
+        url = url or bridge_url()
+        if token is None:
+            token = os.environ.get("MB_BRIDGE_TOKEN")
         self.url, self.timeout, self.on_event = url, timeout, on_event
         self.events_buf = deque(maxlen=event_capacity)
         self.events_dropped = 0
@@ -100,7 +114,7 @@ class Kernel:
         # Only discover local credentials for a loopback endpoint.
         endpoint = urlparse(url)
         if token is None and endpoint.hostname in ("127.0.0.1", "localhost", "::1"):
-            path = Path(os.environ.get("MB_BRIDGE_TOKEN_FILE", str(Path.home() / ".moddedbench" / f"bridge-{endpoint.port or 47223}.token")))
+            path = Path(os.environ.get("MB_BRIDGE_TOKEN_FILE", str(Path.home() / ".moddedbench" / f"bridge-{endpoint.port}.token")))
             if path.is_file():
                 token = path.read_text().strip()
         if token:
@@ -191,7 +205,8 @@ class Kernel:
         if timeout <= 0:
             raise ValueError("timeout must be positive")
         # The server deadline precedes the socket deadline, so timed out work is canceled there.
-        params.setdefault("_timeout_ms", max(1, int(timeout * 1000) - 250))
+        # Java clamps _timeout_ms to 1..3600000 and rejects larger values.
+        params.setdefault("_timeout_ms", min(3_600_000, max(1, int(timeout * 1000) - 250)))
         r = self._request({"id": next(self._ids), "method": method, "params": params}, timeout)
         trace = reply_trace.get()
         if trace is not None:
@@ -219,23 +234,3 @@ class Kernel:
 
     def events(self) -> Iterable[dict]:
         return self.poll_events()
-
-    def subscribe(self, types: list[str] | None) -> str:
-        return self.call("events.subscribe", types=types or [])
-
-    # ---- conveniences ----
-
-    def wait_ticks(self, n: int) -> dict:
-        return self.call("act.wait_ticks", timeout=n * 0.05 + 30, n=n)
-
-    def command(self, cmd: str) -> dict:
-        return self.call("sys.command", cmd=cmd)
-
-    def baritone(self, text: str) -> dict:
-        return self.call("baritone.command", text=text)
-
-    def player(self) -> dict:
-        return self.call("obs.player")
-
-    def world(self) -> dict:
-        return self.call("obs.world")

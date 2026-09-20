@@ -15,13 +15,18 @@ from unittest.mock import patch
 
 MCP = Path(__file__).resolve().parents[1]/"mcp"
 sys.path.insert(0, str(MCP))
-from world_notes import NotesStore, attachment, read_notes, write_note
+import mbtool  # noqa: E402,F401
+from mbtools_gtnh.notes import NotesStore, attachment, read_notes, write_note
+from mbtools_gtnh import notes
+from kernel import BridgeError
 
 
 class WorldNotesTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
+        mbtool.state.pop("notes", None)
+        self.addCleanup(mbtool.state.pop, "notes", None)
         self.world = str(uuid.uuid4())
         self.store = NotesStore(Path(self.tmp.name)/"notes.sqlite3", self.world)
 
@@ -39,7 +44,7 @@ class WorldNotesTests(unittest.TestCase):
         replay = self.store.write("terminal",0,"create-terminal",self.note())
         self.assertTrue(replay["replayed"])
         self.assertEqual(replay["note"], original)
-        code = "from world_notes import NotesStore;import sys,json;print(json.dumps(NotesStore(sys.argv[1],sys.argv[2]).get('terminal')))"
+        code = "import mbtool;from mbtools_gtnh.notes import NotesStore;import sys,json;print(json.dumps(NotesStore(sys.argv[1],sys.argv[2]).get('terminal')))"
         result = subprocess.check_output([sys.executable,"-c",code,str(self.store.path),self.world],cwd=MCP,text=True)
         self.assertEqual(json.loads(result)["status"],"archived")
         self.assertEqual(len(self.store.history("terminal")["revisions"]),2)
@@ -165,6 +170,114 @@ class WorldNotesTests(unittest.TestCase):
             self.assertEqual(read_notes(game,"get",dict(id="anchor"))["revision"],1)
             with self.assertRaisesRegex(ValueError,"world changed"):
                 write_note(game,str(uuid.uuid4()),"anchor",1,"wrongworld",{"text":"wrong"})
+
+class Game:
+    """Fake kernel: memory.context/obs.player/obs.block/work receipts with a movable player."""
+    connected = True
+    def __init__(self, world, pos=(10, 64, 20)):
+        self.world, self.pos, self.calls, self.receipt = world, list(pos), [], {"state": "succeeded"}
+    def call(self, method, **params):
+        self.calls.append(method)
+        if method == "memory.context": return dict(worldId=self.world, dimension=0, pos=list(self.pos))
+        if method == "obs.player": return dict(pos=list(self.pos), dimension=0, health=20)
+        if method == "obs.block": return dict(id="minecraft:stone", meta=0, pos=[params["x"], params["y"], params["z"]])
+        if method.startswith("baritone."): return dict(self.receipt)
+        raise AssertionError(method)
+    def close(self): pass
+
+
+class NotesSurfacingTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        self.env = patch.dict("os.environ", MODBENCH_NOTES_DIR=self.tmp.name); self.env.start(); self.addCleanup(self.env.stop)
+        mbtool.state.pop("notes", None); self.addCleanup(mbtool.state.pop, "notes", None)
+        self.world = str(uuid.uuid4()); self.game = Game(self.world)
+        self.store = notes.store_for(self.world)
+        self.addCleanup(mbtool.state.pop, "kernel", None)
+
+    def put(self, id, attachment, **extra):
+        self.store.write(id, 0, "create-" + id, dict(title=f"note {id}", text="details " * 3 + id, attachments=[attachment], tags=["plan"], **extra))
+
+    def at(self, x, y, z, dimension=0): return dict(kind="location", dimension=dimension, pos=[x, y, z])
+
+    def test_surface_is_bounded_nearest_first_deduplicated_and_reset_by_movement(self):
+        for i in range(7): self.put(f"n{i}", self.at(10 + 2 * i, 64, 20))
+        self.put("far", self.at(500, 64, 500)); self.put("nether", self.at(10, 64, 20, dimension=-1))
+        found = notes.surface(self.game, reason="session", radius=32)
+        self.assertEqual([n["id"] for n in found], ["n0", "n1", "n2", "n3", "n4"])
+        self.assertEqual(found[0], {"id": "n0", "kind": "location", "title": "note n0", "revision": 1, "status": "open", "at": [10, 64, 20],
+                                    "distance": 0.0, "excerpt": "details details details n0", "tags": ["plan"], "why": "session"})
+        self.assertEqual([n["id"] for n in notes.surface(self.game, reason="session", radius=32)], ["n5", "n6"])   # the rest, once
+        self.assertEqual(notes.surface(self.game, reason="session", radius=32), [])                                 # nothing new
+        self.game.pos = [12, 64, 20]
+        self.assertEqual(notes.surface(self.game, position=[12, 64, 20], dimension=0, reason="position"), [])       # small move: still shown
+        self.game.pos = [120, 64, 20]
+        self.assertEqual(notes.surface(self.game, position=[120, 64, 20], dimension=0, radius=200, reason="position")[0]["id"], "n6")
+        self.assertEqual(notes.surface(self.game, reason="session", radius=32), [])                                 # far from every note now
+        self.assertEqual(notes.surface(Game(str(uuid.uuid4())), reason="session"), [])                              # world without notes: no store created
+        self.assertEqual(sorted(p.name for p in Path(self.tmp.name).iterdir() if p.suffix == ".sqlite3"), [f"{self.world}.sqlite3"])
+
+    def test_position_gate_skips_repeated_lookups_and_never_raises(self):
+        self.put("here", self.at(10, 64, 20))
+        self.assertEqual(len(notes.surface(self.game, position=[10, 64, 20], dimension=0, reason="position")), 1)
+        before = len(self.game.calls)
+        self.assertEqual(notes.surface(self.game, position=[11, 64, 20], dimension=0, reason="position"), [])
+        self.assertEqual(len(self.game.calls), before)                                   # gated: no bridge call at all
+        with patch.object(notes, "GATE_S", 0):
+            self.assertEqual(notes.surface(self.game, position=[11, 64, 20], dimension=0, reason="position"), [])
+            self.assertGreater(len(self.game.calls), before)                             # looked up, already shown
+        class Broken:
+            def call(self, method, **params): raise ConnectionError("no bridge")
+        self.assertEqual(notes.surface(Broken(), reason="session"), [])
+
+    def test_block_entity_and_arrival_transitions_attach_notes_only_when_present(self):
+        entity = str(uuid.uuid4())
+        self.put("anchor", dict(kind="block", dimension=0, pos=[3, 65, 3], observed=dict(id="minecraft:stone", meta=0)))
+        self.put("room", dict(kind="region", dimension=0, min=[0, 60, 0], max=[5, 70, 5]))
+        self.put("pig", dict(kind="entity", dimension=0, uuid=entity, uuidScope="server", lastSeen=[30, 64, 20]))
+        mbtool.state["kernel"] = self.game
+        seen = notes.after("obs.block", {"x": 3, "y": 65, "z": 3}, {"id": "minecraft:stone", "meta": 0, "pos": [3, 65, 3]})
+        self.assertEqual([(n["id"], n["why"], n["at"]) for n in seen["notes"]], [("anchor", "block", [3, 65, 3]), ("room", "block", {"min": [0, 60, 0], "max": [5, 70, 5]})])
+        self.assertNotIn("notes", notes.after("obs.block", {"x": 40, "y": 65, "z": 40}, {"id": "minecraft:stone", "pos": [40, 65, 40]}))
+        found = notes.after("obs.entity", {}, {"found": True, "uuid": entity, "uuidScope": "server", "pos": [30, 64, 20]})
+        self.assertEqual([n["id"] for n in found["notes"]], ["pig"])
+        self.assertNotIn("notes", notes.after("obs.entity", {}, {"found": True, "uuid": entity, "uuidScope": "client_session"}))
+        self.assertEqual(notes.after("obs.player", {}, "not an object"), "not an object")
+        self.put("camp", self.at(150, 64, 150)); self.game.pos = [200, 64, 200]
+        arrived = notes.after("baritone.goto", {}, {"state": "succeeded", "arrival": {"pos": [152, 64, 150]}})
+        self.assertEqual([(n["id"], n["why"], n["distance"]) for n in arrived["notes"]], [("camp", "arrival", 2.0)])
+        self.assertNotIn("notes", notes.after("baritone.goto", {}, {"state": "succeeded", "arrival": {"pos": [152, 64, 150]}}))  # shown already
+
+    def test_auto_journal_keys_by_location_and_records_failures(self):
+        mbtool.state["kernel"] = self.game
+        done = notes.journal(self.game, "baritone.build", {"state": "succeeded", "origin": [3, 5, 7], "blocksPlaced": 10, "ticks": 40})
+        self.assertEqual((done["id"], done["tags"], done["status"], done["revision"]), ("auto-build-0-0-4-4", ["auto", "build", "done"], "done", 1))
+        self.assertEqual(done["attachments"][0]["pos"], [3, 5, 7]); self.assertIn("build done at 3,5,7", done["title"])
+        self.assertEqual(json.loads(done["text"])["blocksPlaced"], 10)
+        again = notes.journal(self.game, "baritone.build", {"state": "succeeded", "origin": [2, 6, 5], "blocksPlaced": 3})
+        self.assertEqual((again["id"], again["revision"]), ("auto-build-0-0-4-4", 2))                    # same 4-block cell: updated, not duplicated
+        self.assertEqual(len(self.store.search(tags=["auto"], status="all")["notes"]), 1)
+        self.assertIsNone(notes.journal(self.game, "baritone.build", {"state": "failed"}))                 # failures arrive as BridgeError
+        self.assertIsNone(notes.journal(self.game, "baritone.goto", {"state": "succeeded", "arrival": {"pos": [1, 1, 1]}}))
+        self.assertIsNone(notes.journal(self.game, "obs.block", {"state": "succeeded"}))
+        error = BridgeError("action_failed", "no path", "baritone.route", {"error": {"receipt": {"state": "failed", "reason": "stuck", "goal": [9, 9, 9], "jobId": "j1"}}})
+        failed = notes.journal(self.game, "baritone.route", None, error=error)
+        self.assertEqual((failed["id"], failed["status"], failed["tags"]), ("auto-route-0-8-8-8", "open", ["auto", "failed", "route"]))
+        self.assertIn("stuck", failed["title"]); self.assertEqual(json.loads(failed["text"])["jobId"], "j1")
+        self.assertIsNone(notes.journal(self.game, "baritone.mine", None, error=BridgeError("cancelled", "stopped", "baritone.mine", {})))
+        # tracked() wires it together: the receipt is journaled, then the fresh auto note surfaces at the arrival position.
+        self.game.receipt = {"state": "succeeded", "goal": [40, 64, 40], "blocksMined": 5}
+        result = notes.tracked("baritone.mine", 30, blocks=[{"id": "a:b"}])
+        self.assertEqual(result["blocksMined"], 5); self.assertEqual([n["id"] for n in result["notes"]], ["auto-mine-0-40-64-40"])
+        self.game.receipt = {"state": "running"}
+        self.assertNotIn("notes", notes.tracked("baritone.mine", 30, blocks=[]))
+        class Failing(Game):
+            def call(self, method, **params):
+                if method.startswith("baritone."): raise error
+                return super().call(method, **params)
+        mbtool.state["kernel"] = Failing(self.world)
+        with self.assertRaises(BridgeError): notes.tracked("baritone.route", 30, name="x")
+        self.assertEqual(self.store.get("auto-route-0-8-8-8")["revision"], 2)
 
 
 if __name__=="__main__":unittest.main()

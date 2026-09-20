@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio, sys, tempfile, threading, time, unittest
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "mcp"))
-from gtnh_interrupts import InterruptSupervisor, race_interrupt
+import importlib
+import mbtool
+from mbtools_gtnh.interrupts import InterruptSupervisor, race_interrupt, get_supervisor, close_supervisor
 
 class FakeKernel:
     def __init__(self): self.value=0; self.context={"worldId":"w","dimension":0,"bridgeId":"b","worldEpoch":1}; self.fires=[]; self.errors={}; self.methods={"obs.x":{"effect":"read","watchable":True}}
@@ -49,11 +51,14 @@ class InterruptTests(unittest.TestCase):
             events = [e for e in self.s.events()["events"] if e["kind"] == "reaction_error"]
             time.sleep(.005)
         self.assertEqual("Inspect effects before deciding.", events[0]["data"]["payload"]["modelPrompt"])
+        self.assertEqual((5, True), (events[0]["data"]["attempts"], events[0]["data"]["rearmed"]))
+        status = self.s.status("decision")
+        self.assertTrue(status["armed"]); self.assertEqual(events[0]["data"]["eventId"], status["pendingEvent"])
         for prompt in ("", "x" * 8193, {}):
             with self.assertRaises(ValueError):
                 self.s.add("bad_prompt", {"condition": {"exists": "x.n"}, "prompt": prompt})
 
-    def setUp(self): self.tmp=tempfile.TemporaryDirectory(); self.k=FakeKernel(); self.s=InterruptSupervisor(self.k,self.tmp.name,retained=3,poll_s=10)
+    def setUp(self): self.tmp=tempfile.TemporaryDirectory(); self.k=FakeKernel(); self.s=InterruptSupervisor(self.k,self.tmp.name,retained=3,poll_s=10,fire_backoff_s=.001)
     def tearDown(self): self.s.close(); self.tmp.cleanup()
     def wait_fires(self,n):
         end=time.monotonic()+.5
@@ -89,7 +94,7 @@ class InterruptTests(unittest.TestCase):
         self.assertTrue(asyncio.run(case())["interrupted"])
     def test_scheduler_stall_replace_and_reopen(self):
         # The scheduler observes independently of tools/model calls.
-        self.s.close(); self.s=InterruptSupervisor(self.k,self.tmp.name,retained=3,poll_s=.01)
+        self.s.close(); self.s=InterruptSupervisor(self.k,self.tmp.name,retained=3,poll_s=.01,fire_backoff_s=.001)
         self.s.add("auto",{"queries":{"x":{"method":"obs.x"}},"condition":{"gte":["x.n",0]}})
         time.sleep(.05); self.wait_fires(1)
         slow=Path(self.tmp.name)/"slow.py"; slow.write_text("def evaluate(context):\n import time; time.sleep(.2); return True\n")
@@ -101,7 +106,7 @@ class InterruptTests(unittest.TestCase):
         self.s.add("same",{"queries":{"x":{"method":"obs.x"}},"condition":{"gt":["x.n",99]}},replace=True)
         time.sleep(.25); self.assertEqual(1,len(self.k.fires))
         cursor=self.s.events(0)["cursor"]; self.s.close()
-        self.s=InterruptSupervisor(self.k,self.tmp.name,retained=3,poll_s=10)
+        self.s=InterruptSupervisor(self.k,self.tmp.name,retained=3,poll_s=10,fire_backoff_s=.001)
         replay=self.s.events(max(0,cursor-2)); self.assertTrue(replay["events"])
     def test_validation_edge_cooldown_and_missing_is_fault(self):
         bad=[{"wat":"x"},{"all":{"path":"x","where":{"eq":["$",1,2]}}},{"any_of":{"path":3,"where":{"eq":["$",1]}}}]
@@ -168,6 +173,66 @@ class InterruptTests(unittest.TestCase):
         self.s.poll();self.assertTrue(entered.wait(1))
         for _ in range(10):self.s.poll()
         self.assertEqual(1,len(attempts));release.set();self.wait_fires(1)
+
+    def test_fire_retries_same_event_id_then_rearms_until_delivered(self):
+        old=self.k.call; failures=[]
+        def flaky(method,**kw):
+            if method=="interrupt.fire" and len(failures)<2: failures.append(kw["eventId"]); raise ConnectionError("socket closed")
+            return old(method,**kw)
+        self.k.call=flaky
+        self.s.add("retry",{"queries":{"x":{"method":"obs.x"}},"condition":{"gte":["x.n",0]}}); self.s.poll(); self.wait_fires(1)
+        self.assertEqual(set(failures),{self.k.fires[0]["eventId"]})                 # retried with the same eventId
+        triggered=[e for e in self.s.events(0)["events"] if e["kind"]=="triggered"]
+        self.assertEqual(3,triggered[0]["data"]["attempts"]); self.assertIsNone(self.s.status("retry")["pendingEvent"])
+        self.assertFalse(self.s.status("retry")["armed"])
+        # All retries exhausted: the watch re-arms with the undelivered eventId and the next poll re-sends exactly it.
+        self.k.fires.clear(); down=[True]
+        def dead(method,**kw):
+            if method=="interrupt.fire" and down[0]: raise TimeoutError("lost")
+            return old(method,**kw)
+        self.k.call=dead
+        self.s.add("rearm",{"queries":{"x":{"method":"obs.x"}},"condition":{"gte":["x.n",0]},"reason":"kept"}); self.s.poll()
+        end=time.monotonic()+1
+        while self.s.status("rearm")["pendingEvent"] is None and time.monotonic()<end: time.sleep(.005)
+        pending=self.s.status("rearm")["pendingEvent"]; self.assertTrue(pending and self.s.status("rearm")["armed"])
+        self.assertEqual({"rearm"},set(self.s.specs())); self.assertFalse(self.k.fires)
+        down[0]=False; self.s.poll(); self.wait_fires(1)
+        self.assertEqual(pending,self.k.fires[0]["eventId"]); self.assertEqual("kept",self.k.fires[0]["reason"])
+        self.assertIsNone(self.s.status("rearm")["pendingEvent"]); self.assertFalse(self.s.status("rearm")["armed"])
+        with self.assertRaises(ValueError): InterruptSupervisor(self.k,self.tmp.name,fire_retries=0)
+
+    def test_transport_outage_keeps_watches_and_follows_kernel_factory(self):
+        self.s.close(); live={"k":self.k}
+        self.s=InterruptSupervisor(lambda: live["k"],self.tmp.name,retained=20,poll_s=10,fire_backoff_s=.001)
+        self.s.add("keep",{"queries":{"x":{"method":"obs.x"}},"condition":{"gte":["x.n",0]}})
+        class Down:
+            def call(self,method,**kw): raise ConnectionError("bridge gone")
+        live["k"]=Down(); self.s.poll(); self.s.poll()
+        self.assertTrue(self.s.status("keep")["armed"]); self.assertIn("bridge gone",self.s.status()["transport"])
+        self.assertEqual(["armed","transport"],[e["kind"] for e in self.s.events(0)["events"]]); self.assertFalse(self.k.fires)
+        # A replacement kernel (game restarted) is picked up through the factory; backoff is skipped here for speed.
+        fresh=FakeKernel(); fresh.methods={"obs.x":{"effect":"read","watchable":True}}; live["k"]=fresh; self.s._retry_at=0
+        self.s.poll(); end=time.monotonic()+.5
+        while len(fresh.fires)<1 and time.monotonic()<end: time.sleep(.005)
+        self.assertEqual(1,len(fresh.fires)); self.assertIsNone(self.s.status()["transport"])
+        self.assertEqual("reconnected",[e for e in self.s.events(0)["events"] if e["kind"]=="transport"][-1]["data"]["state"])
+
+    def test_get_supervisor_survives_module_reload_with_watches(self):
+        self.s.close(); self.k.close=lambda: None; self.k.connected=True
+        mbtool.drop_kernel(); mbtool.state["kernel"]=self.k
+        try:
+            sup=get_supervisor(self.tmp.name); self.assertIs(sup,get_supervisor(self.tmp.name))
+            sup.add("kept",{"queries":{"x":{"method":"obs.x"}},"condition":{"gt":["x.n",5]},"oneShot":False})
+            sup.add("gone",{"queries":{"x":{"method":"obs.x"}},"condition":{"gte":["x.n",0]}}); sup.poll(); self.wait_fires(1)
+            mbtool.install_package(); mbtool.evict_package(); reloaded=importlib.import_module("mbtools_gtnh.interrupts")
+            fresh=reloaded.get_supervisor(self.tmp.name)
+            self.assertIsNot(fresh,sup); self.assertTrue(sup._closed); self.assertIs(mbtool.state["interrupts"],fresh)
+            self.assertEqual({"kept"},set(fresh.specs())); self.assertEqual(fresh.watches["kept"].spec["condition"],{"gt":["x.n",5]})
+            self.k.value=6; fresh.poll(); self.wait_fires(2); self.assertEqual("kept",self.k.fires[1]["reason"])
+            self.assertIs(fresh.kernel,self.k)
+        finally:
+            close_supervisor(); mbtool.state.pop("kernel",None)
+        self.assertNotIn("interrupts",mbtool.state); self.s=InterruptSupervisor(self.k,self.tmp.name,retained=3,poll_s=10)
 
     def test_fire_does_not_hold_lock_and_race_cancellation_cleans_model(self):
         entered=threading.Event(); release=threading.Event(); old=self.k.call

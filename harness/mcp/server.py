@@ -2,17 +2,19 @@
 # Copyright (c) 2026 Modbench contributors
 """ModdedBench MCP server: exposes the in-game bridge to a coding agent over stdio.
 
-Start (from the ModdedBench directory)::
+Start (from the repository root)::
 
     python harness/mcp/server.py            # stdio transport, what .mcp.json uses
     python harness/mcp/server.py --check    # import every tool module, print the tool table, exit
 
-Tools come from harness/tools (see mbtool.py for the contract). Modules are re-imported when their file changes (checked before every tool call) or on
-``mb_reload_tools``; an import error is reported as a tool error and the previous version of that
-module's tools stays registered. ``mb_tools_status`` shows what is loaded and any errors.
+Tools come from harness/tools (see mbtool.py for the contract). Before every tool call the server
+checks whether any ``.py`` under harness/tools changed; if so the whole ``mbtools_gtnh`` package is
+evicted and re-imported atomically: a syntax error or a duplicate tool name leaves the previous
+modules and registrations in place and is reported by ``mb_tools_status``. Live state survives in
+``mbtool.state``.
 
-Kernel connection: lazy, to ``ws://127.0.0.1:47223/ws`` (override with MB_BRIDGE_URL); reconnects if
-the game restarts. When the game is not up, tools return a ``bridge_unavailable`` error.
+Kernel connection: lazy, to ``kernel.bridge_url()`` (MB_BRIDGE_URL, default ws://127.0.0.1:47223/ws);
+reconnects if the game restarts. When the game is not up, tools return a ``bridge_unavailable`` error.
 """
 
 from __future__ import annotations
@@ -21,32 +23,26 @@ import asyncio
 import contextvars
 from concurrent.futures import ThreadPoolExecutor
 import functools
-import inspect
-import typing
 import importlib
-import importlib.util
+import inspect
 import json
 import os
 import sys
 import traceback
-from typing import Any, Sequence
+import typing
+from typing import Any
 
 HERE = os.path.dirname(os.path.abspath(__file__))          # harness/mcp
 ROOT = os.path.dirname(os.path.dirname(HERE))              # repository root
-TOOLS_DIR = os.path.join(os.path.dirname(HERE), "tools")  # harness/tools: the hot-reloaded, model-editable surface
-PROFILE_CONFIG = {
-    # The GTNH client bridge listens on 47223; its server-side endpoint is 47224.
-    "gtnh": {"tools_dir": TOOLS_DIR, "bridge_url": "ws://127.0.0.1:47223/ws"},
-}
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
 from mcp.server.fastmcp import FastMCP  # noqa: E402
-from mcp.types import ContentBlock, TextContent, CallToolResult, ToolAnnotations
+from mcp.types import TextContent, CallToolResult, ToolAnnotations  # noqa: E402
 from mcp.server.fastmcp.tools import Tool  # noqa: E402
 
 import mbtool  # noqa: E402
-from kernel import BridgeError, Kernel, reply_trace, CancellationScope, cancel_scope  # noqa: E402
+from kernel import BridgeError, Kernel, bridge_url, reply_trace, CancellationScope, cancel_scope  # noqa: E402
 
 
 def log(msg: str) -> None:
@@ -54,11 +50,9 @@ def log(msg: str) -> None:
 
 
 class ToolModule:
-    def __init__(self, path: str, tools_dir: str = TOOLS_DIR, module_prefix: str = "mbtools"):
-        self.path = path
-        rel = os.path.relpath(path, tools_dir).replace(os.sep, "/")[:-3]
-        self.modname = module_prefix + "_" + rel.replace("/", "_")
-        self.mtime = 0.0
+    def __init__(self, path: str, modname: str):
+        self.path, self.modname = path, modname
+        self.mtime = os.path.getmtime(path)
         self.module = None
         self.tools: dict[str, dict] = {}  # tool name -> meta
         self.error: str | None = None
@@ -71,112 +65,111 @@ class ToolModule:
 
 
 class Server(FastMCP):
-    def __init__(self, profile: str = "gtnh"):
-        if profile not in PROFILE_CONFIG:
-            raise ValueError(f"unknown profile: {profile}; choose one of {', '.join(PROFILE_CONFIG)}")
-        self.profile = profile
-        self.tools_dir = PROFILE_CONFIG[profile]["tools_dir"]
-        # Resolve the environment here, instead of relying on kernel.DEFAULT_URL captured at import time.
-        self.bridge_url = os.environ.get("MB_BRIDGE_URL", PROFILE_CONFIG[profile]["bridge_url"])
+    def __init__(self, tools_dir: str = mbtool.TOOLS_DIR):
+        self.tools_dir = tools_dir
+        self.bridge_url = bridge_url()
         super().__init__(
             "moddedbench",
             instructions=(
-                "Tools for playing Minecraft through the ModdedBench bridge. Tool modules for the selected profile are "
-                "hot-reloaded; mb_call(method, params) can invoke any bridge capability and mb_methods lists methods."
+                "Tools for playing GT New Horizons through the ModdedBench bridge. Tool modules under harness/tools are "
+                "hot-reloaded on the next call; mb_call(method, params) can invoke any bridge method and mb_methods lists them."
             ),
         )
-        self._workers = ThreadPoolExecutor(max_workers=8, thread_name_prefix="mb-tools")
-        self._control_workers = ThreadPoolExecutor(max_workers=4, thread_name_prefix="mb-control")
-        self.modules: dict[str, ToolModule] = {}
-        self.name_owner: dict[str, str] = {}
+        self._pools = {"act": ThreadPoolExecutor(max_workers=8, thread_name_prefix="mb-act"),
+                       "read": ThreadPoolExecutor(max_workers=8, thread_name_prefix="mb-read"),
+                       "control": ThreadPoolExecutor(max_workers=4, thread_name_prefix="mb-control")}
+        self.modules: dict[str, ToolModule] = {}   # path -> loaded module record
+        self.name_owner: dict[str, str] = {}       # tool name -> path
+        self.error: str | None = None              # last failed reload, until a reload succeeds
         mbtool.set_kernel_factory(lambda: Kernel(url=self.bridge_url, connect_retries=2, retry_delay=1.0))
         self._register_builtin()
+
+    def close(self) -> None:
+        mbtool.drop_kernel()
+        for pool in self._pools.values():
+            pool.shutdown(wait=False, cancel_futures=True)
 
     # ---- discovery / reload ----
 
     def discover(self) -> list[str]:
+        """Every ``.py`` under tools_dir, recursively; ``_``-prefixed files and directories are skipped."""
         paths = []
-        for sub in ("", "mods", "composed"):
-            d = os.path.join(self.tools_dir, sub)
-            if not os.path.isdir(d):
-                continue
-            for f in sorted(os.listdir(d)):
-                if f.endswith(".py") and not f.startswith("_"):
-                    paths.append(os.path.join(d, f))
+        for base, dirs, files in os.walk(self.tools_dir):
+            dirs[:] = sorted(d for d in dirs if not d.startswith("_"))
+            paths.extend(os.path.join(base, f) for f in sorted(files) if f.endswith(".py") and not f.startswith("_"))
         return paths
 
-    def check_reload(self, force: bool = False) -> list[str]:
-        """Loads new modules and reloads changed ones. Returns a list of messages."""
-        msgs = []
-        seen = set()
-        for path in self.discover():
-            seen.add(path)
-            tm = self.modules.get(path)
-            if tm is None:
-                tm = ToolModule(path, self.tools_dir, f"mbtools_{self.profile}")
-                self.modules[path] = tm
-            if force or tm.stale():
-                msgs.append(self._load(tm))
-        for path in list(self.modules):
-            if path not in seen:
-                tm = self.modules.pop(path)
-                for name in tm.tools:
-                    self._unregister(name)
-                msgs.append(f"removed {tm.modname} ({len(tm.tools)} tools)")
-        return msgs
+    def _modname(self, path: str) -> str:
+        rel = os.path.relpath(path, self.tools_dir)[:-3].replace(os.sep, "/")
+        return mbtool.PACKAGE + "." + rel.replace("/", ".")
 
-    def _load(self, tm: ToolModule) -> str:
-        previous_module = sys.modules.get(tm.modname)
+    def check_reload(self, force: bool = False) -> list[str]:
+        """Re-imports the whole tool package when any file changed. Returns a list of messages."""
+        paths = self.discover()
+        if not force and set(paths) == set(self.modules) and not any(tm.stale() for tm in self.modules.values()):
+            return []
+        return [self._reload(paths)]
+
+    def _reload(self, paths: list[str]) -> str:
+        mbtool.install_package(self.tools_dir)
+        previous = mbtool.evict_package()
+        fresh = {p: ToolModule(p, self._modname(p)) for p in paths}
+        builtin = set(self._tool_manager._tools) - set(self.name_owner)
+        candidates, owners, tm = {}, {}, None
         try:
-            tm.mtime = os.path.getmtime(tm.path)
-            spec = importlib.util.spec_from_file_location(tm.modname, tm.path)
-            mod = importlib.util.module_from_spec(spec)
-            sys.modules[tm.modname] = mod
-            # Execute the current source bytes directly. SourceFileLoader may accept a valid
-            # timestamp/size .pyc after a same-second, same-size hot edit.
-            with open(tm.path, "rb") as source:
-                exec(compile(source.read(), tm.path, "exec"), mod.__dict__)
-            candidates, metadata = {}, {}
-            for attr in dir(mod):
-                fn = getattr(mod, attr)
-                meta = getattr(fn, "_mb_tool", None)
-                if not callable(fn) or meta is None or meta.get("module") != tm.modname:
-                    continue
-                name = meta["name"]
-                if name in candidates or (name in self._tool_manager._tools and name not in tm.tools):
-                    raise ValueError(f"duplicate tool name: {name}")
-                effect = meta.get("effect", "read" if meta["rung"] == 0 else "interaction")
-                candidates[name] = Tool.from_function(self._worker(fn), name=name, title=meta.get("title"),
-                    description=(fn.__doc__ or name).strip(), meta={"moddedbench": meta | {"effect": effect}},
-                    annotations=ToolAnnotations(readOnlyHint=effect == "read", destructiveHint=effect != "read"))
-                metadata[name] = meta
+            for tm in fresh.values():
+                tm.module = importlib.import_module(tm.modname)
+                for attr in dir(tm.module):
+                    fn = getattr(tm.module, attr)
+                    meta = getattr(fn, "_mb_tool", None)
+                    if not callable(fn) or meta is None or meta.get("module") != tm.modname:
+                        continue
+                    name = meta["name"]
+                    if name in candidates or name in builtin:
+                        raise ValueError(f"duplicate tool name: {name}")
+                    effect = meta["effect"]
+                    candidates[name] = Tool.from_function(self._worker(fn), name=name, title=meta.get("title"),
+                        description=(fn.__doc__ or name).strip(), meta={"moddedbench": meta | {"lane": str(meta["lane"])}},
+                        annotations=ToolAnnotations(readOnlyHint=effect == "read", destructiveHint=effect != "read"))
+                    owners[name], tm.tools[name] = tm.path, meta
         except Exception:
-            if previous_module is None:
-                sys.modules.pop(tm.modname, None)
-            else:
-                sys.modules[tm.modname] = previous_module
-            tm.error = traceback.format_exc()
-            log(f"load failed for {os.path.basename(tm.path)}:\n{tm.error}")
-            return f"ERROR {os.path.basename(tm.path)}: {tm.error.strip().splitlines()[-1]}"
-        # All imports and signatures validated before replacing anything. Runs on the MCP loop.
-        for name in tm.tools:
+            error = traceback.format_exc()
+            mbtool.evict_package()
+            sys.modules.update(previous)
+            # Remember the attempted mtimes so a broken file is not re-tried on every call; registrations stay as they were.
+            for path in list(self.modules):
+                if path not in fresh:
+                    del self.modules[path]
+            for path, new in fresh.items():
+                old = self.modules.setdefault(path, new)
+                old.mtime, old.error = new.mtime, error if new is tm else None
+            self.error = error
+            where = os.path.basename(tm.path) if tm else "?"
+            log(f"reload failed in {where}:\n{error}")
+            return f"ERROR {where}: {error.strip().splitlines()[-1]}"
+        # Everything imported and validated before replacing anything. Runs on the MCP loop.
+        for name in list(self.name_owner):
             self._unregister(name)
         self._tool_manager._tools.update(candidates)
-        for name in candidates:
-            self.name_owner[name] = tm.path
-        tm.module, tm.tools, tm.error = mod, metadata, None
-        return f"loaded {os.path.basename(tm.path)}: {len(candidates)} tools"
+        self.name_owner = owners
+        self.modules = fresh
+        self.error = None
+        return f"loaded {len(fresh)} modules: {len(candidates)} tools"
 
     def _worker(self, fn):
         if inspect.iscoroutinefunction(fn):
             return fn
+        lane = fn._mb_tool["lane"]  # noqa: SLF001
+
         @functools.wraps(fn)
         async def call(**kwargs):
-            name = getattr(fn, "_mb_tool", {}).get("name", fn.__name__)
-            method = kwargs.get("method", "").split(".")[-1]
-            control = name in ("mb_interrupt", "mb_tick", "mb_time", "mb_build_pause", "mb_build_cancel", "mb_stop") or (name in ("mb_act", "mb_actions", "mb_baritone", "mb_call")
-                and method in ("stop", "cancel", "pause", "input_clear", "step", "mode"))
-            pool = self._control_workers if control else self._workers
+            chosen = lane
+            if callable(lane):
+                try:
+                    chosen = lane(kwargs)
+                except Exception:
+                    chosen = "act"
+            pool = self._pools.get(chosen, self._pools["act"])
             context = contextvars.copy_context()
             return await asyncio.get_running_loop().run_in_executor(pool, context.run, functools.partial(fn, **kwargs))
         # Resolve string annotations in the original module, not this wrapper's globals.
@@ -254,56 +247,39 @@ class Server(FastMCP):
         srv = self
 
         def mb_reload_tools(force: bool = True) -> dict:
-            """Re-import selected profile tool modules (changed ones, or all with force) and report load errors."""
-            msgs = srv.check_reload(force=force)
-            return {"messages": msgs, "tools": sorted(srv.name_owner)}
+            """Re-import the tool modules under harness/tools (changed ones, or all with force) and report load errors."""
+            return {"messages": srv.check_reload(force=force), "tools": sorted(srv.name_owner), "error": srv.error}
 
         def mb_tools_status() -> dict:
-            """Loaded tool modules, their tools (with rung/coverage) and any import errors."""
-            out = []
-            for tm in srv.modules.values():
-                out.append({"file": os.path.relpath(tm.path, ROOT), "tools": tm.tools, "error": tm.error})
-            return {"profile": srv.profile, "bridge_url": srv.bridge_url, "modules": out,
-                    "bridge": mbtool._kernel is not None}  # noqa: SLF001
-
-        def mb_coverage(write: bool = True) -> str:
-            """Regenerate bridge-research/COVERAGE.md from tool metadata and the C1–C15 taxonomy; returns the markdown."""
-            import coverage as cov
-
-            text = cov.generate(srv)
-            if write:
-                cov.write(text)
-            return text
+            """Loaded tool modules, their tools (with lane/rung/coverage), live state keys and the last reload error."""
+            out = [{"file": os.path.relpath(tm.path, ROOT), "tools": {n: {k: (str(v) if callable(v) else v) for k, v in m.items()
+                    if k != "module"} for n, m in tm.tools.items()}, "error": tm.error} for tm in srv.modules.values()]
+            return {"bridge_url": srv.bridge_url, "modules": out, "error": srv.error, "state": sorted(mbtool.state),
+                    "bridge": mbtool.state.get("kernel") is not None}
 
         self.add_tool(mb_reload_tools, name="mb_reload_tools", description=mb_reload_tools.__doc__)
         self.add_tool(mb_tools_status, name="mb_tools_status", description=mb_tools_status.__doc__)
-        self.add_tool(mb_coverage, name="mb_coverage", description=mb_coverage.__doc__)
 
 
 def main() -> int:
     import argparse
 
     parser = argparse.ArgumentParser(description="Run the ModdedBench MCP server")
-    parser.add_argument("--profile", choices=sorted(PROFILE_CONFIG), default="gtnh",
-                        help="tool and bridge profile (default: gtnh)")
     parser.add_argument("--check", action="store_true", help="load tools, print them, and exit")
     args = parser.parse_args()
-    srv = Server(profile=args.profile)
+    srv = Server()
     for m in srv.check_reload(force=True):
         log(m)
     if args.check:
         for name, owner in sorted(srv.name_owner.items()):
             print(f"{name:32s} {os.path.relpath(owner, ROOT)}")
-        for tm in srv.modules.values():
-            if tm.error:
-                print(f"ERROR {tm.path}\n{tm.error}")
-        return 1 if any(tm.error for tm in srv.modules.values()) else 0
+        if srv.error:
+            print(f"ERROR\n{srv.error}")
+        return 1 if srv.error else 0
     try:
         srv.run(transport="stdio")
     finally:
-        mbtool.drop_kernel()
-        srv._workers.shutdown(wait=False, cancel_futures=True)
-        srv._control_workers.shutdown(wait=False, cancel_futures=True)
+        srv.close()
     return 0
 
 

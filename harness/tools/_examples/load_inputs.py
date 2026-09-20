@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 # Copyright (c) 2026 Modbench contributors
-"""Copy into harness/tools/ and adapt during a run; reloads on the next call.
+"""Copy into harness/tools/ (a non-underscore name) and adapt during a run; it reloads on the next call.
 
 This example loads caller-chosen slots in any ordinary inventory layout. It does
 not select a recipe, press a start button, claim crafting completion or repeat on
 failure. Those decisions belong to the higher-level adapter.
 """
 from mbtool import tool, kernel
-from gtnh_ui import ContainerSession
+from mbtools_gtnh.inventory import ContainerSession
 
 
 @tool(rung=3, coverage=["inventory", "machine"])
