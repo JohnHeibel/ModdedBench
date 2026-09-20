@@ -67,6 +67,30 @@ public class PauseCoordinatorTest {
     }
 
     @Test
+    public void operatorHoldPausesAndRefusesResumeUntilReleased() {
+        Fixture f=new Fixture();
+        f.coordinator.hold(true);
+        assertFalse(f.coordinator.before());
+        assertEquals("operator_hold",f.coordinator.status().get("reason").getAsString());
+        f.command("time.resume");
+        assertTrue(f.replies.get(0).get("error").getAsString().contains("operator"));
+        assertFalse(f.coordinator.before());
+        f.coordinator.hold(false);
+        assertTrue(f.coordinator.before());
+        assertFalse(f.coordinator.status().get("held").getAsBoolean());
+    }
+
+    @Test
+    public void releaseBeforeThePauseSettlesIsRetried() {
+        Fixture f=new Fixture();f.gregtech.active=1;
+        f.coordinator.hold(true);assertFalse(f.coordinator.before());
+        f.coordinator.hold(false);
+        assertTrue("still held: the resume was refused as unsettled",f.coordinator.status().get("held").getAsBoolean());
+        f.gregtech.active=0;f.coordinator.hold(false);
+        assertTrue(f.coordinator.before());
+    }
+
+    @Test
     public void settleWaitsForAdmittedWorkAndTheClientAckOfTheCurrentGeneration() {
         Fixture f=new Fixture();f.host.connected=true;f.gregtech.active=1;
         f.command("time.pause");

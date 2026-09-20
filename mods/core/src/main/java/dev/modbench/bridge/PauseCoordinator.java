@@ -49,6 +49,7 @@ public final class PauseCoordinator {
     private Consumer<JsonObject> completion;
     private Request owner;
     private int fixtureTicks;
+    private boolean held;
 
     public PauseCoordinator(SimulationClock clock, Barrier background, Barrier computers, Host host) {
         this.clock=clock;this.background=background;this.computers=computers;this.host=host;
@@ -67,6 +68,7 @@ public final class PauseCoordinator {
         out.add("computers",Json.GSON.toJsonTree(computers.status()));
         out.add("gregtechUpdates",Json.GSON.toJsonTree(background.status()));
         out.addProperty("stepping",false);
+        out.addProperty("held",held);
         out.addProperty("clientConnected",host.clientConnected());
         out.addProperty("clientPaused",clientPaused);
         out.addProperty("deferredPackets",deferred.size());
@@ -94,6 +96,7 @@ public final class PauseCoordinator {
                     broadcast(true);return;
                 }
                 case "time.resume" -> {
+                    if(held) throw new IllegalArgumentException("the operator is holding the world paused; wait for the release");
                     if(clock.paused()) {
                         syncBoundary();
                         if(!settled()) throw new IllegalArgumentException("pause has not settled; inspect time.status before resuming");
@@ -105,6 +108,13 @@ public final class PauseCoordinator {
             }
             syncBoundary();broadcast(true);reply.accept(status());
         } catch(IllegalArgumentException error) { reply.accept(Json.object("error",error.getMessage())); }
+    }
+    /** Operator hold, set from outside every agent-reachable path: the world pauses and resume is refused until release. */
+    public void hold(boolean value) {
+        if(value==held) return;
+        held=value;
+        if(!value) command("time.resume",new JsonObject(),result->{ if(result.has("error")) held=true; });
+        else if(!clock.paused()) command("time.pause",Json.object("reason","operator_hold"),result->{});
     }
     private void interrupt(String reason) {
         if(completion!=null) { Consumer<JsonObject> previous=completion;completion=null;owner=null;

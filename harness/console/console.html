@@ -24,7 +24,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}td{padding:4px 8px 4px 
   <section class="card"><h2>Server (container)</h2><div id="server"></div>
     <div class="row"><button class="go" data-act="server.start">Start</button><button data-act="server.stop">Stop (saves)</button>
     <button data-act="time.pause">Pause time</button><button data-act="time.resume">Resume time</button></div>
-    <div class="note">Pause and resume travel through the client, so they need the client in the world.</div></section>
+    <div class="note">Pause is an operator hold on the server itself: the agent cannot resume it, and Resume also clears a pause the agent or a disconnect left behind.</div></section>
 
   <section class="card"><h2>Client (this desktop)</h2><div id="client"></div>
     <div class="row"><button class="go" data-act="client.launch">Launch and join</button><button data-act="client.stop">Stop</button>
@@ -64,15 +64,15 @@ $("init").onclick=()=>{const a={targetQuest:$("quest").value,targetChapter:$("ch
 function svc(s,name){const v=s.services[name];return v?dot(v.state==="running"?"ok":"bad",`${name}: ${v.status||v.state}`):dot("",`${name}: not created`)}
 function render(s){
   if(!s.docker){$("err").textContent="Docker is not answering: "+s.dockerError}
-  const g=s.game,t=g.time||{},p=g.player||{},w=g.world||{},q=g.quests||{};
-  $("server").innerHTML=svc(s,"server")+(g.bridge&&!t.error?dot(t.paused?"warn":"ok",t.paused?`time paused (${t.reason||t.pauseReason||"requested"})`:"time running"):"");
+  const g=s.game,t=(g.time||{}).state||g.time||{},p=g.player||{},w=g.world||{},q=g.quests||{};
+  $("server").innerHTML=svc(s,"server")+(g.bridge&&!t.error?dot(t.paused?"warn":"ok",t.paused?`time paused (${t.held?"operator hold":t.reason||"requested"}), tick ${t.simulationTicks}`:`time running, tick ${t.simulationTicks}`):"");
   $("client").innerHTML=dot(g.bridge?"ok":"bad",g.bridge?"bridge up":"bridge down (client not running)")+(g.bridge?dot(w.inWorld?"ok":"warn",w.inWorld?"in the world":"not in a world"):"");
   $("sup").innerHTML=dot(s.supervisor?"ok":"warn",s.supervisor?"deploy supervisor running":"deploy supervisor stopped");
   const a=s.agent;let thread="";try{thread=JSON.parse(a.thread||"{}").thread||""}catch(e){}
   $("agent").innerHTML=svc(s,"agent")+svc(s,"gateway")+(a.error?dot("bad",a.error):"running" in a?dot(a.loggedIn?"ok":"bad",a.loggedIn?"Codex logged in":"Codex not logged in: run codex login --device-auth in the container")+
     dot(a.running?"ok":"",a.running?(a.stopRequested?"loop running, stopping after this turn":"loop running"):"loop idle")+kv({conversation:thread||"none yet",prompt:a.prompt?"filled run prompt":"PROMPT.md as is","harness commits":a.commits||"0"}):"");
-  $("game").innerHTML=!g.bridge?dot("","no client"):p.error?dot("bad",p.error):kv({player:p.name,position:p.pos?[p.pos.x,p.pos.y,p.pos.z].map(v=>Math.round(v)).join(", "):(p.x!=null?[p.x,p.y,p.z].map(v=>Math.round(v)).join(", "):""),
-    health:p.health,food:p.food??p.foodLevel,dimension:w.dimension??p.dimension,quests:q.error?q.error:Object.entries(q).filter(([k,v])=>typeof v!=="object").map(([k,v])=>k+"="+v).join("  ")});
+  $("game").innerHTML=!g.bridge?dot("","no client"):p.error?dot("bad",p.error):kv({player:p.name,position:(p.pos||[]).map(v=>Math.round(v)).join(", "),
+    health:p.health,food:p.food,dimension:w.dimension??p.dimension,quests:q.error?q.error:Object.entries(q).filter(([k,v])=>typeof v!=="object").map(([k,v])=>k+"="+v).join("  ")});
   $("deploys").innerHTML=s.deploys.length?"<table>"+s.deploys.map(d=>`<tr><td>${esc(d.time)}</td><td>${esc((d.components||[]).join(", "))}</td><td>${d.ok?"installed":d.ok===false?"rolled back":"pending"}</td><td>${esc(d.reason||d.error||"")}</td></tr>`).join("")+"</table>":'<div class="note">none</div>';
   $("jobtitle").textContent=s.job.name?`Last action: ${s.job.name} ${s.job.running?"(running)":s.job.ok?"(done)":"(failed)"}`:"Last action";
   if(s.job.name)$("job").textContent=s.job.log; const log=$("log"),end=log.scrollTop+log.clientHeight>=log.scrollHeight-8; log.textContent=a.log||""; if(end)log.scrollTop=log.scrollHeight}
