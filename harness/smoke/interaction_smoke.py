@@ -61,7 +61,7 @@ def main():
             check('placement observed',call('obs.block',x=chest['x']-1,y=chest['y'],z=chest['z'])['id']=='minecraft:cobblestone')
             refuse('stale held refused','act.use_item',expectedHeld={'id':'minecraft:dirt'})
             at('fluid');select(0);fluid=dict(zip(('x','y','z'),arena['fluid']))
-            call('baritone.goto',x=fluid['x'],y=177,z=fluid['z']-1,timeoutTicks=100)
+            call('nav.goto',x=fluid['x'],y=177,z=fluid['z']-1,timeoutTicks=100)
             r=call('act.use_item',**fluid,fluid=True,face=1)
             check('source pickup native bucket',settled_player()['held']['id']=='minecraft:water_bucket',r)
             check('water collection verified on server',s.call('obs.block',**fluid)['id']=='minecraft:air')
@@ -69,7 +69,7 @@ def main():
             check('source placement native bucket',settled_player()['held']['id']=='minecraft:bucket',r)
             check('placed fluid observed',call('obs.block',**fluid)['id'] in ('minecraft:water','minecraft:flowing_water'))
             check('water placement verified on server',s.call('obs.block',**fluid)['id'] in ('minecraft:water','minecraft:flowing_water'))
-            at('lava');call('baritone.goto',x=fluid['x'],y=177,z=fluid['z']-1,timeoutTicks=100)
+            at('lava');call('nav.goto',x=fluid['x'],y=177,z=fluid['z']-1,timeoutTicks=100)
             r=call('act.use_item',**fluid,fluid=True,face=1)
             check('lava source pickup',settled_player()['held']['id']=='minecraft:lava_bucket',r)
             check('lava collection verified on server',s.call('obs.block',**fluid)['id']=='minecraft:air')
@@ -137,7 +137,7 @@ def main():
                 evidence['cleanupError']=str(cleanup);evidence['ok']=False
                 print('Cleanup needs journal recovery: '+str(cleanup),flush=True)
             finally:
-                path=ROOT/'gtnh/.runtime/logs/interaction-smoke.json';path.write_text(json.dumps(evidence,indent=2,default=str))
+                path=ROOT/'.runtime/logs/interaction-smoke.json';path.write_text(json.dumps(evidence,indent=2,default=str))
                 print(path,flush=True)
     return 0 if evidence['ok'] else 1
 

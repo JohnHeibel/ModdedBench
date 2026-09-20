@@ -25,12 +25,12 @@ from mcp.types import ImageContent
 TOOLS = {
     "mb_interrupt", "mb_interrupt_events",
     "mb_act", "mb_call", "mb_gui", "mb_keys", "mb_methods", "mb_obs", "mb_screenshot", "mb_status", "mb_stop", "mb_time",
-    "mb_nei_status", "mb_search", "mb_item", "mb_recipes", "mb_fluids", "mb_recipe_handlers", "mb_recipe_view", "mb_recipe_inspect",
+    "mb_recipe_status", "mb_item_search", "mb_item_info", "mb_recipes", "mb_fluid_search", "mb_recipe_handlers", "mb_recipe_view", "mb_recipe_inspect",
     "mb_memory", "mb_route", "mb_inventory", "mb_find", "mb_transfer", "mb_click_slot", "mb_notes", "mb_note_write",
     "mb_follow", "mb_process", "mb_settings", "mb_cache",
     "mb_mine", "mb_build_preview", "mb_build", "mb_copy",
     "mb_schematic_import", "mb_schematic_build", "mb_scan", "mb_work_status",
-    "mb_work_resume", "mb_builder_pause", "mb_builder_materials", "mb_quest_status", "mb_quest_sync", "mb_quest_search", "mb_quest_lines",
+    "mb_work_resume", "mb_build_pause", "mb_build_materials", "mb_quest_status", "mb_quest_sync", "mb_quest_search", "mb_quest_lines",
     "mb_quest_observe", "mb_quest_detect", "mb_quest_select_choice", "mb_quest_claim",
 }
 
@@ -101,8 +101,8 @@ class GTNHProfileTests(unittest.TestCase):
         for name in ("mb_selection", "mb_selection_build", "mb_coverage", "mb_load_inputs"):
             self.assertNotIn(name, srv.name_owner)
         lanes = {n: tm.tools[n]["lane"] for tm in srv.modules.values() for n in tm.tools}
-        self.assertEqual({lanes[n] for n in ("mb_obs", "mb_inventory", "mb_notes", "mb_search", "mb_status", "mb_build_preview")}, {"read"})
-        self.assertEqual({lanes[n] for n in ("mb_stop", "mb_builder_pause", "mb_interrupt")}, {"control"})
+        self.assertEqual({lanes[n] for n in ("mb_obs", "mb_inventory", "mb_notes", "mb_item_search", "mb_status", "mb_build_preview")}, {"read"})
+        self.assertEqual({lanes[n] for n in ("mb_stop", "mb_build_pause", "mb_interrupt")}, {"control"})
         self.assertEqual({lanes[n] for n in ("mb_build", "mb_mine", "mb_route", "mb_transfer", "mb_note_write")}, {"act"})
         self.assertTrue(all(callable(lanes[n]) for n in ("mb_call", "mb_time", "mb_gui", "mb_copy", "mb_settings")))
         registered = srv._tool_manager._tools["mb_obs"]
@@ -121,7 +121,7 @@ class GTNHProfileTests(unittest.TestCase):
             def submit(self, fn, *a, **kw): chosen.append(self.lane); return super().submit(fn, *a, **kw)
         for pool in srv._pools.values(): pool.shutdown(wait=False)
         srv._pools = {lane: Recording(lane) for lane in mbtool.LANES}
-        self.use(FakeKernel(lambda method, params: {"origin": [0,0,0], "cells": []} if method == "baritone.copy" else {"method": method}))
+        self.use(FakeKernel(lambda method, params: {"plan": {"origin": [0,0,0], "cells": []}} if method == "nav.copy" else {"method": method}))
         mbtool.state["methods"] = {"obs.thing": {"effect": "read"}, "act.move": {"effect": "interaction"}}
         for name, args in (("mb_stop", {}), ("mb_inventory", {}), ("mb_build", {"cells": [{"pos": [0,0,0], "id": "a:b"}]}),
                            ("mb_time", {"method": "status"}), ("mb_time", {"method": "pause"}),
@@ -231,6 +231,15 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual(core.mb_screenshot().data, b"png")
         with self.assertRaises(ValueError):
             inv.mb_gui("obs.player")
+        core.mb_keys("list"); self.assertEqual(fake.calls[-1], ("obs.keys", {}))
+        core.mb_keys("press", {"name": "key.inventory", "ticks": 2})
+        self.assertEqual(fake.calls[-1], ("act.press_key", {"name": "key.inventory", "ticks": 2}))
+        self.assertEqual(core.mb_keys("act.press_key", {"name": "k"})["method"], "act.press_key")
+        with self.assertRaises(ValueError): core.mb_keys("act.stop")
+        keys_lane = srv.modules[core.__file__].tools["mb_keys"]["lane"]
+        self.assertEqual([keys_lane({"method": m}) for m in ("list", "press", "obs.keys")], ["read", "act", "read"])
+        inv.mb_find({"id": "minecraft:paper"}, scope="container")
+        self.assertEqual(fake.calls[-1], ("obs.find", {"selector": {"id": "minecraft:paper"}, "scope": "container"}))
         inv.mb_click_slot(7, 123, 41, None, {'id':'minecraft:paper'}, click_type='pickup')
         self.assertEqual(fake.calls[-1], ('gui.click_slot', dict(windowId=7, epoch=123, slot=41,
             expected=None, expectedCursor={'id':'minecraft:paper'}, type='pickup', button=0)))
@@ -248,33 +257,33 @@ class GTNHProfileTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             core.mb_memory("dev.fluid_fixture.restore")
         work.mb_route("base to cave", reverse=True, start_index=2, timeout_s=900, timeout_ticks=16000)
-        self.assertEqual(fake.last("baritone.route"), ("baritone.route", {"name": "base to cave", "reverse": True,
+        self.assertEqual(fake.last("nav.route"), ("nav.route", {"name": "base to cave", "reverse": True,
             "startIndex": 2, "allowBreak": False, "allowPlace": False, "overrideProtection": False,
             "timeoutTicks": 16000, "timeout": 900}))
         work.mb_route("approved work", allow_break=True, override_protection=True)
-        self.assertTrue(fake.last("baritone.route")[1]["overrideProtection"])
+        self.assertTrue(fake.last("nav.route")[1]["overrideProtection"])
         work.mb_route("next journey")
-        self.assertFalse(fake.last("baritone.route")[1]["overrideProtection"])
+        self.assertFalse(fake.last("nav.route")[1]["overrideProtection"])
         work.mb_mine([{"id":"ore:block"}], [{"id":"ore:item"}], quantity=8,
                      bounds={"min":[0,1,0],"max":[3,4,3]}, timeout_s=700)
-        self.assertEqual(fake.last("baritone.mine"), ("baritone.mine", {
+        self.assertEqual(fake.last("nav.mine"), ("nav.mine", {
             "blocks":[{"id":"ore:block"}], "items":[{"id":"ore:item"}], "quantity":8,
             "radius":24, "allowBreak":False, "allowPlace":False,
             "overrideProtection":False, "timeoutTicks":12000,
             "bounds":{"min":[0,1,0],"max":[3,4,3]}, "timeout":700}))
         cells=[{"pos":[0,0,0],"id":"minecraft:stone","meta":0}]
         work.mb_build_preview(cells=cells, origin=[10,70,10])
-        self.assertEqual(fake.calls[-1][0], "baritone.build_preview")
+        self.assertEqual(fake.calls[-1][0], "nav.build_preview")
         work.mb_build(cells=cells, timeout_ticks=500, timeout_s=45)
-        self.assertEqual(fake.last("baritone.build"), ("baritone.build", {"replaceExisting":False,
+        self.assertEqual(fake.last("nav.build"), ("nav.build", {"replaceExisting":False,
             "overrideProtection":False,"allowBreak":False,"allowPlace":False,"mode":"blueprint",
             "timeoutTicks":500,"cells":cells,"timeout":45}))
         work.mb_scan([{"ore":"oreIron"}], {"min":[0,1,0],"max":[2,3,2]}, limit=9)
-        self.assertEqual(fake.calls[-1][0], "baritone.scan")
+        self.assertEqual(fake.calls[-1][0], "obs.scan")
         work.mb_work_status("job-7")
-        self.assertEqual(fake.calls[-1], ("baritone.work_status", {"jobId":"job-7"}))
+        self.assertEqual(fake.calls[-1], ("nav.work_status", {"jobId":"job-7"}))
         work.mb_work_resume("job-7", {"timeoutTicks":400,"overrideProtection":True}, timeout_s=88)
-        self.assertEqual(fake.last("baritone.resume"), ("baritone.resume", {"timeout":88,"jobId":"job-7",
+        self.assertEqual(fake.last("nav.resume"), ("nav.resume", {"timeout":88,"jobId":"job-7",
             "timeoutTicks":400,"overrideProtection":True}))
         quests.mb_quest_observe("00000000-0000-0000-0000-000000000001")
         self.assertEqual(fake.calls[-1][0], "quest.observe")
@@ -286,19 +295,19 @@ class GTNHProfileTests(unittest.TestCase):
         tools = module_with(self.loaded(), "mb_follow")
         fake = self.use(FakeKernel(lambda method, params: {"method": method, **params}))
         tools.mb_settings("set", values={"allowInventory":True}, save=True)
-        self.assertEqual(fake.calls[-1], ("baritone.settings", {"operation":"set", "query":"", "save":True, "values":{"allowInventory":True}}))
+        self.assertEqual(fake.calls[-1], ("nav.settings", {"operation":"set", "query":"", "save":True, "values":{"allowInventory":True}}))
         tools.mb_follow({"entityId":7,"type":"Item"}, duration_ticks=40, radius=3, offset_distance=2.5,
                         offset_direction=90, timeout_s=12)
-        self.assertEqual(fake.last("baritone.follow"), ("baritone.follow", {"timeout":12, "target":{"entityId":7,"type":"Item"},
+        self.assertEqual(fake.last("nav.follow"), ("nav.follow", {"timeout":12, "target":{"entityId":7,"type":"Item"},
             "durationTicks":40,"radius":3,"offsetDistance":2.5,"offsetDirection":90,
             "allowBreak":False,"allowPlace":False,"overrideProtection":False}))
         tools.mb_process("goal", goal={"type":"near","pos":[1,64,2],"radius":2}, duration_ticks=80, timeout_s=14)
-        self.assertEqual(fake.last("baritone.process")[1]["goal"]["type"], "near")
+        self.assertEqual(fake.last("nav.process")[1]["goal"]["type"], "near")
         tools.mb_cache("locations", block="minecraft:diamond_ore", meta=0, limit=12, region_distance_squared=4)
-        self.assertEqual(fake.calls[-1], ("baritone.cache", {"operation":"locations", "block":"minecraft:diamond_ore",
+        self.assertEqual(fake.calls[-1], ("nav.cache", {"operation":"locations", "block":"minecraft:diamond_ore",
             "limit":12,"regionDistanceSquared":4,"meta":0}))
         tools.mb_cache("result", task_id="cache-task")
-        self.assertEqual(fake.calls[-1], ("baritone.cache", {"operation":"result","id":"cache-task"}))
+        self.assertEqual(fake.calls[-1], ("nav.cache", {"operation":"result","id":"cache-task"}))
         with self.assertRaises(ValueError): tools.mb_follow({}, duration_ticks=10)
         with self.assertRaises(ValueError): tools.mb_process("goal")
         with self.assertRaises(ValueError): tools.mb_cache("locations")
@@ -350,65 +359,64 @@ class GTNHProfileTests(unittest.TestCase):
         tools = module_with(self.loaded(), "mb_build")
         count = [0]
         def reply(method, params):
-            if method == "baritone.build_stage" and params["operation"] == "begin": return {"stageId":"s", "count":0}
-            if method == "baritone.build_stage" and params["operation"] == "append":
+            if method == "nav.build_stage" and params["operation"] == "begin": return {"stageId":"s", "count":0}
+            if method == "nav.build_stage" and params["operation"] == "append":
                 count[0] += len(params["cells"]); return {"stageId":"s", "count":count[0]}
-            if method == "baritone.build_stage": return {"stageId":"s", "count":count[0], "planId":"p"}
+            if method == "nav.build_stage": return {"stageId":"s", "count":count[0], "planId":"p"}
             return {"state":"completed"}
         fake = self.use(FakeKernel(reply)); cells=[{"pos":[i,0,0],"id":"minecraft:stone"} for i in range(4097)]
         tools.mb_build(cells=cells, origin=[0,1,0], mode="builder", allow_break=True)
-        appends=[p for m,p in fake.calls if m=="baritone.build_stage" and p["operation"]=="append"]
+        appends=[p for m,p in fake.calls if m=="nav.build_stage" and p["operation"]=="append"]
         self.assertEqual([x["offset"] for x in appends],[0,4096])
         self.assertEqual(sum(len(x["cells"]) for x in appends),4097)
         begin=fake.calls[0][1]; self.assertNotIn("cells",begin["spec"]); self.assertEqual(begin["spec"]["mode"],"builder")
-        build = fake.last("baritone.build")[1]
+        build = fake.last("nav.build")[1]
         self.assertEqual(build["planId"],"p"); self.assertTrue(build["allowBreak"])
 
     def test_schematic_import_and_build_use_java_plan_and_explicit_overrides(self):
         tools = module_with(self.loaded(), "mb_schematic_build")
-        plan = {"origin":[0,1,0],"cells":[{"pos":[0,0,0],"id":"a:b"}],"replaceExisting":True,"allowBreak":True,"allowPlace":False,
-                "settings":{"restricted":True},"size":[1,1,1],"count":1,"skipped":{"air":3,"unknown":1}}
-        fake = self.use(FakeKernel(lambda method, params: dict(plan) if method == "baritone.schematic_import" else {"state":"succeeded"}))
+        plan = {"plan":{"cells":[{"pos":[0,0,0],"id":"a:b"}],"origin":[0,0,0],"size":[1,1,1]},
+                "size":[1,1,1],"count":1,"skipped":{"air":3,"unknown":1},"tileEntities":0}
+        fake = self.use(FakeKernel(lambda method, params: dict(plan) if method == "nav.schematic_import" else {"state":"succeeded"}))
         self.assertEqual(tools.mb_schematic_import("x", origin=[5,6,7], include_air=True), plan)
-        self.assertEqual(fake.calls[-1], ("baritone.schematic_import", {"path":"x","origin":[5,6,7],"includeAir":True}))
+        self.assertEqual(fake.calls[-1], ("nav.schematic_import", {"path":"x","origin":[5,6,7],"includeAir":True}))
         result = tools.mb_schematic_build("x", preview=True)
-        self.assertEqual(fake.calls[-2], ("baritone.schematic_import", {"path":"x","includeAir":False}))
+        self.assertEqual(fake.calls[-2], ("nav.schematic_import", {"path":"x","includeAir":False}))
         request = fake.calls[-1]
-        self.assertEqual(request[0], "baritone.build_preview")
-        self.assertTrue(request[1]["replaceExisting"] and request[1]["allowBreak"])
-        self.assertFalse({"size","count","skipped","timeoutTicks","timeout"} & set(request[1]))
-        self.assertEqual(result["imported"], {"size":[1,1,1],"count":1,"skipped":{"air":3,"unknown":1}})
+        self.assertEqual(request[0], "nav.build_preview")
+        self.assertEqual(request[1], {"cells":[{"pos":[0,0,0],"id":"a:b"}],"origin":[0,0,0],"size":[1,1,1]})   # the nested plan, Java defaults kept
+        self.assertEqual(result["imported"], {"size":[1,1,1],"count":1,"skipped":{"air":3,"unknown":1},"tileEntities":0})
         self.assertEqual(result["request"]["cells"], 1)
         self.assertIn("preview", result)
         result = tools.mb_schematic_build("x", preview=False, replace_existing=False, allow_break=False, allow_place=True,
                                           settings={"restricted":False}, timeout_ticks=77, timeout_s=9)
-        request = fake.last("baritone.build")[1]
-        self.assertFalse(request["replaceExisting"]); self.assertTrue(request["allowPlace"])
+        request = fake.last("nav.build")[1]
+        self.assertFalse(request["replaceExisting"]); self.assertFalse(request["allowBreak"]); self.assertTrue(request["allowPlace"])
         self.assertEqual((request["settings"], request["timeoutTicks"], request["timeout"]), ({"restricted":False}, 77, 9))
         self.assertEqual(result["result"], {"state":"succeeded"})
-        fake.reply = lambda method, params: {"count": 0}
+        fake.reply = lambda method, params: {"count": 0, "cells": []}   # cells only count inside the nested plan
         with self.assertRaises(ValueError): tools.mb_schematic_build("x")
 
     def test_copy_returns_java_plan_and_chains_into_preview_or_build(self):
         tools = module_with(self.loaded(), "mb_copy")
-        plan = {"origin":[10,5,10],"cells":[{"pos":[0,0,0],"id":"minecraft:stone","meta":4},{"pos":[1,0,0],"clear":True}],
-                "size":[2,1,1],"count":2,"tileEntities":1}
-        fake = self.use(FakeKernel(lambda method, params: dict(plan) if method == "baritone.copy" else {"state":"succeeded"}))
+        plan = {"plan":{"cells":[{"pos":[0,0,0],"id":"minecraft:stone","meta":4},{"pos":[1,0,0],"clear":True}],"origin":[0,0,0],"size":[2,1,1]},
+                "size":[2,1,1],"count":2,"skipped":{"air":0,"unknown":0,"unloaded":0},"tileEntities":1}
+        fake = self.use(FakeKernel(lambda method, params: dict(plan) if method == "nav.copy" else {"state":"succeeded"}))
         bounds = {"min":[10,5,10],"max":[11,5,10]}
         self.assertEqual(tools.mb_copy(bounds), plan)
-        self.assertEqual(fake.calls, [("baritone.copy", {"bounds":bounds, "includeAir":False})])
+        self.assertEqual(fake.calls, [("nav.copy", {"bounds":bounds, "includeAir":False})])
         tools.mb_copy(bounds, origin=[9,5,9], include_air=True)
-        self.assertEqual(fake.calls[-1], ("baritone.copy", {"bounds":bounds, "origin":[9,5,9], "includeAir":True}))
+        self.assertEqual(fake.calls[-1], ("nav.copy", {"bounds":bounds, "origin":[9,5,9], "includeAir":True}))
         previewed = tools.mb_copy(bounds, at=[20,7,20], preview=True)
         method, request = fake.calls[-1]
-        self.assertEqual(method, "baritone.build_preview")
-        self.assertEqual((request["origin"], request["cells"]), ([20,7,20], plan["cells"]))
-        self.assertFalse({"size","count","tileEntities","timeoutTicks","timeout"} & set(request))
-        self.assertEqual(previewed["copied"], {"size":[2,1,1],"count":2,"tileEntities":1})
+        self.assertEqual(method, "nav.build_preview")
+        self.assertEqual((request["origin"], request["cells"], request["size"]), ([20,7,20], plan["plan"]["cells"], [2,1,1]))
+        self.assertFalse({"count","skipped","tileEntities","timeoutTicks","timeout"} & set(request))
+        self.assertEqual(previewed["copied"], {"size":[2,1,1],"count":2,"skipped":{"air":0,"unknown":0,"unloaded":0},"tileEntities":1})
         self.assertEqual(previewed["request"]["cells"], 2); self.assertIn("preview", previewed)
         built = tools.mb_copy(bounds, build=True, allow_break=True, timeout_ticks=300, timeout_s=30)
-        method, request = fake.last("baritone.build")
-        self.assertEqual((request["origin"], request["allowBreak"], request["timeoutTicks"], request["timeout"]), ([10,5,10], True, 300, 30))
+        method, request = fake.last("nav.build")
+        self.assertEqual((request["origin"], request["allowBreak"], request["timeoutTicks"], request["timeout"]), ([0,0,0], True, 300, 30))
         self.assertEqual(built["result"], {"state":"succeeded"})
         for bad in ({}, {"min":[0,0,0]}, {"min":1,"max":2}):
             with self.assertRaises(ValueError): tools.mb_copy(bad)

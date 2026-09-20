@@ -87,13 +87,13 @@ def mb_quest_claim(quest_id: str, reward_ids: list[int],
 
 
 @tool(lane="read", coverage=["recipes"])
-def mb_nei_status() -> Any:
+def mb_recipe_status() -> Any:
     """Check whether GTNH NEI's full item catalogue and recipe handlers are ready."""
     return kernel().call("nei.status")
 
 
 @tool(lane="read", coverage=["recipes"])
-def mb_search(query: str = "", mod: str = "", ore: str = "", id: str = "", meta: int = -1,
+def mb_item_search(query: str = "", mod: str = "", ore: str = "", id: str = "", meta: int = -1,
               offset: int = 0, limit: int = 30, timeout_s: float = 60.0) -> Any:
     """Search the full native NEI catalogue, with pagination and exact variant identities.
 
@@ -108,7 +108,7 @@ def mb_search(query: str = "", mod: str = "", ore: str = "", id: str = "", meta:
 
 
 @tool(lane="read", coverage=["recipes"])
-def mb_item(id: str, meta: int, nbt: str | None = None) -> Any:
+def mb_item_info(id: str, meta: int, nbt: str | None = None) -> Any:
     """Inspect an exact item variant, including tooltips, ore/fluid data and ItemBlock placement metadata.
 
     placement.initialBlockMeta is the native initial world-block metadata, not
@@ -135,7 +135,7 @@ def mb_recipes(id: str = "", meta: int | None = None, nbt: str | None = None, mo
     observations; no route is selected or declared craftable automatically.
 
     Pass exact id/meta/nbt for an item, or fluid="water" for a canonical fluid ID
-    returned by mb_fluids. Uses all NEI handlers, including modded machines and fluid-container
+    returned by mb_fluid_search. Uses all NEI handlers, including modded machines and fluid-container
     recipes. handler filters by handler id or machine/category name. Returned handler
     summaries show available categories and counts; nextOffset pages recipes.
     Ingredient positions contain alternative item identities and counts; use
@@ -155,7 +155,7 @@ def mb_recipes(id: str = "", meta: int | None = None, nbt: str | None = None, mo
 
 
 @tool(lane="read", coverage=["recipes"])
-def mb_fluids(query: str = "", offset: int = 0, limit: int = 30) -> Any:
+def mb_fluid_search(query: str = "", offset: int = 0, limit: int = 30) -> Any:
     """Search loaded fluid IDs/names and physical properties; pass a returned ID to mb_recipes(fluid=...)."""
     return kernel().call("nei.fluids", query=query, offset=offset, limit=limit)
 

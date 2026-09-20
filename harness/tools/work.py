@@ -18,21 +18,21 @@ REPORT_KEYS = ("size", "count", "skipped", "tileEntities")
 
 
 def _build_call(method: str, params: dict, timeout_s: float | None = None) -> Any:
-    """Direct request for small plans; bounded staging (baritone.build_stage) for large cell lists."""
+    """Direct request for small plans; bounded staging (nav.build_stage) for large cell lists."""
     cells = params.get("cells")
     if not isinstance(cells, list) or len(cells) <= STAGE:
         return notes.tracked(method, timeout_s, **params)
     spec = {key: value for key, value in params.items() if key != "cells"}
-    begun = kernel().call("baritone.build_stage", operation="begin", spec=spec)
+    begun = kernel().call("nav.build_stage", operation="begin", spec=spec)
     stage_id = begun.get("stageId") if isinstance(begun, dict) else None
     if not isinstance(stage_id, str) or not stage_id:
         raise ValueError("build_stage begin did not return stageId")
     for start in range(0, len(cells), STAGE):
-        appended = kernel().call("baritone.build_stage", operation="append", stageId=stage_id,
+        appended = kernel().call("nav.build_stage", operation="append", stageId=stage_id,
                                  offset=start, cells=cells[start:start + STAGE])
         if not isinstance(appended, dict) or appended.get("stageId") != stage_id or appended.get("count") != min(start + STAGE, len(cells)):
             raise ValueError("build_stage append returned an invalid count")
-    finished = kernel().call("baritone.build_stage", operation="finish", stageId=stage_id)
+    finished = kernel().call("nav.build_stage", operation="finish", stageId=stage_id)
     plan_id = finished.get("planId") if isinstance(finished, dict) else None
     if not isinstance(plan_id, str) or not plan_id or finished.get("stageId") != stage_id or finished.get("count") != len(cells):
         raise ValueError("build_stage finish did not return the complete plan")
@@ -43,11 +43,12 @@ def _build_call(method: str, params: dict, timeout_s: float | None = None) -> An
     return notes.tracked(method, timeout_s, **forwarded)
 
 
-def _spec(plan: dict, **overrides) -> dict:
-    """The build spec inside an import/copy result (report fields dropped), with explicit overrides applied."""
+def _spec(result: dict, **overrides) -> dict:
+    """The nested plan {cells,origin,size} of an import/copy result, with explicit overrides applied."""
+    plan = result.get("plan") if isinstance(result, dict) else None
     if not isinstance(plan, dict) or not isinstance(plan.get("cells"), list):
         raise ValueError("Java did not return a plan with cells")
-    spec = {k: v for k, v in plan.items() if k not in REPORT_KEYS}
+    spec = dict(plan)
     spec.update({k: v for k, v in overrides.items() if v is not None})
     return spec
 
@@ -71,7 +72,7 @@ def mb_route(name: str, reverse: bool = False, start_index: int = 0,
     with allow_break/allow_place unless override_protection is explicitly true.
     Notes near the arrival position are returned under "notes".
     """
-    return notes.tracked("baritone.route", timeout_s, name=name, reverse=reverse, startIndex=start_index,
+    return notes.tracked("nav.route", timeout_s, name=name, reverse=reverse, startIndex=start_index,
                          allowBreak=allow_break, allowPlace=allow_place,
                          overrideProtection=override_protection, timeoutTicks=timeout_ticks)
 
@@ -93,7 +94,7 @@ def mb_follow(target: dict, duration_ticks: int = 1200, radius: int = 2,
     """
     if not isinstance(target, dict) or not target or not set(target) <= {"entityId", "uuid", "type", "name"}:
         raise ValueError("target needs entityId, uuid, type or name selectors")
-    return notes.tracked("baritone.follow", timeout_s, target=target, durationTicks=duration_ticks,
+    return notes.tracked("nav.follow", timeout_s, target=target, durationTicks=duration_ticks,
                          radius=radius, offsetDistance=offset_distance, offsetDirection=offset_direction,
                          allowBreak=allow_break, allowPlace=allow_place, overrideProtection=override_protection)
 
@@ -129,7 +130,7 @@ def mb_process(process: str, duration_ticks: int = 1200, goal: dict | None = Non
     if center is not None: params["center"] = center
     if block is not None: params["block"] = block
     if process == "farm": params["radius"] = radius
-    return notes.tracked("baritone.process", timeout_s, **params)
+    return notes.tracked("nav.process", timeout_s, **params)
 
 
 @tool(rung=1, lane=lambda kw: "read" if kw.get("operation", "get") == "get" else "act", coverage=["machine"])
@@ -151,7 +152,7 @@ def mb_settings(operation: str = "get", query: str = "", values: dict | None = N
     params: dict[str, Any] = {"operation": operation, "query": query, "save": save}
     if values is not None:
         params["values"] = values
-    return kernel().call("baritone.settings", **params)
+    return kernel().call("nav.settings", **params)
 
 
 @tool(rung=1, lane=lambda kw: "read" if kw.get("operation", "status") in ("status", "block", "locations", "result") else "act", coverage=["machine"])
@@ -179,7 +180,7 @@ def mb_cache(operation: str = "status", pos: list[int] | None = None, range: int
         params.update(block=block, limit=limit, regionDistanceSquared=region_distance_squared)
         if meta is not None: params["meta"] = meta
     if operation == "result": params["id"] = task_id
-    return kernel().call("baritone.cache", **params)
+    return kernel().call("nav.cache", **params)
 
 
 @tool(rung=1, coverage=["move"])
@@ -203,7 +204,7 @@ def mb_mine(blocks: list[dict], items: list[dict], quantity: int = 1,
                   allowBreak=allow_break, allowPlace=allow_place,
                   overrideProtection=override_protection, timeoutTicks=timeout_ticks)
     if bounds is not None: params["bounds"] = bounds
-    return notes.tracked("baritone.mine", timeout_s, **params)
+    return notes.tracked("nav.mine", timeout_s, **params)
 
 
 @tool(lane="read", coverage=["machine"])
@@ -227,7 +228,7 @@ def mb_build_preview(cells: list[dict] | None = None, selection: dict | None = N
     if origin is not None: params["origin"] = origin
     if settings is not None: params["settings"] = settings
     if size is not None: params["size"] = size
-    return _build_call("baritone.build_preview", params)
+    return _build_call("nav.build_preview", params)
 
 
 @tool(rung=1, coverage=["machine"])
@@ -254,20 +255,21 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
     if origin is not None: params["origin"] = origin
     if settings is not None: params["settings"] = settings
     if size is not None: params["size"] = size
-    return _build_call("baritone.build", params, timeout_s)
+    return _build_call("nav.build", params, timeout_s)
 
 
 @tool(lane="read", coverage=["machine"])
 def mb_schematic_import(path: str, origin: list[int] | None = None, include_air: bool = False) -> Any:
-    """Import a schematic file natively (MCEdit .schematic, Sponge .schem, Litematica, canonical JSON) without building.
+    """Import a file under the game's schematics/ directory without building: MCEdit .schematic or a canonical JSON plan.
 
-    Returns the plan in the shape mb_build_preview/mb_build take as their spec (origin,
-    cells...) plus size [w,h,l], count and skipped {air, unknown}. Unknown legacy IDs are
-    skipped and counted, never guessed. Tile entity NBT is never attached to placement.
+    Java reads only those two formats (Sponge .schem and Litematica are not supported). Returns
+    {plan:{cells,origin,size},size:[w,h,l],count,skipped:{air,unknown},tileEntities}; the nested plan
+    is the spec mb_build_preview/mb_build take. Unknown legacy IDs are skipped and counted, never
+    guessed. Tile entity NBT is never attached to placement.
     """
     params: dict[str, Any] = {"path": path, "includeAir": include_air}
     if origin is not None: params["origin"] = origin
-    return kernel().call("baritone.schematic_import", **params)
+    return kernel().call("nav.schematic_import", **params)
 
 
 @tool(rung=1, lane=lambda kw: "read" if kw.get("preview", True) else "act", coverage=["machine"])
@@ -278,13 +280,13 @@ def mb_schematic_build(path: str, origin: list[int] | None = None, include_air: 
                        settings: dict | None = None) -> Any:
     """Import a schematic, then preview (default) or build it with the strict build contract.
 
-    Set preview=false only after reviewing the material/conflict preview. Omitted
-    options keep whatever the import returned; explicit ones override it.
+    Set preview=false only after reviewing the material/conflict preview. The nested plan of the
+    import result is forwarded; omitted options keep Java's defaults, explicit ones override them.
     """
     imported = mb_schematic_import(path, origin, include_air)
     spec = _spec(imported, allowBreak=allow_break, allowPlace=allow_place, replaceExisting=replace_existing,
                  overrideProtection=override_protection, settings=settings, timeoutTicks=None if preview else timeout_ticks)
-    result = _build_call("baritone.build_preview" if preview else "baritone.build", spec, None if preview else timeout_s)
+    result = _build_call("nav.build_preview" if preview else "nav.build", spec, None if preview else timeout_s)
     return {"imported": {k: imported.get(k) for k in REPORT_KEYS if k in imported}, "request": _echo(spec),
             "preview" if preview else "result": result}
 
@@ -297,22 +299,22 @@ def mb_copy(bounds: dict, origin: list[int] | None = None, include_air: bool = F
             timeout_ticks: int = 12000, timeout_s: float = 600.0) -> Any:
     """Copy loaded blocks inside inclusive bounds {min,max} into a build plan; optionally rebuild it elsewhere.
 
-    Java scans the region natively and returns the plan in the mb_build spec shape with
-    positions relative to origin (default bounds.min) plus size, count and tileEntities
-    (tile state is reported, never copied). With preview=true or build=true the plan is
-    forwarded to baritone.build_preview/baritone.build at `at` (default: the copy origin),
+    Java returns {plan:{cells,origin,size},size,count,skipped,tileEntities} with cell positions
+    relative so that bounds.min maps to origin (default [0,0,0]); tile state is counted, never
+    copied. With preview=true or build=true the nested plan is
+    forwarded to nav.build_preview/nav.build at `at` (default: the copy origin),
     so one call copies a region and rebuilds it at another position. Unloaded cells fail.
     """
     if not isinstance(bounds, dict) or not isinstance(bounds.get("min"), list) or not isinstance(bounds.get("max"), list):
         raise ValueError("bounds must contain min and max [x,y,z]")
     params: dict[str, Any] = {"bounds": bounds, "includeAir": include_air}
     if origin is not None: params["origin"] = origin
-    plan = kernel().call("baritone.copy", **params)
+    plan = kernel().call("nav.copy", **params)
     if not (preview or build):
         return plan
     spec = _spec(plan, origin=at, allowBreak=allow_break, allowPlace=allow_place, replaceExisting=replace_existing,
                  overrideProtection=override_protection, settings=settings, timeoutTicks=timeout_ticks if build else None)
-    result = _build_call("baritone.build" if build else "baritone.build_preview", spec, timeout_s if build else None)
+    result = _build_call("nav.build" if build else "nav.build_preview", spec, timeout_s if build else None)
     return {"copied": {k: plan.get(k) for k in REPORT_KEYS if k in plan}, "request": _echo(spec),
             "result" if build else "preview": result}
 
@@ -328,32 +330,32 @@ def mb_scan(blocks: list[dict] | None = None, bounds: dict | None = None, cursor
     if bounds is None: raise ValueError("bounds are required")
     params = dict(bounds=bounds, cursor=cursor, limit=limit, budget=budget)
     if blocks is not None: params["blocks"] = blocks
-    return kernel().call("baritone.scan", **params)
+    return kernel().call("obs.scan", **params)
 
 
 @tool(rung=1, lane="control", coverage=["machine"])
-def mb_builder_pause() -> Any:
-    """Pause active builder work and return its terminal receipt for this request."""
-    return kernel().call("baritone.build_pause")
+def mb_build_pause() -> Any:
+    """Pause active build work and return its terminal receipt for this request."""
+    return kernel().call("nav.build_pause")
 
 
 @tool(lane="read", coverage=["machine"])
-def mb_builder_materials() -> Any:
+def mb_build_materials() -> Any:
     """Read approximate placeable states in current inventory without changing work."""
-    return kernel().call("baritone.build_materials")
+    return kernel().call("nav.build_materials")
 
 
 @tool(lane="read", coverage=["move", "machine"])
 def mb_work_status(job_id: str) -> Any:
     """Read a bounded durable mining/build summary, progress and last receipt.
 
-    Active execution is also visible in mb_status/baritone.status. Job identity and
+    Active execution is also visible in nav.status. Job identity and
     checkpoints survive a client restart; active execution does not. Resume performs
     fresh observation before continuing and never assumes an in-flight effect failed.
     The complete plan and per-click ledger stay on disk; large collections are
     reported as {omitted: true, count: N} to keep million-cell jobs inspectable.
     """
-    return kernel().call("baritone.work_status", jobId=job_id)
+    return kernel().call("nav.work_status", jobId=job_id)
 
 
 @tool(rung=1, coverage=["move", "machine"])
@@ -365,4 +367,4 @@ def mb_work_resume(job_id: str, options: dict | None = None,
     including overrideProtection. Native recovery re-observes world and inventory;
     already delivered placement/mining input is not blindly replayed.
     """
-    return notes.tracked("baritone.resume", timeout_s, jobId=job_id, **(options or {}))
+    return notes.tracked("nav.resume", timeout_s, jobId=job_id, **(options or {}))

@@ -35,8 +35,8 @@ SHOWN_TTL_S = 600.0      # a note shown less than this ago is not repeated...
 MOVE_RESET = 48.0        # ...unless the player has moved this far since it was shown
 GATE_S, GATE_BLOCKS = 3.0, 4.0  # skip the store entirely when polled again from the same spot
 DEFAULT_DIR = Path(__file__).resolve().parents[2] / ".state" / "notes"
-WORK = {"baritone.goto": "goto", "baritone.route": "route", "baritone.process": "process", "baritone.follow": "follow",
-        "baritone.mine": "mine", "baritone.build": "build", "baritone.resume": "resume"}
+WORK = {"nav.goto": "goto", "nav.route": "route", "nav.process": "process", "nav.follow": "follow",
+        "nav.mine": "mine", "nav.build": "build", "nav.resume": "resume"}
 JOURNALED = {"mine", "build", "process", "resume"}   # route/goto/follow are journaled on failure only
 
 
@@ -508,7 +508,7 @@ def after(method, params, result):
         if method == "obs.block" and isinstance(result, dict):
             pos = params.get("pos") or [params.get("x"), params.get("y"), params.get("z")]
             found = surface(k, block=result.get("pos") or pos, reason="block")
-        elif method in ("obs.tile", "obs.waila", "obs.hwyla") and isinstance(result, dict) and isinstance(result.get("pos"), list):
+        elif method in ("obs.tile", "obs.waila") and isinstance(result, dict) and isinstance(result.get("pos"), list):
             found = surface(k, block=result["pos"], reason="block")
         elif method == "obs.entity" and isinstance(result, dict) and result.get("found") and result.get("uuidScope") == "server":
             found = surface(k, entity=result["uuid"], reason="entity")

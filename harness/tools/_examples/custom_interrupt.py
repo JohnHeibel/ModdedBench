@@ -14,7 +14,7 @@ COUNT = 4
 def evaluate(context):
     player = context.values["player"]
     entities = context.values["nearby"]["entities"]
-    stacks = context.read("inv.find", selector=TARGET, scope="player")["matches"]
+    stacks = context.read("obs.find", selector=TARGET, scope="player")["matches"]
     collected = sum(match["stack"]["count"] for match in stacks)
     threatened = player["health"] < 8 and any(e["hostile"] for e in entities)
     context.state["samples"] = context.state.get("samples", 0) + 1
