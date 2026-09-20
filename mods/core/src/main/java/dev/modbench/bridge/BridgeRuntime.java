@@ -145,12 +145,13 @@ public abstract class BridgeRuntime {
             if (r.isDone()) continue;
             if (!r.session.connected) { r.fail("disconnected", "session closed"); continue; }
             if (r.expired()) { r.fail("timeout", "deadline elapsed before game-thread execution"); continue; }
+            if (!r.start()) continue;
             try {
                 admit(r);
                 if (r.method.equals("act.stop")) cancelQueuedInteractions();
                 if (r.method.equals("sys.shutdown")) cancelQueue(queue, "shutdown");
                 Object result = methods.get(r.method).handler.call(r);
-                if (result != null) r.reply(result);
+                if (result != null) r.reply(result); else r.detach();
             } catch (IllegalArgumentException e) {
                 r.fail("bad_request", e.getMessage());
             } catch (Exception e) {

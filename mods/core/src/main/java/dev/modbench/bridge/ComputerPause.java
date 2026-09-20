@@ -53,8 +53,18 @@ public final class ComputerPause {
         requested=false;
         // No start/reboot: the existing OC update path resumes the state it paused.
     }
+    public static synchronized boolean requested() { return requested; }
     public static synchronized Object status() {
         return Json.object("adapter","OpenComputers Machine.pause(0)","registered",machines.size(),
             "requested",requested,"ready",ready(),"generation",generation,"error",failure());
     }
+    /** The static machine registry seen as a coordinator barrier. */
+    public static final PauseCoordinator.Barrier BARRIER=new PauseCoordinator.Barrier() {
+        @Override public void begin() { ComputerPause.begin(); }
+        @Override public boolean requested() { return ComputerPause.requested(); }
+        @Override public boolean ready() { return ComputerPause.ready(); }
+        @Override public void resume() { ComputerPause.resume(); }
+        @Override public String failure() { return ComputerPause.failure(); }
+        @Override public Object status() { return ComputerPause.status(); }
+    };
 }

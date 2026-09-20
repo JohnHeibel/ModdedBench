@@ -94,6 +94,94 @@ public class BridgeRuntimeTest {
     }
 
     @Test
+    public void timerExpiryOfQueuedRequestAnswersTimeoutAndSkipsExecution() {
+        Runtime runtime = new Runtime();
+        AtomicInteger mutations = new AtomicInteger();
+        runtime.add("act.mutate", request -> { mutations.incrementAndGet(); return "mutated"; });
+        Object world = new Object();
+        runtime.startTick(world);
+        Session session = new Session();
+        List<JsonObject> replies = new ArrayList<>();
+        Request request = request(runtime, session, 1, "act.mutate", new JsonObject(), replies);
+        runtime.dispatch(request);
+
+        request.expire(); // the transport's deadline timer, firing before the game thread drains
+        runtime.startTick(world);
+
+        assertEquals(0, mutations.get());
+        assertEquals(1, replies.size());
+        assertEquals("timeout", replies.get(0).getAsJsonObject("error").get("code").getAsString());
+        assertFalse(replies.get(0).has("late"));
+        assertTrue(session.pending.isEmpty());
+    }
+
+    @Test
+    public void handlerCrossingItsDeadlineAnswersOnceWithTheTrueOutcomeMarkedLate() {
+        Runtime runtime = new Runtime();
+        AtomicInteger mutations = new AtomicInteger();
+        runtime.add("act.mutate", request -> {
+            mutations.incrementAndGet();
+            request.expire(); // timer fires while the handler runs: must not answer
+            while (!request.expired()) Thread.onSpinWait();
+            request.expire(); // and again after the deadline, still while running
+            return "mutated";
+        });
+        Object world = new Object();
+        runtime.startTick(world);
+        Session session = new Session();
+        List<JsonObject> replies = new ArrayList<>();
+        JsonObject params = new JsonObject();
+        params.addProperty("_timeout_ms", 1);
+        Request request = request(runtime, session, 2, "act.mutate", params, replies);
+        runtime.dispatch(request);
+
+        runtime.startTick(world);
+        request.expire(); // a timer firing after completion is a no-op too
+
+        assertEquals(1, mutations.get());
+        assertEquals(1, replies.size());
+        assertTrue(replies.get(0).get("ok").getAsBoolean());
+        assertEquals("mutated", replies.get(0).get("data").getAsString());
+        assertTrue(replies.get(0).get("late").getAsBoolean());
+        assertTrue(session.pending.isEmpty());
+    }
+
+    @Test
+    public void asyncJobIsHandedBackToTheDeadlineTimerOnceItsHandlerReturns() {
+        Runtime runtime = new Runtime();
+        runtime.add("act.job", request -> { request.expire(); return null; }); // timer during the handler: ignored
+        Object world = new Object();
+        runtime.startTick(world);
+        Session session = new Session();
+        List<JsonObject> replies = new ArrayList<>();
+        Request request = request(runtime, session, 4, "act.job", new JsonObject(), replies);
+        runtime.dispatch(request);
+        runtime.startTick(world);
+        assertFalse(request.isDone());
+
+        request.expire(); // the job is async now, so the timer answers as it always did
+        request.reply("job finished after the caller was told");
+
+        assertEquals(1, replies.size());
+        assertEquals("timeout", replies.get(0).getAsJsonObject("error").get("code").getAsString());
+        assertFalse(replies.get(0).has("late"));
+    }
+
+    @Test
+    public void replyInsideTheDeadlineCarriesNoLateMarker() {
+        Runtime runtime = new Runtime();
+        runtime.add("act.quick", request -> "done");
+        Object world = new Object();
+        runtime.startTick(world);
+        Session session = new Session();
+        List<JsonObject> replies = new ArrayList<>();
+        runtime.dispatch(request(runtime, session, 3, "act.quick", new JsonObject(), replies));
+        runtime.startTick(world);
+        assertEquals(1, replies.size());
+        assertFalse(replies.get(0).has("late"));
+    }
+
+    @Test
     public void cancellationIsScopedToItsOwningSession() {
         Runtime runtime = new Runtime();
         AtomicInteger calls = new AtomicInteger();
