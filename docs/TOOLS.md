@@ -28,9 +28,9 @@ Conventions that hold across all tools:
 | `mb_status` | read | Bridge capabilities and connection state; surfaces notes near the player (session start). |
 | `mb_methods` | read | Lists the raw bridge methods with descriptions and effects. |
 | `mb_call` | any | Calls any raw method with JSON params; the escape hatch when no wrapper fits. |
-| `mb_obs` | read | Observations: `player`, `players`, `world`, `block`, `entities`, `entity`, `inventory`, `container`, `gui`, `tooltip`, `tile`, `nbt`, `waila`, `batch`. Block, tile and entity reads surface attached notes. |
+| `mb_obs` | read | Observations: `player`, `players`, `world`, `block`, `entities`, `entity`, `inventory`, `container`, `gui`, `tooltip`, `find`, `keys`, `tile`, `nbt`, `waila`, `batch`, and the engine's world reads `scan`, `terrain`, `fluid`, `tools`. Block, tile and entity reads surface attached notes. |
 | `mb_act` | action | Native actions: raw `input`, `look`, `use_block`, `use_entity`, `attack_entity`, `use_item`, `eat`, `select_hotbar`, bounded `combat`, `status`, `stop`. |
-| `mb_keys` | action | Lists key bindings or presses one for a number of ticks. |
+| `mb_keys` | read/action | `list` reads the key bindings (`obs.keys`); `press` holds one for a number of ticks (`act.press_key`). |
 | `mb_stop` | control | Stops the active action and releases input. |
 | `mb_time` | control | Server clock: `status`, `pause`, `resume`, `configure` guards, `report_failure`. |
 | `mb_memory` | action | Waypoints, corridor routes, protected regions, recording; `status`/`get` are reads. |
@@ -41,7 +41,7 @@ Conventions that hold across all tools:
 | Tool | Effect | What it does |
 | --- | --- | --- |
 | `mb_inventory` | read | Player inventory with identities, NBT, cursor and slot ownership. |
-| `mb_find` | read | Finds stacks by exact `{id, meta?, nbt_hash?, nbt?}` in the player or open container. |
+| `mb_find` | read | Finds stacks by exact `{id, meta?, nbt_hash?, nbt?}` in the player or open container (`obs.find`). |
 | `mb_gui` | action | GUI primitives: open inventory, close, `click_slot`, `transfer`, `return_cursor`, `click_at`, `drag`, `scroll`, `key`, `type`, `button`, `text_field`, `hit_test`, `hover`. |
 | `mb_click_slot` | action | One guarded slot click with expected stack and cursor. |
 | `mb_transfer` | action | Moves up to 64 items to explicit ordinary slots and verifies the postcondition. |
@@ -51,20 +51,23 @@ procedures: observe, act, and poll a postcondition with a bounded timeout.
 
 ## work.py: navigation, mining, construction
 
+These wrap the `nav.*` methods (the Baritone engine); its read-only world
+queries are `obs.scan`, `obs.terrain`, `obs.fluid` and `obs.tools`.
+
 | Tool | Effect | What it does |
 | --- | --- | --- |
 | `mb_route` | action | Travels a saved corridor route, forward or reverse. |
 | `mb_follow` | action | Follows loaded entities for a bounded time. |
 | `mb_process` | action | Runs one upstream process: `goal`, `explore`, `get_to_block`, `farm`. |
 | `mb_mine` | action | Quantity mining by block/item selectors in bounds or a radius; success is measured inventory gain. |
-| `mb_scan` | read | Paged scan of loaded blocks by selector. |
+| `mb_scan` | read | Paged scan of loaded blocks by selector (`obs.scan`). |
 | `mb_build_preview` | read | Fresh diff of a plan against the world plus material allocation. |
 | `mb_build` | action | Executes explicit cells or a selection with the strict per-cell contract. |
-| `mb_builder_pause` | control | Pauses active builder work. |
-| `mb_builder_materials` | read | Placeable states currently in inventory. |
-| `mb_schematic_import` | read | Reads a schematic file inside the game's `schematics/` directory into a plan. |
-| `mb_schematic_build` | read/action | Imports and previews (default) or builds a schematic. |
-| `mb_copy` | read/action | Copies loaded blocks in inclusive bounds into a plan, optionally rebuilding it at another origin. |
+| `mb_build_pause` | control | Pauses active build work; the `jobId` stays resumable. |
+| `mb_build_materials` | read | Placeable states currently in inventory. |
+| `mb_schematic_import` | read | Reads an MCEdit `.schematic` or a canonical JSON plan inside the game's `schematics/` directory into `{plan:{cells,origin,size},size,count,skipped,tileEntities}`. Sponge `.schem` and Litematica are not read. |
+| `mb_schematic_build` | read/action | Imports, then previews (default) or builds the nested `plan`. |
+| `mb_copy` | read/action | Copies loaded blocks in inclusive bounds into the same result shape, optionally rebuilding the nested `plan` at another origin. |
 | `mb_work_status` | read | Durable job summary, progress and last receipt by `jobId`. |
 | `mb_work_resume` | action | Resumes a stopped job after the cause is corrected; permissions are re-supplied each time. |
 | `mb_settings` | action | Reads, sets or resets the pinned engine settings while idle. |
@@ -77,10 +80,10 @@ location, so the next session finds where things stopped.
 
 | Tool | Effect | What it does |
 | --- | --- | --- |
-| `mb_nei_status` | read | Whether the NEI catalogue and handlers are ready. |
-| `mb_search` | read | Searches the item catalogue with pagination and exact variants. |
-| `mb_item` | read | Tooltip, ore and fluid data, ItemBlock placement metadata for one variant. |
-| `mb_fluids` | read | Fluid ids, names and properties. |
+| `mb_recipe_status` | read | Whether the NEI catalogue and handlers are ready. |
+| `mb_item_search` | read | Searches the item catalogue with pagination and exact variants. |
+| `mb_item_info` | read | Tooltip, ore and fluid data, ItemBlock placement metadata for one variant. |
+| `mb_fluid_search` | read | Fluid ids, names and properties. |
 | `mb_recipes` | read | Every way to make an item (or `mode="uses"`), per handler, with voltage and duration. |
 | `mb_recipe_handlers` | read | All NEI categories and their machine catalysts. |
 | `mb_recipe_view` | action | Opens the native recipe page and returns it as an image. |
@@ -140,3 +143,24 @@ Put it in any file under `harness/tools/` (files starting with `_` are
 skipped). The next tool call loads it. A duplicate name or an import error
 is reported and the previous tools stay registered. Keep live state in
 `mbtool.state[...]` so it survives the next reload.
+
+## Renamed in 2026-09
+
+For operators and notes written against the earlier names. Parameters and
+result shapes did not change.
+
+| Old | New |
+| --- | --- |
+| raw `baritone.goto`, `mine_block`, `place_block`, `mine`, `build`, `resume`, `build_preview`, `build_stage`, `build_pause`, `build_materials`, `follow`, `process`, `route`, `cache`, `settings`, `status`, `work_status`, `schematic_import`, `copy` | `nav.<same name>` |
+| raw `baritone.scan`, `baritone.terrain`, `baritone.fluid`, `baritone.tools` | `obs.scan`, `obs.terrain`, `obs.fluid`, `obs.tools` |
+| raw `inv.find` | `obs.find` |
+| raw `keys.list` | `obs.keys` |
+| raw `keys.press` | `act.press_key` |
+| raw `obs.hwyla` | `obs.waila` (the alias was removed) |
+| `mb_builder_pause` | `mb_build_pause` |
+| `mb_builder_materials` | `mb_build_materials` |
+| `mb_nei_status` | `mb_recipe_status` |
+| `mb_search` | `mb_item_search` |
+| `mb_item` | `mb_item_info` |
+| `mb_fluids` | `mb_fluid_search` |
+| launcher `install-control`, `rollback-control` | `install-core`, `rollback-core` (client and server `mods/`) |

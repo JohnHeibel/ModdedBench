@@ -21,9 +21,9 @@ goes: **Java touches Minecraft; Python composes; the model decides.**
 | Responsibility | Owner | Surface |
 | --- | --- | --- |
 | Class transformers, input arbitration and leases, GUI input hooks, websocket transport, simulation clock hooks | `mods/core` (the only coremod) | `dev.modbench.api.*` interfaces, `dev.modbench.control.*`, `dev.modbench.bridge.*` |
-| Game state, actions, GUI and inventory operations, NEI and Better Questing adapters, world memory | `mods/client` | `obs.*`, `act.*`, `gui.*`, `inv.*`, `keys.*`, `nei.*`, `quest.*`, `memory.*`, `interrupt.*`, `sys.*` |
+| Game state, actions, GUI and inventory operations, NEI and Better Questing adapters, world memory | `mods/client` | `obs.*` (including `obs.find`, `obs.keys`), `act.*` (including `act.press_key`), `gui.*`, `nei.*`, `quest.*`, `memory.*`, `interrupt.*`, `sys.*` |
 | Authoritative tile, NBT, fluid, energy and Waila reads; whole-tick pause and guards; world identity | `mods/server` | `obs.tile`, `obs.nbt`, `obs.waila`, `time.*` |
-| Pathfinding, mining, construction, following, scanning, durable work journals | `mods/baritone` | `baritone.*` (registered through the `Navigation` interface in the API) |
+| Pathfinding, mining, construction, following, scanning, durable work journals | `mods/baritone` | `nav.*` for movement and work, `obs.scan`, `obs.terrain`, `obs.fluid`, `obs.tools` for its world reads (registered by the client through the `Navigation` interface in the API) |
 | Tool registration, hot reload, request lanes, cancellation | `harness/mcp` | `server.py`, `kernel.py`, `mbtool.py` |
 | Compositions over RPCs, observation predicates that wake the model, world notes | `harness/tools` | `mb_*` tools |
 | Goals, recipes, machine-specific procedures, recovery decisions, harness improvements | the model | `PROMPT.md` |
@@ -58,7 +58,7 @@ error only for a request that never started running, so an action can never
 run twice because the model retried a timeout. Long jobs (mining, building,
 routing) keep their request open until a terminal receipt and expose a
 `jobId` that survives a client restart. Cancellation is a separate
-`act.stop` / `baritone.stop`-style call, and MCP cancellation reaches the
+`act.stop` call (or `nav.build_pause` for a resumable build), and MCP cancellation reaches the
 bridge.
 
 Every method is registered with a name, a description and an *effect*

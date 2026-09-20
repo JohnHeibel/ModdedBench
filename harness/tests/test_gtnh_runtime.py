@@ -23,21 +23,21 @@ class RuntimeTests(unittest.TestCase):
         return {"prismData": str(root)}, mods
 
     def _write_client_build(self, root: Path, mods: Path, kind: str, source: bytes, target: bytes | None = None) -> None:
-        libs = root / "gtnh" / kind / "build" / "libs"
+        libs = root / "mods" / kind / "build" / "libs"
         libs.mkdir(parents=True, exist_ok=True)
         (libs / f"modbench-{kind}-0.1.0.jar").write_bytes(source)
         if target is not None:
             (mods / f"modbench-{kind}.jar").write_bytes(target)
 
-    def test_verify_client_build_rejects_stale_control_jar_without_writing(self):
+    def test_verify_client_build_rejects_stale_core_jar_without_writing(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); cfg, mods = self._client_build_paths(root)
             self._write_client_build(root, mods, "client", b"client", b"client")
-            self._write_client_build(root, mods, "control", b"new-control", b"old-control")
+            self._write_client_build(root, mods, "core", b"new-core", b"old-core")
             before = {path.name: path.read_bytes() for path in mods.iterdir()}
             old_repo, runtime.REPO = runtime.REPO, root
             try:
-                with self.assertRaisesRegex(runtime.RuntimeError_, "install-control"):
+                with self.assertRaisesRegex(runtime.RuntimeError_, "install-core"):
                     runtime.verify_client_build(cfg, root)
             finally:
                 runtime.REPO = old_repo
@@ -47,7 +47,7 @@ class RuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); cfg, mods = self._client_build_paths(root)
             self._write_client_build(root, mods, "client", b"client", b"client")
-            self._write_client_build(root, mods, "control", b"control", b"control")
+            self._write_client_build(root, mods, "core", b"core", b"core")
             old_repo, runtime.REPO = runtime.REPO, root
             try:
                 runtime.verify_client_build(cfg, root)
@@ -58,7 +58,7 @@ class RuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); cfg, mods = self._client_build_paths(root)
             self._write_client_build(root, mods, "client", b"client", b"client")
-            self._write_client_build(root, mods, "control", b"control", b"control")
+            self._write_client_build(root, mods, "core", b"core", b"core")
             old_repo, runtime.REPO = runtime.REPO, root
             try:
                 runtime.verify_client_build(cfg, root)
@@ -69,7 +69,7 @@ class RuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); cfg, mods = self._client_build_paths(root)
             self._write_client_build(root, mods, "client", b"client", b"client")
-            self._write_client_build(root, mods, "control", b"control", b"control")
+            self._write_client_build(root, mods, "core", b"core", b"core")
             self._write_client_build(root, mods, "baritone", b"new-baritone", b"old-baritone")
             old_repo, runtime.REPO = runtime.REPO, root
             try:
@@ -82,9 +82,9 @@ class RuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); cfg, mods = self._client_build_paths(root)
             self._write_client_build(root, mods, "client", b"current-client", b"previous-client")
-            self._write_client_build(root, mods, "control", b"current-control", b"previous-control")
+            self._write_client_build(root, mods, "core", b"current-core", b"previous-core")
             prior = {"client": runtime.sha256_file(mods / "modbench-client.jar"),
-                     "control": runtime.sha256_file(mods / "modbench-control.jar")}
+                     "core": runtime.sha256_file(mods / "modbench-core.jar")}
             runtime.save_json(root / "client-build-history.json", {"sets": [prior]})
             old_repo, runtime.REPO = runtime.REPO, root
             try:
@@ -96,10 +96,10 @@ class RuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); cfg, mods = self._client_build_paths(root)
             self._write_client_build(root, mods, "client", b"current-client", b"previous-client")
-            self._write_client_build(root, mods, "control", b"current-control", b"current-control")
+            self._write_client_build(root, mods, "core", b"current-core", b"current-core")
             runtime.save_json(root / "client-build-history.json", {"sets": [{
                 "client": runtime.sha256_file(mods / "modbench-client.jar"),
-                "control": hashlib.sha256(b"previous-control").hexdigest(),
+                "core": hashlib.sha256(b"previous-core").hexdigest(),
             }]})
             old_repo, runtime.REPO = runtime.REPO, root
             try:
@@ -112,13 +112,13 @@ class RuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); cfg, mods = self._client_build_paths(root)
             self._write_client_build(root, mods, "client", b"client", b"client")
-            self._write_client_build(root, mods, "control", b"control")
+            self._write_client_build(root, mods, "core", b"core")
             runtime.save_json(root / "client-build-history.json", {"sets": [{
-                "client": runtime.sha256_file(mods / "modbench-client.jar"), "control": "0" * 64,
+                "client": runtime.sha256_file(mods / "modbench-client.jar"), "core": "0" * 64,
             }]})
             old_repo, runtime.REPO = runtime.REPO, root
             try:
-                with self.assertRaisesRegex(runtime.RuntimeError_, "install-control"):
+                with self.assertRaisesRegex(runtime.RuntimeError_, "install-core"):
                     runtime.verify_client_build(cfg, root)
             finally:
                 runtime.REPO = old_repo
@@ -192,30 +192,60 @@ class RuntimeTests(unittest.TestCase):
             runtime.save_json(instance / runtime.MARKER, {"managedBy": "modbench"})
             old_repo, runtime.REPO = runtime.REPO, root
             try:
-                artifacts = root / "gtnh/client/build/libs"; artifacts.mkdir(parents=True)
+                artifacts = root / "mods/client/build/libs"; artifacts.mkdir(parents=True)
                 (artifacts / "modbench-client-0.1.0.jar").write_bytes(b"new")
                 with patch.object(runtime, "instance_dir", return_value=instance), patch.object(runtime, "bridge_is_live", return_value=False), patch.object(runtime, "client_instance_is_running", return_value=False):
                     target = runtime.install_jar("client", {}, root)
-                self.assertEqual(target, instance / ".minecraft/mods/modbench-client.jar")
+                self.assertEqual(target, [instance / ".minecraft/mods/modbench-client.jar"])
                 with patch.object(runtime, "instance_dir", return_value=instance), patch.object(runtime, "bridge_is_live", return_value=False), patch.object(runtime, "client_instance_is_running", return_value=True):
                     with self.assertRaises(runtime.RuntimeError_): runtime.install_jar("client", {}, root)
             finally: runtime.REPO = old_repo
 
-    def test_control_and_baritone_use_the_same_managed_client_guard(self):
+    def test_core_and_baritone_use_the_same_managed_client_guard(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); instance = root / "instance"; (instance / ".minecraft/mods").mkdir(parents=True)
             runtime.save_json(instance / runtime.MARKER, {"managedBy": "modbench"})
+            server = root / "server"; (server / "mods").mkdir(parents=True); runtime.save_json(server / runtime.MARKER, {"managedBy": "modbench"})
             old_repo, runtime.REPO = runtime.REPO, root
             try:
-                for kind in ("control", "baritone"):
-                    libs = root / "gtnh" / kind / "build/libs"; libs.mkdir(parents=True, exist_ok=True)
+                for kind in ("core", "baritone"):
+                    libs = root / "mods" / kind / "build/libs"; libs.mkdir(parents=True, exist_ok=True)
                     (libs / f"modbench-{kind}-0.1.0.jar").write_bytes(kind.encode())
                 with patch.object(runtime, "instance_dir", return_value=instance), patch.object(runtime, "bridge_is_live", return_value=False), patch.object(runtime, "client_instance_is_running", return_value=False):
-                    for kind in ("control", "baritone"):
-                        target = runtime.install_jar(kind, {}, root)
-                        self.assertEqual(target, instance / f".minecraft/mods/modbench-{kind}.jar")
+                    self.assertEqual(runtime.install_jar("baritone", {}, root), [instance / ".minecraft/mods/modbench-baritone.jar"])
+                    self.assertEqual(runtime.install_jar("core", {}, root), [instance / ".minecraft/mods/modbench-core.jar", server / "mods/modbench-core.jar"])
                 with patch.object(runtime, "instance_dir", return_value=instance), patch.object(runtime, "bridge_is_live", return_value=False), patch.object(runtime, "client_instance_is_running", return_value=True):
-                    with self.assertRaises(runtime.RuntimeError_): runtime.install_jar("control", {}, root)
+                    with self.assertRaises(runtime.RuntimeError_): runtime.install_jar("core", {}, root)
+                with patch.object(runtime, "instance_dir", return_value=instance), patch.object(runtime, "bridge_is_live", return_value=False), patch.object(runtime, "client_instance_is_running", return_value=False), patch.object(runtime, "recorded_process_is_running", return_value=True):
+                    with self.assertRaises(runtime.RuntimeError_): runtime.install_jar("core", {}, root)
+            finally: runtime.REPO = old_repo
+
+    def test_core_install_keeps_a_backup_per_side_and_rollback_restores_both(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); instance = root / "instance"; client_mods = instance / ".minecraft/mods"; client_mods.mkdir(parents=True)
+            runtime.save_json(instance / runtime.MARKER, {"managedBy": "modbench"})
+            server = root / "server"; (server / "mods").mkdir(parents=True); runtime.save_json(server / runtime.MARKER, {"managedBy": "modbench"})
+            (client_mods / "modbench-core.jar").write_bytes(b"old-client"); (server / "mods/modbench-core.jar").write_bytes(b"old-server")
+            runtime.save_json(root / "config.json", {"prismData": str(root)})
+            old_repo, runtime.REPO = runtime.REPO, root
+            try:
+                libs = root / "mods/core/build/libs"; libs.mkdir(parents=True); (libs / "modbench-core-0.1.0.jar").write_bytes(b"new")
+                def stopped():
+                    return patch.multiple(runtime, instance_dir=lambda cfg: instance, bridge_is_live=lambda port: False, client_instance_is_running=lambda instance: False)
+                with stopped():
+                    runtime.install_jar("core", {}, root)
+                self.assertEqual((client_mods / "modbench-core.jar").read_bytes(), b"new"); self.assertEqual((server / "mods/modbench-core.jar").read_bytes(), b"new")
+                self.assertEqual((root / "backups/client/modbench-core.previous.jar").read_bytes(), b"old-client")
+                self.assertEqual((root / "backups/server/modbench-core.previous.jar").read_bytes(), b"old-server")
+                self.assertEqual(set(runtime.load_json(root / "installed.json")["core"]), {"client", "server"})
+                (root / "backups/server/modbench-core.previous.jar").unlink()
+                with stopped():
+                    with self.assertRaisesRegex(runtime.RuntimeError_, "server"): runtime.rollback_jar("core", root)
+                self.assertEqual((client_mods / "modbench-core.jar").read_bytes(), b"new")   # nothing moved: rollback is all-or-nothing
+                (root / "backups/server/modbench-core.previous.jar").write_bytes(b"old-server")
+                with stopped():
+                    self.assertEqual(runtime.rollback_jar("core", root), [client_mods / "modbench-core.jar", server / "mods/modbench-core.jar"])
+                self.assertEqual((client_mods / "modbench-core.jar").read_bytes(), b"old-client"); self.assertEqual((server / "mods/modbench-core.jar").read_bytes(), b"old-server")
             finally: runtime.REPO = old_repo
 
     def test_server_install_is_blocked_by_recorded_startup_process(self):
@@ -233,7 +263,7 @@ class RuntimeTests(unittest.TestCase):
             runtime.save_json(root / "installed.json", {"client": {"target": "kept"}})
             old_repo, runtime.REPO = runtime.REPO, root
             try:
-                artifacts = root / "gtnh/server/build/libs"; artifacts.mkdir(parents=True)
+                artifacts = root / "mods/server/build/libs"; artifacts.mkdir(parents=True)
                 (artifacts / "modbench-server-0.1.0.jar").write_bytes(b"new")
                 with patch.object(runtime, "bridge_is_live", return_value=False), patch.object(runtime, "recorded_process_is_running", return_value=False):
                     runtime.install_jar("server", {}, root)
@@ -242,8 +272,9 @@ class RuntimeTests(unittest.TestCase):
 
     def test_rollback_refuses_tampered_transaction_target(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp); (root / "backups").mkdir(); backup = root / "backups/modbench-server.previous.jar"; backup.write_bytes(b"old")
-            runtime.save_json(root / "installed.json", {"server": {"target": str(root / "outside/modbench-server.jar"), "backup": str(backup)}})
+            root = Path(tmp); server = root / "server"; (server / "mods").mkdir(parents=True); runtime.save_json(server / runtime.MARKER, {"managedBy": "modbench"})
+            (root / "backups/server").mkdir(parents=True); backup = root / "backups/server/modbench-server.previous.jar"; backup.write_bytes(b"old")
+            runtime.save_json(root / "installed.json", {"server": {"server": {"target": str(root / "outside/modbench-server.jar"), "backup": str(backup)}}})
             with patch.object(runtime, "bridge_is_live", return_value=False), patch.object(runtime, "recorded_process_is_running", return_value=False):
                 with self.assertRaises(runtime.RuntimeError_): runtime.rollback_jar("server", root)
 
@@ -303,11 +334,12 @@ class RuntimeTests(unittest.TestCase):
             target = server / "mods/modbench-server.jar"; target.write_bytes(b"old")
             old_repo, runtime.REPO = runtime.REPO, root
             try:
-                artifact = root / "gtnh/server/build/libs"; artifact.mkdir(parents=True); (artifact / "modbench-server-0.1.0.jar").write_bytes(b"new")
+                artifact = root / "mods/server/build/libs"; artifact.mkdir(parents=True); (artifact / "modbench-server-0.1.0.jar").write_bytes(b"new")
                 with patch.object(runtime, "bridge_is_live", return_value=False):
-                    self.assertEqual(runtime.install_jar("server", {}, root).read_bytes(), b"new")
+                    self.assertEqual(runtime.install_jar("server", {}, root)[0].read_bytes(), b"new")
+                self.assertEqual((root / "backups/server/modbench-server.previous.jar").read_bytes(), b"old")
                 with patch.object(runtime, "bridge_is_live", return_value=False):
-                    self.assertEqual(runtime.rollback_jar("server", root).read_bytes(), b"old")
+                    self.assertEqual(runtime.rollback_jar("server", root)[0].read_bytes(), b"old")
             finally: runtime.REPO = old_repo
 
 

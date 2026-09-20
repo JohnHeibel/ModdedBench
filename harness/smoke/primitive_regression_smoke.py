@@ -12,7 +12,7 @@ from kernel import Kernel, BridgeError, bridge_url
 
 def main():
     evidence={'ok':False,'checks':[],'receipts':[]}
-    out=ROOT/'gtnh/.runtime/evidence/primitive-regressions.json'
+    out=ROOT/'.runtime/evidence/primitive-regressions.json'
     def check(name,condition,detail=None):
         if not condition: raise AssertionError(f'{name}: {detail}')
         evidence['checks'].append(name);print(name,flush=True)
@@ -64,7 +64,7 @@ def main():
             s.call(active+'.position',name='build')
             call('time.resume');time.sleep(.5)
             call('act.select_hotbar',slot=8)
-            estimate=call('baritone.tools',**coords(10,177,11))
+            estimate=call('obs.tools',**coords(10,177,11))
             check('tallgrass estimate is one tick',estimate['estimatedTicks']==1,estimate)
             p=call('obs.player');target=coords(10,177,11)
             dx=target['x']+.5-p['pos'][0];dz=target['z']+.5-p['pos'][2]
@@ -82,7 +82,7 @@ def main():
             # Builder must clear grass itself, without the old raw-input workaround.
             block(10,177,11,'minecraft:tallgrass',1);time.sleep(.2)
             pos=list(coords(10,177,11).values())
-            receipt=call('baritone.build',selection={'min':pos,'max':pos,'shape':'fill','block':{'id':'minecraft:cobblestone','meta':0}},mode='builder',allowBreak=True,allowPlace=True,replaceExisting=True,timeoutTicks=400)
+            receipt=call('nav.build',selection={'min':pos,'max':pos,'shape':'fill','block':{'id':'minecraft:cobblestone','meta':0}},mode='builder',allowBreak=True,allowPlace=True,replaceExisting=True,timeoutTicks=400)
             check('builder clears tallgrass and places block',receipt['state']=='succeeded' and s.call('obs.block',**coords(10,177,11))['id']=='minecraft:cobblestone',receipt)
             evidence['ok']=True
         finally:
