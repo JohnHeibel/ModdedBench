@@ -81,8 +81,9 @@ paused, networking, keepalives, chunk delivery, observations and screenshots
 stay live; gameplay packets are deferred and released in order at the network
 stage of the first resumed tick. GregTech's background structure jobs pass
 through a barrier so a pause settles only after admitted jobs finish;
-OpenComputers machines are paused cooperatively. Details and the accepted
-evidence are in `docs/legacy/TIME_CONTROL_AUDIT.md`.
+OpenComputers machines are paused cooperatively. The full contract, the
+barrier ordering rules (`PauseCoordinator`, `before:gregtech`) and the accepted
+evidence are in [TIME_CONTROL.md](TIME_CONTROL.md).
 
 ## Control ownership
 
@@ -93,6 +94,20 @@ Protected regions (world memory) are checked at the placement and breaking
 cost level in Baritone and at the interaction guard in core; `automation`
 mode blocks incidental edits, `all_edits` mode also blocks deliberate ones,
 and every override is scoped to a single operation.
+
+World memory (waypoints, corridor routes, protected regions) is stored per
+world and dimension, keyed by the server's persistent world UUID plus the
+connection address. A route leg constrains the search to a corridor around
+its anchors and fails when blocked; it is not a replay of old input.
+
+## Authoritative observations
+
+`obs.tile`, `obs.nbt` and `obs.waila` are answered by the dedicated server
+over the maintenance channel the clock uses, so they work while paused, never
+load chunks and never call fill, drain or insert to probe a machine. The
+bridge assigns no meaning to mod NBT. `obs.batch` runs up to 16 reads in one
+pass: server reads share one server tick, client reads one client tick, and
+the two sides are not atomic with each other.
 
 ## Python layer
 
@@ -124,7 +139,15 @@ A watch is a declarative condition or a small Python file with
 optional prompt for the model, retries with the same event id if the fire is
 not confirmed, and re-arms the watch rather than dropping it. Watch specs
 survive reconnects. `mb_interrupt_events` is how a host (or the autonomous
-runner) learns it should give the model a new turn.
+runner, [RUNNER.md](RUNNER.md)) learns it should give the model a new turn. A
+plain MCP connection cannot wake its host's model: without a consumer the
+event is kept and the native effects still happen, but no turn is promised.
+
+Every fire carries the expected bridge id, world id, dimension and world
+epoch, so a stale reaction fails before any effect, and event ids deduplicate
+retries within one client JVM. `cancel` and `pause` set an admission latch:
+interactions are refused until `interrupt.ack(eventId)`, so an obsolete model
+reply cannot act.
 
 ### World notes
 
@@ -142,6 +165,6 @@ a job failing at a location), tagged `auto`.
 `mods/baritone/src/upstream/java` contains files from Baritone v1.2.19
 (commit `d9cb2d91`) under LGPL-3.0-or-later, listed with their original path
 and SHA-256 in `mods/baritone/UPSTREAM_SOURCES.json`; modified files carry a
-notice. `mods/baritone/PORT_ORIGIN.md` describes the pathing package that
-was written for this project. Everything else is original and released under
-the same licence. See `NOTICE.md`.
+notice. [BARITONE_PORT.md](BARITONE_PORT.md) describes what is ported, what is
+not, and the mining, construction and schematic contracts. Everything else is
+original and released under the same licence. See `NOTICE.md`.

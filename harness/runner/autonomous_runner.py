@@ -4,7 +4,7 @@
 
 Adapters are ordinary editable Python modules with an async ``infer(request)``
 function. They may also define ``cancel()``.  The request and response JSON
-contract is documented in ``docs/legacy/AUTONOMOUS_RUNNER.md``.
+contract is documented in ``docs/RUNNER.md``.
 """
 from __future__ import annotations
 
