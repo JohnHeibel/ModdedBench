@@ -60,9 +60,17 @@ def mb_methods() -> Any:
 
 @tool(lane="read", coverage=["meta"])
 def mb_status() -> Any:
-    """Bridge capabilities and connection status. Also surfaces world notes near the player (session start, region notes)."""
+    """Bridge capabilities and connection status, your goal stack (mb_goal) with its stall signal, and world notes near the player.
+
+    Call it at the start of every session and after every compaction: it is the heartbeat.
+    """
     k = kernel()
-    return notes.attach(k.call("sys.capabilities"), notes.surface(k, reason="session", radius=32))
+    out = dict(k.call("sys.capabilities"), brief="Your standing brief is PROMPT.md at the repository root. If you cannot recall its rules, re-read it now.")
+    try:
+        out["goal"] = notes.goal(k)
+    except Exception as e:  # not in a world yet, or the clock is unreachable: status must still answer
+        out["goal"] = {"unavailable": str(e)}
+    return notes.attach(out, notes.surface(k, reason="session", radius=32))
 
 
 @tool(lane=lane_by_method(), effect="privileged", coverage=["meta"])

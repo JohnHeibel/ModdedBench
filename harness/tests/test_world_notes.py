@@ -182,7 +182,10 @@ class Game:
         if method == "obs.player": return dict(pos=list(self.pos), dimension=0, health=20)
         if method == "obs.block": return dict(id="minecraft:stone", meta=0, pos=[params["x"], params["y"], params["z"]])
         if method.startswith("nav."): return dict(self.receipt)
+        if method == "time.state": return dict(simulationTicks=self.ticks)
+        if method == "obs.inventory": return dict(self.inventory)
         raise AssertionError(method)
+    ticks, inventory = 0, {"counts": {}}
     def close(self): pass
 
 
@@ -205,6 +208,7 @@ class NotesSurfacingTests(unittest.TestCase):
         self.put("far", self.at(500, 64, 500)); self.put("nether", self.at(10, 64, 20, dimension=-1))
         found = notes.surface(self.game, reason="session", radius=32)
         self.assertEqual([n["id"] for n in found], ["n0", "n1", "n2", "n3", "n4"])
+        self.assertTrue(found[0].pop("updated").startswith("20"))  # surfaced notes carry their age
         self.assertEqual(found[0], {"id": "n0", "kind": "location", "title": "note n0", "revision": 1, "status": "open", "at": [10, 64, 20],
                                     "distance": 0.0, "excerpt": "details details details n0", "tags": ["plan"], "why": "session"})
         self.assertEqual([n["id"] for n in notes.surface(self.game, reason="session", radius=32)], ["n5", "n6"])   # the rest, once
@@ -279,5 +283,34 @@ class NotesSurfacingTests(unittest.TestCase):
         with self.assertRaises(BridgeError): notes.tracked("nav.route", 30, name="x")
         self.assertEqual(self.store.get("auto-route-0-8-8-8")["revision"], 2)
 
+    def test_item_and_topic_notes_have_no_place_and_surface_by_subject(self):
+        self.put("cassiterite", dict(kind="item", item="gregtech:gt.blockores:1823"))
+        self.put("boiler", dict(kind="topic", topic="Machine:Boiler"))
+        self.put("here", self.at(10, 64, 20))
+        self.assertEqual([n["id"] for n in self.store.search(subject="machine:boiler")["notes"]], ["boiler"])
+        self.assertEqual([n["id"] for n in self.store.search(dimension=0, near=[10, 64, 20], radius=4)["notes"]], ["here"])
+        self.assertEqual(len(self.store.search(dimension=-1)["notes"]), 2)  # a dimension filter never hides notes that have no place
+        result = {"slots": [{"id": "gregtech:gt.blockores", "meta": 1823, "count": 3}, {"id": "minecraft:stick", "meta": 0}]}
+        self.assertEqual(notes.item_subjects(result), ["gregtech:gt.blockores", "gregtech:gt.blockores:1823", "minecraft:stick", "minecraft:stick:0"])
+        found = notes.surface(self.game, subjects=notes.item_subjects(result), reason="item")
+        self.assertEqual([(n["id"], n["at"]) for n in found], [("cassiterite", "gregtech:gt.blockores:1823")])
+        self.assertEqual(notes.surface(self.game, subjects=notes.item_subjects(result)), [])  # shown once
+        with self.assertRaisesRegex(ValueError, "unknown attachment fields"):
+            attachment(dict(kind="item", item="a:b", pos=[0, 0, 0]))
+
+    def test_goal_stack_persists_and_flags_a_stall_only_in_running_game_time(self):
+        self.assertIn("unset", notes.goal(self.game))
+        notes.goal(self.game, dict(chapter="Steam Age", quest="Bronze", subgoal="mine copper", serves=None))
+        mbtool.state.pop("goal", None); self.addCleanup(mbtool.state.pop, "goal", None)
+        first = notes.goal(self.game)
+        self.assertEqual((first["quest"], first["subgoal"], first["quietGameMinutes"]), ("Bronze", "mine copper", 0))
+        self.game.ticks = 30000
+        self.assertIn("stale", notes.goal(self.game))
+        self.game.inventory = {"counts": {"minecraft:cobblestone": 1}}
+        self.assertNotIn("stale", notes.goal(self.game))
+        self.game.ticks = 10  # server restarted: the counter went backwards and must not count
+        self.assertEqual(notes.goal(self.game)["quietGameMinutes"], 0)
+        self.assertEqual(notes.goal(self.game, dict(subgoal="smelt copper"))["chapter"], "Steam Age")
+        self.assertEqual(self.store.get("goal-stack")["revision"], 2)
 
 if __name__=="__main__":unittest.main()

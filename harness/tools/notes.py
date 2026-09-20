@@ -31,6 +31,7 @@ import uuid
 from mbtool import BridgeError, kernel, state, tool
 
 SURFACE_LIMIT = 5
+SUBJECT_KINDS = ("item", "topic")
 SHOWN_TTL_S = 600.0      # a note shown less than this ago is not repeated...
 MOVE_RESET = 48.0        # ...unless the player has moved this far since it was shown
 GATE_S, GATE_BLOCKS = 3.0, 4.0  # skip the store entirely when polled again from the same spot
@@ -83,11 +84,15 @@ def attachment(value):
         if a.get("uuidScope") != "server":
             raise ValueError("entity attachment requires a server UUID from obs.entity, not a client/session UUID")
         a["lastSeen"] = _pos(a.get("lastSeen"))
+    elif kind in SUBJECT_KINDS:  # not a place: an item type ("modid:name" or "modid:name:meta") or a free topic ("machine:boiler")
+        keys = (keys - {"dimension"}) | {kind}
+        a[kind] = _text(a.get(kind), kind, 128).strip().casefold()
     else:
-        raise ValueError("attachment kind must be block, entity, location or region")
+        raise ValueError("attachment kind must be block, entity, location, region, item or topic")
     if set(a) - keys:
         raise ValueError(f"unknown attachment fields: {sorted(set(a)-keys)}")
-    _int(a.get("dimension"), "dimension", -2**31, 2**31-1)
+    if kind not in SUBJECT_KINDS:
+        _int(a.get("dimension"), "dimension", -2**31, 2**31-1)
     for key in ("label", "observedAt"):
         if key in a:
             _text(a[key], key, 256)
@@ -199,7 +204,7 @@ class NotesStore:
         notes = [json.loads(row[0]) for row in rows[:limit]]
         return {"revisions": notes, "nextBeforeRevision": notes[-1]["revision"] if len(rows) > limit else None}
 
-    def search(self, query="", tags=None, status=None, kind=None, dimension=None, near=None, radius=32, region=None, entity_uuid=None, cursor=None, limit=20, detail="summary"):
+    def search(self, query="", tags=None, status=None, kind=None, dimension=None, near=None, radius=32, region=None, entity_uuid=None, subject=None, cursor=None, limit=20, detail="summary"):
         _int(limit, "limit", 1, 100)
         if detail not in ("summary", "full"):
             raise ValueError("detail must be summary or full")
@@ -207,7 +212,7 @@ class NotesStore:
         if tags is not None and (not isinstance(tags, list) or len(tags) > 32):
             raise ValueError("tags must be a list of at most 32 strings")
         tags = {_text(t, "tag", 96).strip().casefold() for t in tags or []}
-        if status not in (None, "open", "done", "archived", "all") or kind not in (None, "block", "entity", "location", "region"):
+        if status not in (None, "open", "done", "archived", "all") or kind not in (None, "block", "entity", "location", "region", *SUBJECT_KINDS):
             raise ValueError("invalid status or attachment kind")
         if dimension is not None:
             _int(dimension, "dimension", -2**31, 2**31-1)
@@ -221,14 +226,19 @@ class NotesStore:
             raise ValueError("spatial search requires a dimension")
         if entity_uuid is not None:
             entity_uuid = str(uuid.UUID(entity_uuid))
-        fingerprint = hashlib.sha256(_json([self.world_id, terms, sorted(tags), status, kind, dimension, near, radius, region, entity_uuid]).encode()).hexdigest()
+        fingerprint = hashlib.sha256(_json([self.world_id, terms, sorted(tags), status, kind, dimension, near, radius, region, entity_uuid, subject]).encode()).hexdigest()
         after, ceiling = "", None
         if cursor is not None:
             if not isinstance(cursor, dict) or cursor.get("query") != fingerprint:
                 raise ValueError("cursor belongs to another query/world")
             after = _text(cursor.get("after"), "cursor.after", 96)
             ceiling = _int(cursor.get("sequence"), "cursor.sequence")
+        subjects = None if subject is None else {str(v).strip().casefold() for v in ([subject] if isinstance(subject, str) else subject)}
         def matches(a):
+            if a["kind"] in SUBJECT_KINDS:  # no place: matched by subject, never by a spatial filter
+                return near is None and region is None and entity_uuid is None and kind in (None, a["kind"]) and (subjects is None or a[a["kind"]] in subjects)
+            if subjects is not None:
+                return False
             if dimension is not None and a["dimension"] != dimension or kind is not None and a["kind"] != kind:
                 return False
             if entity_uuid is not None and (a["kind"] != "entity" or a["uuid"] != entity_uuid):
@@ -313,8 +323,11 @@ def capture(kernel, context, kind, **params):
         a["pos"] = params.get("pos", context["pos"])
     elif kind == "region":
         a.update(min=params["min"], max=params["max"])
+    elif kind in SUBJECT_KINDS:
+        del a["dimension"]
+        a[kind] = params[kind]
     else:
-        raise ValueError("kind must be block, entity, location or region")
+        raise ValueError("kind must be block, entity, location, region, item or topic")
     after = kernel.call("memory.context")
     if any(after[key] != context[key] for key in ("worldId", "dimension")):
         raise ValueError("world/dimension changed during capture; observe again")
@@ -345,7 +358,9 @@ def read_notes(kernel, method, params):
         resolved = []
         for a in note["attachments"]:
             result = dict(attachment=a, status="annotation")
-            if a["dimension"] != context["dimension"]:
+            if a["kind"] in SUBJECT_KINDS:
+                pass
+            elif a["dimension"] != context["dimension"]:
                 result["status"] = "different_dimension"
             elif a["kind"] in {"block", "entity"}:
                 try:
@@ -383,7 +398,7 @@ def _log(msg):
     print(f"[notes] {msg}", file=sys.stderr, flush=True)
 
 
-def surface(kernel, *, position=None, dimension=None, block=None, entity=None, reason="", radius=16, context=None) -> list[dict]:
+def surface(kernel, *, position=None, dimension=None, block=None, entity=None, subjects=None, reason="", radius=16, context=None) -> list[dict]:
     """At most SURFACE_LIMIT compact notes relevant to a transition, most relevant first; [] when nothing new.
 
     Exactly one focus: ``entity`` (server UUID), ``block`` ([x,y,z]: notes anchored there or regions
@@ -404,7 +419,9 @@ def surface(kernel, *, position=None, dimension=None, block=None, entity=None, r
         here = _floor(position or context["pos"])
         cache["last"] = (dimension, now, here)
         store = store_for(world)
-        if entity is not None:
+        if subjects is not None:
+            anchor, found = here, store.search(subject=subjects, limit=100)["notes"] if subjects else []
+        elif entity is not None:
             anchor, found = here, store.search(entity_uuid=entity, limit=100)["notes"]
         elif block is not None:
             anchor = _floor(block)
@@ -434,7 +451,7 @@ def surface(kernel, *, position=None, dimension=None, block=None, entity=None, r
 def _nearest(note, anchor, dimension):
     best = (math.inf, None)
     for a in note["attachments"]:
-        if a["dimension"] == dimension:
+        if a.get("dimension") == dimension and a["kind"] not in SUBJECT_KINDS:
             best = min(best, (_box_distance(a, anchor), a), key=lambda x: x[0])
     return best if best[1] is not None else (math.inf, note["attachments"][0])
 
@@ -442,7 +459,8 @@ def _nearest(note, anchor, dimension):
 def _compact(note, anchor, dimension, reason):
     distance, a = _nearest(note, anchor, dimension)
     out = {"id": note["id"], "kind": a["kind"], "title": note["title"], "revision": note["revision"], "status": note["status"],
-           "at": {"min": a["min"], "max": a["max"]} if a["kind"] == "region" else a.get("pos") or a.get("lastSeen"),
+           "at": {"min": a["min"], "max": a["max"]} if a["kind"] == "region" else a.get("pos") or a.get("lastSeen") or a.get(a["kind"]),
+           "updated": note.get("updatedAt"),
            "distance": None if math.isinf(distance) else round(distance, 1)}
     excerpt = (note.get("excerpt") if "excerpt" in note else note.get("text", ""))[:140]
     if excerpt:
@@ -452,6 +470,25 @@ def _compact(note, anchor, dimension, reason):
     if reason:
         out["why"] = reason
     return out
+
+
+def item_subjects(result, limit=64):
+    """The item types named anywhere in a result, as "id:meta" and "id", for surfacing item notes."""
+    out, stack = [], [result]
+    while stack and len(out) < limit * 2:
+        value = stack.pop()
+        if isinstance(value, dict):
+            if isinstance(value.get("id"), str) and ":" in value["id"]:
+                out += [f'{value["id"]}:{value.get("meta", 0)}', value["id"]]
+            stack.extend(value.values())
+        elif isinstance(value, list):
+            stack.extend(value)
+    return sorted(set(out))
+
+
+def with_item_notes(result, reason="item"):
+    """Attach notes about the item types a result mentions; the usual cap and show-once rules apply."""
+    return attach(result, surface(kernel(), subjects=item_subjects(result), reason=reason))
 
 
 def attach(result, found):
@@ -551,11 +588,16 @@ def mb_notes(method: str = "search", params: dict | None = None) -> Any:
     Notes also surface on their own (under "notes") when you arrive somewhere, observe a
     block/entity that has one, enter an annotated region, or call mb_status.
     capture: {kind:block,pos:[x,y,z]}, {kind:entity,entityId:observedId} or uuid,
-    {kind:location,pos?:[x,y,z]}, {kind:region,min:[x,y,z],max:[x,y,z]}. Returns
+    {kind:location,pos?:[x,y,z]}, {kind:region,min:[x,y,z],max:[x,y,z]},
+    {kind:item,item:"modid:name" or "modid:name:meta"} for an item TYPE (there is no
+    per-stack identity), {kind:topic,topic:"machine:boiler"} for anything that is not a
+    place: a machine kind, a mod, a quest, a technique, a wiki lesson. Item notes surface
+    when that item shows up in mb_inventory, mb_item_info or mb_recipes; topic notes are
+    found with search {subject:"machine:boiler"} (subject also takes a list). Returns
     worldId and attachment for mb_note_write. Entity UUIDs must come from the server;
     use obs.entities to discover transient IDs. Captures do not save notes.
     search: {query,tags:[all-required-tags],status:open|done|archived|all,kind,
-    near:[x,y,z]|player,radius:32,region:{min,max},entity_uuid,dimension,limit:20,cursor,detail:summary|full}.
+    near:[x,y,z]|player,radius:32,region:{min,max},entity_uuid,subject,dimension,limit:20,cursor,detail:summary|full}.
     Search returns anchors and short excerpts by default; get reads the full note.
     Defaults to current dimension and excludes archived notes; dimension:null searches
     all dimensions (spatial searches require one). Follow nextCursor unchanged with
@@ -587,6 +629,58 @@ def mb_note_write(world_id: str, id: str, expected_revision: int,
     Stored under MODBENCH_NOTES_DIR (default .state/notes), across JVM/MCP restarts.
     """
     return write_note(kernel(), world_id, id, expected_revision, operation_id, patch)
+
+
+# ---- goal stack ----
+
+GOAL_ID, GOAL_FIELDS, STALE_TICKS = "goal-stack", ("chapter", "quest", "subgoal", "serves"), 24000
+
+
+def goal(kernel, changes=None):
+    """The pinned goal note plus a stall signal: game ticks since the sub-goal or the inventory last changed."""
+    context = kernel.call("memory.context", timeout=5)
+    store = store_for(context["worldId"])
+    try:
+        note = store.get(GOAL_ID)
+    except ValueError:
+        note = {"revision": 0, "data": {}}
+    data = dict(note["data"])
+    changes = {k: _text(v, k, 512, empty=True).strip() for k, v in (changes or {}).items() if v is not None}
+    if changes:
+        data.update(changes, setAt=datetime.now(timezone.utc).isoformat())
+        text = " / ".join(f"{k}: {data[k]}" for k in GOAL_FIELDS if data.get(k))
+        store.write(GOAL_ID, note["revision"], f"goal-{uuid.uuid4()}", {"title": "Goal stack", "text": text, "data": data, "tags": ["goal"],
+                    "attachments": [{"kind": "topic", "topic": "goal"}]})
+    if not data:
+        return {"unset": "no goal stack yet: call mb_goal(chapter=..., quest=..., subgoal=..., serves=...)"}
+    watch = state.setdefault("goal", {})
+    ticks = kernel.call("time.state", timeout=5).get("simulationTicks", 0)
+    mark = hashlib.sha256(_json([data.get("subgoal"), kernel.call("obs.inventory", detail="counts", timeout=5)]).encode()).hexdigest()
+    if mark != watch.get("mark"):
+        watch.update(mark=mark, quiet=0)
+    else:
+        watch["quiet"] = watch.get("quiet", 0) + max(0, ticks - watch.get("ticks", ticks))  # the counter restarts with the server
+    watch["ticks"] = ticks
+    out = {**{k: data.get(k, "") for k in GOAL_FIELDS}, "setAt": data.get("setAt"), "quietGameMinutes": round(watch["quiet"] / 1200, 1)}
+    if watch["quiet"] >= STALE_TICKS:
+        out["stale"] = "same sub-goal and same inventory for a game day of running time: say in one sentence why, then change something or re-scope. A running job or an armed wait is a fine reason; put it in the sub-goal."
+    return out
+
+
+@tool(coverage=["memory"])
+def mb_goal(chapter: str | None = None, quest: str | None = None, subgoal: str | None = None, serves: str | None = None) -> Any:
+    """Read or update your goal stack: chapter > current quest > working sub-goal. One cheap call; only the fields you pass change.
+
+    chapter changes rarely; quest changes when one is claimed and verified or parked
+    with a note; subgoal is the immediate step ("mine copper for the bronze quest") and
+    should be rewritten whenever you switch. serves names what the sub-goal is for when
+    it is not the current quest: a named investment ("second coke oven: charcoal for
+    the next three quests"). If you cannot say what a sub-goal serves, you have drifted.
+    mb_status returns this stack every time, with quietGameMinutes (running game time
+    since the sub-goal or your inventory last changed) and a stale flag after a game day.
+    It lives in the note "goal-stack", so it survives compaction, restarts and crashes.
+    """
+    return goal(kernel(), {"chapter": chapter, "quest": quest, "subgoal": subgoal, "serves": serves})
 
 
 if __name__ == "__main__":
