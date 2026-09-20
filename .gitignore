@@ -1,0 +1,27 @@
+# Gradle / Java
+build/
+.gradle/
+*.class
+mods/*/run/
+mods/*/logs/
+
+# Managed game instances, world state, evidence (never commit)
+.runtime/
+.state/
+*.token
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# IDE / OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Modpack archives: download yourself; sha256 pinned in pack.lock.json
+GT_New_Horizons_*.zip

@@ -1,0 +1,15 @@
+pluginManagement {
+    repositories {
+        maven { url = 'https://nexus.gtnewhorizons.com/repository/public/' }
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
+plugins {
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
+rootProject.name = 'modbench-gtnh'
+include 'bridge-core', 'control-api', 'control', 'baritone-core', 'baritone', 'client', 'server'
+rootProject.children.each { it.projectDir = file("mods/${it.name}") }

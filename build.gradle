@@ -1,0 +1,104 @@
+plugins {
+    id 'base'
+    id 'com.gtnewhorizons.retrofuturagradle' version '2.0.2' apply false
+}
+
+allprojects {
+    group = 'dev.modbench'
+    version = '0.1.0'
+    repositories { mavenCentral() }
+}
+
+subprojects {
+    apply plugin: 'java-library'
+    java {
+        toolchain { languageVersion = JavaLanguageVersion.of(21) }
+        withSourcesJar()
+    }
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+    }
+    tasks.withType(JavaCompile).matching { it.name in ['compileJava', 'compileTestJava'] }.configureEach {
+        options.release = 17
+    }
+    dependencies { testImplementation 'junit:junit:4.13.2' }
+    tasks.withType(Test).configureEach { useJUnit() }
+}
+
+configure([project(':client'), project(':server'), project(':control'), project(':baritone')]) {
+    apply plugin: 'com.gtnewhorizons.retrofuturagradle'
+    minecraft {
+        mcVersion = '1.7.10'
+        javaCompatibilityVersion = 17
+        // Minecraft's own decompilation/recompilation still uses its Java 8 toolchain.
+        jvmLanguageVersion = JavaLanguageVersion.of(8)
+        username = 'ModbenchDev'
+        userUUID = '3ba1bc1f-38db-3d85-86ff-07184d30b7a9'
+    }
+    tasks.named('jar', Jar) {
+        archiveBaseName = 'modbench-' + project.name
+        manifest { attributes('Implementation-Version': project.version) }
+    }
+    tasks.named('processResources') {
+        inputs.property('version', project.version)
+        filesMatching('mcmod.info') { expand(version: project.version) }
+    }
+}
+
+configure([project(':client'), project(':server')]) {
+    sourceSets.main.java.srcDir rootProject.file('mods/clock-hooks/src/main/java')
+    dependencies { implementation project(':bridge-core') }
+    tasks.named('jar') {
+        from project(':bridge-core').sourceSets.main.output
+        manifest { attributes('FMLCorePlugin': 'dev.modbench.clock.ClockPlugin', 'FMLCorePluginContainsFMLMod': 'true') }
+    }
+}
+configure([project(':client'), project(':baritone')]) {
+    dependencies {
+        compileOnly project(':control-api')
+        compileOnly project(':control')
+    }
+}
+project(':control') {
+    dependencies { implementation project(':control-api') }
+    tasks.named('jar') { from project(':control-api').sourceSets.main.output }
+}
+project(':baritone') {
+    sourceSets.main.java.srcDir 'src/upstream/java'
+    configurations { fastutilBundle { transitive = false } }
+    dependencies {
+        implementation project(':baritone-core')
+        // fastutil is not shipped by MC 1.7.10 or the pack, so the jar bundles it from a
+        // detached configuration: resolving runtimeClasspath while wiring the jar task
+        // would run RFG's deobf transform on the unbuilt baritone-core jar.
+        compileOnly 'it.unimi.dsi:fastutil:8.5.15'
+        testRuntimeOnly 'it.unimi.dsi:fastutil:8.5.15'
+        fastutilBundle 'it.unimi.dsi:fastutil:8.5.15'
+        testImplementation project(':control-api')
+        testRuntimeOnly project(':control')
+        // Allocating Minecraft for the settings persistence boundary resolves
+        // its declared legacy LWJGL exception types even though no display is
+        // created by the test.
+        testRuntimeOnly 'org.lwjgl.lwjgl:lwjgl:2.9.4-nightly-20150209'
+    }
+    tasks.named('compileJava') { options.compilerArgs += ['-Xmaxerrs', '1000'] }
+    tasks.named('test') {
+        dependsOn ':control:jar', ':control-api:jar', ':baritone-core:jar'
+        // Resolved at execution time: .asPath here would run RFG's deobf transform on
+        // sibling project jars before they are built.
+        doFirst { systemProperty 'modbench.test.classpath', sourceSets.test.runtimeClasspath.asPath }
+    }
+    tasks.named('jar') {
+        from project(':baritone-core').sourceSets.main.output
+        manifest { attributes('FMLCorePlugin': 'baritone.launch.ActionPlugin', 'FMLCorePluginContainsFMLMod': 'true') }
+        from({ configurations.fastutilBundle.collect { zipTree(it) } }) {
+            include 'it/unimi/dsi/fastutil/**'
+        }
+        from(rootProject.file('LICENSE')) { into 'META-INF/licenses'; rename { 'Baritone-LGPL-3.0.txt' } }
+        from(rootProject.file('mods/baritone/licenses')) { into 'META-INF/licenses' }
+        from(rootProject.file('mods/baritone/UPSTREAM_SOURCES.json')) { into 'META-INF/modbench' }
+        from(rootProject.file('mods/baritone-core/PORT_ORIGIN.md')) { into 'META-INF' }
+    }
+}
+tasks.named('assemble') { dependsOn ':client:build', ':server:build', ':control:build', ':baritone:build' }
+tasks.named('check') { dependsOn subprojects.collect { it.tasks.named('check') } }

@@ -1,0 +1,22 @@
+{
+  "pack": "GT New Horizons",
+  "version": "2.8.4",
+  "minecraft": "1.7.10",
+  "forge": "10.13.4.1614",
+  "javaRuntime": 25,
+  "javaBytecodeTarget": 17,
+  "archives": [
+    {
+      "side": "client",
+      "file": "GT_New_Horizons_2.8.4_Java_17-25.zip",
+      "sha256": "8fecdf562312e1c0d28812123770eee616eb420519cea4b8cbfcf24c26767828",
+      "bytes": 595584698
+    },
+    {
+      "side": "server",
+      "file": "GT_New_Horizons_2.8.4_Server_Java_17-25.zip",
+      "sha256": "a58d771a07dd707535df01519085755398296c1e91383612d2d32ff36990c08c",
+      "bytes": 441093161
+    }
+  ]
+}

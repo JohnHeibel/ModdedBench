@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "modbench": {
+      "command": "python",
+      "args": [
+        "harness/mcp/server.py"
+      ],
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      }
+    }
+  }
+}

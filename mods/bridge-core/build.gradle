@@ -1,0 +1,7 @@
+dependencies {
+    // Compile against the versions shipped by Minecraft 1.7.10; supplied by the game at runtime.
+    compileOnly 'com.google.code.gson:gson:2.2.4'
+    compileOnly 'io.netty:netty-all:4.0.10.Final'
+    testImplementation 'com.google.code.gson:gson:2.2.4'
+    testImplementation 'io.netty:netty-all:4.0.10.Final'
+}
