@@ -38,6 +38,8 @@ public interface Navigation {
     default Job resume(String jobId,Map<String,Object> options){throw new UnsupportedOperationException("work resume unavailable");}
     default Map<String,Object> previewBuild(Map<String,Object> params){throw new UnsupportedOperationException("build preview unavailable");}
     default Map<String,Object> scan(Map<String,Object> params){throw new UnsupportedOperationException("block scan unavailable");}
+    default Map<String,Object> importSchematic(Map<String,Object> params){throw new UnsupportedOperationException("schematic import unavailable");}
+    default Map<String,Object> copy(Map<String,Object> params){throw new UnsupportedOperationException("region copy unavailable");}
     default Map<String,Object> workStatus(String jobId){throw new UnsupportedOperationException("work journal unavailable");}
     Map<String, Object> inspectFluid(int x, int y, int z);
     Map<String, Object> inspectTerrain(int x, int y, int z);
