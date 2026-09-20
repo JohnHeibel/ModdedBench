@@ -73,8 +73,7 @@ def reload_proof(result: dict) -> None:
             require(result, "mcp_reload_last_good", any(m.startswith("ERROR") for m in errors)
                     and srv.modules.get(str(source)).module.mb_temp() == "v2")
     finally:
-        srv._workers.shutdown(wait=False, cancel_futures=True)
-        srv._control_workers.shutdown(wait=False, cancel_futures=True)
+        srv.close()
         mbtool.drop_kernel()
 
 
