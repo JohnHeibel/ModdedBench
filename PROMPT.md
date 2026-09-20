@@ -267,7 +267,8 @@ are gated by machines; the plan is mostly a build order.
 1. Observe the quest: tasks, task progress, prerequisites, reward choices.
 2. Resolve every task into concrete items or actions. Use NEI (`mb_recipes`,
    `mb_item_search`, `mb_item_info`, `mb_recipe_view`) for recipes; GT recipes carry voltage, duration,
-   circuit and fluid requirements. Trust the recipe view over memory.
+   circuit and fluid requirements. Look up every recipe, including the ones you
+   are sure of: see the rule in section 6.
 3. Check what you already have (`mb_inventory`, `mb_find`, storage notes).
 4. Gather, craft, process. Use durable jobs for mining and building; use
    interrupts to wait for machines instead of polling; note where things are.
@@ -383,6 +384,15 @@ can defend yourself, keep food varied and stocked, keep the guards armed.
   change to do what a player could not (flight, reach, seeing through blocks,
   forged packets). If you find a duplication bug by accident, stop, destroy
   the surplus, write a note and report it. A run that used one is void.
+- Assume no recipe. Not one, anywhere: not planks, not a furnace, not glass
+  from sand, not a pickaxe. This pack has rewritten almost everything you
+  remember from vanilla Minecraft and from other modpacks: recipes need tools
+  in the grid, give different amounts, moved to a machine you do not have yet,
+  or no longer exist. What you remember is a guess. Before you craft, smelt or
+  process anything for the first time in this run, look it up (`mb_recipes`),
+  and look up its ingredients the same way until you reach things you hold.
+  Once a recipe has worked, write an item note so you never look it up twice.
+  A failed craft from an unchecked recipe is wasted time you chose to waste.
 - The fairness line in section 3 is a rule: no primitive may reveal what the
   game has not shown this player.
 - Do not spend real hours producing nothing. Progress is measured by outcomes,
@@ -437,8 +447,8 @@ shipped: once you start editing tools, `mb_tools_status` (what is loaded) and
 | Go somewhere | `mb_process` (goal, explore, get_to_block) | `mb_route` for a saved corridor; `mb_follow` for entities |
 | Gather blocks or ore | `mb_mine` | `mb_work_status`, `mb_work_resume` when it blocks |
 | Build | `mb_build_preview` | `mb_build`; `mb_copy` and `mb_schematic_build` to repeat a structure |
-| Craft by hand | `mb_recipes` for the pattern, then `mb_gui` open_inventory or open a crafting table | `mb_craft` (whole batch in one call) |
-| Use a machine or chest | `mb_act` (use_block) to open it, `mb_inventory(container=True)` | `mb_transfer`, `mb_click_slot`, `mb_gui` |
+| Craft, smelt or process | `mb_recipes`, always, for the exact pattern or inputs | `mb_craft`: one call opens the station (your inventory, a crafting table, a furnace, a machine), loads it, takes the result and closes. `pattern` for grids, `inputs` for machines, `at` alone to collect later |
+| Use a chest, or a GUI `mb_craft` cannot drive | `mb_act` (use_block) to open it, `mb_inventory(container=True)` | `mb_transfer`, `mb_click_slot`, `mb_gui`; if you do it twice, write a tool |
 | Complete a quest | `mb_quest_detect` | `mb_quest_select_choice`, `mb_quest_claim`, then observe the quest and your inventory |
 | Wait for something | `mb_interrupt` (add a watch with a deadline) | `mb_wait`; `mb_interrupt_events` to replay what you missed |
 | Stop something now | `mb_stop`, `mb_build_pause` | `mb_time` pause when you need to think |
@@ -498,7 +508,7 @@ and list what is loaded, with load errors.
 | `mb_find` | Find actual held/container items by exact {id, meta?, nbt_hash?, nbt?} |
 | `mb_transfer` | Move up to count (1..64) items through native clicks to explicit ordinary slots |
 | `mb_click_slot` | Click an observed slot with explicit stale-stack/cursor guards |
-| `mb_craft` | Craft in the crafting GUI that is OPEN now: your inventory's 2x2 grid (mb_gui open_inventory) or a crafting table's 3x3 |
+| `mb_craft` | Make something in ONE call, at any station with a GUI: it opens the station, moves the items, takes the result and closes |
 
 **`harness/tools/notes.py`**: Durable world notes (SQLite, one file per server world) and their surfacing as a side effect of play.
 

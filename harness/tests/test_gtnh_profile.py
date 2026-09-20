@@ -433,6 +433,36 @@ class GTNHProfileTests(unittest.TestCase):
         for bad in ({}, {"min":[0,0,0]}, {"min":1,"max":2}):
             with self.assertRaises(ValueError): tools.mb_copy(bad)
 
+    def test_craft_runs_a_machine_in_one_call_and_cells_without_meta_accept_any_facing(self):
+        tools = module_with(self.loaded(), "mb_craft")
+        cobble, coal, stone = ({"id": f"minecraft:{n}", "meta": 0, "count": c} for n, c in (("cobblestone", 3), ("coal", 1), ("stone", 2)))
+        gui = {"open": False, "stacks": {2: stone, 3: cobble, 4: coal}}  # furnace: 0 input, 1 fuel, 2 output (holds an earlier job); 3.. player
+
+        def slots(probe):
+            want = gui["stacks"].get(probe)
+            for i in range(6):
+                held = gui["stacks"].get(i)
+                fits = i != 2 and (held is None or want is not None and held["id"] == want["id"])
+                yield {"i": i, "kind": "container" if i < 3 else "main", "inventory": int(i >= 3), "slotClass": "net.minecraft.inventory.Slot", "ordinary": True,
+                       "canTake": True, "stack": held, **({"acceptsProbe": fits, "spaceForProbe": 64 if fits else 0} if want else {})}
+
+        def reply(method, params):
+            if method == "obs.container": return {"open": gui["open"], "windowId": 1, "epoch": 1, "cursor": None, "slots": list(slots(params.get("probeSlot")))}
+            if method in ("act.use_block", "gui.close"): gui["open"] = method == "act.use_block"
+            if method == "gui.transfer": gui["stacks"][params["destinations"][0]] = gui["stacks"].pop(params["source"]); return {"state": "completed", "transfer": {"moved": params["count"]}}
+            if method == "gui.click_slot": gui["stacks"][5] = gui["stacks"].pop(params["slot"])
+            return {"state": "completed"}
+        fake = self.use(FakeKernel(reply))
+        done = tools.mb_craft(at=[1, 64, 1], inputs=[cobble, coal])
+        self.assertEqual(done["loaded"], [{"slot": 0, "id": "minecraft:cobblestone", "count": 3}, {"slot": 1, "id": "minecraft:coal", "count": 1}])
+        self.assertEqual(done["collected"], [{"id": "minecraft:stone", "meta": 0, "count": 2}])  # only the slot that rejects its own contents is an output
+        self.assertEqual([s["slot"] for s in done["inside"]], [0, 1]); self.assertFalse(gui["open"])
+        self.assertEqual(fake.last("act.use_block")[1], {"x": 1, "y": 64, "z": 1, "face": 1})
+        with self.assertRaises(ValueError): tools.mb_craft(pattern=[[cobble]], inputs=[cobble])
+        build = module_with(self.srv, "mb_build")
+        build.mb_build_preview(cells=[{"pos": [0, 0, 0], "id": "minecraft:furnace"}, {"pos": [1, 0, 0], "id": "minecraft:wool", "meta": 3}])
+        self.assertEqual(fake.last("nav.build_preview")[1]["settings"], {"metadataMasks": {"minecraft:furnace": 0}})
+
 
 if __name__ == "__main__":
     unittest.main()

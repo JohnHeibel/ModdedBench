@@ -129,11 +129,13 @@ final class ConstructionPlan {
         if(WorkAccess.item(WorkAccess.MC.thePlayer.getHeldItem(),selector))return held;
         for(int i=0;i<36;i++)if(WorkAccess.item(WorkAccess.MC.thePlayer.inventory.mainInventory[i],selector))return i;return -1;
     }
-    static Map<String,Object> inspect(List<Cell> cells,boolean replace,boolean override) {
+    static Map<String,Object> inspect(List<Cell> cells,boolean replace,boolean override) {return inspect(cells,replace,override,ConstructionPlan::matches);}
+    /** `done` is the plan's own idea of a finished cell, so a preview and a preflight honour its metadata masks exactly as the build will. */
+    static Map<String,Object> inspect(List<Cell> cells,boolean replace,boolean override,java.util.function.Predicate<Cell> done) {
         var mc=WorkAccess.MC;Map<Map<String,Object>,Integer> required=new LinkedHashMap<>();List<Map<String,Object>> differences=new ArrayList<>();
         int correct=0,unloaded=0,conflicts=0,protectedCount=0,unsupported=0;
         for(Cell c:cells) {
-            String reason="different";if(matches(c)){correct++;continue;}
+            String reason="different";if(done.test(c)){correct++;continue;}
             if(!ForgeSnapshot.loaded(mc.theWorld,c.pos().getX(),c.pos().getY(),c.pos().getZ())){unloaded++;reason="unloaded";}
             else {
                 Block actual=mc.theWorld.getBlock(c.pos().getX(),c.pos().getY(),c.pos().getZ());
@@ -158,7 +160,7 @@ final class ConstructionPlan {
     static String key(Cell c){return c.pos().getX()+","+c.pos().getY()+","+c.pos().getZ();}
     /** Fresh diff of the selected cells: blueprint compares every cell, builder only what its schematic predicate rejects. */
     Map<String,Object> preview(boolean override) {
-        if(strict)return inspect(cells,replace(),override);
+        if(strict)return inspect(cells,replace(),override,this::correct);
         var pending=cells.stream().filter(c->!correct(c)).map(this::desired).toList();var out=inspect(pending,true,override);
         out.put("mode","builder");out.put("selected",cells.size());out.put("acceptedBySchematic",cells.size()-pending.size());out.put("settings",settings.values);return out;
     }
