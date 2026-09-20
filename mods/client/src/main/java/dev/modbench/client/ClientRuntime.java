@@ -120,34 +120,34 @@ public final class ClientRuntime extends BridgeRuntime {
         register("obs.block", "One loaded block {x,y,z}", "read", r -> block(r));
         register("obs.container", "Screen/container epoch, slots, geometry and widgets {detail:summary|full|compact,probeSlot?:observed source index}; probe reports native slot acceptance/capacity without picking up items", "read", r -> {ui.view.require(r.params);return ui.view.container(Json.string(r.params,"detail","summary"),r.params.has("probeSlot")?Json.integer(r.params,"probeSlot",0,0,4095):-1);});
         register("obs.gui", "Current screen class and dimensions", "read", r -> gui());
-        register("keys.list", "Registered key bindings", "read", r -> bindings());
-        register("keys.press", "Press registered binding {name,ticks:1..200,overrideProtection:false}", "interaction", r -> press(r));
+        register("obs.keys", "Registered key bindings", "read", r -> bindings());
+        register("act.press_key", "Press registered binding {name,ticks:1..200,overrideProtection:false}", "interaction", r -> press(r));
         register("act.input", "Hold vanilla controls {keys:[forward,back,left,right,jump,sneak,sprint,attack,use],ticks:1..200,overrideProtection:false,allowRetarget:false}; attack locks the initial block and ends on change", "interaction", r -> input(r));
         register("act.look", "Set player view {yaw,pitch}", "interaction", r -> look(r));
         register("act.stop", "Release controls and cancel active or pending navigation, including Java API processes", "interaction", r -> {
             controlsChanged("cancelled");cancelNavigation("cancelled");return Json.object("stopped", true);
         });
-        register("baritone.status", "Standalone Baritone navigation state and supported movement", "read", r ->
+        register("nav.status", "Standalone Baritone navigation state and supported movement", "read", r ->
             NavigationRegistry.get() == null ? java.util.Map.of("available",false) : NavigationRegistry.get().status());
-        register("baritone.terrain", "Loaded feet cell {x,y,z}: collision boxes, standing height and ladder attachment", "read", r -> {
+        register("obs.terrain", "Loaded feet cell {x,y,z}: collision boxes, standing height and ladder attachment", "read", r -> {
             requirePlayer();
             if(NavigationRegistry.get()==null) throw new IllegalArgumentException("Baritone mod is not installed");
             if(!r.params.has("x")||!r.params.has("y")||!r.params.has("z")) throw new IllegalArgumentException("x,y,z required");
             return NavigationRegistry.get().inspectTerrain(Json.integer(r.params,"x",0,-30000000,30000000),Json.integer(r.params,"y",0,1,254),Json.integer(r.params,"z",0,-30000000,30000000));
         });
-        register("baritone.fluid", "Inspect loaded fluid {x,y,z}: identity, source/drainability, signed fill, flow and traversal policy", "read", r -> {
+        register("obs.fluid", "Inspect loaded fluid {x,y,z}: identity, source/drainability, signed fill, flow and traversal policy", "read", r -> {
             requirePlayer();
             Navigation provider=NavigationRegistry.get();
             if(provider==null) throw new IllegalArgumentException("Baritone mod is not installed");
             return provider.inspectFluid(Json.integer(r.params,"x",0,-30000000,30000000),Json.integer(r.params,"y",0,0,255),Json.integer(r.params,"z",0,-30000000,30000000));
         });
-        register("baritone.tools", "Inspect inventory harvest eligibility, tool NBT and estimated break ticks for {x,y,z}; does not select or mine", "read", r -> {
+        register("obs.tools", "Inspect inventory harvest eligibility, tool NBT and estimated break ticks for {x,y,z}; does not select or mine", "read", r -> {
             requirePlayer();Navigation provider=NavigationRegistry.get();
             if(provider==null) throw new IllegalArgumentException("Baritone mod is not installed");
             if(!r.params.has("x")||!r.params.has("y")||!r.params.has("z")) throw new IllegalArgumentException("x,y,z required");
             return provider.inspectTools(Json.integer(r.params,"x",0,-30000000,30000000),Json.integer(r.params,"y",0,1,254),Json.integer(r.params,"z",0,-30000000,30000000));
         });
-        register("baritone.place_block", "Place one common support cube at loaded air {x,y,z,timeoutTicks:1..6000}, using inventory and normal input; overrideProtection:false by default", "interaction", r -> {
+        register("nav.place_block", "Place one common support cube at loaded air {x,y,z,timeoutTicks:1..6000}, using inventory and normal input; overrideProtection:false by default", "interaction", r -> {
             requirePlayer();Navigation provider=NavigationRegistry.get();
             if(provider==null) throw new IllegalArgumentException("Baritone mod is not installed");
             if(!r.params.has("x")||!r.params.has("y")||!r.params.has("z")) throw new IllegalArgumentException("x,y,z required");
@@ -155,7 +155,7 @@ public final class ClientRuntime extends BridgeRuntime {
             navigationJob=provider.placeBlock(Json.integer(r.params,"x",0,-30000000,30000000),Json.integer(r.params,"y",0,1,254),Json.integer(r.params,"z",0,-30000000,30000000),Json.integer(r.params,"timeoutTicks",1200,1,6000),Json.bool(r.params,"overrideProtection",false));
             navigationRequest=r;return null;
         });
-        register("baritone.mine_block", "Mine one reachable block {x,y,z,autoTool:true,timeoutTicks:1..6000}; requires stable footing and dry escape step; overrideProtection:false by default", "interaction", r -> {
+        register("nav.mine_block", "Mine one reachable block {x,y,z,autoTool:true,timeoutTicks:1..6000}; requires stable footing and dry escape step; overrideProtection:false by default", "interaction", r -> {
             requirePlayer();
             Navigation provider=NavigationRegistry.get();
             if(provider==null) throw new IllegalArgumentException("Baritone mod is not installed");
@@ -165,7 +165,7 @@ public final class ClientRuntime extends BridgeRuntime {
             navigationRequest=r;
             return null;
         });
-        register("baritone.goto", "Navigate within 4096 blocks {x,y,z,allowBreak:false,allowPlace:false,overrideProtection:false,timeoutTicks:1..72000}; optional flat excavation and inventory-funded bridging; set caller timeout for long routes", "interaction", r -> {
+        register("nav.goto", "Navigate within 4096 blocks {x,y,z,allowBreak:false,allowPlace:false,overrideProtection:false,timeoutTicks:1..72000}; optional flat excavation and inventory-funded bridging; set caller timeout for long routes", "interaction", r -> {
             requirePlayer();
             Navigation provider = NavigationRegistry.get();
             if (provider == null) throw new IllegalArgumentException("Baritone mod is not installed");
@@ -178,7 +178,7 @@ public final class ClientRuntime extends BridgeRuntime {
             navigationRequest=r;
             return null;
         });
-        register("baritone.route", "Follow saved route {name,reverse:false,startIndex:0,allowBreak:false,allowPlace:false,overrideProtection:false,timeoutTicks:1..72000}; approach first anchor, then stay inside each corridor", "interaction", r -> {
+        register("nav.route", "Follow saved route {name,reverse:false,startIndex:0,allowBreak:false,allowPlace:false,overrideProtection:false,timeoutTicks:1..72000}; approach first anchor, then stay inside each corridor", "interaction", r -> {
             requirePlayer();Navigation provider=NavigationRegistry.get();
             if(provider==null) throw new IllegalArgumentException("Baritone mod is not installed");
             controlsChanged("superseded");ControlRegistry.controls().focusForInput();
@@ -196,28 +196,28 @@ public final class ClientRuntime extends BridgeRuntime {
             if(clock.isPaused()) throw new IllegalArgumentException("time_paused: resume before executing native GUI actions");
             controlsChanged("superseded");return ui.start(r);
         });
-        for(String method:List.of("mine","build","resume")) register("baritone."+method,"Owned, checkpointed "+method+" process; timeoutTicks<=72000. Mine: blocks/items selectors, quantity, bounds/radius. Build: cells, selection or planId; mode blueprint/builder, origin, size, settings, replaceExisting, allowBreak/allowPlace. Resume: jobId. Explicit overrideProtection required each attempt.","interaction",r->{
+        for(String method:List.of("mine","build","resume")) register("nav."+method,"Owned, checkpointed "+method+" process; timeoutTicks<=72000. Mine: blocks/items selectors, quantity, bounds/radius. Build: cells, selection or planId; mode blueprint/builder, origin, size, settings, replaceExisting, allowBreak/allowPlace. Resume: jobId. Explicit overrideProtection required each attempt.","interaction",r->{
             requirePlayer();Navigation provider=navigation();Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");controlsChanged("superseded");ControlRegistry.controls().focusForInput();
             navigationJob=method.equals("mine")?provider.mine(params):method.equals("build")?provider.build(params):provider.resume(Json.string(r.params,"jobId",""),params);navigationRequest=r;return null;
         });
-        register("baritone.build_preview","Fresh read-only build diff and material allocation for {cells|selection|planId,mode,settings,origin,size,replaceExisting,overrideProtection}; no chunk loading","read",r->navigation().previewBuild(Json.GSON.fromJson(r.params,Map.class)));
-        register("baritone.follow","Source FollowProcess: {target:{entityId|uuid|type|name},durationTicks:1..72000,radius,offsetDistance,offsetDirection,allowBreak:false,allowPlace:false,overrideProtection:false}. Follows loaded matches until duration/cancellation; fails when none remain loaded.","interaction",r->{
+        register("nav.build_preview","Fresh read-only build diff and material allocation for {cells|selection|planId,mode,settings,origin,size,replaceExisting,overrideProtection}; no chunk loading","read",r->navigation().previewBuild(Json.GSON.fromJson(r.params,Map.class)));
+        register("nav.follow","Source FollowProcess: {target:{entityId|uuid|type|name},durationTicks:1..72000,radius,offsetDistance,offsetDirection,allowBreak:false,allowPlace:false,overrideProtection:false}. Follows loaded matches until duration/cancellation; fails when none remain loaded.","interaction",r->{
             requirePlayer();Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");controlsChanged("superseded");ControlRegistry.controls().focusForInput();
             navigationJob=navigation().follow(params);navigationRequest=r;return null;
         });
-        register("baritone.settings","Source settings {operation:get|set|reset,query,values,save}; typed values or source syntax, atomic edits while idle. Optional declarations do not promise runtime support.","interaction",r->navigation().settings(Json.GSON.fromJson(r.params,Map.class)));
-        register("baritone.build_pause","Pause active construction and release controls; retains jobId for baritone.resume. Server time continues.","interaction",r->navigation().pauseBuild());
-        register("baritone.build_materials","Approximate placeable native inventory states; final state depends on native placement callbacks","read",r->navigation().buildMaterials());
-        register("baritone.cache","Source terrain cache {operation:status|block(pos)|repack(range)|save|reload|locations(block,meta?,limit,regionDistanceSquared)|result(id)}. Disk operations return an id to poll. Cached states are approximate and need native verification.","interaction",r->navigation().cache(Json.GSON.fromJson(r.params,Map.class)));
-        register("baritone.process","Source {process:goal|explore|get_to_block|farm,durationTicks:1..72000,goal:{type,...},center:[x,y,z],radius,block:{id,meta},allowBreak:false,allowPlace:false,exploreForBlocks:true,openOnArrival:false,enterPortal:false}. Goal types: block,near,adjacent,two_blocks,xz,y,axis,inverted,composite,run_away. Farm/explore run for a bounded duration; native source behavior and explicit mod crop adapters apply.","interaction",r->{
+        register("nav.settings","Source settings {operation:get|set|reset,query,values,save}; typed values or source syntax, atomic edits while idle. Optional declarations do not promise runtime support.","interaction",r->navigation().settings(Json.GSON.fromJson(r.params,Map.class)));
+        register("nav.build_pause","Pause active construction and release controls; retains jobId for nav.resume. Server time continues.","interaction",r->navigation().pauseBuild());
+        register("nav.build_materials","Approximate placeable native inventory states; final state depends on native placement callbacks","read",r->navigation().buildMaterials());
+        register("nav.cache","Source terrain cache {operation:status|block(pos)|repack(range)|save|reload|locations(block,meta?,limit,regionDistanceSquared)|result(id)}. Disk operations return an id to poll. Cached states are approximate and need native verification.","interaction",r->navigation().cache(Json.GSON.fromJson(r.params,Map.class)));
+        register("nav.process","Source {process:goal|explore|get_to_block|farm,durationTicks:1..72000,goal:{type,...},center:[x,y,z],radius,block:{id,meta},allowBreak:false,allowPlace:false,exploreForBlocks:true,openOnArrival:false,enterPortal:false}. Goal types: block,near,adjacent,two_blocks,xz,y,axis,inverted,composite,run_away. Farm/explore run for a bounded duration; native source behavior and explicit mod crop adapters apply.","interaction",r->{
             requirePlayer();Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");controlsChanged("superseded");ControlRegistry.controls().focusForInput();
             navigationJob=navigation().sourceProcess(params);navigationRequest=r;return null;
         });
-        register("baritone.build_stage","Stage a large immutable plan: operation begin(spec), append(stageId,offset,cells), finish(stageId). Finish returns planId for build/preview.","interaction",r->{Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");return navigation().stageBuild(params);});
-        register("baritone.scan","Paged native block/metadata/ore-dictionary/item selectors {blocks:[selector],bounds:{min,max},cursor,limit,budget}; reports unloaded cells","read",r->navigation().scan(Json.GSON.fromJson(r.params,Map.class)));
-        register("baritone.schematic_import","Read <gameDir>/schematics/{path} (MCEdit .schematic or a canonical JSON plan) into {plan:{cells,origin,size},size:[w,h,l],count,skipped:{air,unknown}}; plan is accepted by baritone.build_preview/baritone.build. Params {path,origin?:[x,y,z],includeAir?}; at most 1048576 cells","read",r->navigation().importSchematic(Json.GSON.fromJson(r.params,Map.class)));
-        register("baritone.copy","Copy loaded blocks in {bounds:{min,max}} into {plan:{cells,origin,size},size,count,skipped:{air,unknown,unloaded},tileEntities}; positions are relative so that bounds.min maps to origin (default [0,0,0]). Tile entities are copied as plain blocks (no NBT). Params {bounds,origin?,includeAir?}; at most 1048576 cells","read",r->navigation().copy(Json.GSON.fromJson(r.params,Map.class)));
-        register("baritone.work_status","Durable process intent and last receipt {jobId}; active status remains baritone.status","read",r->navigation().workStatus(Json.string(r.params,"jobId","")));
+        register("nav.build_stage","Stage a large immutable plan: operation begin(spec), append(stageId,offset,cells), finish(stageId). Finish returns planId for build/preview.","interaction",r->{Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");return navigation().stageBuild(params);});
+        register("obs.scan","Paged native block/metadata/ore-dictionary/item selectors {blocks:[selector],bounds:{min,max},cursor,limit,budget}; reports unloaded cells","read",r->navigation().scan(Json.GSON.fromJson(r.params,Map.class)));
+        register("nav.schematic_import","Read <gameDir>/schematics/{path} (MCEdit .schematic or a canonical JSON plan) into {plan:{cells,origin,size},size:[w,h,l],count,skipped:{air,unknown}}; plan is accepted by nav.build_preview/nav.build. Params {path,origin?:[x,y,z],includeAir?}; at most 1048576 cells","read",r->navigation().importSchematic(Json.GSON.fromJson(r.params,Map.class)));
+        register("nav.copy","Copy loaded blocks in {bounds:{min,max}} into {plan:{cells,origin,size},size,count,skipped:{air,unknown,unloaded},tileEntities}; positions are relative so that bounds.min maps to origin (default [0,0,0]). Tile entities are copied as plain blocks (no NBT). Params {bounds,origin?,includeAir?}; at most 1048576 cells","read",r->navigation().copy(Json.GSON.fromJson(r.params,Map.class)));
+        register("nav.work_status","Durable process intent and last receipt {jobId}; active status remains nav.status","read",r->navigation().workStatus(Json.string(r.params,"jobId","")));
         register("gui.status","Last/current GUI action receipt, including partial effects and native transaction acknowledgements","read",r->ui.status());
         register("gui.hit_test","Inspect native slots, buttons, text fields and custom widget geometry under {x,y}","read",r->{
             if(mc.currentScreen==null) throw new IllegalArgumentException("open GUI first");
@@ -230,7 +230,7 @@ public final class ClientRuntime extends BridgeRuntime {
             else stack=Json.bool(r.params,"cursor",false)?mc.thePlayer.inventory.getItemStack():mc.thePlayer.getHeldItem();
             return Stacks.tooltip(stack,Json.bool(r.params,"advanced",true));
         });
-        register("inv.find","Find observed inventory/container stacks {selector:{id,meta?,nbt_hash?,nbt?},scope:player|container}","read",r->{
+        register("obs.find","Find observed inventory/container stacks {selector:{id,meta?,nbt_hash?,nbt?},scope:player|container}","read",r->{
             requirePlayer();if(!r.params.has("selector")||!r.params.get("selector").isJsonObject()) throw new IllegalArgumentException("selector required");
             JsonObject selector=r.params.getAsJsonObject("selector");JsonArray matches=new JsonArray();
             String scope=Json.string(r.params,"scope","player");
@@ -261,8 +261,8 @@ public final class ClientRuntime extends BridgeRuntime {
             controlsChanged("shutdown"); mc.shutdown(); return Json.object("shuttingDown", true);
         });
         watchable("obs.player","obs.world","obs.entities","obs.inventory","obs.block","obs.container","obs.gui","obs.tooltip",
-            "inv.find","gui.status","act.status","interrupt.status","baritone.status","baritone.terrain","baritone.fluid","baritone.tools",
-            "memory.context","memory.status","memory.get","time.status","keys.list","quest.status","quest.observe");
+            "obs.find","gui.status","act.status","interrupt.status","nav.status","obs.terrain","obs.fluid","obs.tools",
+            "memory.context","memory.status","memory.get","time.status","obs.keys","quest.status","quest.observe");
     }
     private Navigation navigation(){requirePlayer();Navigation p=NavigationRegistry.get();if(p==null)throw new IllegalArgumentException("Baritone mod is not installed");return p;}
     private List<Integer> questIds(JsonObject params,String key){if(!params.has(key)||!params.get(key).isJsonArray()||params.getAsJsonArray(key).size()>256)throw new IllegalArgumentException(key+" array required (max 256)");List<Integer> out=new ArrayList<>();for(JsonElement e:params.getAsJsonArray(key)){JsonObject one=Json.object("id",e);out.add(Json.integer(one,"id",0,0,Integer.MAX_VALUE));}return out;}
@@ -458,8 +458,8 @@ public final class ClientRuntime extends BridgeRuntime {
         interrupts.admit(r);
         if(readOnly(r.method))return;
         String m=r.method;
-        if(clock.isPaused()&&(m.startsWith("act.")&&!Set.of("act.stop","act.look").contains(m)||m.equals("keys.press")
-            ||m.startsWith("baritone.")&&!Set.of("baritone.settings","baritone.cache").contains(m)||m.startsWith("quest.")))
+        if(clock.isPaused()&&(m.startsWith("act.")&&!Set.of("act.stop","act.look").contains(m)
+            ||m.startsWith("nav.")&&!Set.of("nav.settings","nav.cache").contains(m)||m.startsWith("quest.")))
             throw new IllegalArgumentException("time_paused: resume before starting simulation actions");
     }
 

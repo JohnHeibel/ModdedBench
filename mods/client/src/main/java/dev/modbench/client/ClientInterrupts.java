@@ -34,9 +34,9 @@ final class ClientInterrupts {
         if(latched.isEmpty()||runtime.readOnly(r.method)) return;
         String m=r.method;
         if(m.equals("act.stop")||m.startsWith("interrupt.")||m.equals("sys.shutdown")||m.equals("sys.disconnect")||m.equals("time.pause")||m.equals("time.configure")) return;
-        if(m.startsWith("act.")&&!m.equals("act.status") || m.equals("keys.press") || m.equals("time.resume") || m.equals("nei.view") || m.equals("nei.inspect") ||
+        if(m.startsWith("act.")&&!m.equals("act.status") || m.equals("time.resume") || m.equals("nei.view") || m.equals("nei.inspect") ||
             m.startsWith("gui.")&&!Set.of("gui.status","gui.hit_test").contains(m) ||
-            m.startsWith("quest.")||m.startsWith("baritone."))
+            m.startsWith("quest.")||m.startsWith("nav."))
             throw new IllegalArgumentException("interrupt_latched: acknowledge "+latched+" before starting another action");
     }
     Object ack(Request r) {

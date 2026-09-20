@@ -14,7 +14,7 @@ import java.util.Set;
  * No chunk loads, dimension switching, client-only pick-block or gameplay writes.
  */
 final class TileObservations {
-    static final Set<String> METHODS=Set.of("obs.tile","obs.nbt","obs.waila","obs.hwyla");
+    static final Set<String> METHODS=Set.of("obs.tile","obs.nbt","obs.waila");
     private final ServerRuntime runtime;
     private final NbtSnapshots snapshots=new NbtSnapshots();
     TileObservations(ServerRuntime runtime){this.runtime=runtime;}
@@ -49,7 +49,7 @@ final class TileObservations {
                 JsonObject nbt=NbtSnapshots.describe(tag,params);out.add("tile",nbt.remove("value"));nbt.addProperty("handle",handle);nbt.addProperty("snapshot",true);out.add("nbt",nbt);
             }catch(Exception|LinkageError e){out.add("nbt",Json.object("error",TileInterfaces.error(e)));tag=null;}
         }
-        if(method.equals("obs.waila")||method.equals("obs.hwyla")||Json.bool(params,"hwyla",true))out.add("waila",WailaServer.read(player,tile,block,x,y,z,tag));
+        if(method.equals("obs.waila")||Json.bool(params,"hwyla",true))out.add("waila",WailaServer.read(player,tile,block,x,y,z,tag));
         return out;
     }
 }
