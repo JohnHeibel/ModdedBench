@@ -153,7 +153,10 @@ way, start the stack, and record the restore in the run's log.
 Recording: OBS window capture matched on the window title picks the client up
 again after a deploy restarts it; record to `.mkv` and split by time. With
 the `pauseOnDisconnect` guard set (`PROMPT.md` asks for it at session start)
-the world is held while the client is down.
+the world is held while the client is down. The pack's Darkerer mod makes nights
+near-black on video; it only changes rendering, so for recording add `0`, `-1`
+and `1` to `dimBlocklist` in the client's `config/darkerer.cfg` and restart the
+client. Light levels and mob spawning are unchanged.
 
 Restarts: the world stays paused (`client_disconnected`) after the client
 comes back, until the agent or the console's Resume resumes it. After a server
