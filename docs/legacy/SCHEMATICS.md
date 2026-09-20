@@ -48,10 +48,10 @@ imported = import_schematic(
     "house.schematic", origin=[120, 70, -35],
     registry={1: "minecraft:stone", 300: "gregtech:gt.blockmachines"})
 canonical_request = imported["build"]
-preview = kernel.call("baritone.build_preview", **canonical_request)
-job = kernel.call("baritone.build", **canonical_request)
+preview = kernel.call("nav.build_preview", **canonical_request)
+job = kernel.call("nav.build", **canonical_request)
 # After correcting access or materials for a retained blocked job:
-kernel.call("baritone.resume", jobId=job["jobId"])
+kernel.call("nav.resume", jobId=job["jobId"])
 ```
 
 `build` contains `origin`, explicit `cells`, `replaceExisting`, `timeoutTicks`,

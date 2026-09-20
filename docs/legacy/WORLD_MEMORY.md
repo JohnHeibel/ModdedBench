@@ -30,7 +30,7 @@ Reserve it for deliberate locks, not routine workshop use.
 ```python
 mb_memory("protect", {"name": "critical wall", "min": [100, 64, 200],
                      "max": [100, 67, 210], "mode": "all_edits"})
-mb_call("baritone.mine_block", {"x": 100, "y": 64, "z": 205,
+mb_call("nav.mine_block", {"x": 100, "y": 64, "z": 205,
                                "overrideProtection": True})
 ```
 
