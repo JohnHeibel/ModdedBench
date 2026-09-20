@@ -16,9 +16,6 @@ final class PlacementItems {
         return stack!=null && stack.stackSize>0 && stack.getItem() instanceof ItemBlock && stack.getItemDamage()==0
             && !stack.hasTagCompound() && DEFAULTS.contains(Item.itemRegistry.getNameForObject(stack.getItem()));
     }
-    static int count() {
-        int count=0;for(ItemStack stack:Minecraft.getMinecraft().thePlayer.inventory.mainInventory) if(usable(stack)) count+=stack.stackSize;return count;
-    }
     static int slot() {
         var inventory=Minecraft.getMinecraft().thePlayer.inventory;
         if(usable(inventory.getCurrentItem())) return inventory.currentItem;

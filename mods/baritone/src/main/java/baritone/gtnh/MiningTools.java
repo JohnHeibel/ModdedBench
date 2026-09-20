@@ -113,15 +113,4 @@ final class MiningTools {
         out.put("bestSlot",best==null?null:best.slot());out.put("estimatedTicks",best==null?null:best.ticks());
         out.put("estimateOnly",true);return out;
     }
-    /** Per-capture cost estimates; execution rechecks the actual tool and location. */
-    static final class Costs {
-        private record Key(Block block,int meta,float hardness) {}
-        private final Map<Key,Double> cache=new HashMap<>();
-        double at(World world,BlockPos p) {
-            if(!automaticBlock(world,p)) return Double.POSITIVE_INFINITY;
-            Block b=world.getBlock(p.x(),p.y(),p.z());
-            Key key=new Key(b,world.getBlockMetadata(p.x(),p.y(),p.z()),b.getBlockHardness(world,p.x(),p.y(),p.z()));
-            return cache.computeIfAbsent(key,k->{Choice choice=best(world,p,null);return choice==null?Double.POSITIVE_INFINITY:choice.ticks();});
-        }
-    }
 }
