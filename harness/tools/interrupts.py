@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-# Copyright (c) 2026 Modbench contributors
+# Copyright (c) 2026 ModdedBench contributors
 """Composable, process-local interrupt watches for the GTNH bridge, and the mb_interrupt tools.
 
 ``add`` accepts either ``queries`` plus a declarative ``condition``, or a Python ``file`` whose

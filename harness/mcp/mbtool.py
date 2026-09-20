@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-# Copyright (c) 2026 Modbench contributors
+# Copyright (c) 2026 ModdedBench contributors
 """Tool-module contract for the ModdedBench MCP server. Restart to change this file.
 
 Every ``harness/tools/**/*.py`` (not ``_``-prefixed) is a hot-reloaded tool module importable as

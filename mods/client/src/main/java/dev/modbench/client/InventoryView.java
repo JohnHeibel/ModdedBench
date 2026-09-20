@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Copyright (c) 2026 Modbench contributors
+// Copyright (c) 2026 ModdedBench contributors
 package dev.modbench.client;
 
 import com.google.gson.*;
@@ -12,7 +12,7 @@ import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.inventory.*;
 import net.minecraft.item.ItemStack;
 
-/** DJ2 slot ownership/geometry semantics, adapted to 1.7.10 and flat GTNH observations. */
+/** Slot ownership and geometry for 1.7.10 containers, as flat observations. */
 final class InventoryView {
     private final Minecraft mc=Minecraft.getMinecraft();
     private Object player,container,screen;

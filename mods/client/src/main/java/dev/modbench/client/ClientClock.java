@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Copyright (c) 2026 Modbench contributors
+// Copyright (c) 2026 ModdedBench contributors
 package dev.modbench.client;
 
 import com.google.gson.JsonObject;
@@ -36,7 +36,7 @@ public final class ClientClock implements ClockHooks.Driver {
     }
     public Object command(Request r) {
         if(r.method.equals("time.status")) return status();
-        if(!supported || connection==null || !connection.isChannelOpen()) throw new IllegalArgumentException("server does not advertise Modbench time control");
+        if(!supported || connection==null || !connection.isChannelOpen()) throw new IllegalArgumentException("server does not advertise ModdedBench time control");
         if(agent!=null && agent.connected && agent!=r.session) throw new IllegalArgumentException("time control belongs to another connected agent session");
         agent=r.session;
         String id=Long.toString(++requestId);pending.put(id,r);
@@ -54,7 +54,7 @@ public final class ClientClock implements ClockHooks.Driver {
         command(pause);
     }
     public Object entity(Request r) {
-        if(!supported||connection==null||!connection.isChannelOpen()) throw new IllegalArgumentException("Modbench server identity unavailable");
+        if(!supported||connection==null||!connection.isChannelOpen()) throw new IllegalArgumentException("ModdedBench server identity unavailable");
         JsonObject params=new JsonObject();
         if(r.params.has("uuid")) params.addProperty("uuid",java.util.UUID.fromString(r.params.get("uuid").getAsString()).toString());
         else {
@@ -68,7 +68,7 @@ public final class ClientClock implements ClockHooks.Driver {
         send(Json.object("type","entity_observation","id",id,"params",params));return null;
     }
     void observe(Request original,JsonObject params,java.util.function.Consumer<JsonObject> finish) {
-        if(!supported||connection==null||!connection.isChannelOpen())throw new IllegalArgumentException("authoritative observations require the Modbench server");
+        if(!supported||connection==null||!connection.isChannelOpen())throw new IllegalArgumentException("authoritative observations require the ModdedBench server");
         if(pending.size()>=64)throw new IllegalArgumentException("too many pending server requests");
         if(Json.GSON.toJson(params).getBytes(StandardCharsets.UTF_8).length>24000)throw new IllegalArgumentException("observation request exceeds 24KiB; reduce batch");
         Object identity=runtime.identity();int dimension=mc.thePlayer.dimension;

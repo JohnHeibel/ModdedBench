@@ -26,7 +26,7 @@ Integrated-server play and multi-client coordination are outside the contract.
 
 The paused maintenance path follows the pause-when-empty behaviour of the
 ServerUtilities build shipped with GTNH (chunk I/O completion, networking,
-pending server commands). Modbench adds explicit pause ownership, client
+pending server commands). ModdedBench adds explicit pause ownership, client
 coordination, deferred gameplay packets and the barriers below.
 
 ## Background-work barriers

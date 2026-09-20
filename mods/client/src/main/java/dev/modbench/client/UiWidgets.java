@@ -27,7 +27,7 @@ import net.minecraft.item.ItemStack;
 import java.lang.reflect.*;
 import java.util.*;
 
-/** DJ2 widget introspection port; geometry from unknown widgets is explicitly heuristic. */
+/** Widget introspection; geometry from unknown widgets is explicitly heuristic. */
 final class UiWidgets {
     @SuppressWarnings("unchecked")
     static List<GuiButton> buttonListOf(GuiScreen screen) {

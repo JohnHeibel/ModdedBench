@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Copyright (c) 2026 Modbench contributors
+// Copyright (c) 2026 ModdedBench contributors
 package dev.modbench.bridge;
 
 import com.google.gson.JsonElement;
@@ -63,7 +63,7 @@ public final class BridgeTransport implements AutoCloseable {
             tokenPath.toFile().setReadable(true, true);
             tokenPath.toFile().setWritable(false, false);
             tokenPath.toFile().setWritable(true, true);
-            System.out.println("[Modbench] " + runtime.side() + " bridge ready at ws://127.0.0.1:" + port + "/ws");
+            System.out.println("[ModdedBench] " + runtime.side() + " bridge ready at ws://127.0.0.1:" + port + "/ws");
         } catch (Exception e) { close(); throw e; }
     }
 

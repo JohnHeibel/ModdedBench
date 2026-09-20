@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Copyright (c) 2026 Modbench contributors
+// Copyright (c) 2026 ModdedBench contributors
 package dev.modbench.server;
 
 import com.google.gson.*;
@@ -7,7 +7,7 @@ import dev.modbench.bridge.Json;
 import net.minecraft.nbt.*;
 import java.util.*;
 
-/** DJ2 Nbt's bounded summaries and drill-down, adapted to 1.7 native tags.
+/** Bounded NBT summaries and drill-down over 1.7 native tags.
  * Snapshots are immutable, uniquely named even during a pause, and owner/world scoped.
  */
 final class NbtSnapshots {

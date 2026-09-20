@@ -24,7 +24,7 @@ export async function connectModbench({ python = 'python', userSite = '' } = {})
   child.stderr.on('data', value => { logs = (logs + value).slice(-8192); });
   child.on('error', failAll);
   child.stdin.on('error', failAll);
-  child.on('exit', (code, signal) => failAll(new Error(`Modbench MCP exited (${code ?? signal})`)));
+  child.on('exit', (code, signal) => failAll(new Error(`ModdedBench MCP exited (${code ?? signal})`)));
   lines.on('line', line => {
     let message;
     try { message = JSON.parse(line); }
@@ -41,7 +41,7 @@ export async function connectModbench({ python = 'python', userSite = '' } = {})
     else waiter.resolve(message.result);
   });
   function request(method, params = {}, timeoutMs = 30000) {
-    if (ended) return Promise.reject(new Error('Modbench MCP connection closed'));
+    if (ended) return Promise.reject(new Error('ModdedBench MCP connection closed'));
     const id = ++nextId;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {

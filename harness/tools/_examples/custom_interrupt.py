@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-# Copyright (c) 2026 Modbench contributors
+# Copyright (c) 2026 ModdedBench contributors
 """Editable example: combine threats, player state and an exact inventory selector.
 
 Arm with file=<this absolute path>, queries={player:{method:obs.player},

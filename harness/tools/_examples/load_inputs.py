@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-# Copyright (c) 2026 Modbench contributors
+# Copyright (c) 2026 ModdedBench contributors
 """Copy into harness/tools/ (a non-underscore name) and adapt during a run; it reloads on the next call.
 
 This example loads caller-chosen slots in any ordinary inventory layout. It does

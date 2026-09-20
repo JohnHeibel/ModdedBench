@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Copyright (c) 2026 Modbench contributors
+// Copyright (c) 2026 ModdedBench contributors
 package dev.modbench.bridge;
 
 import static org.junit.Assert.assertEquals;

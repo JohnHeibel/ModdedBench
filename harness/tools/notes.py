@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-# Copyright (c) 2026 Modbench contributors
+# Copyright (c) 2026 ModdedBench contributors
 """Durable world notes (SQLite, one file per server world) and their surfacing as a side effect of play.
 
 Only capture/resolve contact Minecraft. Stored observations are never silently refreshed.

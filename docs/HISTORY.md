@@ -21,13 +21,12 @@ contract notes. What was still true is now in the current docs.
 - **2026-09-14** Native runtime and API acceptance: event bus, rendering,
   free-look and the Java process API run through Forge 1.7.10 adapters; 16
   live checks. Roadmap refreshed.
-- **2026-09-13** Baritone parity audit against upstream and the 1.12.2
-  generation, then the source port of the upstream engine (pinned upstream
+- **2026-09-13** Baritone parity audit against upstream, then the source port of the upstream engine (pinned upstream
   revision `d9cb2d91`, 162 files) validated. Natural-world log mining attempt
   recorded as a failure (nothing collected in 1,352 ticks) and fixed later.
 - **2026-09-12** First standalone GTNH bridge milestone on Windows: client and
   server bridges, tokens, observations, aiming, finite input, cancellation,
   screenshots. Time-control audit accepted the whole-tick gate contract with
   GregTech and OpenComputers background-work barriers.
-- **Before 2026-09-12** The harness targeted a 1.12.2 pack (the "DJ2"
-  generation). Its structure informed this one; none of its code is here.
+- **Before 2026-09-12** The harness targeted a different, 1.12.2 modpack. Its
+  structure informed this one; none of its code is here.

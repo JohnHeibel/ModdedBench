@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Copyright (c) 2026 Modbench contributors
+// Copyright (c) 2026 ModdedBench contributors
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh;
 
@@ -55,6 +55,6 @@ final class BaritoneCommand extends CommandBase {
     @SuppressWarnings("unchecked") private static Map<String,Object> jsonObject(String json){
         try{Object value=new com.google.gson.Gson().fromJson(json,Object.class);if(value instanceof Map<?,?> map)return (Map<String,Object>)map;}
         catch(com.google.gson.JsonParseException error){throw new IllegalArgumentException("invalid JSON: "+error.getMessage());}
-        throw new IllegalArgumentException("parameters must be a JSON object using the same fields as the Modbench operation");
+        throw new IllegalArgumentException("parameters must be a JSON object using the same fields as the ModdedBench operation");
     }
 }

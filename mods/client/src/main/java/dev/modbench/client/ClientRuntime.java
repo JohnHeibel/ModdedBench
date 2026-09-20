@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Copyright (c) 2026 Modbench contributors
+// Copyright (c) 2026 ModdedBench contributors
 package dev.modbench.client;
 
 import dev.modbench.api.ControlRegistry;
@@ -249,7 +249,7 @@ public final class ClientRuntime extends BridgeRuntime {
             mc.gameSettings.pauseOnLostFocus = false;
             // Forge owns handshake initialization; raw GuiConnecting leaves its latch unset.
             FMLClientHandler.instance().setupServerList();
-            FMLClientHandler.instance().connectToServer(new GuiMainMenu(), new ServerData("Modbench", host + ":" + port));
+            FMLClientHandler.instance().connectToServer(new GuiMainMenu(), new ServerData("ModdedBench", host + ":" + port));
             return Json.object("connecting", true);
         });
         register("sys.disconnect", "Leave the current server", "interaction", r -> {

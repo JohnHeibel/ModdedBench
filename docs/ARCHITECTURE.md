@@ -1,6 +1,6 @@
 # Architecture
 
-Modbench lets a language model play GT New Horizons (Minecraft 1.7.10) through
+ModdedBench lets a language model play GT New Horizons (Minecraft 1.7.10) through
 an MCP server. Three layers, two seams, and the rule that decides where code
 goes: **Java touches Minecraft; Python composes; the model decides.**
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Copyright (c) 2026 Modbench contributors
+// Copyright (c) 2026 ModdedBench contributors
 package dev.modbench.server;
 
 import com.google.gson.*;
@@ -11,7 +11,7 @@ import net.minecraftforge.common.util.ForgeDirection;
 import net.minecraftforge.fluids.*;
 import java.util.*;
 
-/** Native 1.7 inventory/fluid interfaces replace DJ2's Forge capability APIs.
+/** Native 1.7 inventory and fluid interfaces (this Forge has no capability API).
  * Only getters: no simulated fill/drain/insert calls or arbitrary reflective methods.
  */
 final class TileInterfaces {

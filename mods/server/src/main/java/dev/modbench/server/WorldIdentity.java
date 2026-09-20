@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Copyright (c) 2026 Modbench contributors
+// Copyright (c) 2026 ModdedBench contributors
 package dev.modbench.server;
 
 import java.util.UUID;
@@ -18,11 +18,11 @@ public final class WorldIdentity extends WorldSavedData {
         java.io.File file=world.getSaveHandler().getMapFileFromName(KEY);
         if(data==null) {
             // MapStorage catches read failures and returns null; never turn corrupt identity into an unprotected new world.
-            if(file.exists()) throw new IllegalStateException("saved Modbench world identity could not be loaded");
+            if(file.exists()) throw new IllegalStateException("saved ModdedBench world identity could not be loaded");
             data=new WorldIdentity(KEY);data.id=UUID.randomUUID().toString();world.setItemData(KEY,data);data.markDirty();
             world.mapStorage.saveAllData();
         }
-        if(data.id==null) throw new IllegalStateException("saved Modbench world identity is invalid");
+        if(data.id==null) throw new IllegalStateException("saved ModdedBench world identity is invalid");
         if(!data.verified) {
             try {
                 // The pack may defer MapStorage writes, so a new world has no file yet; write the same NBT MapStorage will.

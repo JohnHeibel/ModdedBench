@@ -1,4 +1,4 @@
-# Modbench
+# ModdedBench
 
 A harness that lets a language model play **GT New Horizons** (Minecraft
 1.7.10) in survival, and improve its own tools while it plays.

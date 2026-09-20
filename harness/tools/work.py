@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-# Copyright (c) 2026 Modbench contributors
+# Copyright (c) 2026 ModdedBench contributors
 """Navigation, mining, building, schematics/copy, scans and the source engine's settings/cache.
 
 Every tool forwards one Java method; Java validates ranges and shapes. Work outcomes and arrivals

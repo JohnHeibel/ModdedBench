@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Copyright (c) 2026 Modbench contributors
+// Copyright (c) 2026 ModdedBench contributors
 package dev.modbench.client;
 
 import cpw.mods.fml.common.Mod;
@@ -7,7 +7,7 @@ import cpw.mods.fml.common.event.FMLInitializationEvent;
 import dev.modbench.bridge.BridgeTransport;
 import net.minecraft.client.Minecraft;
 
-@Mod(modid = "modbenchclient", name = "Modbench Client", version = "0.1.0", dependencies = "required-after:modbenchcore", acceptableRemoteVersions = "*")
+@Mod(modid = "modbenchclient", name = "ModdedBench Client", version = "0.1.0", dependencies = "required-after:modbenchcore", acceptableRemoteVersions = "*")
 public final class ModbenchClient {
     private ClientRuntime runtime;
     private BridgeTransport transport;

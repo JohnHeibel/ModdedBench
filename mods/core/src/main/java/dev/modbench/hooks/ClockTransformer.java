@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Copyright (c) 2026 Modbench contributors
+// Copyright (c) 2026 ModdedBench contributors
 package dev.modbench.hooks;
 
 import net.minecraft.launchwrapper.IClassTransformer;
@@ -104,9 +104,9 @@ public final class ClockTransformer implements IClassTransformer {
                 method.instructions.insert(head); edits++;
             }
         }
-        if(controller && edits!=5) throw new IllegalStateException("Modbench protection hooks missing: expected 5, got "+edits);
-        if(client&&frameEdits!=1) throw new IllegalStateException("Modbench presentation hook missing: expected 1, got "+frameEdits);
-        if (edits == 0) throw new IllegalStateException("Modbench clock hook missing: " + transformedName);
+        if(controller && edits!=5) throw new IllegalStateException("ModdedBench protection hooks missing: expected 5, got "+edits);
+        if(client&&frameEdits!=1) throw new IllegalStateException("ModdedBench presentation hook missing: expected 1, got "+frameEdits);
+        if (edits == 0) throw new IllegalStateException("ModdedBench clock hook missing: " + transformedName);
         ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
         node.accept(writer);
         return writer.toByteArray();

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-# Copyright (c) 2026 Modbench contributors
+# Copyright (c) 2026 ModdedBench contributors
 """Live first-milestone acceptance checks for the GTNH client/server bridges.
 
 Run only after the managed GTNH client and dedicated server are connected:

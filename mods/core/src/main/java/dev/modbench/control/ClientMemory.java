@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Copyright (c) 2026 Modbench contributors
+// Copyright (c) 2026 ModdedBench contributors
 package dev.modbench.control;
 
 import com.google.gson.Gson;
@@ -13,7 +13,7 @@ import java.util.*;
 import net.minecraft.client.Minecraft;
 import net.minecraft.util.MovingObjectPosition;
 
-/** Shared memory and protection policy for every Modbench input owner. Game-thread only. */
+/** Shared memory and protection policy for every ModdedBench input owner. Game-thread only. */
 public final class ClientMemory implements MemoryAccess {
     static final ClientMemory INSTANCE=new ClientMemory();
     private static final Minecraft MC=Minecraft.getMinecraft();
@@ -36,7 +36,7 @@ public final class ClientMemory implements MemoryAccess {
     }
     public WorldMemory memory() {
         ClientControls.requireGameThread();
-        if(worldId==null || MC.theWorld==null || MC.thePlayer==null) throw new IllegalStateException("server world identity unavailable; connect to the Modbench server");
+        if(worldId==null || MC.theWorld==null || MC.thePlayer==null) throw new IllegalStateException("server world identity unavailable; connect to the ModdedBench server");
         String address=MC.func_147104_D()==null?"integrated":MC.func_147104_D().serverIP.toLowerCase(Locale.ROOT);
         String wanted=address+"|"+worldId+"|"+MC.theWorld.provider.dimensionId;
         try {

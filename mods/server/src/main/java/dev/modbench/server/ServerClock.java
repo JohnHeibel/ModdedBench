@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Copyright (c) 2026 Modbench contributors
+// Copyright (c) 2026 ModdedBench contributors
 package dev.modbench.server;
 
 import com.google.gson.JsonObject;
@@ -55,7 +55,7 @@ public final class ServerClock implements ClockHooks.Driver, PauseCoordinator.Ho
                     || proxy.channel().equals("FML") && proxy.payload().readableBytes()==2
                     && proxy.payload().getByte(proxy.payload().readerIndex())==0)) return false;
             if(messages.size()<4096) messages.add(new Incoming(packet,play));
-            else play.netManager.closeChannel(new net.minecraft.util.ChatComponentText("Modbench paused packet queue full"));
+            else play.netManager.closeChannel(new net.minecraft.util.ChatComponentText("ModdedBench paused packet queue full"));
             return true;
         }
         return false;
@@ -101,7 +101,7 @@ public final class ServerClock implements ClockHooks.Driver, PauseCoordinator.Ho
                         }
                     }
                 } catch(RuntimeException error) { clock.pause("clock_protocol_error"); }
-            } else if(!coordinator.defer(next)) next.handler.netManager.closeChannel(new net.minecraft.util.ChatComponentText("Modbench paused packet queue full"));
+            } else if(!coordinator.defer(next)) next.handler.netManager.closeChannel(new net.minecraft.util.ChatComponentText("ModdedBench paused packet queue full"));
         }
     }
     private void observe() {

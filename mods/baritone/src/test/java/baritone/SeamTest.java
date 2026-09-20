@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Copyright (c) 2026 Modbench contributors
+// Copyright (c) 2026 ModdedBench contributors
 package baritone;
 
 import java.io.*;
@@ -10,7 +10,7 @@ import java.util.stream.Stream;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
-/** The Baritone jar only talks to Modbench through dev.modbench.api. */
+/** The Baritone jar only talks to ModdedBench through dev.modbench.api. */
 public class SeamTest {
     private static final Pattern MODBENCH=Pattern.compile("dev/modbench/[\\w/$]+");
     /** Every referenced class, descriptor and signature lives in the constant pool's Utf8 entries. */

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Copyright (c) 2026 Modbench contributors
+// Copyright (c) 2026 ModdedBench contributors
 package dev.modbench.control;
 
 import dev.modbench.api.BlockAttackGuard;
@@ -136,7 +136,7 @@ public final class ClientControls implements Controls {
 
     static void revoke(String reason) {
         requireGameThread();
-        if(ARBITER.current().active()) cpw.mods.fml.common.FMLLog.warning("Modbench input revoked: %s; focus=%s; screen=%s; ownedInventory=%s; ownedGui=%s",reason,MC.inGameHasFocus,MC.currentScreen==null?"none":MC.currentScreen.getClass().getName(),inventorySession!=null&&inventorySession.isOpen(),hasOwnedGui());
+        if(ARBITER.current().active()) cpw.mods.fml.common.FMLLog.warning("ModdedBench input revoked: %s; focus=%s; screen=%s; ownedInventory=%s; ownedGui=%s",reason,MC.inGameHasFocus,MC.currentScreen==null?"none":MC.currentScreen.getClass().getName(),inventorySession!=null&&inventorySession.isOpen(),hasOwnedGui());
         ARBITER.revoke(reason);
     }
 

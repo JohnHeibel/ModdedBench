@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Copyright (c) 2026 Modbench contributors
+// Copyright (c) 2026 ModdedBench contributors
 package dev.modbench.hooks;
 
 import dev.modbench.api.UiInput;
@@ -7,7 +7,7 @@ import net.minecraft.client.Minecraft;
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
 
-/** Native input fallback with DJ2-style synthetic event/poll semantics; excluded from call-site rewriting. */
+/** Native input fallback with synthetic event/poll semantics; excluded from call-site rewriting. */
 public final class UiHooks {
     private UiHooks() {}
     private static java.lang.reflect.Method keyTyped;

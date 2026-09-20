@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-# Copyright (c) 2026 Modbench contributors
+# Copyright (c) 2026 ModdedBench contributors
 """Storage failures, concurrent edits and long-horizon retrieval contracts."""
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing

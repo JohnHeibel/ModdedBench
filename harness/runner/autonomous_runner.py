@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-# Copyright (c) 2026 Modbench contributors
+# Copyright (c) 2026 ModdedBench contributors
 """Provider-neutral, interrupt-aware GTNH autonomous runner.
 
 Adapters are ordinary editable Python modules with an async ``infer(request)``
