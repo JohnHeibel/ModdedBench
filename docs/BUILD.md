@@ -95,6 +95,10 @@ Close Prism before `prepare`; a running launcher caches its instance list.
 python harness/launcher/runtime.py prepare --client-zip <client.zip> --server-zip <server.zip> --prism <prismlauncher.exe> --prism-data <PrismLauncher data dir> --java <jdk25 java.exe>
 ```
 
+`--java` must be a JDK 17 to 25; `prepare` refuses anything older. Add
+`--window 1920x1080` to set the client window size (Prism otherwise opens
+854x480); re-run `prepare` with only that flag to change it later.
+
 ```bash
 python harness/launcher/runtime.py build
 ```
