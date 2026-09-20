@@ -26,7 +26,7 @@ import baritone.api.event.events.TickEvent;
 import baritone.api.utils.IInputOverrideHandler;
 import baritone.api.utils.input.Input;
 import baritone.behavior.Behavior;
-import dev.modbench.control.api.InputArbiter;
+import dev.modbench.api.InputArbiter;
 import java.util.*;
 
 import java.util.HashMap;

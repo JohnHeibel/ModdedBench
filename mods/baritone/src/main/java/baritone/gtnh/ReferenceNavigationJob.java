@@ -3,14 +3,13 @@
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh;
 
+import dev.modbench.api.ControlRegistry;
 import baritone.Baritone;
 import baritone.api.pathing.goals.*;
 import baritone.api.pathing.calc.IPath;
 import baritone.compat.BlockPos;
-import dev.modbench.control.ClientControls;
-import dev.modbench.control.ClientMemory;
-import dev.modbench.control.api.InputArbiter;
-import dev.modbench.control.api.Navigation;
+import dev.modbench.api.InputArbiter;
+import dev.modbench.api.Navigation;
 import net.minecraft.client.Minecraft;
 import java.util.*;
 
@@ -23,7 +22,7 @@ final class ReferenceNavigationJob implements Navigation.Job {
     private List<BlockPos> normalizedGoals;
     private int goalRenormalizations;
     private final Object world=mc.theWorld,player=mc.thePlayer;
-    private final String scope=ClientMemory.memory().scope();
+    private final String scope=ControlRegistry.memory().memory().scope();
     private final boolean ownsLease,allowBreak,allowPlace,override;
     private final int timeout;
     private InputArbiter.Lease lease;
@@ -43,7 +42,7 @@ final class ReferenceNavigationJob implements Navigation.Job {
         previousAllowBreak=Baritone.settings().allowBreak.value;previousAllowPlace=Baritone.settings().allowPlace.value;
         engine.getPathingBehavior().forceCancel();
         initialCalculations=engine.getPathingBehavior().calculationsStarted();initialSegments=engine.getPathingBehavior().segmentsCompleted();
-        lease=ownsLease?ClientControls.arbiter().acquire("baritone-reference",this::cancel,override,true):parent;
+        lease=ownsLease?ControlRegistry.controls().arbiter().acquire("baritone-reference",this::cancel,override,true):parent;
         if(!lease.isActive())throw new IllegalArgumentException("navigation lease is inactive");
         Baritone.settings().allowBreak.value=allowBreak;Baritone.settings().allowPlace.value=allowPlace;
         engine.overrideProtection=override;
@@ -65,9 +64,9 @@ final class ReferenceNavigationJob implements Navigation.Job {
     }
     void tick(){
         if(done())return;
-        if(mc.theWorld!=world||mc.thePlayer!=player||!scope.equals(ClientMemory.memory().scope())){cancel("world_changed");return;}
+        if(mc.theWorld!=world||mc.thePlayer!=player||!scope.equals(ControlRegistry.memory().memory().scope())){cancel("world_changed");return;}
         if(!lease.isActive()){cancel("control_lost");return;}
-        if(mc.currentScreen!=null&&!dev.modbench.control.ClientControls.ownsPlayerInventory(lease)){cancel("gui_open");return;}
+        if(mc.currentScreen!=null&&!dev.modbench.api.ControlRegistry.controls().ownsPlayerInventory(lease)){cancel("gui_open");return;}
         if(mc.thePlayer.isDead||mc.thePlayer.getHealth()<=0){cancel("player_unavailable");return;}
         if(++ticks>timeout){finish("failed","timeout");return;}
         // A destination can first become observable hundreds of blocks after

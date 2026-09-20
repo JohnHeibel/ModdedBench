@@ -2,11 +2,11 @@
 // Copyright (c) 2026 Modbench contributors
 package dev.modbench.client;
 
+import dev.modbench.api.ControlRegistry;
 import com.google.gson.*;
 import dev.modbench.bridge.Json;
-import dev.modbench.control.ClientMemory;
-import dev.modbench.control.api.WorldMemory;
-import dev.modbench.control.api.WorldMemory.*;
+import dev.modbench.api.WorldMemory;
+import dev.modbench.api.WorldMemory.*;
 import java.util.*;
 
 /** Small, discoverable memory operations; all writes remain on the game thread. */
@@ -26,12 +26,12 @@ final class MemoryMethods {
         };
     }
     static Object call(String method,JsonObject params) throws Exception {
-        if(method.equals("record")) return ClientMemory.record(Json.string(params,"action","status"),Json.string(params,"name",""),
+        if(method.equals("record")) return ControlRegistry.memory().record(Json.string(params,"action","status"),Json.string(params,"name",""),
             Json.bool(params,"replace",false),Json.number(params,"radius",2,1,16));
-        WorldMemory memory=ClientMemory.memory();String name=Json.string(params,"name","");
+        WorldMemory memory=ControlRegistry.memory().memory();String name=Json.string(params,"name","");
         switch(method) {
-            case "context": return ClientMemory.context();
-            case "status": return ClientMemory.status();
+            case "context": return ControlRegistry.memory().context();
+            case "status": return ControlRegistry.memory().status();
             case "get": {
                 String kind=Json.string(params,"kind","");
                 Object result=switch(kind) {
@@ -43,7 +43,7 @@ final class MemoryMethods {
                 if(result==null) throw new IllegalArgumentException("unknown named "+kind);
                 return result;
             }
-            case "waypoint": memory.waypoint(name,params.has("pos")?pos(params.get("pos")):ClientMemory.feet(),Json.bool(params,"replace",false));break;
+            case "waypoint": memory.waypoint(name,params.has("pos")?pos(params.get("pos")):ControlRegistry.memory().feet(),Json.bool(params,"replace",false));break;
             case "route": {
                 if(!params.has("points")||!params.get("points").isJsonArray()) throw new IllegalArgumentException("points array required");
                 List<Pos> points=new ArrayList<>();

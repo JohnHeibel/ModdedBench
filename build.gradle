@@ -18,14 +18,15 @@ subprojects {
     tasks.withType(JavaCompile).configureEach {
         options.encoding = 'UTF-8'
     }
-    tasks.withType(JavaCompile).matching { it.name in ['compileJava', 'compileTestJava'] }.configureEach {
+    tasks.withType(JavaCompile).matching { it.name in ['compileJava', 'compileTestJava', 'compileDevJava'] }.configureEach {
         options.release = 17
     }
     dependencies { testImplementation 'junit:junit:4.13.2' }
     tasks.withType(Test).configureEach { useJUnit() }
 }
 
-configure([project(':client'), project(':server'), project(':control'), project(':baritone')]) {
+// Shipped jars: core (the only coremod), client, server and baritone.
+configure([project(':core'), project(':client'), project(':server'), project(':baritone')]) {
     apply plugin: 'com.gtnewhorizons.retrofuturagradle'
     minecraft {
         mcVersion = '1.7.10'
@@ -45,28 +46,49 @@ configure([project(':client'), project(':server'), project(':control'), project(
     }
 }
 
-configure([project(':client'), project(':server')]) {
-    sourceSets.main.java.srcDir rootProject.file('mods/clock-hooks/src/main/java')
-    dependencies { implementation project(':bridge-core') }
+project(':core') {
+    def pack = new groovy.json.JsonSlurper().parse(rootProject.file('pack.lock.json'))
+    dependencies { implementation project(':api') }
+    tasks.named('processResources') {
+        inputs.property('pack', pack.pack + ' ' + pack.version)
+        filesMatching('modbench-pack.properties') { expand(pack: pack.pack + ' ' + pack.version) }
+    }
     tasks.named('jar') {
-        from project(':bridge-core').sourceSets.main.output
-        manifest { attributes('FMLCorePlugin': 'dev.modbench.clock.ClockPlugin', 'FMLCorePluginContainsFMLMod': 'true') }
+        from project(':api').sourceSets.main.output
+        manifest { attributes('FMLCorePlugin': 'dev.modbench.hooks.ClockPlugin', 'FMLCorePluginContainsFMLMod': 'true') }
     }
 }
-configure([project(':client'), project(':baritone')]) {
+configure([project(':client'), project(':server')]) {
     dependencies {
-        compileOnly project(':control-api')
-        compileOnly project(':control')
+        compileOnly project(':api')
+        compileOnly project(':core')
+        testImplementation project(':api')
+        testImplementation project(':core')
     }
 }
-project(':control') {
-    dependencies { implementation project(':control-api') }
-    tasks.named('jar') { from project(':control-api').sourceSets.main.output }
+project(':server') {
+    // Development fixtures compile on every build but only ship with -PdevFixtures.
+    sourceSets {
+        dev {
+            java.srcDir 'src/dev/java'
+            compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        }
+    }
+    tasks.named('jar') { dependsOn 'devClasses'; if (project.hasProperty('devFixtures')) from sourceSets.dev.output }
+    tasks.named('test') {
+        dependsOn 'reobfJar'
+        doFirst {
+            systemProperty 'modbench.jar', tasks.reobfJar.outputs.files.singleFile.path
+            systemProperty 'modbench.devFixtures', project.hasProperty('devFixtures') ? 'true' : 'false'
+        }
+    }
 }
 project(':baritone') {
     sourceSets.main.java.srcDir 'src/upstream/java'
     configurations { fastutilBundle { transitive = false } }
     dependencies {
+        // Only the api: the compiler enforces the seam between Baritone and the core mod.
+        compileOnly project(':api')
         implementation project(':baritone-core')
         // fastutil is not shipped by MC 1.7.10 or the pack, so the jar bundles it from a
         // detached configuration: resolving runtimeClasspath while wiring the jar task
@@ -74,8 +96,7 @@ project(':baritone') {
         compileOnly 'it.unimi.dsi:fastutil:8.5.15'
         testRuntimeOnly 'it.unimi.dsi:fastutil:8.5.15'
         fastutilBundle 'it.unimi.dsi:fastutil:8.5.15'
-        testImplementation project(':control-api')
-        testRuntimeOnly project(':control')
+        testImplementation project(':api')
         // Allocating Minecraft for the settings persistence boundary resolves
         // its declared legacy LWJGL exception types even though no display is
         // created by the test.
@@ -83,14 +104,16 @@ project(':baritone') {
     }
     tasks.named('compileJava') { options.compilerArgs += ['-Xmaxerrs', '1000'] }
     tasks.named('test') {
-        dependsOn ':control:jar', ':control-api:jar', ':baritone-core:jar'
+        dependsOn ':api:jar', ':baritone-core:jar'
         // Resolved at execution time: .asPath here would run RFG's deobf transform on
         // sibling project jars before they are built.
-        doFirst { systemProperty 'modbench.test.classpath', sourceSets.test.runtimeClasspath.asPath }
+        doFirst {
+            systemProperty 'modbench.test.classpath', sourceSets.test.runtimeClasspath.asPath
+            systemProperty 'modbench.classes', sourceSets.main.output.classesDirs.asPath
+        }
     }
     tasks.named('jar') {
         from project(':baritone-core').sourceSets.main.output
-        manifest { attributes('FMLCorePlugin': 'baritone.launch.ActionPlugin', 'FMLCorePluginContainsFMLMod': 'true') }
         from({ configurations.fastutilBundle.collect { zipTree(it) } }) {
             include 'it/unimi/dsi/fastutil/**'
         }
@@ -100,5 +123,5 @@ project(':baritone') {
         from(rootProject.file('mods/baritone-core/PORT_ORIGIN.md')) { into 'META-INF' }
     }
 }
-tasks.named('assemble') { dependsOn ':client:build', ':server:build', ':control:build', ':baritone:build' }
+tasks.named('assemble') { dependsOn ':core:build', ':client:build', ':server:build', ':baritone:build' }
 tasks.named('check') { dependsOn subprojects.collect { it.tasks.named('check') } }

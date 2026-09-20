@@ -13,7 +13,7 @@ public interface IPlayerContext {
     EntityPlayerSP player();
     LegacyPlayerController playerController();
     World world();
-    default baritone.api.cache.IWorldData worldData(){return baritone.Baritone.instance().getWorldProvider().getCurrentWorld();}
+    baritone.api.cache.IWorldData worldData();
     RayTraceResult objectMouseOver();
     default BetterBlockPos playerFeet(){
         return NavigationCoordinates.feet(player().posX,player().boundingBox.minY,player().posZ,

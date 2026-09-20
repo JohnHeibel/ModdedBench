@@ -2,9 +2,9 @@
 // Copyright (c) 2026 Modbench contributors
 package dev.modbench.client;
 
+import dev.modbench.api.ControlRegistry;
 import com.google.gson.*;
 import dev.modbench.bridge.*;
-import dev.modbench.control.ClientControls;
 import java.util.*;
 import net.minecraft.client.Minecraft;
 
@@ -20,7 +20,7 @@ final class ClientInterrupts {
             "bridgeId",runtime.bridgeId(),"worldEpoch",runtime.worldEpoch());
     }
     JsonObject status(JsonObject params) {
-        var owner=ClientControls.arbiter().current();JsonArray selected=new JsonArray();
+        var owner=ControlRegistry.controls().arbiter().current();JsonArray selected=new JsonArray();
         if(params.has("eventId")) {
             JsonObject receipt=receipts.get(Json.string(params,"eventId",""));
             if(receipt==null)throw new IllegalArgumentException("unknown eventId");selected.add(receipt);
@@ -48,7 +48,7 @@ final class ClientInterrupts {
         String id=UUID.fromString(Json.string(r.params,"eventId","")).toString();
         if(receipts.containsKey(id)) return receipts.get(id);
         if(!context().equals(r.params.get("expectedContext"))) throw new IllegalArgumentException("stale_context: bridge/world changed");
-        if(r.params.has("expectedOperationId")&&r.params.get("expectedOperationId").getAsLong()!=ClientControls.arbiter().current().operationId()) throw new IllegalArgumentException("stale_operation: control owner changed");
+        if(r.params.has("expectedOperationId")&&r.params.get("expectedOperationId").getAsLong()!=ControlRegistry.controls().arbiter().current().operationId()) throw new IllegalArgumentException("stale_operation: control owner changed");
         String reason=Json.string(r.params,"reason","interrupt");
         if(reason.isBlank()||reason.length()>240) throw new IllegalArgumentException("reason must contain 1..240 characters");
         JsonArray effects=r.params.getAsJsonArray("effects");

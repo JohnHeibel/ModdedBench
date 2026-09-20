@@ -17,13 +17,14 @@ import static org.junit.Assert.*;
 @org.junit.runner.RunWith(ForgePlanningTestRunner.class)
 public class ReferenceSettingsTest {
     private static Path dataDirectory;
+    private static Baritone engine;
 
     @BeforeClass public static void bootstrap() throws Exception {
         cpw.mods.fml.common.Loader.injectData("7","99","40","1614","1.7.10","9.05",new java.io.File("."),List.of());
         net.minecraft.init.Bootstrap.func_151354_b();
         dataDirectory=Files.createTempDirectory("baritone-settings-test");
         installMinecraftDataDirectory(dataDirectory);
-        new Baritone();
+        engine=new Baritone();
     }
 
     @AfterClass public static void cleanup() throws Exception {
@@ -43,7 +44,7 @@ public class ReferenceSettingsTest {
         values.put("allowInventory",true);
         values.put("acceptableThrowawayItems","minecraft:stone");
         values.put("allowParkour","not-a-boolean");
-        assertThrows(IllegalArgumentException.class,()->ReferenceSettings.call(Map.of("operation","set","values",values)));
+        assertThrows(IllegalArgumentException.class,()->ReferenceSettings.call(engine,Map.of("operation","set","values",values)));
         assertFalse(settings.allowInventory.value);
         assertEquals(originalItems,SettingsUtil.settingValueToString(settings.acceptableThrowawayItems));
     }
@@ -53,7 +54,7 @@ public class ReferenceSettingsTest {
         settings.allowInventory.value=false;
         Path settingsDirectory=dataDirectory.resolve("baritone");
         Files.writeString(settingsDirectory,"previous settings must survive");
-        assertThrows(IllegalStateException.class,()->ReferenceSettings.call(Map.of(
+        assertThrows(IllegalStateException.class,()->ReferenceSettings.call(engine,Map.of(
             "operation","set","values",Map.of("allowInventory",true),"save",true)));
         assertFalse(settings.allowInventory.value);
         assertEquals("previous settings must survive",Files.readString(settingsDirectory));

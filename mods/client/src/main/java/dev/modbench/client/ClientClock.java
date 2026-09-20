@@ -106,7 +106,7 @@ public final class ClientClock implements ClockHooks.Driver {
             switch(Json.string(data,"type","")) {
                 case "state" -> {
                     state=data.getAsJsonObject("state");supported=true;
-                    if(state.has("worldId")) dev.modbench.control.ClientMemory.bind(state.get("worldId").getAsString());
+                    if(state.has("worldId")) dev.modbench.api.ControlRegistry.memory().bind(state.get("worldId").getAsString());
                     paused=state.get("paused").getAsBoolean();
                     if(paused) send(Json.object("type","paused","generation",state.get("generation").getAsLong()));
                 }
@@ -129,7 +129,7 @@ public final class ClientClock implements ClockHooks.Driver {
         NetworkManager current=mc.theWorld==null || mc.getNetHandler()==null?null:mc.getNetHandler().getNetworkManager();
         if(current!=connection) {
             for(Request r:pending.values()) r.fail("disconnected","clock connection changed");
-            dev.modbench.control.ClientMemory.disconnected();
+            dev.modbench.api.ControlRegistry.memory().disconnected();
             pending.clear();observationFrames.clear();incoming.clear();connection=current;supported=false;paused=false;
             state=Json.object("mode","unavailable","paused",false);
             if(connection!=null) send(Json.object("type","hello"));
@@ -159,11 +159,11 @@ public final class ClientClock implements ClockHooks.Driver {
         runtime.simulationTick();
         return true;
     }
-    @Override public boolean blockAction(int action,int x,int y,int z,int side) {return dev.modbench.control.ClientMemory.blockAction(action,x,y,z,side);}
+    @Override public boolean blockAction(int action,int x,int y,int z,int side) {return dev.modbench.api.ControlRegistry.memory().blockAction(action,x,y,z,side);}
     @Override public void after() {
         if(!runningTick) return;
         runtime.endTick();
-        dev.modbench.control.ClientMemory.endTick();
+        dev.modbench.api.ControlRegistry.memory().endTick();
         runningTick=false;
     }
 }

@@ -2,10 +2,10 @@
 // Copyright (c) 2026 Modbench contributors
 package dev.modbench.client;
 
+import dev.modbench.api.ControlRegistry;
 import com.google.gson.*;
 import dev.modbench.bridge.*;
-import dev.modbench.control.ClientControls;
-import dev.modbench.control.api.InputArbiter;
+import dev.modbench.api.InputArbiter;
 import java.util.*;
 import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
@@ -103,7 +103,7 @@ final class InteractionOperations {
                 double[] hit={.5,.5,.5};int axis=face/2;axis=axis==0?1:axis==1?2:0;hit[axis]=face%2;
                 if(!fluidTarget) {
                     Block block=world.getBlock(x,y,z);block.setBlockBoundsBasedOnState(world,x,y,z);
-                    var box=dev.modbench.control.NativeTargeting.withContext(()->block.getSelectedBoundingBoxFromPool(world,x,y,z));
+                    var box=dev.modbench.api.ControlRegistry.targeting().withContext(()->block.getSelectedBoundingBoxFromPool(world,x,y,z));
                     if(box!=null) {
                         double[] low={box.minX-x,box.minY-y,box.minZ-z},high={box.maxX-x,box.maxY-y,box.maxZ-z};
                         for(int i=0;i<3;i++)hit[i]=(low[i]+high[i])/2;
@@ -128,8 +128,8 @@ final class InteractionOperations {
             before=snapshot();
         }
         void start() {
-            ClientControls.focusForInput();
-            lease=ClientControls.arbiter().acquire("interaction:"+kind,reason->{
+            ControlRegistry.controls().focusForInput();
+            lease=ControlRegistry.controls().arbiter().acquire("interaction:"+kind,reason->{
                 // Native use may synchronously open a screen. The click still needs an honest receipt.
                 if(delivering) {if(!reason.equals("gui_open"))revokedDuringDelivery=reason;}
                 else finish("cancelled",reason);
@@ -164,7 +164,7 @@ final class InteractionOperations {
                 Vec3 eye=eyes(),look=player.getLook(1);double reach=mc.playerController.getBlockReachDistance();
                 return world.rayTraceBlocks(eye,eye.addVector(look.xCoord*reach,look.yCoord*reach,look.zCoord*reach),true);
             }
-            return dev.modbench.control.NativeTargeting.refresh();
+            return (MovingObjectPosition)dev.modbench.api.ControlRegistry.targeting().refresh();
         }
         boolean entityInReach() {
             if(target==null||target.isDead||world.getEntityByID(target.getEntityId())!=target) return false;

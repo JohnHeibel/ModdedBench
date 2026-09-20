@@ -3,9 +3,9 @@
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh;
 
+import dev.modbench.api.ControlRegistry;
 import baritone.gtnh.pathing.*;
 import static baritone.gtnh.pathing.WorkSpec.*;
-import dev.modbench.control.ClientMemory;
 import java.util.*;
 import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
@@ -132,5 +132,5 @@ final class WorkAccess {
         }
         out.sort(Comparator.comparingDouble(WorkAccess::distance));return out.stream().distinct().limit(40).toList();
     }
-    static String protection(BlockPos p,boolean override){return ClientMemory.editProblem(p.x(),p.y(),p.z(),override,true);}
+    static String protection(BlockPos p,boolean override){return ControlRegistry.memory().editProblem(p.x(),p.y(),p.z(),override,true);}
 }

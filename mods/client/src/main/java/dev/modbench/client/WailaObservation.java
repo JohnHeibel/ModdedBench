@@ -2,9 +2,9 @@
 // Copyright (c) 2026 Modbench contributors
 package dev.modbench.client;
 
+import dev.modbench.api.ControlRegistry;
 import com.google.gson.*;
 import dev.modbench.bridge.Json;
-import dev.modbench.control.NativeTargeting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
@@ -42,7 +42,7 @@ final class WailaObservation {
             NBTTagCompound nbt=CompressedStreamTools.readCompressed(new java.io.ByteArrayInputStream(bytes));
             accessorClass.getMethod("setNBTData",NBTTagCompound.class).invoke(accessor,nbt);
             MovingObjectPosition pickHit=hit;ItemStack stack=null;
-            try{stack=NativeTargeting.withContext(()->nativeBlock.getPickBlock(pickHit,mc.theWorld,x,y,z,mc.thePlayer));}catch(Exception|LinkageError e){errors.add(Json.object("stage","pick","error",error(e)));}
+            try{stack=ControlRegistry.targeting().withContext(()->nativeBlock.getPickBlock(pickHit,mc.theWorld,x,y,z,mc.thePlayer));}catch(Exception|LinkageError e){errors.add(Json.object("stage","pick","error",error(e)));}
             for(Object provider:providers(registry,registrar,"getStackProviders",nativeBlock,tile))try{
                 Object next=api.getMethod("getWailaStack",dataApi,configApi).invoke(provider,accessor,config);used.add(new JsonPrimitive(provider.getClass().getName()));if(next instanceof ItemStack selected){stack=selected;break;}
             }catch(Exception|LinkageError e){errors.add(Json.object("provider",provider.getClass().getName(),"stage","stack","error",error(e)));}

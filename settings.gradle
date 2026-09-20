@@ -11,5 +11,5 @@ plugins {
 }
 
 rootProject.name = 'modbench-gtnh'
-include 'bridge-core', 'control-api', 'control', 'baritone-core', 'baritone', 'client', 'server'
+include 'api', 'core', 'baritone-core', 'baritone', 'client', 'server'
 rootProject.children.each { it.projectDir = file("mods/${it.name}") }
