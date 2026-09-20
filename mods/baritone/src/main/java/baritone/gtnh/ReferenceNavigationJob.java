@@ -48,7 +48,7 @@ final class ReferenceNavigationJob implements Navigation.Job {
         engine.overrideProtection=override;
         engine.explicitMiningTargets=()->s->false;
         if(corridorStart!=null){
-            var corridor=new baritone.gtnh.pathing.CorridorWorld(null,corridorStart,goals.get(0),radius);
+            var corridor=new baritone.gtnh.pathing.Corridor(corridorStart,goals.get(0),radius);
             engine.positionAllowed=p->corridor.contains(new baritone.gtnh.pathing.BlockPos(p.getX(),p.getY(),p.getZ()));
         }else engine.positionAllowed=p->true;
         engine.getInputOverrideHandler().attach(lease);

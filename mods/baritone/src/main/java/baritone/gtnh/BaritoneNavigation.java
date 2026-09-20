@@ -73,7 +73,7 @@ public final class BaritoneNavigation implements Navigation {
         if(mc.thePlayer==null || mc.theWorld==null || mc.currentScreen!=null) throw new IllegalArgumentException("navigation needs a player with GUI closed");
         if(mc.thePlayer.getHealth()<=0 || (!mc.thePlayer.onGround && !mc.thePlayer.isInWater() && !mc.thePlayer.isOnLadder())) throw new IllegalArgumentException("navigation must start alive, grounded, on a ladder or in water");
         BlockPos start=feet();
-        if(!RouteProgress.validGoal(start,new BlockPos(x,y,z))) throw new IllegalArgumentException("goal must be within 4096 horizontal blocks and world height");
+        if(!GoalRange.validGoal(start,new BlockPos(x,y,z))) throw new IllegalArgumentException("goal must be within 4096 horizontal blocks and world height");
         if(timeoutTicks<1 || timeoutTicks>72000) throw new IllegalArgumentException("timeoutTicks must be 1..72000");
         if(active!=null && !active.done()) active.cancel("superseded");
         active=new ReferenceNavigationJob(reference,List.of(new BlockPos(x,y,z)),timeoutTicks,allowBreak,allowPlace,overrideProtection,null,null,0);
@@ -205,7 +205,7 @@ public final class BaritoneNavigation implements Navigation {
             if(leg==null) {
                 if(next>=points.size()) {finish("succeeded","route_complete");return;}
                 WorldMemory.Pos p=points.get(next);BlockPos goal=new BlockPos(p.x(),p.y(),p.z());
-                if(!RouteProgress.validGoal(feet(),goal)) {finish("failed","route_leg_out_of_range");return;}
+                if(!GoalRange.validGoal(feet(),goal)) {finish("failed","route_leg_out_of_range");return;}
                 WorldMemory.Pos prior=next==startedAt?null:points.get(next-1);
                 leg=new ReferenceNavigationJob(reference,List.of(goal),remaining,allowBreak,allowPlace,overrideProtection,null,prior==null?null:new BlockPos(prior.x(),prior.y(),prior.z()),radius);
             }

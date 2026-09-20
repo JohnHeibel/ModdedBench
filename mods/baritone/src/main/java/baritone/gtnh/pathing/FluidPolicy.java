@@ -14,11 +14,4 @@ public final class FluidPolicy {
         // Material.water and room temperature say nothing about poison or custom collision effects.
         return "unverified_fluid";
     }
-
-    public static double swimCost(double flowX, double flowZ, int dx, int dz) {
-        double against = Math.max(0, -(flowX * dx + flowZ * dz));
-        double cross = Math.abs(flowX * dz - flowZ * dx);
-        // Never discount below the retained Baritone heuristic, even downstream.
-        return ActionCosts.WALK_ONE_IN_WATER_COST * (1 + 1.8 * against + .5 * cross);
-    }
 }

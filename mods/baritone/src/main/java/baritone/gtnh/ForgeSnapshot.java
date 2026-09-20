@@ -26,7 +26,6 @@ final class ForgeSnapshot {
     private final float[] flows;
     private final Map<BlockPos,List<CollisionBox>> shapes=new HashMap<>();
     private final Map<BlockPos,LadderFacing> ladders=new HashMap<>();
-    private final double stepHeight=Minecraft.getMinecraft().thePlayer.stepHeight;
     private int cursor;
     private ForgeSnapshot(World world,int x,int y,int z,int w,int h,int d) {
         this.world=world;minX=x;minY=y;minZ=z;width=w;height=h;depth=d;
@@ -51,7 +50,7 @@ final class ForgeSnapshot {
         }
         return cursor==cells.length;
     }
-    private TerrainGrid finish() { return new TerrainGrid(minX,minY,minZ,width,height,depth,cells,flows,shapes,ladders,stepHeight); }
+    private TerrainGrid finish() { return new TerrainGrid(minX,minY,minZ,width,height,depth,cells,flows,shapes,ladders); }
     static TerrainGrid local(World world,BlockPos a,BlockPos b) {
         int x=Math.min(a.x(),b.x())-1,z=Math.min(a.z(),b.z())-1,y=Math.max(0,Math.min(a.y(),b.y())-2);
         ForgeSnapshot snapshot=new ForgeSnapshot(world,x,y,z,Math.abs(a.x()-b.x())+3,Math.min(256,Math.max(a.y(),b.y())+5)-y,Math.abs(a.z()-b.z())+3);

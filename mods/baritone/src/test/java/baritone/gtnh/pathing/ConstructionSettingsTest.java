@@ -28,13 +28,6 @@ public class ConstructionSettingsTest {
         var cells=WorkSpec.cells(spec);assertEquals(32768,cells.size());assertEquals(7,cells.get(cells.size()-1).meta());
         spec.put("mode","blueprint");invalid(()->WorkSpec.cells(spec));
     }
-    @Test public void constructionGoalKeepsClearingFallbackButPrefersLowerPlacementHeuristic() {
-        BlockPos low=new BlockPos(20,10,0),high=new BlockPos(0,14,0),clear=new BlockPos(-1,10,0);
-        var goal=new ConstructionGoal(Map.of(low,10,high,14),Set.of(clear));
-        assertTrue(goal.isInGoal(clear.x(),clear.y(),clear.z()));assertTrue(goal.isInGoal(high.x(),high.y(),high.z()));
-        assertFalse(goal.isInGoal(0,10,0));
-        assertEquals(1000+new GoalBlock(20,10,0).heuristic(0,10,0),goal.heuristic(0,10,0),.001);
-    }
     @Test public void verificationKeepsNativeVariantSeparateFromBlockAndPlacementItem() {
         var spec=plan();spec.put("cells",List.of(Map.of("pos",List.of(0,40,0),"id","pack:shared_block","meta",3,
             "item",Map.of("id","pack:placement_tool","meta",17),"verify",Map.of("pickedItem",Map.of("id","pack:shared_item","meta",314,"nbt","{variant:7}")))));
