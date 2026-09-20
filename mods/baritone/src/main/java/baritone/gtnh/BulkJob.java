@@ -12,7 +12,7 @@ import java.util.*;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.World;
 
-/** One owned process across movement, inventory and block-work child jobs. */
+/** One owned process: a control lease, a journal, a tick budget and a terminal state. */
 abstract class BulkJob implements Navigation.Job {
     final Minecraft mc=Minecraft.getMinecraft();
     final World world=mc.theWorld;
@@ -25,8 +25,6 @@ abstract class BulkJob implements Navigation.Job {
     int remaining,ticks;
     String state="preparing",reason="";
     InputArbiter.Lease lease;
-    Navigation.Job child;
-    final List<Map<String,Object>> history=new ArrayList<>();
     BulkJob(BaritoneNavigation navigation,WorkJournal journal,Map<String,Object> options) {
         this.navigation=navigation;this.journal=journal;params=new LinkedHashMap<>(journal.spec);params.putAll(options);
         override=bool(options,"overrideProtection",false);allowBreak=bool(params,"allowBreak",false);allowPlace=bool(params,"allowPlace",false);
@@ -44,26 +42,18 @@ abstract class BulkJob implements Navigation.Job {
             if(mc.currentScreen!=null&&!ControlRegistry.controls().ownsPlayerInventory(lease)||mc.thePlayer.getHealth()<=0){cancel("gui_or_death");return;}
             if(--remaining<=0){finish("failed","timeout");return;}ticks++;
             if(mc.thePlayer.getHealth()<health||mc.thePlayer.isBurning()||mc.thePlayer.getAir()<120){finish("failed","damage_fire_or_low_air");return;}
-            boolean tickedChild=false;
             for(int transitions=0;transitions<8&&!done();transitions++) {
-                if(child!=null&&!child.done()) {
-                    if(tickedChild)return;
-                    tickedChild=true;navigation.tickChild(child);if(!child.done())return;
-                }
-                var oldChild=child;String oldPhase=phase();step();
-                if(oldChild==child&&oldPhase.equals(phase()))return;
+                String oldPhase=phase();step();
+                if(oldPhase.equals(phase()))return;
             }
         }catch(Exception|LinkageError error){finish("failed",error.getClass().getSimpleName()+": "+error.getMessage());}
     }
     abstract void step();
     abstract String phase();
     void releaseProcess() {}
-    Map<String,Object> consumeChild() {
-        Map<String,Object> receipt=child.status();if(history.size()>=32)history.remove(0);history.add(receipt);child=null;return receipt;
-    }
     final void finish(String terminal,String why) {
         if(done())return;state=terminal;reason=why;
-        try {if(child!=null&&!child.done())child.cancel(why);}finally{try{releaseProcess();}finally{if(lease!=null)lease.close();}}
+        try{releaseProcess();}finally{if(lease!=null)lease.close();}
         journal.progress.put("lastTicks",ticks);
         try{journal.save(status());}catch(Exception error){state="failed";reason+="; checkpoint_failed: "+error.getMessage();}
     }
@@ -72,6 +62,6 @@ abstract class BulkJob implements Navigation.Job {
     @Override public boolean succeeded(){return state.equals("succeeded");}
     @Override public Map<String,Object> status() {
         Map<String,Object> out=new LinkedHashMap<>();out.put("available",true);out.put("action",journal.kind);out.put("jobId",journal.id);out.put("state",state);out.put("reason",reason);out.put("ticks",ticks);out.put("remainingTicks",remaining);
-        out.put("overrideProtection",override);out.put("scope",journal.scope);out.put("controlOwned",lease!=null&&lease.isActive());out.put("child",child==null?null:child.status());out.put("recentWork",history);out.put("serverAcknowledged",false);return out;
+        out.put("overrideProtection",override);out.put("scope",journal.scope);out.put("controlOwned",lease!=null&&lease.isActive());out.put("serverAcknowledged",false);return out;
     }
 }
