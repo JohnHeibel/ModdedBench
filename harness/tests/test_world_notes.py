@@ -312,5 +312,8 @@ class NotesSurfacingTests(unittest.TestCase):
         self.assertEqual(notes.goal(self.game)["quietGameMinutes"], 0)
         self.assertEqual(notes.goal(self.game, dict(subgoal="smelt copper"))["chapter"], "Steam Age")
         self.assertEqual(self.store.get("goal-stack")["revision"], 2)
+        self.store.write("goal-stack", 2, "archive-goal", {"status": "archived"})
+        self.assertIn("unset", notes.goal(self.game))
+        self.assertEqual(notes.goal(self.game, dict(quest="Steel"))["chapter"], "")  # a cleared stack starts again
 
 if __name__=="__main__":unittest.main()

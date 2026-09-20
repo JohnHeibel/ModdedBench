@@ -644,12 +644,12 @@ def goal(kernel, changes=None):
         note = store.get(GOAL_ID)
     except ValueError:
         note = {"revision": 0, "data": {}}
-    data = dict(note["data"])
+    data = {} if note.get("status") == "archived" else dict(note["data"])  # archiving the note clears the stack
     changes = {k: _text(v, k, 512, empty=True).strip() for k, v in (changes or {}).items() if v is not None}
     if changes:
         data.update(changes, setAt=datetime.now(timezone.utc).isoformat())
         text = " / ".join(f"{k}: {data[k]}" for k in GOAL_FIELDS if data.get(k))
-        store.write(GOAL_ID, note["revision"], f"goal-{uuid.uuid4()}", {"title": "Goal stack", "text": text, "data": data, "tags": ["goal"],
+        store.write(GOAL_ID, note["revision"], f"goal-{uuid.uuid4()}", {"title": "Goal stack", "text": text, "data": data, "tags": ["goal"], "status": "open",
                     "attachments": [{"kind": "topic", "topic": "goal"}]})
     if not data:
         return {"unset": "no goal stack yet: call mb_goal(chapter=..., quest=..., subgoal=..., serves=...)"}
