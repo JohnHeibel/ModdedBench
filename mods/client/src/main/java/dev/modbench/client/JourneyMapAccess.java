@@ -40,6 +40,24 @@ final class JourneyMapAccess {
         }
         return out;
     }
+    /** VisualProspecting's client cache: only the veins this player has prospected, exactly what its own map overlay shows. Optional mod. */
+    private static JsonArray veins(int dimension,int minX,int minZ,int span) throws Exception {
+        JsonArray out=new JsonArray();java.lang.reflect.Method get;
+        try { get=Class.forName("com.sinthoras.visualprospecting.VisualProspecting_API$LogicalClient").getMethod("getOreVein",int.class,int.class,int.class); }
+        catch(ClassNotFoundException e) { return out; }
+        java.util.Set<Long> seen=new java.util.HashSet<>();
+        for(int cx=minX>>4;cx<=(minX+span-1)>>4;cx++) for(int cz=minZ>>4;cz<=(minZ+span-1)>>4;cz++) {
+            Object vein=get.invoke(null,dimension,cx,cz);Class<?> c=vein.getClass();Object type=c.getField("veinType").get(vein);
+            int vx=c.getField("chunkX").getInt(vein),vz=c.getField("chunkZ").getInt(vein);
+            String name=(String)type.getClass().getMethod("getVeinName").invoke(type);
+            if(type==type.getClass().getField("NO_VEIN").get(null)||!seen.add(((long)vx<<32)^(vz&0xFFFFFFFFL))) continue;
+            out.add(Json.object("name",name,"ores",Json.GSON.toJsonTree(type.getClass().getMethod("getOreMaterialNames").invoke(type)),
+                "center",Json.GSON.toJsonTree(new int[]{(Integer)c.getMethod("getBlockX").invoke(vein),(Integer)c.getMethod("getBlockZ").invoke(vein)}),
+                "y",Json.GSON.toJsonTree(new int[]{type.getClass().getField("minBlockY").getInt(type),type.getClass().getField("maxBlockY").getInt(type)}),
+                "depleted",(Boolean)c.getMethod("isDepleted").invoke(vein)));
+        }
+        return out;
+    }
     static JsonObject view(JsonObject p) throws Exception {
         Minecraft mc=Minecraft.getMinecraft();if(mc.thePlayer==null) throw new IllegalArgumentException("not in a world");
         int px=(int)Math.floor(mc.thePlayer.posX),py=(int)Math.floor(mc.thePlayer.posY),pz=(int)Math.floor(mc.thePlayer.posZ),dimension=mc.thePlayer.dimension;
@@ -78,6 +96,14 @@ final class JourneyMapAccess {
             g.setColor(Color.BLACK);g.fillRect(sx-5,sz-5,10,10);g.setColor(death?Color.RED:Color.CYAN);g.fillRect(sx-3,sz-3,6,6);
             label(g,Json.string(w,"name",""),sx+8,sz+4);shown.add(w);
         }
+        JsonArray veins=veins(dimension,minX,minZ,span);
+        for(JsonElement e:veins) {
+            JsonObject v=e.getAsJsonObject();JsonArray at=v.getAsJsonArray("center");int x=at.get(0).getAsInt(),z=at.get(1).getAsInt();
+            if(x<minX||x>=minX+span||z<minZ||z>=minZ+span) continue;
+            int sx=(int)((x-minX+.5)*scale),sz=(int)((z-minZ+.5)*scale);
+            g.setColor(Color.BLACK);g.fillOval(sx-6,sz-6,12,12);g.setColor(v.get("depleted").getAsBoolean()?Color.GRAY:Color.ORANGE);g.fillOval(sx-4,sz-4,8,8);
+            if(scale>=.5) label(g,Json.string(v,"name",""),sx+8,sz+4);
+        }
         if(px>=minX&&px<minX+span&&pz>=minZ&&pz<minZ+span) {
             int sx=(int)((px-minX+.5)*scale),sz=(int)((pz-minZ+.5)*scale);double yaw=Math.toRadians(mc.thePlayer.rotationYaw);
             g.setColor(Color.BLACK);g.fillOval(sx-7,sz-7,14,14);g.setColor(Color.YELLOW);g.fillOval(sx-5,sz-5,10,10);
@@ -88,7 +114,7 @@ final class JourneyMapAccess {
         return Json.object("png",Base64.getEncoder().encodeToString(png.toByteArray()),"width",OUT,"height",OUT,"layer",layer,"dimension",dimension,
             "bounds",Json.object("minX",minX,"minZ",minZ,"maxX",minX+span-1,"maxZ",minZ+span-1),"blocksPerPixel",span/(double)OUT,"gridBlocks",grid,
             "mappedFraction",Math.round(mapped*1000.0/((long)span*span))/1000.0,"player",Json.GSON.toJsonTree(new int[]{px,py,pz}),
-            "waypointsShown",shown,"waypointsOutside",outside,"orientation","north is up: x grows to the right, z grows downwards; the yellow dot is you and its line is your facing");
+            "waypointsShown",shown,"waypointsOutside",outside,"veins",veins,"orientation","north is up: x grows to the right, z grows downwards; the yellow dot is you and its line is your facing");
     }
     private static void label(Graphics2D g,String text,int x,int y) {
         if(text.length()>28) text=text.substring(0,28);

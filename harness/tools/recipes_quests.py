@@ -11,6 +11,7 @@ from typing import Any
 from mcp.types import CallToolResult, TextContent, ImageContent
 
 from mbtool import kernel, tool
+from mbtools_gtnh import notes
 
 
 @tool(lane="read", coverage=["progression"])
@@ -114,7 +115,7 @@ def mb_item_info(id: str, meta: int, nbt: str | None = None) -> Any:
     placement.initialBlockMeta is the native initial world-block metadata, not
     the item variant meta; face, pose and callbacks can still alter final state.
     """
-    return kernel().call("nei.item", id=id, meta=meta, nbt=nbt)
+    return notes.attach(kernel().call("nei.item", id=id, meta=meta, nbt=nbt), notes.surface(kernel(), subjects=[f"{id}:{meta}".casefold(), id.casefold()], reason="item"))
 
 
 @tool(lane="read", coverage=["recipes"])
@@ -149,9 +150,10 @@ def mb_recipes(id: str = "", meta: int | None = None, nbt: str | None = None, mo
     Custom non-GT handlers may expose additional requirements only through their GUI.
     This observes recipes; it does not craft, spawn items or alter the current GUI.
     """
-    return kernel().call("nei.recipes", id=id, meta=meta, nbt=nbt, mode=mode, handler=handler,
-                         offset=offset, limit=limit, alternativesOffset=alternatives_offset,
-                         alternativesLimit=alternatives_limit, timeout=timeout_s, fluid=fluid, amount=amount, detail=detail, index=index)
+    result = kernel().call("nei.recipes", id=id, meta=meta, nbt=nbt, mode=mode, handler=handler,
+                           offset=offset, limit=limit, alternativesOffset=alternatives_offset,
+                           alternativesLimit=alternatives_limit, timeout=timeout_s, fluid=fluid, amount=amount, detail=detail, index=index)
+    return notes.attach(result, notes.surface(kernel(), subjects=[f"{id}:{meta or 0}".casefold(), id.casefold()], reason="item")) if id else result
 
 
 @tool(lane="read", coverage=["recipes"])

@@ -14,6 +14,7 @@ import time
 from typing import Any
 
 from mbtool import BridgeError, kernel, tool
+from mbtools_gtnh import notes
 from mbtools_gtnh.core import lane_by_method, method_name
 
 
@@ -39,7 +40,7 @@ def mb_inventory(detail: str = "full", container: bool = False) -> Any:
     full includes bounded custom widget inspection. Container indices differ from
     player inventory indices. Use observed clickAt coordinates for native events.
     """
-    return kernel().call("obs.container" if container else "obs.inventory", detail=detail)
+    return notes.with_item_notes(kernel().call("obs.container" if container else "obs.inventory", detail=detail))
 
 
 @tool(lane="read", coverage=["inventory"])
