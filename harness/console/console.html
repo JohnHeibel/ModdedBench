@@ -32,7 +32,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}td{padding:4px 8px 4px 
     <div class="row"><span id="sup"></span><button data-act="supervisor.start">Start deploy supervisor</button><button data-act="supervisor.stop">Stop</button></div></section>
 
   <section class="card"><h2>Agent (container)</h2><div id="agent"></div>
-    <div class="row"><input id="model" placeholder="model (blank = Codex default)"><input id="turns" type="number" value="200" style="max-width:90px" title="max turns"></div>
+    <div class="row"><input id="model" placeholder="model id (blank = Codex default)"><select id="effort" title="reasoning effort"><option value="">effort: default</option><option>minimal</option><option>low</option><option>medium</option><option>high</option><option>xhigh</option></select><input id="turns" type="number" value="200" style="max-width:90px" title="max turns"></div>
     <div class="row"><button class="go" id="start">Start / resume run</button><button data-act="agent.stop">Stop after this turn</button>
     <button class="danger" data-act="agent.kill" data-confirm="Kill Codex mid-turn? A running game action finishes on its own; the conversation can be resumed.">Kill now</button>
     <button data-act="agent.down">Stop container</button></div></section>
@@ -57,7 +57,7 @@ async function act(name,args){$("err").textContent="";
   const r=await fetch("/api/action",{method:"POST",headers:{"X-Console-Token":T,"Content-Type":"application/json"},body:JSON.stringify({name,args})}).then(r=>r.json()).catch(e=>({ok:false,error:String(e)}));
   if(!r.ok)$("err").textContent=r.error; refresh()}
 document.querySelectorAll("[data-act]").forEach(b=>b.onclick=()=>{if(!b.dataset.confirm||confirm(b.dataset.confirm))act(b.dataset.act,{})});
-$("start").onclick=()=>act("agent.start",{model:$("model").value.trim(),maxTurns:+$("turns").value});
+$("start").onclick=()=>act("agent.start",{model:$("model").value.trim(),effort:$("effort").value,maxTurns:+$("turns").value});
 $("init").onclick=()=>{const a={targetQuest:$("quest").value,targetChapter:$("chapter").value,freshWorld:$("freshWorld").checked,freshAgent:$("freshAgent").checked};
   const lost=[a.freshWorld&&"the current world",a.freshAgent&&"the agent's checkout and commits"].filter(Boolean).join(" and ");
   if(!lost||confirm("This permanently deletes "+lost+". Continue?"))act("run.init",a)};

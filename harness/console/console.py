@@ -130,6 +130,7 @@ class Console:
             if self.supervisor: self.supervisor.terminate()
         elif name == "agent.start":
             extra = ["--", "-m", a["model"]] if re.fullmatch(r"[\w.\-]{1,64}", a.get("model") or "") else []
+            if a.get("effort") in ("minimal", "low", "medium", "high", "xhigh"): extra = [*(extra or ["--"]), "-c", f'model_reasoning_effort="{a["effort"]}"']
             turns = str(max(1, min(int(a.get("maxTurns") or 200), 10000)))
             loop = "rm -f .state/STOP; p=PROMPT.md; [ -f /brief/PROMPT.md ] && p=/brief/PROMPT.md; exec python3 harness/runner/codex_loop.py --prompt $p --max-turns \"$0\" \"$@\" >/dev/null 2>&1"
             self.run_job(name, [[*COMPOSE, "up", "-d", "gateway", "agent"], [*COMPOSE, "exec", "-d", "agent", "sh", "-c", loop, turns, *extra]])
