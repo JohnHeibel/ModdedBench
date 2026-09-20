@@ -9,15 +9,18 @@ import org.objectweb.asm.tree.*;
 /** Gates complete Forge simulation ticks; packet servicing remains available while paused. */
 public final class ClockTransformer implements IClassTransformer {
     private static final String HOOK = "dev/modbench/bridge/ClockHooks";
+    // Third-party classes the clock must also gate: OpenComputers machines register with the
+    // computer pause on construction; GregTech's async update threads run through the async pause.
+    private static final String COMPUTER = "li.cil.oc.server.machine.Machine";
+    private static final java.util.Set<String> ASYNC_UPDATES = java.util.Set.of("gregtech.api.threads.RunnableMachineUpdate", "gregtech.api.threads.RunnableCableUpdate");
     @Override public byte[] transform(String name, String transformedName, byte[] bytes) {
         if (bytes == null) return null;
         boolean server = transformedName.equals("net.minecraft.server.MinecraftServer");
         boolean client = transformedName.equals("net.minecraft.client.Minecraft");
         boolean network = transformedName.equals("net.minecraft.network.NetworkManager");
         boolean controller = transformedName.equals("net.minecraft.client.multiplayer.PlayerControllerMP");
-        boolean computer = transformedName.equals("li.cil.oc.server.machine.Machine");
-        boolean gregtech = transformedName.equals("gregtech.api.threads.RunnableMachineUpdate")
-            || transformedName.equals("gregtech.api.threads.RunnableCableUpdate");
+        boolean computer = transformedName.equals(COMPUTER);
+        boolean gregtech = ASYNC_UPDATES.contains(transformedName);
         if (!server && !client && !network && !computer && !gregtech && !controller) return bytes;
         ClassNode node = new ClassNode();
         new ClassReader(bytes).accept(node, 0);
