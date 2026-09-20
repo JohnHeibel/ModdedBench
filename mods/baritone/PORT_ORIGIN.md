@@ -1,5 +1,16 @@
 # Baritone search-core port origin
 
+> **Phase 4a (2026-09-19).** The standalone search core this file describes
+> (`AStarPathFinder`, `PathNode`, open set, `Goal*`, `ActionCosts`, `Move`,
+> `WorldView`, `SearchResult`, `WorkWorld`, `RouteProgress`) and the native
+> executor and work processes built on it are deleted; navigation and
+> construction run on the pinned upstream sources under `src/upstream/java`.
+> What remains of this package is `WorkSpec`, `ConstructionSettings`,
+> `ConstructionMask`, `DeferredClearance`, `TerrainGrid` observation,
+> `CollisionBox`, `LadderFacing`, `FluidPolicy`, `Corridor` and `GoalRange`.
+> The text below is kept as provenance for those files and for the behavioural
+> rules carried into the adapters.
+
 This describes the implementation before the source-faithful migration. The
 [2026-09-13 implementation audit](../BARITONE_PARITY_AUDIT.md) is the active gap
 register and acceptance plan. The complete movement/process/builder port is now
