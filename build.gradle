@@ -118,7 +118,6 @@ project(':baritone') {
         from(rootProject.file('LICENSE')) { into 'META-INF/licenses'; rename { 'Baritone-LGPL-3.0.txt' } }
         from(rootProject.file('mods/baritone/licenses')) { into 'META-INF/licenses' }
         from(rootProject.file('mods/baritone/UPSTREAM_SOURCES.json')) { into 'META-INF/modbench' }
-        from(rootProject.file('mods/baritone/PORT_ORIGIN.md')) { into 'META-INF' }
     }
 }
 tasks.named('assemble') { dependsOn ':core:build', ':client:build', ':server:build', ':baritone:build' }
