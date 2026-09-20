@@ -26,7 +26,7 @@ TOKEN = secrets.token_urlsafe(24)
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 # One line of JSON about the loop, produced inside the agent container.
 AGENT_PROBE = ("import json,subprocess,pathlib;s=pathlib.Path('.state');r=lambda n:(s/n).read_text(errors='replace') if (s/n).exists() else '';"
-               "print(json.dumps({'running':subprocess.run(['pgrep','-f','codex_loop.py'],capture_output=True).returncode==0,"
+               "print(json.dumps({'running':subprocess.run(['pgrep','-f','[c]odex_loop.py'],capture_output=True).returncode==0,"
                "'stopRequested':(s/'STOP').exists(),'thread':r('codex-loop.json'),'prompt':(s/'run-prompt.md').exists(),"
                "'commits':subprocess.run(['git','rev-list','--count','modbench-base..HEAD'],capture_output=True,text=True).stdout.strip(),"
                "'log':r('codex-loop.log')[-6000:]}))")
@@ -50,7 +50,7 @@ class Console:
         self.lock = threading.Lock(); self.kernel = None; self.supervisor = None
         self.job = {"name": "", "running": False, "ok": True, "log": ""}; self.login = (0.0, None)
 
-    # The bridge: one long-lived session, so a pause this console asked for keeps its owner.
+    # The bridge, read only: one long-lived session for the state panel.
     def call(self, method, **params):
         with self.lock:
             if self.kernel is None or not self.kernel.connected:
@@ -107,7 +107,16 @@ class Console:
         agent = [*COMPOSE, "exec", "-T", "agent"]
         if name == "server.start": self.run_job(name, [[*COMPOSE, "up", "-d", "server"]])
         elif name == "server.stop": self.run_job(name, [[*COMPOSE, "stop", "server"]])
-        elif name in ("time.pause", "time.resume"): return self.call(name, **({"reason": "operator console"} if name == "time.pause" else {}))
+        elif name in ("time.pause", "time.resume"):  # the operator hold: a file in the server directory, which outranks every bridge session
+            def hold(*cmd):
+                done = sh([*COMPOSE, "exec", "-T", "server", *cmd, "/data/modbench-hold"])
+                if done.returncode: raise RuntimeError((done.stderr or done.stdout).strip()[-300:])
+            if name == "time.pause": hold("touch")
+            else:  # the server resumes when the hold goes away, so a pause someone else left is taken over first
+                try: left = self.call("time.status")["state"]; left = left["paused"] and not left.get("held")
+                except Exception: left = False
+                if left: hold("touch"); time.sleep(0.5)
+                hold("rm", "-f")
         elif name == "client.launch": self.run_job(name, [[*PY, LAUNCHER, "launch-client", "--installed-as-is"]])
         elif name == "client.stop": self.run_job(name, [[*PY, LAUNCHER, "stop-client"]])
         elif name == "client.install":  # the host's own build of this checkout, client side only

@@ -26,6 +26,8 @@ public final class ServerClock implements ClockHooks.Driver, PauseCoordinator.Ho
     private final PauseCoordinator coordinator=new PauseCoordinator(new SimulationClock(),AsyncPause.GREGTECH,ComputerPause.BARRIER,this);
     private final SimulationClock clock=coordinator.clock;
     private final ConcurrentLinkedQueue<Incoming> messages=new ConcurrentLinkedQueue<>();
+    /** The operator console creates this file in the server directory, which no agent can reach. */
+    private static final java.io.File HOLD=new java.io.File("modbench-hold");
     private NetHandlerPlayServer client;
     private long lastHeartbeat;
 
@@ -122,6 +124,7 @@ public final class ServerClock implements ClockHooks.Driver, PauseCoordinator.Ho
             if(!connected()) clock.pause("client_disconnected");
             else if(System.nanoTime()-lastHeartbeat>15_000_000_000L) clock.pause("client_unresponsive");
         }
+        coordinator.hold(HOLD.exists());
         if(!coordinator.before()) return false;
         runtime.simulationTick();return true;
     }
