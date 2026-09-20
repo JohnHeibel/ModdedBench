@@ -1,9 +1,17 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 # Copyright (c) 2026 Modbench contributors
-"""Durable world annotations. SQLite transactions and history are independent of the game JVM.
+"""Durable world notes (SQLite, one file per server world) and their surfacing as a side effect of play.
 
 Only capture/resolve contact Minecraft. Stored observations are never silently refreshed.
-Set MODBENCH_NOTES_DIR to a persistent volume when packaging or moving the harness.
+Notes live under MODBENCH_NOTES_DIR (default <repo>/.state/notes). Store objects are cached in
+``mbtool.state["notes"]["stores"]``; the "already shown" cache is ``mbtool.state["notes"]["shown"]``.
+
+Surfacing: ``surface()`` returns at most SURFACE_LIMIT compact notes for a transition (arrival,
+observing a block/entity, entering a region, session start), most relevant first, and suppresses a
+note already shown in the last SHOWN_TTL_S seconds unless the player has moved MOVE_RESET blocks.
+``tracked()`` wraps ``kernel().call`` for the methods that mark such transitions and attaches the
+notes under a ``"notes"`` key only when non-empty. Terminal work outcomes are journaled as ``auto``
+notes keyed by location (a repeat at the same place updates instead of duplicating).
 """
 from __future__ import annotations
 
@@ -15,7 +23,21 @@ import math
 import os
 from pathlib import Path
 import sqlite3
+import sys
+import time
+from typing import Any
 import uuid
+
+from mbtool import BridgeError, kernel, state, tool
+
+SURFACE_LIMIT = 5
+SHOWN_TTL_S = 600.0      # a note shown less than this ago is not repeated...
+MOVE_RESET = 48.0        # ...unless the player has moved this far since it was shown
+GATE_S, GATE_BLOCKS = 3.0, 4.0  # skip the store entirely when polled again from the same spot
+DEFAULT_DIR = Path(__file__).resolve().parents[2] / ".state" / "notes"
+WORK = {"baritone.goto": "goto", "baritone.route": "route", "baritone.process": "process", "baritone.follow": "follow",
+        "baritone.mine": "mine", "baritone.build": "build", "baritone.resume": "resume"}
+JOURNALED = {"mine", "build", "process", "resume"}   # route/goto/follow are journaled on failure only
 
 
 def _json(value):
@@ -211,10 +233,10 @@ class NotesStore:
                 return False
             if entity_uuid is not None and (a["kind"] != "entity" or a["uuid"] != entity_uuid):
                 return False
+            if near is not None and _box_distance(a, near) > radius:
+                return False
             lo = a.get("min", a.get("pos", a.get("lastSeen")))
             hi = a.get("max", lo)
-            if near is not None and sum(max(lo[i]-near[i], 0, near[i]-hi[i])**2 for i in range(3)) > radius**2:
-                return False
             return region is None or all(lo[i] <= region["max"][i] and hi[i] >= region["min"][i] for i in range(3))
         with closing(self.connect()) as db:
             if ceiling is None:
@@ -250,10 +272,26 @@ class NotesStore:
         return str(path)
 
 
-def store_for(world_id):
+def _box_distance(a, point):
+    """Euclidean distance from a point to an attachment's box (0 inside a region / at the anchor)."""
+    lo = a.get("min", a.get("pos", a.get("lastSeen")))
+    hi = a.get("max", lo)
+    return math.sqrt(sum(max(lo[i]-point[i], 0, point[i]-hi[i])**2 for i in range(3)))
+
+
+def notes_dir() -> Path:
+    return Path(os.environ.get("MODBENCH_NOTES_DIR", DEFAULT_DIR))
+
+
+def store_for(world_id) -> NotesStore:
+    """Cached per world in mbtool.state (survives reloads); the schema check runs once per process."""
     world_id = str(uuid.UUID(world_id))
-    directory = Path(os.environ.get("MODBENCH_NOTES_DIR", Path(__file__).resolve().parents[2]/"gtnh/.state/notes"))
-    return NotesStore(directory / f"{world_id}.sqlite3", world_id)
+    path = notes_dir() / f"{world_id}.sqlite3"
+    stores = state.setdefault("notes", {}).setdefault("stores", {})
+    store = stores.get(world_id)
+    if store is None or store.path != path:
+        store = stores[world_id] = NotesStore(path, world_id)
+    return store
 
 
 def capture(kernel, context, kind, **params):
@@ -305,7 +343,6 @@ def read_notes(kernel, method, params):
     if method == "resolve":
         note = store.get(params["id"])
         resolved = []
-        from kernel import BridgeError
         for a in note["attachments"]:
             result = dict(attachment=a, status="annotation")
             if a["dimension"] != context["dimension"]:
@@ -330,6 +367,226 @@ def write_note(kernel, world_id, id, expected_revision, operation_id, patch):
     if str(uuid.UUID(world_id)) != context["worldId"]:
         raise ValueError("world changed; note write refused")
     return store_for(world_id).write(id, expected_revision, operation_id, patch)
+
+
+# ---- surfacing as a side effect ----
+
+def _floor(pos):
+    return [int(math.floor(v)) for v in pos]
+
+
+def _dist(a, b):
+    return math.sqrt(sum((a[i]-b[i])**2 for i in range(3)))
+
+
+def _log(msg):
+    print(f"[notes] {msg}", file=sys.stderr, flush=True)
+
+
+def surface(kernel, *, position=None, dimension=None, block=None, entity=None, reason="", radius=16, context=None) -> list[dict]:
+    """At most SURFACE_LIMIT compact notes relevant to a transition, most relevant first; [] when nothing new.
+
+    Exactly one focus: ``entity`` (server UUID), ``block`` ([x,y,z]: notes anchored there or regions
+    containing it), or a position (``position`` or the player's feet) with ``radius``. Never raises.
+    """
+    try:
+        cache = state.setdefault("notes", {})
+        now = time.monotonic()
+        if position is not None and block is None and entity is None:
+            last = cache.get("last")
+            if last and last[0] == dimension and now - last[1] < GATE_S and _dist(last[2], position) < GATE_BLOCKS:
+                return []
+        context = context or kernel.call("memory.context", timeout=5)
+        world = str(uuid.UUID(context["worldId"]))
+        if not (notes_dir() / f"{world}.sqlite3").exists():
+            return []
+        dimension = context["dimension"] if dimension is None else dimension
+        here = _floor(position or context["pos"])
+        cache["last"] = (dimension, now, here)
+        store = store_for(world)
+        if entity is not None:
+            anchor, found = here, store.search(entity_uuid=entity, limit=100)["notes"]
+        elif block is not None:
+            anchor = _floor(block)
+            found = store.search(dimension=dimension, near=anchor, radius=0, limit=100)["notes"]
+        else:
+            anchor, found = here, store.search(dimension=dimension, near=here, radius=radius, limit=100)["notes"]
+        shown = cache.setdefault("shown", {})
+        out = []
+        for note in sorted(found, key=lambda n: (_nearest(n, anchor, dimension)[0], n["status"] != "open")):
+            key = (note["id"], note["revision"])
+            prior = shown.get(key)
+            if prior and now - prior[0] < SHOWN_TTL_S and _dist(prior[1], here) < MOVE_RESET:
+                continue
+            shown[key] = (now, here)
+            out.append(_compact(note, anchor, dimension, reason))
+            if len(out) == SURFACE_LIMIT:
+                break
+        if len(shown) > 512:
+            for key in sorted(shown, key=lambda k: shown[k][0])[:256]:
+                del shown[key]
+        return out
+    except Exception as e:  # surfacing is a side effect; it must never break the tool that triggered it
+        _log(f"surface({reason}) skipped: {e}")
+        return []
+
+
+def _nearest(note, anchor, dimension):
+    best = (math.inf, None)
+    for a in note["attachments"]:
+        if a["dimension"] == dimension:
+            best = min(best, (_box_distance(a, anchor), a), key=lambda x: x[0])
+    return best if best[1] is not None else (math.inf, note["attachments"][0])
+
+
+def _compact(note, anchor, dimension, reason):
+    distance, a = _nearest(note, anchor, dimension)
+    out = {"id": note["id"], "kind": a["kind"], "title": note["title"], "revision": note["revision"], "status": note["status"],
+           "at": {"min": a["min"], "max": a["max"]} if a["kind"] == "region" else a.get("pos") or a.get("lastSeen"),
+           "distance": None if math.isinf(distance) else round(distance, 1)}
+    excerpt = (note.get("excerpt") if "excerpt" in note else note.get("text", ""))[:140]
+    if excerpt:
+        out["excerpt"] = excerpt
+    if note.get("tags"):
+        out["tags"] = note["tags"]
+    if reason:
+        out["why"] = reason
+    return out
+
+
+def attach(result, found):
+    """Adds the notes under "notes" when there are any and the result is a JSON object."""
+    return {**result, "notes": found} if found and isinstance(result, dict) else result
+
+
+def _work_pos(result):
+    if not isinstance(result, dict):
+        return None
+    for value in ((result.get("arrival") or {}).get("pos"), result.get("origin"), result.get("goal"), result.get("target")):
+        if isinstance(value, list) and len(value) == 3 and all(isinstance(v, (int, float)) for v in value):
+            return _floor(value)
+    return None
+
+
+def journal(kernel, method, result, error=None, context=None):
+    """Auto-journal a terminal work outcome as an ``auto`` note at its location; repeats there update the note."""
+    kind = WORK.get(method)
+    if kind is None:
+        return None
+    receipt = result if error is None else ((error.reply or {}).get("error") or {}).get("receipt")
+    receipt = receipt if isinstance(receipt, dict) else {}
+    if error is None and (kind not in JOURNALED or receipt.get("state") != "succeeded"):
+        return None
+    if error is not None and getattr(error, "code", "") == "cancelled":
+        return None
+    context = context or kernel.call("memory.context", timeout=5)
+    pos = _work_pos(receipt) or _floor(context["pos"])
+    dim = context["dimension"]
+    cell = [v // 4 * 4 for v in pos]
+    outcome = "failed" if error is not None else "done"
+    note_id = f"auto-{kind}-{dim}-{cell[0]}-{cell[1]}-{cell[2]}"
+    facts = {k: receipt.get(k) for k in ("jobId", "action", "state", "reason", "blocksPlaced", "blocksMined", "placed", "removed", "ticks") if receipt.get(k) is not None}
+    if error is not None:
+        facts.update(code=error.code, msg=error.msg)
+    reason = facts.get("reason") or facts.get("msg") or ""
+    title = f"{kind} {outcome} at {pos[0]},{pos[1]},{pos[2]}" + (f": {reason}"[:200] if reason else "")
+    store = store_for(context["worldId"])
+    try:
+        current = store.get(note_id)["revision"]
+    except ValueError:
+        current = 0
+    patch = {"title": title[:256], "text": _json(facts), "tags": ["auto", kind, outcome], "status": "open" if error else "done",
+             "attachments": [{"kind": "location", "dimension": dim, "pos": pos, "label": f"{kind} {outcome}"}]}
+    return store.write(note_id, current, f"auto-{uuid.uuid4()}", patch)["note"]
+
+
+def after(method, params, result):
+    """Post-call hook: surfaces notes for the transitions a method marks; returns the (possibly annotated) result."""
+    try:
+        k = kernel()
+        found = []
+        if method == "obs.block" and isinstance(result, dict):
+            pos = params.get("pos") or [params.get("x"), params.get("y"), params.get("z")]
+            found = surface(k, block=result.get("pos") or pos, reason="block")
+        elif method in ("obs.tile", "obs.waila", "obs.hwyla") and isinstance(result, dict) and isinstance(result.get("pos"), list):
+            found = surface(k, block=result["pos"], reason="block")
+        elif method == "obs.entity" and isinstance(result, dict) and result.get("found") and result.get("uuidScope") == "server":
+            found = surface(k, entity=result["uuid"], reason="entity")
+        elif method in ("obs.player", "memory.context") and isinstance(result, dict) and isinstance(result.get("pos"), list):
+            found = surface(k, position=result["pos"], dimension=result.get("dimension"), reason="position",
+                            context=result if method == "memory.context" else None)
+        elif method in WORK:
+            context = k.call("memory.context", timeout=5)
+            try:
+                journal(k, method, result, context=context)
+            except Exception as e:
+                _log(f"journal({method}) skipped: {e}")
+            found = surface(k, position=_work_pos(result) or context["pos"], reason="arrival", context=context)
+        return attach(result, found)
+    except Exception as e:
+        _log(f"after({method}) skipped: {e}")
+        return result
+
+
+def tracked(method, timeout=None, **params):
+    """kernel().call plus note side effects: surfacing for reads/arrivals, auto-journal for work outcomes and failures."""
+    try:
+        result = kernel().call(method, **({"timeout": timeout} if timeout is not None else {}), **params)
+    except BridgeError as error:
+        if method in WORK:
+            try:
+                journal(kernel(), method, None, error=error)
+            except Exception as e:
+                _log(f"journal({method}) skipped: {e}")
+        raise
+    return after(method, params, result)
+
+
+# ---- tools ----
+
+@tool(lane="read", coverage=["memory"])
+def mb_notes(method: str = "search", params: dict | None = None) -> Any:
+    """Durable world notes: context, status, capture, search, get, history, resolve.
+
+    Notes also surface on their own (under "notes") when you arrive somewhere, observe a
+    block/entity that has one, enter an annotated region, or call mb_status.
+    capture: {kind:block,pos:[x,y,z]}, {kind:entity,entityId:observedId} or uuid,
+    {kind:location,pos?:[x,y,z]}, {kind:region,min:[x,y,z],max:[x,y,z]}. Returns
+    worldId and attachment for mb_note_write. Entity UUIDs must come from the server;
+    use obs.entities to discover transient IDs. Captures do not save notes.
+    search: {query,tags:[all-required-tags],status:open|done|archived|all,kind,
+    near:[x,y,z]|player,radius:32,region:{min,max},entity_uuid,dimension,limit:20,cursor,detail:summary|full}.
+    Search returns anchors and short excerpts by default; get reads the full note.
+    Defaults to current dimension and excludes archived notes; dimension:null searches
+    all dimensions (spatial searches require one). Follow nextCursor unchanged with
+    the same filters; pages retain a consistent snapshot. Entity proximity uses lastSeen.
+    get: {id}; history: {id,before_revision?,limit:20}. resolve: {id} inspects currently
+    loaded attachments without overwriting notes; absence never proves destruction.
+    Block identity checks cannot detect replacement by an identical block.
+    Notes tagged "auto" are journaled by the harness (work outcomes); yours are anything else.
+    Notes are annotations, not protection rules or verified facts. Keep useful plans,
+    machine quirks, adapter source references and construction reservations here.
+    """
+    return read_notes(kernel(), method, params)
+
+
+@tool(coverage=["memory"])
+def mb_note_write(world_id: str, id: str, expected_revision: int,
+                  operation_id: str, patch: dict) -> Any:
+    """Create/update a durable note with history and a retry-safe receipt.
+
+    Use worldId from mb_notes context/capture. Create with expected_revision:0 and
+    patch:{title,text,attachments:[capturedAttachment,...],tags?:[],status?:open,data?:{}}.
+    Update with the observed revision and only changed fields. Text/arrays replace
+    those fields; read before appending. data holds model-defined JSON, e.g. adapter
+    source paths. Use a distinct operation_id for each edit; after a timeout retry
+    exactly the same arguments and operation_id. A stale revision fails without edits.
+    Archive with patch:{status:archived}; restore with status:open. No destructive delete;
+    history preserves prior content, which can be copied into a new guarded revision.
+    Region annotations do not prevent normal progression or automatically protect blocks.
+    Stored under MODBENCH_NOTES_DIR (default .state/notes), across JVM/MCP restarts.
+    """
+    return write_note(kernel(), world_id, id, expected_revision, operation_id, patch)
 
 
 if __name__ == "__main__":

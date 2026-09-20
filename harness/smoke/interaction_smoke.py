@@ -2,20 +2,22 @@
 # Copyright (c) 2026 Modbench contributors
 """Batched native survival interactions and autonomous interrupt acceptance."""
 from __future__ import annotations
-import asyncio, json, sys, tempfile, time, uuid
+import asyncio, json, os, sys, tempfile, time, uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'harness' / 'mcp'))
-from kernel import Kernel, BridgeError
-from gtnh_interrupts import InterruptSupervisor, race_interrupt
+from kernel import Kernel, BridgeError, bridge_url
+import mbtool  # noqa: F401  (installs the mbtools_gtnh package)
+from mbtools_gtnh.interrupts import InterruptSupervisor, race_interrupt
+USER = os.environ.get("MB_USERNAME", "ModbenchDev")
 
 def main():
     evidence={'ok':False,'checks':[],'receipts':[]}
     def check(name,ok,detail=None):
         if not ok: raise AssertionError(f'{name}: {detail}')
         evidence['checks'].append(name);print(name,flush=True)
-    with Kernel(url='ws://127.0.0.1:47223/ws') as c, Kernel(url='ws://127.0.0.1:47224/ws') as s, tempfile.TemporaryDirectory() as tmp, ThreadPoolExecutor(2) as pool:
+    with Kernel() as c, Kernel(url=bridge_url('server')) as s, tempfile.TemporaryDirectory() as tmp, ThreadPoolExecutor(2) as pool:
         sup=InterruptSupervisor(c,path=tmp)
         created=False
         def call(method,**kw):
@@ -42,7 +44,7 @@ def main():
         try:
             call('time.configure',healthDrop=False,healthBelow=-1,airBelow=-1,actionFailed=False,pauseOnDisconnect=True)
             call('time.pause');s.call('dev.interaction_fixture.restore');time.sleep(.2)
-            base=next(p for p in s.call('obs.players') if p['name']=='ModbenchDev');arena=s.call('dev.interaction_fixture.create');created=True
+            base=next(p for p in s.call('obs.players') if p['name']==USER);arena=s.call('dev.interaction_fixture.create');created=True
             call('time.resume');time.sleep(.5)
             methods={m['name']:m for m in call('sys.methods')}
             check('watchable discovery',methods['obs.player']['watchable'] and not methods['obs.entity']['watchable'])
@@ -128,7 +130,7 @@ def main():
                 call('act.stop');call('time.pause')
                 if created:
                     restored=s.call('dev.interaction_fixture.restore');evidence['restored']=restored
-                    time.sleep(.2);restored_player=next(p for p in s.call('obs.players') if p['name']=='ModbenchDev')
+                    time.sleep(.2);restored_player=next(p for p in s.call('obs.players') if p['name']==USER)
                     check('original player health restored',restored_player['health']==base['health'],restored_player)
                     check('client health synced while paused',call('obs.player')['health']==base['health'])
             except Exception as cleanup:

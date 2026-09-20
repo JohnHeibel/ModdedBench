@@ -1,5 +1,15 @@
 # Schematic import
 
+> **Changed in the Python-seam phase (2026-09-19).** `gtnh_schematics.py` and `gtnh_selections.py`
+> are gone; Python no longer parses schematic files or scans regions. `mb_schematic_import` and
+> `mb_schematic_build` call Java `baritone.schematic_import {path, origin?, includeAir?}`, and the
+> selection tools are replaced by one `mb_copy(bounds, origin?, include_air?, at?, preview?, build?)`
+> calling Java `baritone.copy {bounds:{min,max}, origin?, includeAir?}`. Both return the plan in the
+> `baritone.build_preview`/`baritone.build` spec shape plus `size:[w,h,l]`, `count` and
+> `skipped:{air,unknown}` (import) or `tileEntities` (copy); the Python wrappers only strip those
+> report fields, apply explicit overrides and forward to preview/build. The file-format details
+> below describe the Java importer's inputs; the Python CLI paths in this document no longer exist.
+
 `tools/mcp/gtnh_schematics.py` converts canonical JSON, legacy MCEdit
 `.schematic`, Sponge v1/v2 `.schem`, and Litematica v4 `.litematic` files into
 the explicit-cell request consumed by the GTNH construction builder. NBT may be

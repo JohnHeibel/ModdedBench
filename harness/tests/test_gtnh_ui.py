@@ -7,7 +7,8 @@ import sys
 import unittest
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'mcp'))
-from gtnh_ui import ContainerSession, ProcedureStopped
+import mbtool  # noqa: E402,F401
+from mbtools_gtnh.inventory import ContainerSession, ProcedureStopped
 from kernel import BridgeError
 
 
@@ -57,13 +58,13 @@ class CompositionTests(unittest.TestCase):
         k=FakeKernel();session=ContainerSession(k)
         def completed(view):return view['slots'][1].get('stack',{}).get('id')=='mod:output' if view['slots'][1].get('stack') else False
         def process(_):k.view['slots'][1]['stack']=dict(id='mod:output',count=1)
-        with patch('gtnh_ui.time.sleep',side_effect=process):
+        with patch('mbtools_gtnh.inventory.time.sleep',side_effect=process):
             result=session.wait_for(completed,timeout_s=2)
         self.assertEqual(result['slots'][1]['stack']['count'],1)
         self.assertTrue(all(m=='obs.container' for m,_ in k.calls))
     def test_postcondition_timeout_does_not_repeat_inputs(self):
         k=FakeKernel();session=ContainerSession(k)
-        with patch('gtnh_ui.time.monotonic',side_effect=[0,2]):
+        with patch('mbtools_gtnh.inventory.time.monotonic',side_effect=[0,2]):
             with self.assertRaises(ProcedureStopped):session.wait_for(lambda v:False,timeout_s=1)
         self.assertTrue(all(m=='obs.container' for m,_ in k.calls))
 

@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'harness' / 'mcp'))
-from kernel import Kernel, BridgeError
+from kernel import Kernel, BridgeError, bridge_url
 
 def main():
     evidence={'ok':False,'checks':[],'receipts':[]}
@@ -16,7 +16,7 @@ def main():
     def check(name,condition,detail=None):
         if not condition: raise AssertionError(f'{name}: {detail}')
         evidence['checks'].append(name);print(name,flush=True)
-    with Kernel(url='ws://127.0.0.1:47223/ws',timeout=60) as c, Kernel(url='ws://127.0.0.1:47224/ws') as s:
+    with Kernel(timeout=60) as c, Kernel(url=bridge_url('server')) as s:
         active=None
         config=c.call('time.status')['state']
         evidence['previousClock']=config

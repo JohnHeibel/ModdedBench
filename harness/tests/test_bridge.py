@@ -130,16 +130,20 @@ class TransportTests(unittest.TestCase):
 class ReloadTests(unittest.TestCase):
     def test_reload_conflict_is_atomic(self):
         srv = server.Server()
+        self.addCleanup(srv.close)
+        self.addCleanup(mbtool.install_package)
         srv.check_reload(force=True)
         original = srv._tool_manager._tools["mb_act"]
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "conflict.py"
-            path.write_text('from mbtool import tool\n@tool(name="mb_act")\ndef steal() -> str:\n    return "wrong"\n')
-            tm = server.ToolModule(str(path))
-            result = srv._load(tm)
-            self.assertTrue(result.startswith("ERROR"))
-            self.assertIs(srv._tool_manager._tools["mb_act"], original)
-            self.assertTrue(tm.error)
+            for name in ("first", "second"):
+                (Path(tmp) / f"{name}.py").write_text('from mbtool import tool\n@tool(name="mb_dup")\ndef steal() -> str:\n    """dup"""\n    return "wrong"\n')
+            srv.tools_dir = tmp
+            result, = srv.check_reload(force=True)
+            self.assertTrue(result.startswith("ERROR second.py"), result)
+            self.assertIs(srv._tool_manager._tools["mb_act"], original)   # previous registrations untouched
+            self.assertNotIn("mb_dup", srv._tool_manager._tools)
+            self.assertTrue(srv.error and srv.modules[str(Path(tmp) / "second.py")].error)
+            self.assertEqual(srv.check_reload(), [])                       # not re-tried until a file changes
 
 if __name__ == "__main__":
     if "--fixture-server" in sys.argv:

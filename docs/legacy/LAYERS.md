@@ -1,5 +1,15 @@
 # Native mod, Python, and model responsibilities
 
+> **Changed in the Python-seam phase (2026-09-19).** `harness/mcp/` is now only `server.py`,
+> `kernel.py` and `mbtool.py` (restart to change these). Everything the model edits lives in
+> `harness/tools/` as flat domain modules (`core`, `inventory`, `work`, `recipes_quests`,
+> `interrupts`, `notes`), importable as `mbtools_gtnh.<name>`; any change under `harness/tools/`
+> re-imports the whole package atomically before the next tool call, and live objects (kernel,
+> interrupt supervisor, notes stores) survive in `mbtool.state`. Tools declare their worker lane
+> in metadata (`@tool(lane="read"|"act"|"control")`, or a callable per call); the server has no
+> name lists. The bridge URL comes from one place, `kernel.bridge_url()` (`MB_BRIDGE_URL`).
+> Schematic parsing and region copying moved to Java (`baritone.schematic_import`, `baritone.copy`).
+
 Updated 2026-09-18. This is the ownership boundary for GTNH development.
 Use the existing native primitives before adding Python infrastructure.
 
