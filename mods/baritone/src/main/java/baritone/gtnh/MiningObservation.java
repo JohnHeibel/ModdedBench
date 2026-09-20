@@ -5,6 +5,7 @@ package baritone.gtnh;
 
 import baritone.api.utils.*;
 import baritone.compat.IBlockState;
+import baritone.compat.BlockPos;
 import baritone.gtnh.pathing.*;
 import net.minecraft.item.ItemStack;
 import net.minecraft.world.World;
@@ -27,8 +28,8 @@ final class MiningObservation extends BlockOptionalMetaLookup {
         long until=System.nanoTime()+2_000_000L;int budget=2048;
         while(cursor<bounds.volume()&&budget-->0&&System.nanoTime()<until){
             BlockPos p=bounds.at(cursor++);
-            if(WorkAccess.block(world,p,selectors)&&!world.isAirBlock(p.x(),p.y(),p.z())&&!ForgeFluids.fluid(world.getBlock(p.x(),p.y(),p.z()))){
-                scanning.put(new baritone.compat.BlockPos(p.x(),p.y(),p.z()),new IBlockState.StateKey(world.getBlock(p.x(),p.y(),p.z()),world.getBlockMetadata(p.x(),p.y(),p.z())));
+            if(WorkAccess.block(world,p,selectors)&&!world.isAirBlock(p.getX(),p.getY(),p.getZ())&&!ForgeFluids.fluid(world.getBlock(p.getX(),p.getY(),p.getZ()))){
+                scanning.put(new baritone.compat.BlockPos(p.getX(),p.getY(),p.getZ()),new IBlockState.StateKey(world.getBlock(p.getX(),p.getY(),p.getZ()),world.getBlockMetadata(p.getX(),p.getY(),p.getZ())));
             }
         }
         if(cursor==bounds.volume()){published=Map.copyOf(scanning);scanning.clear();cursor=0;passes++;}
@@ -42,8 +43,8 @@ final class MiningObservation extends BlockOptionalMetaLookup {
     @Override public List<BlockOptionalMeta> blocks(){return published.values().stream().distinct().map(key->new BlockOptionalMeta(key.block(),key.meta())).toList();}
     @Override public List<baritone.compat.BlockPos> observedLocations(){return new ArrayList<>(published.keySet());}
     @Override public boolean acceptsDrop(baritone.compat.BlockPos p){
-        return p.getX()>=bounds.min().x()-3&&p.getX()<=bounds.max().x()+3
-            &&p.getY()>=bounds.min().y()-3&&p.getY()<=bounds.max().y()+3
-            &&p.getZ()>=bounds.min().z()-3&&p.getZ()<=bounds.max().z()+3;
+        return p.getX()>=bounds.min().getX()-3&&p.getX()<=bounds.max().getX()+3
+            &&p.getY()>=bounds.min().getY()-3&&p.getY()<=bounds.max().getY()+3
+            &&p.getZ()>=bounds.min().getZ()-3&&p.getZ()<=bounds.max().getZ()+3;
     }
 }

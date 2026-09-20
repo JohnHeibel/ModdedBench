@@ -3,6 +3,7 @@
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh.pathing;
 
+import baritone.compat.BlockPos;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
@@ -51,7 +52,7 @@ public final class TerrainGrid {
     }
     /** The graph keeps block identities; exact feet heights come from the collision surface. */
     public double standingY(BlockPos p) {
-        return floorCache.computeIfAbsent(p,key->surface(key.x()+.5,key.z()+.5,key.y()-.0001,key.y()+.9999));
+        return floorCache.computeIfAbsent(p,key->surface(key.getX()+.5,key.getZ()+.5,key.getY()-.0001,key.getY()+.9999));
     }
     private double surface(double x,double z,double low,double high) {
         double best=Double.NaN;
@@ -77,7 +78,7 @@ public final class TerrainGrid {
         return true;
     }
     public LadderFacing ladder(BlockPos p) {return ladders.getOrDefault(p,LadderFacing.NONE);}
-    public boolean climbable(BlockPos p) {return ladder(p)!=LadderFacing.NONE && bodyClear(p.x()+.5,p.y(),p.z()+.5,1.8,false);}
+    public boolean climbable(BlockPos p) {return ladder(p)!=LadderFacing.NONE && bodyClear(p.getX()+.5,p.getY(),p.getZ()+.5,1.8,false);}
     public boolean water(int x,int y,int z) { return cell(x,y,z)==WATER; }
     public boolean passable(int x,int y,int z) { return clear(x,y,z)||water(x,y,z)||cell(x,y,z)==LADDER; }
     public double flow(int x,int y,int z,int axis) {

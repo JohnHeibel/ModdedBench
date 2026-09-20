@@ -3,7 +3,7 @@
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh;
 
-import baritone.gtnh.pathing.BlockPos;
+import baritone.compat.BlockPos;
 import java.util.*;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockFalling;
@@ -68,14 +68,14 @@ final class MiningTools {
         }catch(ReflectiveOperationException|LinkageError error){return "gregtech_tool_api_unavailable";}
     }
     static boolean automaticBlock(World world,BlockPos p) {
-        if(!ForgeSnapshot.loaded(world,p.x(),p.y(),p.z()) || !ForgeSnapshot.loaded(world,p.x(),p.y()+1,p.z())) return false;
-        Block block=world.getBlock(p.x(),p.y(),p.z());int meta=world.getBlockMetadata(p.x(),p.y(),p.z());
-        return !block.hasTileEntity(meta) && world.getTileEntity(p.x(),p.y(),p.z())==null
-            && !(block instanceof BlockFalling) && !(world.getBlock(p.x(),p.y()+1,p.z()) instanceof BlockFalling)
-            && !ForgeFluids.fluid(block) && block.getBlockHardness(world,p.x(),p.y(),p.z())>=0;
+        if(!ForgeSnapshot.loaded(world,p.getX(),p.getY(),p.getZ()) || !ForgeSnapshot.loaded(world,p.getX(),p.getY()+1,p.getZ())) return false;
+        Block block=world.getBlock(p.getX(),p.getY(),p.getZ());int meta=world.getBlockMetadata(p.getX(),p.getY(),p.getZ());
+        return !block.hasTileEntity(meta) && world.getTileEntity(p.getX(),p.getY(),p.getZ())==null
+            && !(block instanceof BlockFalling) && !(world.getBlock(p.getX(),p.getY()+1,p.getZ()) instanceof BlockFalling)
+            && !ForgeFluids.fluid(block) && block.getBlockHardness(world,p.getX(),p.getY(),p.getZ())>=0;
     }
     static Choice best(World world,BlockPos p,List<Map<String,Object>> observations) {
-        Minecraft mc=Minecraft.getMinecraft();Block block=world.getBlock(p.x(),p.y(),p.z());int meta=world.getBlockMetadata(p.x(),p.y(),p.z());
+        Minecraft mc=Minecraft.getMinecraft();Block block=world.getBlock(p.getX(),p.getY(),p.getZ());int meta=world.getBlockMetadata(p.getX(),p.getY(),p.getZ());
         Choice best=null;int selected=mc.thePlayer.inventory.currentItem;
         ItemStack original=mc.thePlayer.inventory.mainInventory[selected];
         boolean emptySeen=false;
@@ -91,7 +91,7 @@ final class MiningTools {
                     mc.thePlayer.inventory.mainInventory[selected]=candidate==null?null:candidate.copy();
                     if(!block.canHarvestBlock(mc.thePlayer,meta)) reason="cannot_harvest";
                     else {
-                        double strength=block.getPlayerRelativeBlockHardness(mc.thePlayer,world,p.x(),p.y(),p.z());
+                        double strength=block.getPlayerRelativeBlockHardness(mc.thePlayer,world,p.getX(),p.getY(),p.getZ());
                         // Zero-hardness plants return +infinity and break on the first hit.
                         ticks=breakTicks(strength);
                         if(!Double.isFinite(ticks)) reason="cannot_break";
@@ -107,9 +107,9 @@ final class MiningTools {
         return best;
     }
     static Map<String,Object> inspect(World world,BlockPos p) {
-        if(!ForgeSnapshot.loaded(world,p.x(),p.y(),p.z())) throw new IllegalArgumentException("target not loaded");
+        if(!ForgeSnapshot.loaded(world,p.getX(),p.getY(),p.getZ())) throw new IllegalArgumentException("target not loaded");
         List<Map<String,Object>> tools=new ArrayList<>();Choice best=best(world,p,tools);
-        Map<String,Object> out=new LinkedHashMap<>();out.put("target",List.of(p.x(),p.y(),p.z()));out.put("tools",tools);
+        Map<String,Object> out=new LinkedHashMap<>();out.put("target",List.of(p.getX(),p.getY(),p.getZ()));out.put("tools",tools);
         out.put("bestSlot",best==null?null:best.slot());out.put("estimatedTicks",best==null?null:best.ticks());
         out.put("estimateOnly",true);return out;
     }

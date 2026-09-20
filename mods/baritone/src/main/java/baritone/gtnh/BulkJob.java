@@ -6,6 +6,7 @@ package baritone.gtnh;
 import dev.modbench.api.ControlRegistry;
 import dev.modbench.api.InputArbiter;
 import dev.modbench.api.Navigation;
+import baritone.compat.BlockPos;
 import baritone.gtnh.pathing.*;
 import static baritone.gtnh.pathing.WorkSpec.*;
 import java.util.*;

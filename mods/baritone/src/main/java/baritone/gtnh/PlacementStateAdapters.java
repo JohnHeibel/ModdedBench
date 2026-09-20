@@ -3,7 +3,7 @@
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh;
 
-import baritone.gtnh.pathing.BlockPos;
+import baritone.compat.BlockPos;
 import java.util.*;
 import net.minecraft.block.*;
 import net.minecraft.util.Vec3;
@@ -18,12 +18,12 @@ public final class PlacementStateAdapters {
         register(BlockFurnace.class,(b,w,p,m,y,e)->new int[]{2,5,3,4}[quadrant(y)]);
         register(BlockPumpkin.class,(b,w,p,m,y,e)->(quadrant(y)+2)&3);
         Predictor sixWay=(b,w,p,m,y,e)-> {
-            if(Math.abs(e.xCoord-p.x())<2&&Math.abs(e.zCoord-p.z())<2){if(e.yCoord-p.y()>2)return 1;if(p.y()>e.yCoord)return 0;}
+            if(Math.abs(e.xCoord-p.getX())<2&&Math.abs(e.zCoord-p.getZ())<2){if(e.yCoord-p.getY()>2)return 1;if(p.getY()>e.yCoord)return 0;}
             return new int[]{2,5,3,4}[quadrant(y)];
         };
         register(BlockPistonBase.class,sixWay);register(BlockDispenser.class,sixWay);
         register(BlockChest.class,(b,w,p,m,y,e)-> {
-            int facing=new int[]{2,5,3,4}[quadrant(y)];boolean ns=w.getBlock(p.x(),p.y(),p.z()-1)==b||w.getBlock(p.x(),p.y(),p.z()+1)==b,ew=w.getBlock(p.x()-1,p.y(),p.z())==b||w.getBlock(p.x()+1,p.y(),p.z())==b;
+            int facing=new int[]{2,5,3,4}[quadrant(y)];boolean ns=w.getBlock(p.getX(),p.getY(),p.getZ()-1)==b||w.getBlock(p.getX(),p.getY(),p.getZ()+1)==b,ew=w.getBlock(p.getX()-1,p.getY(),p.getZ())==b||w.getBlock(p.getX()+1,p.getY(),p.getZ())==b;
             return (!ns&&!ew||ns&&(facing==4||facing==5)||ew&&(facing==2||facing==3))?facing:m;
         });
     }

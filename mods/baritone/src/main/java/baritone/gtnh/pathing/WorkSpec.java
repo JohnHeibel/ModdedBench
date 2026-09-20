@@ -3,6 +3,7 @@
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh.pathing;
 
+import baritone.compat.BlockPos;
 import java.util.*;
 
 /** Bounded transport-neutral work plans. No game registries or item assumptions. */
@@ -33,14 +34,14 @@ public final class WorkSpec {
         List<?> a=list(value);if(a.size()!=3)throw new IllegalArgumentException("position needs three integers");
         return new BlockPos(integer(Map.of("x",a.get(0)),"x",0,-30000000,30000000),integer(Map.of("y",a.get(1)),"y",0,-255,255),integer(Map.of("z",a.get(2)),"z",0,-30000000,30000000));
     }
-    public static List<Integer> point(BlockPos p) {return List.of(p.x(),p.y(),p.z());}
+    public static List<Integer> point(BlockPos p) {return List.of(p.getX(),p.getY(),p.getZ());}
     public record Bounds(BlockPos min,BlockPos max) {
         public Bounds {
-            if(min.x()>max.x()||min.y()>max.y()||min.z()>max.z()||min.y()<0||max.y()>255)throw new IllegalArgumentException("ordered world bounds required");
+            if(min.getX()>max.getX()||min.getY()>max.getY()||min.getZ()>max.getZ()||min.getY()<0||max.getY()>255)throw new IllegalArgumentException("ordered world bounds required");
         }
-        public long volume(){return ((long)max.x()-min.x()+1)*((long)max.y()-min.y()+1)*((long)max.z()-min.z()+1);}
-        public BlockPos at(long index){long h=max.y()-min.y()+1,d=max.z()-min.z()+1;return new BlockPos((int)(min.x()+index/(h*d)),(int)(min.y()+index%h),(int)(min.z()+(index/h)%d));}
-        public boolean contains(BlockPos p){return p.x()>=min.x()&&p.x()<=max.x()&&p.y()>=min.y()&&p.y()<=max.y()&&p.z()>=min.z()&&p.z()<=max.z();}
+        public long volume(){return ((long)max.getX()-min.getX()+1)*((long)max.getY()-min.getY()+1)*((long)max.getZ()-min.getZ()+1);}
+        public BlockPos at(long index){long h=max.getY()-min.getY()+1,d=max.getZ()-min.getZ()+1;return new BlockPos((int)(min.getX()+index/(h*d)),(int)(min.getY()+index%h),(int)(min.getZ()+(index/h)%d));}
+        public boolean contains(BlockPos p){return p.getX()>=min.getX()&&p.getX()<=max.getX()&&p.getY()>=min.getY()&&p.getY()<=max.getY()&&p.getZ()>=min.getZ()&&p.getZ()<=max.getZ();}
     }
     public static Bounds bounds(Map<String,Object> p) {return new Bounds(pos(p.get("min")),pos(p.get("max")));}
     public record Cell(BlockPos pos,String id,int meta,boolean clear,Map<String,Object> item,Map<String,Object> placement,Map<String,Object> replace,Map<String,Object> verify) {
@@ -79,9 +80,9 @@ public final class WorkSpec {
             if(shape.equals("replace")&&!sel.containsKey("replace"))throw new IllegalArgumentException("replace selector required");
             Map<String,Object> block=shape.equals("clear")?Map.of("clear",true):child(sel,"block");
             for(long i=0;i<bounds.volume();i++) {
-                BlockPos p=bounds.at(i);boolean sides=p.x()==bounds.min.x()||p.x()==bounds.max.x()||p.z()==bounds.min.z()||p.z()==bounds.max.z();
-                if(shape.equals("walls")&&!sides||shape.equals("shell")&&!sides&&p.y()!=bounds.min.y()&&p.y()!=bounds.max.y())continue;
-                if(Set.of("sphere","hsphere","cylinder","hcylinder").contains(shape)&&!ConstructionMask.contains(shape,axis,p.x()-bounds.min.x(),p.y()-bounds.min.y(),p.z()-bounds.min.z(),bounds.max.x()-bounds.min.x()+1,bounds.max.y()-bounds.min.y()+1,bounds.max.z()-bounds.min.z()+1))continue;
+                BlockPos p=bounds.at(i);boolean sides=p.getX()==bounds.min.getX()||p.getX()==bounds.max.getX()||p.getZ()==bounds.min.getZ()||p.getZ()==bounds.max.getZ();
+                if(shape.equals("walls")&&!sides||shape.equals("shell")&&!sides&&p.getY()!=bounds.min.getY()&&p.getY()!=bounds.max.getY())continue;
+                if(Set.of("sphere","hsphere","cylinder","hcylinder").contains(shape)&&!ConstructionMask.contains(shape,axis,p.getX()-bounds.min.getX(),p.getY()-bounds.min.getY(),p.getZ()-bounds.min.getZ(),bounds.max.getX()-bounds.min.getX()+1,bounds.max.getY()-bounds.min.getY()+1,bounds.max.getZ()-bounds.min.getZ()+1))continue;
                 Map<String,Object> e=new LinkedHashMap<>(block);e.put("pos",point(p));if(sel.containsKey("replace"))e.put("replace",sel.get("replace"));entries.add(e);
             }
         }
@@ -92,14 +93,14 @@ public final class WorkSpec {
             fields(e,Set.of("pos","id","meta","clear","item","placement","replace","verify"));
             placement(child(e,"placement"));
             verification(child(e,"verify"));
-            BlockPos local=pos(e.get("pos"));long x=(long)local.x()+origin.x(),y=(long)local.y()+origin.y(),z=(long)local.z()+origin.z();
+            BlockPos local=pos(e.get("pos"));long x=(long)local.getX()+origin.getX(),y=(long)local.getY()+origin.getY(),z=(long)local.getZ()+origin.getZ();
             if(Math.abs(x)>30000000||y<1||y>254||Math.abs(z)>30000000)throw new IllegalArgumentException("translated cell outside world bounds");
             BlockPos p=new BlockPos((int)x,(int)y,(int)z);if(!seen.add(p))throw new IllegalArgumentException("duplicate cell "+p);
             boolean clear=bool(e,"clear",false);String id=string(e,"id","");if(!clear&&(id.isBlank()||!id.contains(":")))throw new IllegalArgumentException("namespaced block id required");
             if(clear&&!child(e,"verify").isEmpty())throw new IllegalArgumentException("clear cells cannot require a picked item");
             cells.add(new Cell(p,id,integer(e,"meta",0,0,15),clear,child(e,"item"),child(e,"placement"),child(e,"replace"),child(e,"verify")));
         }
-        cells.sort(Comparator.comparingInt((Cell c)->c.clear?0:1).thenComparingInt(c->c.clear?-c.pos.y():c.pos.y()).thenComparingInt(c->c.pos.x()).thenComparingInt(c->c.pos.z()));
+        cells.sort(Comparator.comparingInt((Cell c)->c.clear?0:1).thenComparingInt(c->c.clear?-c.pos.getY():c.pos.getY()).thenComparingInt(c->c.pos.getX()).thenComparingInt(c->c.pos.getZ()));
         return List.copyOf(cells);
     }
 }

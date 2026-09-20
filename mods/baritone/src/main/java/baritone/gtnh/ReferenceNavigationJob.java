@@ -34,9 +34,9 @@ final class ReferenceNavigationJob implements Navigation.Job {
     private final LinkedHashSet<String> movements=new LinkedHashSet<>();
     private final List<Map<String,Object>> segmentHistory=new ArrayList<>();
     private final boolean previousAllowBreak,previousAllowPlace;
-    ReferenceNavigationJob(Baritone engine,List<baritone.gtnh.pathing.BlockPos> goals,int timeout,boolean allowBreak,boolean allowPlace,boolean override,InputArbiter.Lease parent,baritone.gtnh.pathing.BlockPos corridorStart,double radius){
+    ReferenceNavigationJob(Baritone engine,List<baritone.compat.BlockPos> goals,int timeout,boolean allowBreak,boolean allowPlace,boolean override,InputArbiter.Lease parent,baritone.compat.BlockPos corridorStart,double radius){
         this.engine=engine;this.timeout=timeout;this.allowBreak=allowBreak;this.allowPlace=allowPlace;this.override=override;
-        physicalGoals=goals.stream().map(p->new BlockPos(p.x(),p.y(),p.z())).toList();normalizedGoals=physicalGoals;
+        physicalGoals=List.copyOf(goals);normalizedGoals=physicalGoals;
         refreshGoal();
         ownsLease=parent==null;
         previousAllowBreak=Baritone.settings().allowBreak.value;previousAllowPlace=Baritone.settings().allowPlace.value;
@@ -49,7 +49,7 @@ final class ReferenceNavigationJob implements Navigation.Job {
         engine.explicitMiningTargets=()->s->false;
         if(corridorStart!=null){
             var corridor=new baritone.gtnh.pathing.Corridor(corridorStart,goals.get(0),radius);
-            engine.positionAllowed=p->corridor.contains(new baritone.gtnh.pathing.BlockPos(p.getX(),p.getY(),p.getZ()));
+            engine.positionAllowed=p->corridor.contains(p);
         }else engine.positionAllowed=p->true;
         engine.getInputOverrideHandler().attach(lease);
         engine.getCustomGoalProcess().setGoalAndPath(goal);

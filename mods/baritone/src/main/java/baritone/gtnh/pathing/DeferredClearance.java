@@ -3,6 +3,7 @@
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh.pathing;
 
+import baritone.compat.BlockPos;
 import java.util.*;
 import java.util.function.Predicate;
 import static baritone.gtnh.pathing.WorkSpec.*;

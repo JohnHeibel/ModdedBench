@@ -3,7 +3,9 @@
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh;
 
+import baritone.compat.Registry;
 import dev.modbench.api.ControlRegistry;
+import baritone.compat.BlockPos;
 import baritone.gtnh.pathing.*;
 import static baritone.gtnh.pathing.WorkSpec.*;
 import java.util.*;
@@ -22,7 +24,7 @@ final class WorkAccess {
     static void player(){if(MC.theWorld==null||MC.thePlayer==null||MC.thePlayer.getHealth()<=0||MC.currentScreen!=null)throw new IllegalArgumentException("living player with closed GUI required");}
     static boolean item(ItemStack stack,Map<String,Object> selector) {
         if(stack==null||stack.stackSize<=0)return false;
-        if(selector.containsKey("id")&&!selector.get("id").equals(Item.itemRegistry.getNameForObject(stack.getItem())))return false;
+        if(selector.containsKey("id")&&!selector.get("id").equals(Registry.name(stack.getItem())))return false;
         if(selector.containsKey("meta")&&integer(selector,"meta",0,0,32767)!=stack.getItemDamage())return false;
         if(selector.containsKey("nbt"))try {
             NBTBase expected=JsonToNBT.func_150315_a(string(selector,"nbt","{}"));
@@ -66,14 +68,14 @@ final class WorkAccess {
         if(s.containsKey("item"))validateItemSelector(child(s,"item"));
     }
     static ItemStack picked(World world,BlockPos p) {
-        Block block=world.getBlock(p.x(),p.y(),p.z());
-        return block.getPickBlock(new MovingObjectPosition(p.x(),p.y(),p.z(),1,Vec3.createVectorHelper(p.x()+.5,p.y()+.5,p.z()+.5)),world,p.x(),p.y(),p.z(),MC.thePlayer);
+        Block block=world.getBlock(p.getX(),p.getY(),p.getZ());
+        return block.getPickBlock(new MovingObjectPosition(p.getX(),p.getY(),p.getZ(),1,Vec3.createVectorHelper(p.getX()+.5,p.getY()+.5,p.getZ()+.5)),world,p.getX(),p.getY(),p.getZ(),MC.thePlayer);
     }
     static boolean block(World world,BlockPos p,Map<String,Object> s) {
-        if(!ForgeSnapshot.loaded(world,p.x(),p.y(),p.z()))return false;
-        Block block=world.getBlock(p.x(),p.y(),p.z());
-        if(s.containsKey("id")&&!s.get("id").equals(Block.blockRegistry.getNameForObject(block)))return false;
-        if(s.containsKey("meta")&&integer(s,"meta",0,0,15)!=world.getBlockMetadata(p.x(),p.y(),p.z()))return false;
+        if(!ForgeSnapshot.loaded(world,p.getX(),p.getY(),p.getZ()))return false;
+        Block block=world.getBlock(p.getX(),p.getY(),p.getZ());
+        if(s.containsKey("id")&&!s.get("id").equals(Registry.name(block)))return false;
+        if(s.containsKey("meta")&&integer(s,"meta",0,0,15)!=world.getBlockMetadata(p.getX(),p.getY(),p.getZ()))return false;
         if(s.containsKey("item")&&!item(picked(world,p),child(s,"item")))return false;
         if(s.containsKey("ore")&&!item(picked(world,p),Map.of("ore",s.get("ore"))))return false;
         return true;
@@ -91,34 +93,34 @@ final class WorkAccess {
             if(stack.stackSize<Math.min(stack.getMaxStackSize(),MC.thePlayer.inventory.getInventoryStackLimit()))for(var s:selectors)if(item(stack,s))return true;
         }return false;
     }
-    static double distance(BlockPos p){return Math.hypot(p.x()+.5-MC.thePlayer.posX,p.z()+.5-MC.thePlayer.posZ)+Math.abs(p.y()-MC.thePlayer.boundingBox.minY);}
-    static Vec3 eyeAt(BlockPos feet){return Vec3.createVectorHelper(feet.x()+.5,feet.y()+MC.thePlayer.getPosition(1).yCoord-MC.thePlayer.boundingBox.minY,feet.z()+.5);}
+    static double distance(BlockPos p){return Math.hypot(p.getX()+.5-MC.thePlayer.posX,p.getZ()+.5-MC.thePlayer.posZ)+Math.abs(p.getY()-MC.thePlayer.boundingBox.minY);}
+    static Vec3 eyeAt(BlockPos feet){return Vec3.createVectorHelper(feet.getX()+.5,feet.getY()+MC.thePlayer.getPosition(1).yCoord-MC.thePlayer.boundingBox.minY,feet.getZ()+.5);}
     record Pose(BlockPos feet,double standingY) {}
-    static Vec3 eyeAt(Pose pose){return Vec3.createVectorHelper(pose.feet().x()+.5,pose.standingY()+MC.thePlayer.getPosition(1).yCoord-MC.thePlayer.boundingBox.minY,pose.feet().z()+.5);}
+    static Vec3 eyeAt(Pose pose){return Vec3.createVectorHelper(pose.feet().getX()+.5,pose.standingY()+MC.thePlayer.getPosition(1).yCoord-MC.thePlayer.boundingBox.minY,pose.feet().getZ()+.5);}
     static List<Pose> buildingApproaches(World world,BlockPos target) {
         double reach=MC.playerController.getBlockReachDistance();
         int radius=Math.min(8,(int)Math.ceil(reach));
-        BlockPos min=new BlockPos(target.x()-radius,Math.max(1,target.y()-radius-2),target.z()-radius);
-        BlockPos max=new BlockPos(target.x()+radius,Math.min(254,target.y()+radius),target.z()+radius);
+        BlockPos min=new BlockPos(target.getX()-radius,Math.max(1,target.getY()-radius-2),target.getZ()-radius);
+        BlockPos max=new BlockPos(target.getX()+radius,Math.min(254,target.getY()+radius),target.getZ()+radius);
         // Use exactly the navigation graph's collision-derived footing. A
         // full-block-only pose list loses every stance as a slab roof closes.
         // Include the lower poses permitted by the player's native eye/reach.
         TerrainGrid grid=ForgeSnapshot.local(world,min,max);List<Pose> out=new ArrayList<>();
-        for(int x=min.x();x<=max.x();x++)for(int z=min.z();z<=max.z();z++)for(int y=min.y();y<=max.y();y++) {
+        for(int x=min.getX();x<=max.getX();x++)for(int z=min.getZ();z<=max.getZ();z++)for(int y=min.getY();y<=max.getY();y++) {
             BlockPos feet=new BlockPos(x,y,z);double height=grid.standingY(feet);
             if(!Double.isFinite(height))continue;
             Pose pose=new Pose(feet,height);Vec3 eye=eyeAt(pose);
-            double dx=Math.max(0,Math.max(target.x()-eye.xCoord,eye.xCoord-target.x()-1));
-            double dy=Math.max(0,Math.max(target.y()-eye.yCoord,eye.yCoord-target.y()-1));
-            double dz=Math.max(0,Math.max(target.z()-eye.zCoord,eye.zCoord-target.z()-1));
+            double dx=Math.max(0,Math.max(target.getX()-eye.xCoord,eye.xCoord-target.getX()-1));
+            double dy=Math.max(0,Math.max(target.getY()-eye.yCoord,eye.yCoord-target.getY()-1));
+            double dz=Math.max(0,Math.max(target.getZ()-eye.zCoord,eye.zCoord-target.getZ()-1));
             if(dx*dx+dy*dy+dz*dz<=reach*reach&&ForgeSnapshot.liveClear(world,x+.5,height,z+.5,height+1.8))out.add(pose);
         }
         out.sort(Comparator.comparingDouble(p->distance(p.feet())));return out;
     }
     static Map<String,Object> observed(World world,BlockPos p) {
-        if(!ForgeSnapshot.loaded(world,p.x(),p.y(),p.z()))return Map.of("pos",point(p),"loaded",false);
-        Map<String,Object> out=new LinkedHashMap<>();out.put("pos",point(p));out.put("loaded",true);out.put("id",Block.blockRegistry.getNameForObject(world.getBlock(p.x(),p.y(),p.z())));out.put("meta",world.getBlockMetadata(p.x(),p.y(),p.z()));
-        var tile=world.getTileEntity(p.x(),p.y(),p.z());out.put("tileClass",tile==null?null:tile.getClass().getName());return out;
+        if(!ForgeSnapshot.loaded(world,p.getX(),p.getY(),p.getZ()))return Map.of("pos",point(p),"loaded",false);
+        Map<String,Object> out=new LinkedHashMap<>();out.put("pos",point(p));out.put("loaded",true);out.put("id",Registry.name(world.getBlock(p.getX(),p.getY(),p.getZ())));out.put("meta",world.getBlockMetadata(p.getX(),p.getY(),p.getZ()));
+        var tile=world.getTileEntity(p.getX(),p.getY(),p.getZ());out.put("tileClass",tile==null?null:tile.getClass().getName());return out;
     }
-    static String protection(BlockPos p,boolean override){return ControlRegistry.memory().editProblem(p.x(),p.y(),p.z(),override,true);}
+    static String protection(BlockPos p,boolean override){return ControlRegistry.memory().editProblem(p.getX(),p.getY(),p.getZ(),override,true);}
 }

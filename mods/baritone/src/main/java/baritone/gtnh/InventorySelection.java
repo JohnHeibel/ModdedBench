@@ -3,6 +3,7 @@
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh;
 
+import baritone.compat.Registry;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import net.minecraft.client.Minecraft;
@@ -90,7 +91,7 @@ final class InventorySelection {
     }
     static Map<String,Object> describe(ItemStack stack) {
         if(stack==null) return Map.of("empty",true);
-        Map<String,Object> out=new LinkedHashMap<>();out.put("id",Item.itemRegistry.getNameForObject(stack.getItem()));
+        Map<String,Object> out=new LinkedHashMap<>();out.put("id",Registry.name(stack.getItem()));
         out.put("meta",stack.getItemDamage());out.put("count",stack.stackSize);out.put("name",stack.getDisplayName());
         if(stack.hasTagCompound()) out.put("nbt",stack.getTagCompound().toString());return out;
     }
