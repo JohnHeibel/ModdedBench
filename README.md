@@ -53,6 +53,7 @@ mb_notes("search", {"query": "furnace"})  what past sessions left behind
 | `harness/runner` | Provider-neutral autonomous loop with a file adapter | |
 | `harness/smoke` | Live-game probes | |
 | `harness/console` | Local web console for contained runs: server, client, agent, run setup | |
+| `harness/wiki` | Fetches the GTNH wiki into one SQLite file for the offline wiki tools | |
 | `docker/` | Server, agent and gateway images for contained runs | |
 | `docs/` | [ARCHITECTURE](docs/ARCHITECTURE.md), [BUILD](docs/BUILD.md), [TOOLS](docs/TOOLS.md), [TIME_CONTROL](docs/TIME_CONTROL.md), [BARITONE_PORT](docs/BARITONE_PORT.md), [RUNNER](docs/RUNNER.md), [CONTAINERS](docs/CONTAINERS.md), [VALIDATION](docs/VALIDATION.md), [HISTORY](docs/HISTORY.md) | |
 

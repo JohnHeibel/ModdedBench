@@ -80,6 +80,12 @@ Key facts about the runtime:
 - **World memory** (`mb_memory`) stores waypoints, corridor routes and protected
   regions in Java. Protect your base early; navigation will not dig through a
   protected region by accident.
+- **The wiki** (`mb_wiki_search`, then `mb_wiki_read`) is an offline copy of the
+  GTNH wiki: progression by age, what each multiblock needs and does, ore,
+  bee and crop guides, mechanics the quest book only hints at. Read the page
+  for your current age before planning it, and look a machine up before you
+  build it. It follows the newest pack version and can be ahead of this one:
+  the quest book and NEI (`mb_recipes`) decide exact recipes and requirements.
 - **The map** (`mb_map`) is JourneyMap, the pack's map mod, as a picture: every
   chunk this client has had loaded, one pixel per block, north up, with
   labelled x/z grid lines so you can read coordinates straight off it. Black is

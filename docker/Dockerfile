@@ -11,7 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends git python3 pyt
 RUN useradd -m agent && mkdir -p /work /outbox && chown agent:agent /work /outbox
 USER agent
 WORKDIR /work/modbench
-COPY --chown=agent:agent docker/codex-config.toml /home/agent/.codex/config.toml
+# ~/.codex is a volume (it keeps the login), so the config is copied in at every start rather than frozen at first use.
+COPY --chown=agent:agent docker/codex-config.toml /opt/codex-config.toml
+RUN mkdir -p /home/agent/.codex
 COPY --chown=agent:agent harness/mcp/requirements.txt /tmp/requirements.txt
 RUN pip3 install --user --break-system-packages --no-cache-dir -r /tmp/requirements.txt
 # Warm layer: with the build scripts alone, Gradle provisions the toolchains and downloads and decompiles
@@ -25,8 +27,9 @@ COPY --chown=agent:agent . .
 RUN ./gradlew build --console=plain -q && ./gradlew --stop \
  && git config user.name agent && git config user.email agent@modbench.invalid && git tag -f modbench-base
 ENV MODBENCH_OUTBOX=/outbox MB_BRIDGE_URL=ws://gateway:47223/ws MB_BRIDGE_TOKEN_FILE=/run/bridge/bridge-47223.token \
+    MB_WIKI_DB=/wiki/gtnh-wiki.sqlite \
     HTTPS_PROXY=http://gateway:3128 HTTP_PROXY=http://gateway:3128 NO_PROXY=gateway PYTHONUNBUFFERED=1
-CMD ["sleep", "infinity"]
+CMD ["sh", "-c", "cp /opt/codex-config.toml /home/agent/.codex/config.toml && exec sleep infinity"]
 
 # server: the pinned pack server. Its ModdedBench jars come from this image on every start, never from a volume.
 FROM eclipse-temurin:25-jre-noble AS server

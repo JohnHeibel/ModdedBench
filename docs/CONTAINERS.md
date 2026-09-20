@@ -47,6 +47,15 @@ forbidden in `PROMPT.md` and reviewable afterwards: every deploy is kept under
 docker compose -f docker/compose.yaml --env-file docker/.env up -d --build
 ```
 
+   Snapshot the GTNH wiki for the agent's offline `mb_wiki_search` and
+   `mb_wiki_read` (about 640 pages, a minute, CC BY-SA 4.0, kept out of git in
+   `.runtime/wiki`). The agent has no route to the wiki, so every run reads the
+   same frozen copy; rerun to refresh it.
+
+```bash
+python harness/wiki/fetch.py
+```
+
 4. Log Codex in once; the login is kept in the `agent-home` volume.
 
 ```bash
