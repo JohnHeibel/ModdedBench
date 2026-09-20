@@ -4,7 +4,7 @@
 
 Adapters are ordinary editable Python modules with an async ``infer(request)``
 function. They may also define ``cancel()``.  The request and response JSON
-contract is documented in ``gtnh/AUTONOMOUS_RUNNER.md``.
+contract is documented in ``docs/legacy/AUTONOMOUS_RUNNER.md``.
 """
 from __future__ import annotations
 
@@ -122,7 +122,7 @@ class ModuleAdapter:
 
 class ManagedDeploy:
     """Bounded facade over the existing managed lifecycle CLI."""
-    COMPONENTS = ("control", "baritone", "client")
+    COMPONENTS = ("core", "baritone", "client")   # core is the coremod on both sides, so deploying it also restarts the server
     def __init__(self, runtime_dir: Path, command: Callable[[list[str]], None] | None = None,
                  launch_timeout: float = 300):
         self.runtime_dir = Path(runtime_dir).resolve()
@@ -139,24 +139,31 @@ class ManagedDeploy:
     def deploy(self, components: list[str]) -> dict[str, Any]:
         if (not isinstance(components, list) or not components or
                 any(x not in self.COMPONENTS for x in components) or len(set(components)) != len(components)):
-            raise ValueError("deploy components must be a unique nonempty subset of control, baritone, client")
+            raise ValueError("deploy components must be a unique nonempty subset of core, baritone, client")
         ordered = [x for x in self.COMPONENTS if x in components]
+        server = "core" in ordered
         installed: list[str] = []
         self.command(["stop-client"])
+        if server: self.command(["stop-server"])
         try:
             self.command(["build"])
             for component in ordered:
                 self.command([f"install-{component}"]); installed.append(component)
+            if server: self.command(["start-server"])
             self.command(["launch-client", "--timeout", str(self.launch_timeout)])
             return {"deployed": ordered, "rolledBack": []}
         except BaseException as failure:
             rollback_errors = []
             if installed:
-                try: self.command(["stop-client"])
-                except Exception: pass
+                for stop in (["stop-client"], *([["stop-server"]] if server else [])):
+                    try: self.command(stop)
+                    except Exception: pass
             for component in reversed(installed):
                 try: self.command([f"rollback-{component}"])
                 except Exception as exc: rollback_errors.append(f"{component}: {exc}")
+            if server:
+                try: self.command(["start-server"])
+                except Exception as exc: rollback_errors.append(f"start-server: {exc}")
             try: self.command(["launch-client", "--timeout", str(self.launch_timeout)])
             except Exception as exc: rollback_errors.append(f"relaunch: {exc}")
             if rollback_errors:
@@ -425,8 +432,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--adapter", required=True, type=Path)
     parser.add_argument("--objective", required=True)
     parser.add_argument("--watches", required=True, type=Path, help="JSON object mapping watch names to specs")
-    parser.add_argument("--state", type=Path, default=REPO / "gtnh" / ".state" / "runner")
-    parser.add_argument("--runtime", type=Path, default=REPO / "gtnh" / ".runtime")
+    parser.add_argument("--state", type=Path, default=REPO / ".state" / "runner")
+    parser.add_argument("--runtime", type=Path, default=REPO / ".runtime")
     parser.add_argument("--max-iterations", type=int, default=50)
     parser.add_argument("--max-calls", type=int, default=200)
     parser.add_argument("--max-deploys", type=int, default=1)
