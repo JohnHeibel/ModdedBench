@@ -1,9 +1,30 @@
 # Bounded work-process contracts
 
+> **Changed in phase 4a (2026-09-19).** There is one construction engine:
+> `ReferenceConstructionProcess`, upstream `BuilderProcess` behind the Modbench
+> adapters. `BuildingProcess`, `ExactPlacementJob` and the custom
+> `ConstructionProcess` scheduler are deleted; `ConstructionPlan` keeps the plan
+> model (validated cells, journaled selection, substitutes, the cell predicate)
+> and the preview diff. `mode: blueprint` is now the strict profile of that
+> engine, not a second process: restricted to its own cells, the same preflight
+> (`preflight_unloaded`, `_conflicts`, `_protected`, `_unsupported`,
+> `_missingItems`), `replaceExisting` default false, two placement attempts per
+> cell and no destructive repair of an attempted cell. Differences from the text
+> below: a blueprint that reaches its attempt limit or finds an attempted cell
+> changed now ends `paused` with the builder reasons
+> (`placement_attempt_limit_inspect_block_adapter`,
+> `placement_not_verified_inspect_before_retry`) instead of `failed`; its status
+> has the builder keys (`buildPhase`, `deferredAirCells`, `selected`, ...); the
+> journaled selection is stored as `selection:<repeat>`; travel uses the
+> upstream builder goals rather than composite pose goals. `baritone.build_preview`
+> builds a plan only, with no job or journal. The second path executor
+> (`BaritoneNavigation.Run`) is deleted, so all travel is upstream `PathExecutor`.
+> `baritone-core` is folded into `mods/baritone`.
+
 The GTNH mining and building processes are dev-only, native-client work jobs.
 This document records their bounded contracts; live evidence and remaining
 scope are in [VALIDATION.md](VALIDATION.md). Their provenance is in
-[PORT_ORIGIN.md](baritone-core/PORT_ORIGIN.md).
+[PORT_ORIGIN.md](../../mods/baritone/PORT_ORIGIN.md).
 
 ## Mining
 
