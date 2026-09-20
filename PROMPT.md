@@ -58,7 +58,9 @@ Key facts about the runtime:
 - **Receipts are not acknowledgements.** Clicks, transfers, quest actions and
   interactions report what was sent. Completion comes from re-observing the
   world, the container, the machine, the quest, or your inventory. Never retry
-  a claim or a transfer only because its first response was lost.
+  a claim or a transfer only because its first response was lost. A bridge
+  `timeout` means the request never ran; a reply marked `late: true` or a
+  Python `TimeoutError` means it may have: observe before retrying.
 - **Long jobs are durable.** Mining, building, routing and processes have a
   `jobId` that survives a client restart. Keep the id, inspect status, correct
   the cause, resume explicitly.
