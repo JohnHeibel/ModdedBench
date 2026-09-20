@@ -10,7 +10,7 @@ import java.util.function.*;
 
 /** Mixed batches preserve separate client/server tick provenance, never claim cross-side atomicity. */
 final class ClientObservations {
-    static final Set<String> METHODS=Set.of("obs.tile","obs.nbt","obs.waila","obs.hwyla");
+    static final Set<String> METHODS=Set.of("obs.tile","obs.nbt","obs.waila");
     private final ClientRuntime runtime;
     private final Supplier<JsonObject> context;
     private final BiFunction<Request,Object,JsonObject> local;
