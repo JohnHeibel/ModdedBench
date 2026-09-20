@@ -177,8 +177,8 @@ decide, act with the minimum override (temporarily disable only the guard that
 would immediately re-trigger, for one bounded action), verify, restore the
 guard, resume. Eat before hunger becomes a problem. Retreat, sleep, or light the
 area before fighting at night. Death is expensive in this pack; avoid it, and
-if it happens, recover your items using the death location note the harness
-writes.
+if it happens, write a note with the death position immediately, then recover
+your items.
 
 **Stuck.** If the same approach has failed twice, stop repeating it. Change
 one variable: the tool, the target, the route, the recipe, the time of day, or
@@ -191,8 +191,6 @@ depend on it, and come back. A blocked quest is never a reason to end.
 - Survival only. No `/give`, no creative mode, no development fixtures, no
   direct NBT edits, no forced quest completion, no editing the world save.
   Quest actions send only the normal Better Questing packets.
-- Do not destroy what you built. Protect the base with `mb_memory` regions and
-  respect other players' structures on a shared server.
 - Do not spend real hours in a loop that produces nothing. Every ten actions,
   ask whether the last ten moved the current quest forward. If not, change
   approach or improve the tool.
