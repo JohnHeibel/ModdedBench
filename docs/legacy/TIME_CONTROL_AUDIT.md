@@ -31,6 +31,23 @@ GregTech's whole background structural jobs are admitted through Modbench's
 `AsyncPause` barrier. A pause does not settle until active admitted jobs finish;
 new jobs wait until resume. The server exposes this state in clock status.
 
+The barrier depends on an invariant: **it is only begun while the tick gate is
+closed.** GregTech's server tick handler acquires one semaphore permit per posted
+machine-update task, and a task blocked in `AsyncPause` never releases its
+permit, so a barrier requested during a running tick would hang the server
+thread inside the tick with no way to deliver `time.resume`. `PauseCoordinator`
+(Minecraft-free, in `mods/core`, unit tested with fake barriers) owns this: it
+begins the barriers only after `SimulationClock.pause`, closes the gate on the
+next `before()`, resumes the barriers before the clock on `time.resume`, and if
+it ever finds the GregTech barrier requested while the clock is not paused it
+resumes the barrier and logs a warning instead of deadlocking.
+
+Shutdown has the same dependency. FML delivers `FMLServerStoppingEvent` in
+sorted mod order and GregTech's handler waits up to 60 s + 60 s for its update
+executor, so `modbenchserver` declares `before:gregtech`: its stopping handler
+resumes the barrier first and blocked tasks finish normally. (`after:gregtech`
+would run the handler too late; FML sorts event delivery, not only loading.)
+
 OpenComputers is handled cooperatively: registered native machines receive
 `Machine.pause(0)` at a pause transition, and the clock waits for those requests
 to settle. This prevents queued machine execution after the native pause takes

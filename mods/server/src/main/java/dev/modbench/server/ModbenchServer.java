@@ -8,7 +8,13 @@ import cpw.mods.fml.common.event.FMLServerStoppingEvent;
 import dev.modbench.bridge.BridgeTransport;
 import net.minecraft.server.MinecraftServer;
 
-@Mod(modid = "modbenchserver", name = "Modbench Server", version = "0.1.0", acceptableRemoteVersions = "*")
+/**
+ * FML delivers FMLServerStoppingEvent in load order, and GregTech's stopping handler waits (60 s + 60 s) for
+ * every posted machine-update task. Sorting before gregtech makes {@link #stopping} resume the AsyncPause
+ * barrier first, so tasks blocked by a pause finish instead of stalling the shutdown.
+ */
+@Mod(modid = "modbenchserver", name = "Modbench Server", version = "0.1.0", acceptableRemoteVersions = "*",
+    dependencies = "before:gregtech")
 public final class ModbenchServer {
     private ServerRuntime runtime;
     private BridgeTransport transport;
