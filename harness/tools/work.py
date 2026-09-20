@@ -18,6 +18,14 @@ STAGE = 4096
 REPORT_KEYS = ("size", "count", "skipped", "tileEntities")
 
 
+def _any_facing(params: dict) -> dict:
+    """A hand-written cell without meta means "this block, any facing". Meta 0 is a facing no furnace, chest or machine can be
+    placed with, so taken literally the builder would stand beside the cell for ever, unable to make what was asked."""
+    cells = [c for c in params.get("cells") or [] if isinstance(c, dict) and "id" in c]
+    masks = {**dict.fromkeys({c["id"] for c in cells} - {c["id"] for c in cells if "meta" in c}, 0), **(params.get("settings") or {}).get("metadataMasks", {})}
+    return {**params, "settings": {**(params.get("settings") or {}), "metadataMasks": masks}} if masks else params
+
+
 def _build_call(method: str, params: dict, timeout_s: float | None = None) -> Any:
     """Direct request for small plans; bounded staging (nav.build_stage) for large cell lists."""
     cells = params.get("cells")
@@ -222,7 +230,9 @@ def mb_build_preview(cells: list[dict] | None = None, selection: dict | None = N
     Provide exactly one of cells or selection. Cells use {pos,id,meta?,item?,
     placement?,verify?:{pickedItem:itemSelector},clear?,replace?}. Selection uses inclusive bounds plus shape
     fill|replace|walls|shell|clear|sphere|hsphere|cylinder|hcylinder (with axis), block and optional
-    replace selector. Explicit registry IDs are required. Tile NBT is rejected rather than ignored.
+    replace selector. A cell without meta accepts any meta, which is what you want for blocks that face
+    the way they are placed (furnace, chest, machines); give meta to demand a variant or a facing.
+    Explicit registry IDs are required. Tile NBT is rejected rather than ignored.
     Preview does not load chunks, reserve inventory, prove reachability or mutate the world.
     """
     if (cells is None) == (selection is None): raise ValueError("provide exactly one of cells or selection")
@@ -232,7 +242,7 @@ def mb_build_preview(cells: list[dict] | None = None, selection: dict | None = N
     if origin is not None: params["origin"] = origin
     if settings is not None: params["settings"] = settings
     if size is not None: params["size"] = size
-    return _build_call("nav.build_preview", params)
+    return _build_call("nav.build_preview", _any_facing(params))
 
 
 @tool(rung=1, coverage=["machine"])
@@ -259,7 +269,7 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
     if origin is not None: params["origin"] = origin
     if settings is not None: params["settings"] = settings
     if size is not None: params["size"] = size
-    return _build_call("nav.build", params, timeout_s)
+    return _build_call("nav.build", _any_facing(params), timeout_s)
 
 
 @tool(lane="read", coverage=["machine"])

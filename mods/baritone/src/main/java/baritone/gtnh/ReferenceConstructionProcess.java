@@ -25,7 +25,8 @@ final class ReferenceConstructionProcess extends BulkJob {
     private final Set<BlockPos> pending=new HashSet<>();
     private final Set<BlockPos> placedObserved=new HashSet<>(),removedObserved=new HashSet<>();
     private final Map<BlockPos,IBlockState.StateKey> previousObserved=new HashMap<>();
-    private int repeat,layer,passStarts;
+    private int repeat,layer,passStarts,stallTicks;
+    private Object stallMark;
     private boolean started;
     private List<List<Integer>> incorrect=List.of();
     private final Set<String> movements=new LinkedHashSet<>();
@@ -50,7 +51,7 @@ final class ReferenceConstructionProcess extends BulkJob {
         super.begin();
         if(plan.strict){
             // Blueprint preflight: refuse before any input rather than discover a conflict mid-build.
-            inspection=ConstructionPlan.inspect(plan.cells,plan.replace(),override);
+            inspection=ConstructionPlan.inspect(plan.cells,plan.replace(),override,plan::correct);
             for(String key:List.of("unloaded","conflicts","protected","unsupported","missingItems"))if(((Number)inspection.get(key)).intValue()>0){finish("failed","preflight_"+key);return;}
         }
         engine.getPathingBehavior().forceCancel();
@@ -221,7 +222,15 @@ final class ReferenceConstructionProcess extends BulkJob {
             }
             // No existing vantage is not proof that construction is impossible:
             // the source planner may still build the support it needs to stand on.
-            if(legal.isEmpty())return goal;
+            if(legal.isEmpty()){
+                // Standing in the cell itself fails native collision from every vantage, and the source goal (stand on top of the
+                // new block) is unreachable without scaffolding: step out to a neighbouring column first, then this adapter runs again.
+                var at=cell.pos();
+                if(!mc.thePlayer.boundingBox.intersectsWith(net.minecraft.util.AxisAlignedBB.getBoundingBox(at.getX(),at.getY(),at.getZ(),at.getX()+1,at.getY()+1,at.getZ()+1)))return goal;
+                var out=WorkAccess.buildingApproaches(world,at).stream().map(pose->pose.feet()).filter(f->(f.getX()!=at.getX()||f.getZ()!=at.getZ())&&ForgeSnapshot.liveStandable(world,f))
+                    .map(f->(baritone.api.pathing.goals.Goal)new baritone.api.pathing.goals.GoalBlock(f)).toArray(baritone.api.pathing.goals.Goal[]::new);
+                return out.length==0?goal:new baritone.api.pathing.goals.GoalComposite(out);
+            }
             // Retain source adjacency where native placement permits it. An
             // obstructing half/full block can instead require a higher vantage;
             // use the source GoalPlace preference and native reach for those.
@@ -390,6 +399,11 @@ final class ReferenceConstructionProcess extends BulkJob {
         if(mouse!=null)interaction.put("nativeHit",Map.of("type",mouse.typeOfHit.name(),"pos",List.of(mouse.blockX,mouse.blockY,mouse.blockZ),"side",mouse.sideHit));
         inspection=Map.of("interaction",interaction);
         var path=engine.getPathingBehavior().getCurrent();if(path!=null)path.getPath().movements().forEach(m->movements.add(m.getClass().getSimpleName()));
+        // A cell nothing can be placed against (no solid neighbour), or one the player cannot leave, keeps the source builder
+        // standing at its goal or replanning for ever. Fifteen seconds with no block changed and no step taken is that case.
+        Object mark=List.of(placedObserved.size(),removedObserved.size(),pending.size(),feet.x,feet.y,feet.z);
+        if(!mark.equals(stallMark)||engine.getInputOverrideHandler().isInputForcedDown(baritone.api.utils.input.Input.CLICK_LEFT)){stallMark=mark;stallTicks=0;}
+        else if(++stallTicks>=300){finish("paused","stalled_no_placement_possible_check_support_and_standing_cell");return;}
         state="building";
         if(ticks%20==0)journal.save(status());
     }

@@ -63,7 +63,8 @@ public final class WorkSpec {
         integer(spec,"timeoutTicks",12000,1,72000);
         String mode=string(spec,"mode","blueprint");if(!Set.of("blueprint","builder").contains(mode))throw new IllegalArgumentException("unknown construction mode");
         ConstructionSettings settings=new ConstructionSettings(child(spec,"settings"));
-        if(mode.equals("blueprint")&&!settings.values.isEmpty())throw new IllegalArgumentException("construction settings require mode builder");
+        // Metadata masks say which variants satisfy a cell, which a strict blueprint needs too (any-facing furnaces); the rest tune the builder.
+        if(mode.equals("blueprint")&&!Set.of("metadataMasks").containsAll(settings.values.keySet()))throw new IllegalArgumentException("construction settings require mode builder");
         int limit=mode.equals("builder")?1048576:16384;
         if(spec.containsKey("size")){List<?> size=list(spec.get("size"));if(size.size()!=3)throw new IllegalArgumentException("size needs three dimensions");for(int i=0;i<3;i++)integer(Map.of("size",size.get(i)),"size",1,1,i==1?256:30000000);}
         List<Map<String,Object>> entries=new ArrayList<>();
