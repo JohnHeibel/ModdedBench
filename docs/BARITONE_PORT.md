@@ -10,10 +10,10 @@ without it; only `nav.*` and `obs.scan`/`terrain`/`fluid`/`tools` need it.
 
 | Location | Contents |
 | --- | --- |
-| `src/upstream/java` | 162 upstream files, adapted in place. `UPSTREAM_SOURCES.json` records each file's original path and SHA-256; the Gradle build verifies them. Modified files carry a notice. The hash pins provenance, not text identity after adaptation. |
+| `src/upstream/java` | 156 upstream files, adapted in place. `UPSTREAM_SOURCES.json` records each file's original path and SHA-256; the Gradle build verifies them. Modified files carry a notice. The hash pins provenance, not text identity after adaptation. |
 | `src/main/java/baritone/compat` | Version boundary: coordinates, vectors, block state as registry id plus metadata, loaded-chunk index, native placement, inventory swaps, events, rendering. No fake `net.minecraft` classes. |
-| `src/main/java/baritone/gtnh` | Modbench side: `BaritoneNavigation` (the `Navigation` implementation the client registers), job wrappers (`Reference*Job`, `MiningProcess`, `ReferenceConstructionProcess`), the strict blueprint builder (`BuildingProcess`), `PlanImport`, `WorkJournal`, tool and placement adapters. |
-| package `baritone.gtnh.pathing` | Minecraft-free code written for this project: work and construction spec validation (`WorkSpec`, `ConstructionSettings`, `ConstructionMask`), corridor constraint (`CorridorWorld`), route progress, and a small A* (`PathNode`, `BinaryHeapOpenSet`, search loop, `GoalBlock`/`GoalXZ`/`GoalComposite`, `ActionCosts`) retained mechanically from upstream with LGPL headers. Unit tested without a game. |
+| `src/main/java/baritone/gtnh` | Modbench side: `BaritoneNavigation` (the `Navigation` implementation the client registers), job wrappers (`Reference*Job`, `MiningProcess`, `ReferenceConstructionProcess`), the validated build plan (`ConstructionPlan`), `PlanImport`, `WorkJournal`, tool and placement adapters. |
+| package `baritone.gtnh.pathing` | Minecraft-free code written for this project and unit tested without a game: work and construction spec validation (`WorkSpec`, `ConstructionSettings`, `ConstructionMask`), `DeferredClearance`, the corridor constraint (`Corridor`), `GoalRange`, and terrain observation helpers (`TerrainGrid`, `CollisionBox`, `LadderFacing`, `FluidPolicy`). There is no second path search; all routing is upstream's. |
 
 The GUI input transformer and widget inspection in `mods/core` and
 `mods/client` are this project's own code, not Baritone's; the client has no
@@ -97,20 +97,17 @@ metadata. `tileNbt` and `nbt` on a cell are rejected, never dropped silently.
 
 | | `mode: "blueprint"` (default) | `mode: "builder"` |
 | --- | --- | --- |
-| Engine | Custom strict scheduler; travel uses the upstream navigation job | Upstream `BuilderProcess` |
+| Engine | Upstream `BuilderProcess`, strict profile: confined to plan cells, no settings | Upstream `BuilderProcess` |
 | Cell limit | 16,384 | 1,048,576 (Python stages 4,096 per `nav.build_stage` call) |
 | Edits outside the plan | None | With `allowBreak`/`allowPlace`; `settings.restricted: true` confines them to plan cells |
 | Settings | Rejected | Validated and frozen into the job |
-| Retry | At most two placement attempts per cell; a placed cell that later differs fails rather than being destroyed and retried | `repairPlaced` allows correction |
+| Retry | At most two placement attempts per cell; an attempted cell that later differs pauses the job for inspection, it is never destroyed and retried | Eight attempts; `repairPlaced` (default true) allows correction |
 | Completion | Fresh comparison of every cell's registry id and metadata, plus `verify.pickedItem` | Predicate based (see settings) |
 
 Both modes place through native right-click handling and never write blocks.
 Preview is a fresh loaded-world diff with conflicts, protection, unsupported
 mappings and a shared-stack material allocation. A `replace` selection is
-filtered once at job creation and journaled. The blueprint builder keeps
-upstream's placement-height rule (place at or below the feet, one level above
-only when capped) so it climbs the structure instead of stranding the roof.
-In builder mode, requested air that starts empty is deferred while temporary
+filtered once at job creation and journaled. Requested air that starts empty is deferred while temporary
 supports are needed, then cleared in a final phase; status exposes
 `buildPhase` and `deferredAirCells`.
 
