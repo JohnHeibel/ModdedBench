@@ -12,7 +12,8 @@ sys.path.insert(0, str(ROOT / "harness" / "launcher"))
 sys.path.insert(0, str(ROOT / "harness" / "runner"))
 sys.path.insert(0, str(ROOT / "harness" / "mcp"))
 from autonomous_runner import AutonomousRunner, Journal, ManagedDeploy, ModuleAdapter, RunnerState
-from gtnh_interrupts import race_interrupt
+import mbtool  # noqa: E402,F401
+from mbtools_gtnh.interrupts import race_interrupt  # noqa: E402
 
 
 class EventSupervisor:
