@@ -85,8 +85,15 @@ public abstract class BridgeRuntime {
         return out;
     }
 
+    /** Expanded at build time from pack.lock.json (see the core processResources task). */
+    static final String PACK = pack();
+    private static String pack() {
+        try (var in = BridgeRuntime.class.getResourceAsStream("/modbench-pack.properties")) {
+            var p = new java.util.Properties(); if (in != null) p.load(in); return p.getProperty("pack", "unknown");
+        } catch (java.io.IOException e) { return "unknown"; }
+    }
     public Object capabilities() {
-        return Json.object("protocol", 1, "version", "0.1.0", "minecraft", "1.7.10", "pack", "GTNH 2.8.4",
+        return Json.object("protocol", 1, "version", "0.1.0", "minecraft", "1.7.10", "pack", PACK,
             "side", side, "bridgeId",bridgeId,"baritone", false, "tickControl", false, "methods", describe());
     }
 
