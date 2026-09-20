@@ -164,6 +164,7 @@ def mb_recipes(id: str = "", meta: int | None = None, nbt: str | None = None, mo
     Custom non-GT handlers may expose additional requirements only through their GUI.
     This observes recipes; it does not craft, spawn items or alter the current GUI.
     """
+    if detail == "full": limit = min(limit, 1) if limit else limit  # a full recipe is thousands of tokens: one at a time, by index
     result = kernel().call("nei.recipes", id=id, meta=meta, nbt=nbt, mode=mode, handler=handler,
                            offset=offset, limit=limit, alternativesOffset=alternatives_offset,
                            alternativesLimit=alternatives_limit, timeout=timeout_s, fluid=fluid, amount=amount, detail=detail, index=index)

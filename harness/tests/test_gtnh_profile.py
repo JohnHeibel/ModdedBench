@@ -278,8 +278,20 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual(fake.last("nav.build"), ("nav.build", {"replaceExisting":False,
             "overrideProtection":False,"allowBreak":False,"allowPlace":False,"mode":"blueprint",
             "timeoutTicks":500,"cells":cells,"timeout":45}))
-        work.mb_scan([{"ore":"oreIron"}], {"min":[0,1,0],"max":[2,3,2]}, limit=9)
-        self.assertEqual(fake.calls[-1][0], "obs.scan")
+        # One mb_scan covers a volume above the bridge's per-scan cap: layers of <=262144 cells, each paged to its end.
+        def scan(method, params):
+            volume = 1
+            for a, b in zip(params["bounds"]["min"], params["bounds"]["max"]): volume *= b - a + 1
+            end = min(params["cursor"] + params["budget"], volume)
+            return {"matches": [{"at": end}] if end == volume else [], "cursor": end, "done": end == volume, "scanned": end - params["cursor"], "unloaded": 0}
+        scanning = self.use(FakeKernel(scan))
+        found = work.mb_scan([{"ore":"oreIron"}], {"min":[0,0,0],"max":[63,199,63]}, limit=9)
+        self.assertEqual((found["done"], len(found["matches"]), found["scanned"], found["volume"]), (True, 4, 819200, 819200))
+        self.assertTrue(all(c[1]["bounds"]["max"][1] - c[1]["bounds"]["min"][1] + 1 <= 64 for c in scanning.calls))
+        part = work.mb_scan(None, {"min":[0,0,0],"max":[63,199,63]}, limit=1)
+        self.assertEqual((part["done"], part["cursor"]), (False, [1, 0]))
+        with self.assertRaisesRegex(ValueError, "512x512"): work.mb_scan(None, {"min":[0,0,0],"max":[600,1,600]})
+        self.use(fake)
         work.mb_work_status("job-7")
         self.assertEqual(fake.calls[-1], ("nav.work_status", {"jobId":"job-7"}))
         work.mb_work_resume("job-7", {"timeoutTicks":400,"overrideProtection":True}, timeout_s=88)
