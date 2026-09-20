@@ -111,3 +111,10 @@ Recording: OBS window capture matched on the window title picks the client up
 again after a deploy restarts it; record to `.mkv` and split by time. With
 the `pauseOnDisconnect` guard set (`PROMPT.md` asks for it at session start)
 the world is held while the client is down.
+
+Restarts: the world stays paused (`client_disconnected`) after the client
+comes back, until the agent or the console's Resume resumes it. After a server
+restart press Launch and join; it reconnects the running client and keeps
+trying every 10 s while the server boots. A hold survives a server restart:
+the server runs a one-second warm-up (pack mods build world data on their
+first tick) and then holds again.
