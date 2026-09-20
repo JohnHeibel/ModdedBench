@@ -5,9 +5,11 @@
 from __future__ import annotations
 
 import base64
+import json
 from typing import Any
 
 from mcp.server.fastmcp import Image
+from mcp.types import CallToolResult, ImageContent, TextContent
 
 from mbtool import kernel, state, tool
 from mbtools_gtnh import notes
@@ -126,6 +128,26 @@ def mb_screenshot() -> Image:
         return Image(data=base64.b64decode(shot["png"], validate=True), format="png")
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("sys.screenshot must return a base64 PNG in 'png'") from exc
+
+
+@tool(lane="read", coverage=["meta"])
+def mb_map(center: list[int] | None = None, radius: int = 128, layer: str = "day") -> CallToolResult:
+    """JourneyMap's overhead map as a picture: what this client has seen, one pixel per block before scaling.
+
+    center [x,z] defaults to you; radius 16..2048 blocks. The 768 px image has labelled
+    x/z grid lines (north up, x right, z down), you as the yellow dot with a facing
+    line, red squares for JourneyMap death points (your dropped items) and cyan for
+    mb_memory waypoints. layer: day, night, topo, cave (the 16-block slice you stand
+    in) or a slice number y//16. Black is unexplored: mappedFraction says how much of
+    the window is known, and only chunks that were loaded near you are ever mapped.
+    JourneyMap starts a world's map only once time has run after you joined, so a
+    view taken while paused straight after a join or deploy is black: resume first.
+    Use it to survey terrain, water, forests, structures and unexplored directions and
+    to plan routes; confirm block-level facts with mb_obs before acting on them.
+    """
+    view = kernel().call("map.view", **({"center": center} if center else {}), radius=radius, layer=layer)
+    png = view.pop("png")
+    return CallToolResult(content=[TextContent(type="text", text=json.dumps(view)), ImageContent(type="image", data=png, mimeType="image/png")])
 
 
 @tool(lane="control", coverage=["move"])

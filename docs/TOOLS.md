@@ -35,6 +35,7 @@ Conventions that hold across all tools:
 | `mb_time` | control | Server clock: `status`, `pause`, `resume`, `configure` guards, `report_failure`. |
 | `mb_memory` | action | Waypoints, corridor routes, protected regions, recording; `status`/`get` are reads. |
 | `mb_screenshot` | read | PNG of the client view, works while paused. |
+| `mb_map` | read | JourneyMap overhead picture of explored terrain: labelled x/z grid, player, death points, `mb_memory` waypoints; day, night, topo and cave layers. |
 
 Actions (`mb_act`) need running time, so resume first:
 

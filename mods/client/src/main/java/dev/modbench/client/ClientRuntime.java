@@ -240,6 +240,7 @@ public final class ClientRuntime extends BridgeRuntime {
             return Json.object("matches",matches,"scope",scope,"epoch",ui.view.epoch());
         });
         register("sys.screenshot", "Capture client framebuffer as base64 PNG", "read", r -> screenshot());
+        register("map.view", "JourneyMap overhead picture {center:[x,z]=player,radius:16..2048=128,layer:day|night|topo|cave|slice}: gridded PNG, bounds, mapped fraction, JourneyMap and memory waypoints", "read", r -> JourneyMapAccess.view(r.params));
         register("sys.connect", "Join a server {host,port}; completion means connection initiated", "interaction", r -> {
             if (mc.theWorld != null) throw new IllegalArgumentException("disconnect before connecting");
             // Two launchers once asked at the same moment; two concurrent FML handshakes both remap the registries and the join crashes.
