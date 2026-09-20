@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "mcp"))
 import importlib
 import mbtool
-from mbtools_gtnh.interrupts import InterruptSupervisor, race_interrupt, get_supervisor, close_supervisor
+from mbtools_gtnh.interrupts import InterruptSupervisor, race_interrupt, get_supervisor, close_supervisor, mb_wait
 
 class FakeKernel:
     def __init__(self): self.value=0; self.context={"worldId":"w","dimension":0,"bridgeId":"b","worldEpoch":1}; self.fires=[]; self.errors={}; self.methods={"obs.x":{"effect":"read","watchable":True}}
@@ -64,6 +64,9 @@ class InterruptTests(unittest.TestCase):
         end=time.monotonic()+.5
         while len(self.k.fires)<n and time.monotonic()<end: time.sleep(.005)
         self.assertEqual(n,len(self.k.fires))
+    def wait_kind(self,sup,kind):
+        end=time.monotonic()+2
+        while time.monotonic()<end and kind not in [e["kind"] for e in sup.events(0)["events"]]: time.sleep(.005)
     def test_combinations_edge_debounce_and_receipt(self):
         self.s.add("danger",{"queries":{"x":{"method":"obs.x"}},"condition":{"all":[{"gt":["x.n",2]},{"changed":"x.n"}]},"consecutive":2,"effects":["notify","cancel"]})
         for n in (1,3,4): self.k.value=n; self.s.poll()
@@ -181,7 +184,7 @@ class InterruptTests(unittest.TestCase):
             return old(method,**kw)
         self.k.call=flaky
         self.s.add("retry",{"queries":{"x":{"method":"obs.x"}},"condition":{"gte":["x.n",0]}}); self.s.poll(); self.wait_fires(1)
-        self.assertEqual(set(failures),{self.k.fires[0]["eventId"]})                 # retried with the same eventId
+        self.assertEqual(set(failures),{self.k.fires[0]["eventId"]}); self.wait_kind(self.s,"triggered")  # retried with the same eventId
         triggered=[e for e in self.s.events(0)["events"] if e["kind"]=="triggered"]
         self.assertEqual(3,triggered[0]["data"]["attempts"]); self.assertIsNone(self.s.status("retry")["pendingEvent"])
         self.assertFalse(self.s.status("retry")["armed"])
@@ -223,7 +226,7 @@ class InterruptTests(unittest.TestCase):
         try:
             sup=get_supervisor(self.tmp.name); self.assertIs(sup,get_supervisor(self.tmp.name))
             sup.add("kept",{"queries":{"x":{"method":"obs.x"}},"condition":{"gt":["x.n",5]},"oneShot":False})
-            sup.add("gone",{"queries":{"x":{"method":"obs.x"}},"condition":{"gte":["x.n",0]}}); sup.poll(); self.wait_fires(1)
+            sup.add("gone",{"queries":{"x":{"method":"obs.x"}},"condition":{"gte":["x.n",0]}}); sup.poll(); self.wait_fires(1); self.wait_kind(sup,"triggered")
             mbtool.install_package(); mbtool.evict_package(); reloaded=importlib.import_module("mbtools_gtnh.interrupts")
             fresh=reloaded.get_supervisor(self.tmp.name)
             self.assertIsNot(fresh,sup); self.assertTrue(sup._closed); self.assertIs(mbtool.state["interrupts"],fresh)
@@ -250,5 +253,45 @@ class InterruptTests(unittest.TestCase):
             self.s._event("triggered","wake")
             return await race_interrupt(self.s,task)
         self.assertTrue(asyncio.run(case())["interrupted"]); self.assertTrue(cancelled)
+
+    def test_watches_persist_across_supervisor_restart(self):
+        old=self.k.call; down=[True]
+        def dead(method,**kw):
+            if method=="interrupt.fire" and down[0]: raise TimeoutError("lost")
+            return old(method,**kw)
+        self.k.call=dead; q={"x":{"method":"obs.x"}}
+        self.s.add("kept",{"queries":q,"condition":{"gt":["x.n",5]},"oneShot":False})
+        self.s.add("gone",{"queries":q,"condition":{"gt":["x.n",5]}}); self.s.remove("gone")
+        self.s.add("bad",{"queries":q,"condition":{"changed":"x.absent"}})
+        self.s.add("undelivered",{"queries":q,"condition":{"gte":["x.n",0]}}); self.s.poll()
+        end=time.monotonic()+2
+        while self.s.status("undelivered")["pendingEvent"] is None and time.monotonic()<end: time.sleep(.005)
+        pending=self.s.status("undelivered")["pendingEvent"]; self.assertTrue(pending); self.assertFalse(self.s.status("bad")["armed"])
+        self.s.close(); self.s=InterruptSupervisor(self.k,self.tmp.name,retained=50,poll_s=10,fire_backoff_s=.001)
+        self.assertEqual([],self.s.list()); self.s.restore()  # only get_supervisor restores; the runner arms its own specs
+        self.assertEqual({"kept","undelivered"},{w["name"] for w in self.s.list() if w["armed"]}); self.assertEqual(2,len(self.s.list()))
+        self.assertEqual(pending,self.s.status("undelivered")["pendingEvent"])
+        down[0]=False; self.s.poll(); self.wait_fires(1); self.assertEqual(pending,self.k.fires[0]["eventId"])
+        self.wait_kind(self.s,"triggered"); self.s.close(); self.s=InterruptSupervisor(self.k,self.tmp.name,poll_s=10); self.s.restore()
+        self.assertEqual({"kept"},set(self.s.specs()))  # a delivered one-shot stays disarmed
+
+    def test_mb_wait_wakes_skips_noise_times_out_and_validates(self):
+        self.s.close(); self.k.close=lambda: None; self.k.connected=True
+        mbtool.drop_kernel(); mbtool.state["kernel"]=self.k
+        try:
+            sup=get_supervisor(self.tmp.name)
+            for bad in ({"after":-1},{"timeout_s":.5},{"timeout_s":901}):
+                with self.assertRaises(ValueError): mb_wait(**bad)
+            sup._event("armed","noise"); sup._event("transport",state="down")
+            got=mb_wait(0,1)
+            self.assertEqual((False,[],False,sup.events(0)["cursor"]),(got["woke"],got["events"],got["gap"],got["cursor"])); self.assertGreater(got["cursor"],0)
+            timer=threading.Timer(.3,lambda: (sup._event("disarmed","noise",reason="oneShot"),sup._event("triggered","w",eventId="e1",payload={"modelPrompt":"look"})))
+            start=time.monotonic(); timer.start(); woke=mb_wait(got["cursor"],60); timer.join()
+            self.assertTrue(woke["woke"]); self.assertLess(time.monotonic()-start,30)
+            self.assertEqual(["triggered"],[e["kind"] for e in woke["events"]]); self.assertEqual("look",woke["events"][0]["data"]["payload"]["modelPrompt"])
+            self.assertEqual(got["cursor"]+2,woke["cursor"])
+        finally:
+            close_supervisor(); mbtool.state.pop("kernel",None)
+        self.s=InterruptSupervisor(self.k,self.tmp.name,retained=3,poll_s=10)
 
 if __name__ == "__main__": unittest.main()

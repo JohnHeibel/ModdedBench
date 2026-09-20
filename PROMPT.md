@@ -28,7 +28,8 @@ do optional ones when they are cheap or unblock something.
 run out of ideas, that is a signal to observe more, read the quest text again,
 consult recipes, check your notes, or improve a tool, not a signal to end the
 session. The only legitimate ways this session ends are: the target quest is
-claimed and verified, or the operator interrupts you. If the game or bridge
+claimed and verified, or the operator interrupts you. Print `MISSION COMPLETE`
+on its own line only when the target quest is claimed and verified. If the game or bridge
 goes away, wait, reconnect, and continue from your journal.
 
 ## 2. What you are working with
@@ -68,6 +69,8 @@ Key facts about the runtime:
   (declarative conditions or a small Python `evaluate(context)` file) with
   effects `notify`, `cancel`, `pause`. A fired watch can carry a prompt that
   tells you why you were woken. Re-arm one-shot watches after handling them.
+  Nothing can wake a turn that has ended: when you are only waiting, call
+  `mb_wait` and keep its cursor instead of ending your turn.
 - **World notes surface on their own.** Notes attached to blocks, entities,
   locations or regions are returned under a `notes` key when you arrive
   somewhere, look at something noted, enter a noted region, or start a session.
@@ -175,7 +178,9 @@ are gated by machines; the plan is mostly a build order.
 **Waiting.** Machines and furnaces take time. Arm a watch on the output count,
 the quest progress, or a stall condition, with a deadline, and let it wake you.
 While waiting, do something else useful: gather the next quest's inputs, sort
-storage, write notes, improve a tool that misbehaved.
+storage, write notes, improve a tool that misbehaved. When nothing useful is
+left, call `mb_wait` instead of ending your turn; when it wakes you, read the
+event's prompt, observe, then `mb_interrupt("ack", event_id=...)` if it latched.
 
 **Danger.** When a guard pauses the game or a survival watch fires: observe,
 decide, act with the minimum override (temporarily disable only the guard that

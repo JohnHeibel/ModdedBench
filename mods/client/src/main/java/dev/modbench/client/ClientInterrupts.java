@@ -37,7 +37,19 @@ final class ClientInterrupts {
         if(m.startsWith("act.")&&!m.equals("act.status") || m.equals("time.resume") || m.equals("nei.view") || m.equals("nei.inspect") ||
             m.startsWith("gui.")&&!Set.of("gui.status","gui.hit_test").contains(m) ||
             m.startsWith("quest.")||m.startsWith("nav."))
-            throw new IllegalArgumentException("interrupt_latched: acknowledge "+latched+" before starting another action");
+            throw new IllegalArgumentException(refusal(latched,receipts));
+    }
+    /** Names each latched event's reason and model prompt, so the refused caller knows what to inspect before acknowledging. */
+    static String refusal(Set<String> latched,Map<String,JsonObject> receipts) {
+        StringBuilder out=new StringBuilder("interrupt_latched: acknowledge "+latched+" before starting another action");int shown=0;
+        for(String id:latched) {
+            if(shown++==8) {out.append("; ...");break;}
+            JsonObject receipt=receipts.get(id);JsonElement payload=receipt.get("payload");
+            JsonElement prompt=payload!=null&&payload.isJsonObject()?payload.getAsJsonObject().get("modelPrompt"):null;
+            out.append("; ").append(id).append(": ").append(receipt.get("reason").getAsString());
+            if(prompt!=null&&prompt.isJsonPrimitive()) {String text=prompt.getAsString();out.append(" | ").append(text.length()>240?text.substring(0,240)+"...":text);}
+        }
+        return out.toString();
     }
     Object ack(Request r) {
         String id=Json.string(r.params,"eventId","");

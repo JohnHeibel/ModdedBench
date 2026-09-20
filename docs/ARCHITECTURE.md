@@ -138,16 +138,20 @@ A watch is a declarative condition or a small Python file with
 `interrupt.fire` with native effects (`notify`, `cancel`, `pause`) and an
 optional prompt for the model, retries with the same event id if the fire is
 not confirmed, and re-arms the watch rather than dropping it. Watch specs
-survive reconnects. `mb_interrupt_events` is how a host (or the autonomous
-runner, [RUNNER.md](RUNNER.md)) learns it should give the model a new turn. A
-plain MCP connection cannot wake its host's model: without a consumer the
-event is kept and the native effects still happen, but no turn is promised.
+survive reconnects and, persisted in the journal's SQLite file, an MCP server
+restart. `mb_interrupt_events` is how a host (or the autonomous runner,
+[RUNNER.md](RUNNER.md)) learns it should give the model a new turn. A plain
+MCP connection cannot wake a model whose turn has ended, so a chat-style agent
+stays in its turn by blocking in `mb_wait`, which returns when an event needs
+it; an ended turn is restarted by an outer loop such as
+`harness/runner/codex_loop.py`. Without either, the event is kept and the
+native effects still happen.
 
 Every fire carries the expected bridge id, world id, dimension and world
 epoch, so a stale reaction fails before any effect, and event ids deduplicate
 retries within one client JVM. `cancel` and `pause` set an admission latch:
 interactions are refused until `interrupt.ack(eventId)`, so an obsolete model
-reply cannot act.
+reply cannot act. The refusal names each latched event's reason and prompt.
 
 ### World notes
 
