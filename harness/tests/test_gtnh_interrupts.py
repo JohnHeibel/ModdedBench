@@ -240,7 +240,7 @@ class InterruptTests(unittest.TestCase):
             if method=="interrupt.fire": entered.set(); release.wait(1)
             return old(method,**kw)
         self.k.call=slow_fire; self.s.add("send",{"queries":{"x":{"method":"obs.x"}},"condition":{"gte":["x.n",0]}}); self.s.poll(); entered.wait(1)
-        start=time.monotonic(); self.s.remove("send"); self.assertLess(time.monotonic()-start,.05); release.set()
+        start=time.monotonic(); self.s.remove("send"); self.assertLess(time.monotonic()-start,.5); release.set()  # the fire is held for 1 s; a journal write alone can take 100 ms
         cancelled=[]
         async def case():
             async def blocked():
