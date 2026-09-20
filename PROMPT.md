@@ -145,6 +145,16 @@ that keep the harness healthy:
   sides), `start-server`. Wait for the bridge (`mb_status`), then
   continue. Do not edit files under `mods/*/src/upstream` (pinned upstream
   Baritone) unless there is no alternative, and say so in the commit.
+- **Contained runs** (`MODBENCH_OUTBOX` is set): you cannot reach the game
+  install. Build with `./gradlew build --offline`, commit, then
+  `python harness/launcher/deploy.py request client baritone core --reason "..."`
+  (any subset). A supervisor outside your container installs those three jars
+  on the client only, restarts it, rolls back if it does not join, and answers
+  with the outcome. Nothing else is deployable: no new jars, no other mod, and
+  not the server, which runs pinned code for the whole run. Edits to
+  `mods/server` have no effect, and a `mods/core` change must stay compatible
+  with the pinned core on the server. Every deploy is archived with its source
+  patch for review.
 
 ## 4. How to work
 
@@ -201,6 +211,10 @@ depend on it, and come back. A blocked quest is never a reason to end.
 - Survival only. No `/give`, no creative mode, no development fixtures, no
   direct NBT edits, no forced quest completion, no editing the world save.
   Quest actions send only the normal Better Questing packets.
+- No exploits. Never duplicate items, fluids or energy, and never use a client
+  change to do what a player could not (flight, reach, seeing through blocks,
+  forged packets). If you find a duplication bug by accident, stop, destroy
+  the surplus, write a note and report it. A run that used one is void.
 - Do not spend real hours in a loop that produces nothing. Every ten actions,
   ask whether the last ten moved the current quest forward. If not, change
   approach or improve the tool.
