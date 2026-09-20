@@ -2,7 +2,8 @@
 // Copyright (c) 2026 Modbench contributors
 package baritone.gtnh;
 
-import baritone.gtnh.pathing.BlockPos;
+import baritone.compat.Registry;
+import baritone.compat.BlockPos;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
@@ -17,7 +18,7 @@ final class PlanImport {
     static final int LIMIT=1048576;
     private PlanImport(){}
     private static BlockPos origin(Map<String,Object> params){return params.containsKey("origin")?pos(params.get("origin")):new BlockPos(0,0,0);}
-    private static List<Integer> at(BlockPos origin,int x,int y,int z){return List.of(origin.x()+x,origin.y()+y,origin.z()+z);}
+    private static List<Integer> at(BlockPos origin,int x,int y,int z){return List.of(origin.getX()+x,origin.getY()+y,origin.getZ()+z);}
     private static Map<String,Object> result(List<Map<String,Object>> cells,int w,int h,int l,int air,int unknown){
         Map<String,Object> plan=new LinkedHashMap<>();plan.put("cells",cells);plan.put("origin",List.of(0,0,0));plan.put("size",List.of(w,h,l));
         Map<String,Object> out=new LinkedHashMap<>();out.put("plan",plan);out.put("size",List.of(w,h,l));out.put("count",cells.size());
@@ -39,8 +40,8 @@ final class PlanImport {
                 Map<String,Object> cell=new LinkedHashMap<>(object(entry));BlockPos local=pos(cell.get("pos"));
                 boolean clear=bool(cell,"clear",false);
                 if(!clear&&string(cell,"id","").equals("minecraft:air")){if(!includeAir){air++;continue;}cell.remove("id");cell.remove("meta");cell.put("clear",true);}
-                for(int i=0;i<3;i++){int v=List.of(local.x(),local.y(),local.z()).get(i);min[i]=Math.min(min[i],v);max[i]=Math.max(max[i],v);}
-                cell.put("pos",at(origin,base.x()+local.x(),base.y()+local.y(),base.z()+local.z()));cells.add(cell);
+                for(int i=0;i<3;i++){int v=List.of(local.getX(),local.getY(),local.getZ()).get(i);min[i]=Math.min(min[i],v);max[i]=Math.max(max[i],v);}
+                cell.put("pos",at(origin,base.getX()+local.getX(),base.getY()+local.getY(),base.getZ()+local.getZ()));cells.add(cell);
             }
             boolean any=!cells.isEmpty();
             return result(cells,any?max[0]-min[0]+1:0,any?max[1]-min[1]+1:0,any?max[2]-min[2]+1:0,air,0);
@@ -57,7 +58,7 @@ final class PlanImport {
             Block block=Block.getBlockById(id);
             if(id==0){if(!includeAir){air++;continue;}cells.add(new LinkedHashMap<>(Map.of("pos",at(origin,x,y,z),"clear",true)));continue;}
             if(block==null||Block.getIdFromBlock(block)!=id){unknown++;continue;}
-            Map<String,Object> cell=new LinkedHashMap<>();cell.put("pos",at(origin,x,y,z));cell.put("id",Block.blockRegistry.getNameForObject(block));cell.put("meta",data[i]&15);cells.add(cell);
+            Map<String,Object> cell=new LinkedHashMap<>();cell.put("pos",at(origin,x,y,z));cell.put("id",Registry.name(block));cell.put("meta",data[i]&15);cells.add(cell);
         }
         Map<String,Object> out=result(cells,w,h,l,air,unknown);out.put("tileEntities",tag.getTagList("TileEntities",10).tagCount());return out;
     }
@@ -67,15 +68,15 @@ final class PlanImport {
         BlockPos origin=origin(params);boolean includeAir=bool(params,"includeAir",false);
         List<Map<String,Object>> cells=new ArrayList<>();int air=0,unknown=0,unloaded=0,tiles=0;
         for(long i=0;i<bounds.volume();i++){
-            BlockPos p=bounds.at(i);int x=p.x()-bounds.min().x(),y=p.y()-bounds.min().y(),z=p.z()-bounds.min().z();
-            if(!ForgeSnapshot.loaded(world,p.x(),p.y(),p.z())){unloaded++;continue;}
-            if(world.isAirBlock(p.x(),p.y(),p.z())){if(!includeAir){air++;continue;}cells.add(new LinkedHashMap<>(Map.of("pos",at(origin,x,y,z),"clear",true)));continue;}
-            Block block=world.getBlock(p.x(),p.y(),p.z());String id=Block.blockRegistry.getNameForObject(block);
+            BlockPos p=bounds.at(i);int x=p.getX()-bounds.min().getX(),y=p.getY()-bounds.min().getY(),z=p.getZ()-bounds.min().getZ();
+            if(!ForgeSnapshot.loaded(world,p.getX(),p.getY(),p.getZ())){unloaded++;continue;}
+            if(world.isAirBlock(p.getX(),p.getY(),p.getZ())){if(!includeAir){air++;continue;}cells.add(new LinkedHashMap<>(Map.of("pos",at(origin,x,y,z),"clear",true)));continue;}
+            Block block=world.getBlock(p.getX(),p.getY(),p.getZ());String id=Registry.name(block);
             if(id==null){unknown++;continue;}
-            if(world.getTileEntity(p.x(),p.y(),p.z())!=null)tiles++;
-            Map<String,Object> cell=new LinkedHashMap<>();cell.put("pos",at(origin,x,y,z));cell.put("id",id);cell.put("meta",world.getBlockMetadata(p.x(),p.y(),p.z()));cells.add(cell);
+            if(world.getTileEntity(p.getX(),p.getY(),p.getZ())!=null)tiles++;
+            Map<String,Object> cell=new LinkedHashMap<>();cell.put("pos",at(origin,x,y,z));cell.put("id",id);cell.put("meta",world.getBlockMetadata(p.getX(),p.getY(),p.getZ()));cells.add(cell);
         }
-        Map<String,Object> out=result(cells,bounds.max().x()-bounds.min().x()+1,bounds.max().y()-bounds.min().y()+1,bounds.max().z()-bounds.min().z()+1,air,unknown);
+        Map<String,Object> out=result(cells,bounds.max().getX()-bounds.min().getX()+1,bounds.max().getY()-bounds.min().getY()+1,bounds.max().getZ()-bounds.min().getZ()+1,air,unknown);
         ((Map<String,Object>)out.get("skipped")).put("unloaded",unloaded);out.put("tileEntities",tiles);return out;
     }
 }

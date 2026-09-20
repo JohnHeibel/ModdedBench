@@ -3,7 +3,7 @@
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh;
 
-import baritone.gtnh.pathing.BlockPos;
+import baritone.compat.BlockPos;
 import baritone.gtnh.pathing.TerrainGrid;
 import baritone.gtnh.pathing.CollisionBox;
 import baritone.gtnh.pathing.LadderFacing;
@@ -52,8 +52,8 @@ final class ForgeSnapshot {
     }
     private TerrainGrid finish() { return new TerrainGrid(minX,minY,minZ,width,height,depth,cells,flows,shapes,ladders); }
     static TerrainGrid local(World world,BlockPos a,BlockPos b) {
-        int x=Math.min(a.x(),b.x())-1,z=Math.min(a.z(),b.z())-1,y=Math.max(0,Math.min(a.y(),b.y())-2);
-        ForgeSnapshot snapshot=new ForgeSnapshot(world,x,y,z,Math.abs(a.x()-b.x())+3,Math.min(256,Math.max(a.y(),b.y())+5)-y,Math.abs(a.z()-b.z())+3);
+        int x=Math.min(a.getX(),b.getX())-1,z=Math.min(a.getZ(),b.getZ())-1,y=Math.max(0,Math.min(a.getY(),b.getY())-2);
+        ForgeSnapshot snapshot=new ForgeSnapshot(world,x,y,z,Math.abs(a.getX()-b.getX())+3,Math.min(256,Math.max(a.getY(),b.getY())+5)-y,Math.abs(a.getZ()-b.getZ())+3);
         while(!snapshot.captureSlice()) { /* Small, bounded main-thread corridor capture. */ }
         return snapshot.finish();
     }
@@ -97,12 +97,12 @@ final class ForgeSnapshot {
         return new Cell(TerrainGrid.PARTIAL,copied,LadderFacing.NONE);
     }
     static boolean liveStandable(World world,BlockPos p) {
-        return classify(world,p.x(),p.y(),p.z())==TerrainGrid.CLEAR
-            && classify(world,p.x(),p.y()+1,p.z())==TerrainGrid.CLEAR
-            && classify(world,p.x(),p.y()-1,p.z())==TerrainGrid.SUPPORT
-            && liveClear(world,p.x()+.5,p.y(),p.z()+.5,p.y()+1.8);
+        return classify(world,p.getX(),p.getY(),p.getZ())==TerrainGrid.CLEAR
+            && classify(world,p.getX(),p.getY()+1,p.getZ())==TerrainGrid.CLEAR
+            && classify(world,p.getX(),p.getY()-1,p.getZ())==TerrainGrid.SUPPORT
+            && liveClear(world,p.getX()+.5,p.getY(),p.getZ()+.5,p.getY()+1.8);
     }
-    static boolean water(World world,BlockPos p) {return classify(world,p.x(),p.y(),p.z())==TerrainGrid.WATER;}
+    static boolean water(World world,BlockPos p) {return classify(world,p.getX(),p.getY(),p.getZ())==TerrainGrid.WATER;}
 
     /** Check the swept body volume, including liquids whose collision box is empty. */
     static boolean safeBody(World world,double x,double y,double z,boolean allowWater) {

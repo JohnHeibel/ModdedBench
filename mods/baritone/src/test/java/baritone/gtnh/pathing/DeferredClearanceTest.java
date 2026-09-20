@@ -3,6 +3,7 @@
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh.pathing;
 
+import baritone.compat.BlockPos;
 import org.junit.Test;
 import java.util.*;
 import static org.junit.Assert.*;
@@ -27,7 +28,7 @@ public class DeferredClearanceTest {
     }
     @Test public void resumeDoesNotRequireAnExitAfterSupportsWereAlreadyRemoved(){
         var supports=Set.of(new BlockPos(1,64,1),new BlockPos(1,65,1));
-        assertTrue(DeferredClearance.needsEgress(supports,p->p.y()==64));
+        assertTrue(DeferredClearance.needsEgress(supports,p->p.getY()==64));
         assertFalse(DeferredClearance.needsEgress(supports,p->true));
         assertFalse(DeferredClearance.needsEgress(Set.of(),p->false));
     }

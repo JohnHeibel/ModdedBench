@@ -28,7 +28,7 @@ public final class IBlockState {
     public net.minecraft.item.ItemStack placementItem(){return placementItem==null?null:placementItem.copy();}
     @Override public boolean equals(Object other){return other instanceof IBlockState state&&block==state.block&&meta==state.meta;}
     @Override public int hashCode(){return 31*System.identityHashCode(block)+meta;}
-    @Override public String toString(){return Block.blockRegistry.getNameForObject(block)+":"+meta;}
+    @Override public String toString(){return Registry.name(block)+":"+meta;}
     public <T> T getValue(LegacyProperties.Property<T> p){return p.read().apply(this);}
     public boolean getValue(LegacyProperties.PropertyBool p){return p.read().apply(this);}
     int effectiveDoorMeta(){return block instanceof BlockDoor&&(meta&8)!=0&&access!=null?access.getBlockMetadata(x,y-1,z):meta;}

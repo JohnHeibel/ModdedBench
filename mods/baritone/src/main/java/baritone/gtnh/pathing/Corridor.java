@@ -3,6 +3,7 @@
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh.pathing;
 
+import baritone.compat.BlockPos;
 /** A saved route leg constrains newly calculated paths, never blindly replays old controls. */
 public final class Corridor {
     private final BlockPos start,end;
@@ -13,8 +14,8 @@ public final class Corridor {
     }
     /** Capsule around the segment, so elevation and both end caps count. */
     public boolean contains(BlockPos pos) {
-        double dx=(double)end.x()-start.x(),dy=(double)end.y()-start.y(),dz=(double)end.z()-start.z();
-        double px=(double)pos.x()-start.x(),py=(double)pos.y()-start.y(),pz=(double)pos.z()-start.z();
+        double dx=(double)end.getX()-start.getX(),dy=(double)end.getY()-start.getY(),dz=(double)end.getZ()-start.getZ();
+        double px=(double)pos.getX()-start.getX(),py=(double)pos.getY()-start.getY(),pz=(double)pos.getZ()-start.getZ();
         double length=dx*dx+dy*dy+dz*dz;
         double t=length==0?0:Math.max(0,Math.min(1,(px*dx+py*dy+pz*dz)/length));
         double x=px-t*dx,y=py-t*dy,z=pz-t*dz;

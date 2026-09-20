@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Modbench contributors
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh;
+import baritone.compat.Registry;
 import baritone.Baritone;
 import baritone.api.utils.BlockUtils;
 import baritone.compat.BlockPos;
@@ -27,9 +28,9 @@ final class ReferenceCache {
         }
         if(operation.equals("status"))return Map.of("scope",scope,"directory",data.directory.toString(),"cache",data.cache.diagnostics(),"schema","gtnh-v1-registry-metadata","terrain","source two-bit approximation; loaded world always takes precedence");
         if(operation.equals("block")){
-            var p=pos(params.get("pos"));var region=data.cache.getRegion(p.x()>>9,p.z()>>9);var state=region==null?null:region.getBlock(p.x()&511,p.y(),p.z()&511);
+            var p=pos(params.get("pos"));var region=data.cache.getRegion(p.getX()>>9,p.getZ()>>9);var state=region==null?null:region.getBlock(p.getX()&511,p.getY(),p.getZ()&511);
             var out=new LinkedHashMap<String,Object>();out.put("cached",state!=null);out.put("approximate",true);
-            if(state!=null){out.put("id",net.minecraft.block.Block.blockRegistry.getNameForObject(state.getBlock()));out.put("meta",state.meta);}return out;
+            if(state!=null){out.put("id",Registry.name(state.getBlock()));out.put("meta",state.meta);}return out;
         }
         if(operation.equals("repack"))return Map.of("capturedChunks",baritone.cache.WorldScanner.INSTANCE.repack(engine.getPlayerContext(),integer(params,"range",2,0,16)),"cache",data.cache.diagnostics());
         if(!Set.of("save","reload","locations").contains(operation))throw new IllegalArgumentException("cache operation must be status, block, repack, save, reload, locations or result");

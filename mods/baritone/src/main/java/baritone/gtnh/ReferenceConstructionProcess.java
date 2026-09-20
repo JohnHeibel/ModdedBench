@@ -3,11 +3,13 @@
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh;
 
+import baritone.compat.Registry;
 import baritone.Baritone;
 import baritone.api.Settings;
 import baritone.api.schematic.ISchematic;
 import baritone.compat.IBlockState;
 import baritone.compat.StackIdentity;
+import baritone.compat.BlockPos;
 import baritone.gtnh.pathing.*;
 import static baritone.gtnh.pathing.WorkSpec.*;
 import java.util.*;
@@ -65,9 +67,9 @@ final class ReferenceConstructionProcess extends BulkJob {
             deferredAir=Set.copyOf(restored);cleanupPhase=bool(journal.progress,"cleanupPhase",false);
             clearanceEgress=bool(journal.progress,"clearanceEgress",false);
         }else{
-            deferredAir=DeferredClearance.capture(plan.cells,allowPlace,p->plan.loaded(p)&&world.isAirBlock(p.x(),p.y(),p.z()));
+            deferredAir=DeferredClearance.capture(plan.cells,allowPlace,p->plan.loaded(p)&&world.isAirBlock(p.getX(),p.getY(),p.getZ()));
             cleanupPhase=false;clearanceEgress=false;egressGoal=null;journal.progress.put("clearanceRepeat",repeat);
-            journal.progress.put("deferredAir",deferredAir.stream().map(p->List.of(p.x(),p.y(),p.z())).toList());
+            journal.progress.put("deferredAir",deferredAir.stream().map(p->List.of(p.getX(),p.getY(),p.getZ())).toList());
             journal.progress.put("cleanupPhase",false);
             journal.progress.put("clearanceEgress",false);
         }
@@ -104,7 +106,7 @@ final class ReferenceConstructionProcess extends BulkJob {
         engine.getInventoryBehavior().throwawayFilter=stack->plan.throwaways.isEmpty()||plan.throwaways.stream().anyMatch(selector->WorkAccess.item(stack,selector));
     }
     private static List<net.minecraft.block.Block> blocks(List<String> ids){
-        return ids.stream().map(id->{if(!net.minecraft.block.Block.blockRegistry.containsKey(id))throw new IllegalArgumentException("unknown block: "+id);return (net.minecraft.block.Block)net.minecraft.block.Block.blockRegistry.getObject(id);}).toList();
+        return ids.stream().map(Registry::block).toList();
     }
     private void capture(){
         BlockPos currentFeet=WorkAccess.feet();
@@ -118,7 +120,7 @@ final class ReferenceConstructionProcess extends BulkJob {
         for(Cell source:plan.cells){
             Cell cell=plan.desired(source);BlockPos p=cell.pos();cells.put(p,cell);
             var block=cell.clear()?net.minecraft.init.Blocks.air:ConstructionPlan.block(cell);
-            states.put(p,new IBlockState(block,cell.meta(),null,p.x(),p.y(),p.z()));
+            states.put(p,new IBlockState(block,cell.meta(),null,p.getX(),p.getY(),p.getZ()));
             masks.put(block,plan.settings.metadataMask(cell.id()));
             if(!cell.clear()){
                 var selector=Map.copyOf(ConstructionPlan.material(cell));selectors.put(p,selector);
@@ -130,9 +132,9 @@ final class ReferenceConstructionProcess extends BulkJob {
             }
             if(plan.loaded(p)){
                 boolean now=plan.correct(source);matches.put(p,now);
-                IBlockState.StateKey state=new IBlockState.StateKey(world.getBlock(p.x(),p.y(),p.z()),world.getBlockMetadata(p.x(),p.y(),p.z()));
+                IBlockState.StateKey state=new IBlockState.StateKey(world.getBlock(p.getX(),p.getY(),p.getZ()),world.getBlockMetadata(p.getX(),p.getY(),p.getZ()));
                 var previous=previousObserved.put(p,state);
-                if(!now&&!state.block().isAir(world,p.x(),p.y(),p.z())&&!plan.repairPlaced()&&attempts.containsKey(ConstructionPlan.key(cell)))pending.add(p);
+                if(!now&&!state.block().isAir(world,p.getX(),p.getY(),p.getZ())&&!plan.repairPlaced()&&attempts.containsKey(ConstructionPlan.key(cell)))pending.add(p);
                 if(now&&pending.remove(p)){if(cell.clear())removedObserved.add(p);else placedObserved.add(p);}
                 // Explicit-air cells may start empty, receive an autonomous
                 // scaffold, then be cleared again. Count that observed removal
@@ -202,7 +204,7 @@ final class ReferenceConstructionProcess extends BulkJob {
             int slot=plan.slot(cell);if(slot<0||!mc.thePlayer.onGround)return goal;
             Set<baritone.compat.BlockPos> legal=new HashSet<>(),adjacent=new HashSet<>();
             for(var pose:WorkAccess.buildingApproaches(world,cell.pos())){
-                var sourceFeet=baritone.compat.NavigationCoordinates.feet(pose.feet().x()+.5,pose.standingY(),pose.feet().z()+.5,
+                var sourceFeet=baritone.compat.NavigationCoordinates.feet(pose.feet().getX()+.5,pose.standingY(),pose.feet().getZ()+.5,
                     p->world.getBlock(p.getX(),p.getY(),p.getZ()) instanceof net.minecraft.block.BlockSlab);
                 if(!sourcePlacementHeight(cell,sourceFeet))continue;
                 // PathExecutor reaches a block goal before necessarily reaching
@@ -210,9 +212,9 @@ final class ReferenceConstructionProcess extends BulkJob {
                 // otherwise a boundary-overlapping player can be declared ready
                 // to place its neighbor forever, while native collision rejects it.
                 boolean here=pose.feet().equals(currentFeet);
-                double x=here?mc.thePlayer.posX:pose.feet().x()+.5;
+                double x=here?mc.thePlayer.posX:pose.feet().getX()+.5;
                 double y=here?mc.thePlayer.boundingBox.minY:pose.standingY();
-                double z=here?mc.thePlayer.posZ:pose.feet().z()+.5;
+                double z=here?mc.thePlayer.posZ:pose.feet().getZ()+.5;
                 if(engine.getBuilderProcess().canPlaceFrom(schematicStates.get(cell.pos()),x,y,z,slot)){
                     legal.add(sourceFeet);if(goal.isInGoal(sourceFeet))adjacent.add(sourceFeet);
                 }
@@ -237,12 +239,12 @@ final class ReferenceConstructionProcess extends BulkJob {
             return cleanupGoals.computeIfAbsent(p,key->{
                 List<baritone.api.pathing.goals.Goal> goals=new ArrayList<>();goals.add(goal);
                 for(var pose:WorkAccess.buildingApproaches(world,p)){
-                    var feet=pose.feet();int dy=p.y()-feet.y();
+                    var feet=pose.feet();int dy=p.getY()-feet.getY();
                     // Match source toBreakNearPlayer's actionable height range.
                     if(dy<0||dy>5||feet.equals(p)||!ForgeSnapshot.liveStandable(world,feet))continue;
                     var eye=feet.equals(currentFeet)?mc.thePlayer.getPosition(1):WorkAccess.eyeAt(pose);
                     if(MiningJob.reachable(mc,world,p,eye)!=null)
-                        goals.add(new baritone.api.pathing.goals.GoalBlock(new baritone.compat.BlockPos(feet.x(),feet.y(),feet.z())));
+                        goals.add(new baritone.api.pathing.goals.GoalBlock(feet));
                 }
                 return new baritone.api.pathing.goals.GoalComposite(goals.toArray(baritone.api.pathing.goals.Goal[]::new));
             });
@@ -256,8 +258,8 @@ final class ReferenceConstructionProcess extends BulkJob {
             for(BlockPos p:deferredAir)if(!correct.getOrDefault(p,false))
                 for(var pose:WorkAccess.buildingApproaches(world,p)){
                     var feet=pose.feet();
-                    if(feet.y()>p.y()||deferredAir.contains(new BlockPos(feet.x(),feet.y()-1,feet.z()))||!ForgeSnapshot.liveStandable(world,feet))continue;
-                    if(MiningJob.reachable(mc,world,p,WorkAccess.eyeAt(pose))!=null)safe.add(new baritone.compat.BlockPos(feet.x(),feet.y(),feet.z()));
+                    if(feet.getY()>p.getY()||deferredAir.contains(new BlockPos(feet.getX(),feet.getY()-1,feet.getZ()))||!ForgeSnapshot.liveStandable(world,feet))continue;
+                    if(MiningJob.reachable(mc,world,p,WorkAccess.eyeAt(pose))!=null)safe.add(feet);
                 }
             if(safe.isEmpty())throw new IllegalStateException("no_observed_clearance_egress_pose");
             egressGoal=new baritone.api.pathing.goals.GoalComposite(safe.stream().map(baritone.api.pathing.goals.GoalBlock::new).toArray(baritone.api.pathing.goals.Goal[]::new));
@@ -266,7 +268,7 @@ final class ReferenceConstructionProcess extends BulkJob {
         // Immutable explicit permissions match exact observed states inside the plan only.
         Map<BlockPos,IBlockState.StateKey> breaks=new HashMap<>();
         for(Cell cell:desired.values())if((replace||cell.clear())&&!correct.getOrDefault(cell.pos(),false)&&plan.loaded(cell.pos())&&!pending.contains(cell.pos())){
-            BlockPos p=cell.pos();breaks.put(p,new IBlockState.StateKey(world.getBlock(p.x(),p.y(),p.z()),world.getBlockMetadata(p.x(),p.y(),p.z())));
+            BlockPos p=cell.pos();breaks.put(p,new IBlockState.StateKey(world.getBlock(p.getX(),p.getY(),p.getZ()),world.getBlockMetadata(p.getX(),p.getY(),p.getZ())));
         }
         Map<BlockPos,IBlockState.StateKey> breakSnapshot=Map.copyOf(breaks);
         engine.explicitMiningTargets=()->state->state.key().equals(breakSnapshot.get(new BlockPos(state.x,state.y,state.z)));
@@ -302,16 +304,16 @@ final class ReferenceConstructionProcess extends BulkJob {
         // A goal must be actionable by searchForPlaceables, not merely within
         // native click reach. Its upward-placement restriction deliberately
         // leaves unsupported vertical construction to MovementPillar.
-        int dy=cell.pos().y()-sourceFeet.getY();
-        return dy>=-5&&dy<=1&&(dy!=1||world.getBlock(cell.pos().x(),cell.pos().y()+1,cell.pos().z())!=net.minecraft.init.Blocks.air);
+        int dy=cell.pos().getY()-sourceFeet.getY();
+        return dy>=-5&&dy<=1&&(dy!=1||world.getBlock(cell.pos().getX(),cell.pos().getY()+1,cell.pos().getZ())!=net.minecraft.init.Blocks.air);
     }
     private void startPass(){
         passStarts++;
         if(plan.cells.isEmpty()){finish("succeeded","empty_selected_schematic");return;}
-        int minX=plan.cells.stream().mapToInt(c->c.pos().x()).min().orElseThrow(),minY=Math.min(plan.minY,plan.cells.stream().mapToInt(c->c.pos().y()).min().orElseThrow()),minZ=plan.cells.stream().mapToInt(c->c.pos().z()).min().orElseThrow();
+        int minX=plan.cells.stream().mapToInt(c->c.pos().getX()).min().orElseThrow(),minY=Math.min(plan.minY,plan.cells.stream().mapToInt(c->c.pos().getY()).min().orElseThrow()),minZ=plan.cells.stream().mapToInt(c->c.pos().getZ()).min().orElseThrow();
         // Canonical cells may have offsets outside the size used for repeat
         // orientation. The source schematic must include every selected cell.
-        int width=plan.cells.stream().mapToInt(c->c.pos().x()).max().orElseThrow()-minX+1,height=Math.max(plan.maxY,plan.cells.stream().mapToInt(c->c.pos().y()).max().orElseThrow())-minY+1,length=plan.cells.stream().mapToInt(c->c.pos().z()).max().orElseThrow()-minZ+1;
+        int width=plan.cells.stream().mapToInt(c->c.pos().getX()).max().orElseThrow()-minX+1,height=Math.max(plan.maxY,plan.cells.stream().mapToInt(c->c.pos().getY()).max().orElseThrow())-minY+1,length=plan.cells.stream().mapToInt(c->c.pos().getZ()).max().orElseThrow()-minZ+1;
         Map<BlockPos,IBlockState> frozen=DeferredClearance.schematic(schematicStates,deferredAir,cleanupPhase);
         passCells=desired;
         ISchematic schematic=new ISchematic(){

@@ -21,7 +21,7 @@ public final class LegacyPlacement {
         if(stack==null||stack.stackSize<=0||!(stack.getItem() instanceof ItemBlock))return IBlockState.of(Blocks.AIR,0);
         Block block=Block.getBlockFromItem(stack.getItem());
         int meta=block.onBlockPlaced(ctx.world().nativeWorld,target.getX(),target.getY(),target.getZ(),face.ordinal(),hitX,hitY,hitZ,ControlRegistry.placement().initialMetadata(stack));
-        meta=PlacementStateAdapters.predict(block,ctx.world().nativeWorld,new baritone.gtnh.pathing.BlockPos(target.getX(),target.getY(),target.getZ()),meta,yaw,eye);
+        meta=PlacementStateAdapters.predict(block,ctx.world().nativeWorld,new baritone.compat.BlockPos(target.getX(),target.getY(),target.getZ()),meta,yaw,eye);
         return new IBlockState(block,meta,ctx.world().nativeWorld,target.getX(),target.getY(),target.getZ()).withPlacementItem(stack);
     }
     public static IBlockState predict(IPlayerContext ctx,ItemStack stack,RayTraceResult hit,Rotation rotation){

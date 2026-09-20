@@ -3,7 +3,9 @@
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh;
 
+import baritone.compat.Registry;
 import dev.modbench.api.ControlRegistry;
+import baritone.compat.BlockPos;
 import baritone.gtnh.pathing.*;
 import dev.modbench.api.WorldMemory;
 import dev.modbench.api.InputArbiter;
@@ -120,7 +122,7 @@ public final class BaritoneNavigation implements Navigation {
     @Override public Map<String,Object> buildMaterials() {
         WorkAccess.player();List<Map<String,Object>> stacks=new ArrayList<>();
         for(int i=0;i<36;i++){var stack=mc.thePlayer.inventory.mainInventory[i];if(stack==null||!(stack.getItem() instanceof net.minecraft.item.ItemBlock))continue;
-            var row=new LinkedHashMap<>(InventorySelection.describe(stack));row.put("slot",i);row.put("hotbar",i<9);row.put("blockId",net.minecraft.block.Block.blockRegistry.getNameForObject(net.minecraft.block.Block.getBlockFromItem(stack.getItem())));row.put("initialItemMeta",stack.getItem().getMetadata(stack.getItemDamage()));row.put("placement",dev.modbench.api.ControlRegistry.placement().describe(stack));stacks.add(row);}
+            var row=new LinkedHashMap<>(InventorySelection.describe(stack));row.put("slot",i);row.put("hotbar",i<9);row.put("blockId",Registry.name(net.minecraft.block.Block.getBlockFromItem(stack.getItem())));row.put("initialItemMeta",stack.getItem().getMetadata(stack.getItemDamage()));row.put("placement",dev.modbench.api.ControlRegistry.placement().describe(stack));stacks.add(row);}
         return Map.of("approxPlaceable",stacks,"meaning","native ItemBlock mappings and initial metadata; final state depends on placement side, hit, pose and native callbacks");
     }
     @Override public Job resume(String jobId,Map<String,Object> options) {
@@ -143,7 +145,7 @@ public final class BaritoneNavigation implements Navigation {
         var selectors=params.containsKey("blocks")?WorkAccess.selectors(params.get("blocks")):null;int cursor=WorkSpec.integer(params,"cursor",0,0,(int)bounds.volume()),limit=WorkSpec.integer(params,"limit",64,1,256),budget=WorkSpec.integer(params,"budget",2048,1,4096);
         List<Map<String,Object>> found=new ArrayList<>();int start=cursor,unloaded=0;
         while(cursor<bounds.volume()&&cursor-start<budget&&found.size()<limit){
-            BlockPos p=bounds.at(cursor++);if(!ForgeSnapshot.loaded(mc.theWorld,p.x(),p.y(),p.z())){unloaded++;continue;}
+            BlockPos p=bounds.at(cursor++);if(!ForgeSnapshot.loaded(mc.theWorld,p.getX(),p.getY(),p.getZ())){unloaded++;continue;}
             if(selectors==null||WorkAccess.block(mc.theWorld,p,selectors)){
                 var row=WorkAccess.observed(mc.theWorld,p);var picked=WorkAccess.picked(mc.theWorld,p);
                 row.put("pickedItem",InventorySelection.describe(picked));
@@ -151,7 +153,7 @@ public final class BaritoneNavigation implements Navigation {
                 // actually places this block. Non-block picks (seeds, tools,
                 // debug items) are not silently turned into placement promises.
                 if(picked!=null&&picked.getItem() instanceof net.minecraft.item.ItemBlock&&
-                    net.minecraft.block.Block.getBlockFromItem(picked.getItem())==mc.theWorld.getBlock(p.x(),p.y(),p.z()))
+                    net.minecraft.block.Block.getBlockFromItem(picked.getItem())==mc.theWorld.getBlock(p.getX(),p.getY(),p.getZ()))
                     row.put("placementItem",InventorySelection.describe(picked));
                 found.add(row);
             }
@@ -172,15 +174,15 @@ public final class BaritoneNavigation implements Navigation {
     }
     private BlockPos feet() {
         BlockPos p=new BlockPos((int)Math.floor(mc.thePlayer.posX),(int)Math.floor(mc.thePlayer.boundingBox.minY+.001),(int)Math.floor(mc.thePlayer.posZ));
-        if(mc.thePlayer.onGround && ForgeSnapshot.classify(mc.theWorld,p.x(),p.y(),p.z())==TerrainGrid.PARTIAL) {
+        if(mc.thePlayer.onGround && ForgeSnapshot.classify(mc.theWorld,p.getX(),p.getY(),p.getZ())==TerrainGrid.PARTIAL) {
             TerrainGrid local=ForgeSnapshot.local(mc.theWorld,p,p);
             if(!Double.isFinite(local.standingY(p))) {
-                BlockPos raised=new BlockPos(p.x(),p.y()+1,p.z());
+                BlockPos raised=new BlockPos(p.getX(),p.getY()+1,p.getZ());
                 double height=local.standingY(raised);
                 if(Double.isFinite(height) && height-mc.thePlayer.boundingBox.minY<=mc.thePlayer.stepHeight+.001) return raised;
             }
         }
-        BlockPos below=new BlockPos(p.x(),p.y()-1,p.z());
+        BlockPos below=new BlockPos(p.getX(),p.getY()-1,p.getZ());
         return !mc.thePlayer.onGround && !ForgeSnapshot.water(mc.theWorld,p) && ForgeSnapshot.water(mc.theWorld,below)?below:p;
     }
 

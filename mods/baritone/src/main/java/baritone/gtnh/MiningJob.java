@@ -4,7 +4,7 @@
 package baritone.gtnh;
 
 import dev.modbench.api.ControlRegistry;
-import baritone.gtnh.pathing.BlockPos;
+import baritone.compat.BlockPos;
 import baritone.gtnh.pathing.TerrainGrid;
 import dev.modbench.api.InputArbiter;
 import dev.modbench.api.Navigation;
@@ -47,12 +47,12 @@ final class MiningJob implements Navigation.Job {
         if(mc.theWorld==null||mc.thePlayer==null||mc.currentScreen!=null) throw new IllegalArgumentException("mining needs a player with GUI closed");
         if(timeoutTicks<1||timeoutTicks>6000) throw new IllegalArgumentException("timeoutTicks must be 1..6000");
         world=mc.theWorld;player=mc.thePlayer;remaining=timeoutTicks;
-        if(target.y()<1||target.y()>254||!ForgeSnapshot.loaded(world,target.x(),target.y(),target.z())) throw new IllegalArgumentException("target not loaded");
-        original=world.getBlock(target.x(),target.y(),target.z());metadata=world.getBlockMetadata(target.x(),target.y(),target.z());
+        if(target.getY()<1||target.getY()>254||!ForgeSnapshot.loaded(world,target.getX(),target.getY(),target.getZ())) throw new IllegalArgumentException("target not loaded");
+        original=world.getBlock(target.getX(),target.getY(),target.getZ());metadata=world.getBlockMetadata(target.getX(),target.getY(),target.getZ());
         health=mc.thePlayer.getHealth();startX=mc.thePlayer.posX;startZ=mc.thePlayer.posZ;
-        if(health<=0||original.isAir(world,target.x(),target.y(),target.z())||ForgeFluids.fluid(original)) throw new IllegalArgumentException("target must be a non-fluid block; use native held-item/block interaction for fluids");
+        if(health<=0||original.isAir(world,target.getX(),target.getY(),target.getZ())||ForgeFluids.fluid(original)) throw new IllegalArgumentException("target must be a non-fluid block; use native held-item/block interaction for fluids");
         if(!autoTool && !original.canHarvestBlock(mc.thePlayer,metadata)) throw new IllegalArgumentException("selected tool cannot harvest target");
-        if(!autoTool && original.getPlayerRelativeBlockHardness(mc.thePlayer,world,target.x(),target.y(),target.z())<=0) throw new IllegalArgumentException("target cannot be mined with selected tool");
+        if(!autoTool && original.getPlayerRelativeBlockHardness(mc.thePlayer,world,target.getX(),target.getY(),target.getZ())<=0) throw new IllegalArgumentException("target cannot be mined with selected tool");
         String unsafe=unsafe();
         if(unsafe!=null) throw new IllegalArgumentException(unsafe);
         if(aim()==null) throw new IllegalArgumentException("target is occluded or outside normal reach");
@@ -74,7 +74,7 @@ final class MiningJob implements Navigation.Job {
         if(ticks==1){lease.setKeys(Set.of());state="arming";return;}
         String unsafe=unsafe();
         if(unsafe!=null) {finish("failed",unsafe);return;}
-        boolean changed=world.getBlock(target.x(),target.y(),target.z())!=original || world.getBlockMetadata(target.x(),target.y(),target.z())!=metadata;
+        boolean changed=world.getBlock(target.getX(),target.getY(),target.getZ())!=original || world.getBlockMetadata(target.getX(),target.getY(),target.getZ())!=metadata;
         if(changed) {
             lease.setKeys(Set.of());
             state="settling";
@@ -112,7 +112,7 @@ final class MiningJob implements Navigation.Job {
     }
 
     private String unsafe() {
-        String protectedRegion=dev.modbench.api.ControlRegistry.memory().editProblem(target.x(),target.y(),target.z(),overrideProtection,automatedEdits);
+        String protectedRegion=dev.modbench.api.ControlRegistry.memory().editProblem(target.getX(),target.getY(),target.getZ(),overrideProtection,automatedEdits);
         if(protectedRegion!=null) return protectedRegion;
         if(mc.thePlayer.getHealth()<health||mc.thePlayer.isBurning()) return "damage_or_fire";
         if(mc.thePlayer.getAir()<160) return "insufficient_air";
@@ -120,18 +120,18 @@ final class MiningJob implements Navigation.Job {
         int fx=(int)Math.floor(mc.thePlayer.posX),fy=(int)Math.floor(mc.thePlayer.boundingBox.minY+.001),fz=(int)Math.floor(mc.thePlayer.posZ);
         if(!mc.thePlayer.onGround || ForgeSnapshot.classify(world,fx,fy-1,fz)!=TerrainGrid.SUPPORT) return "stable_footing_required";
         // Reject any overlap with the supporting footprint, even at a block boundary.
-        if(target.y()<mc.thePlayer.boundingBox.minY+.001 && target.y()+1>=mc.thePlayer.boundingBox.minY-.001 && Math.abs(target.x()+.5-mc.thePlayer.posX)<.81 && Math.abs(target.z()+.5-mc.thePlayer.posZ)<.81) return "would_remove_footing";
+        if(target.getY()<mc.thePlayer.boundingBox.minY+.001 && target.getY()+1>=mc.thePlayer.boundingBox.minY-.001 && Math.abs(target.getX()+.5-mc.thePlayer.posX)<.81 && Math.abs(target.getZ()+.5-mc.thePlayer.posZ)<.81) return "would_remove_footing";
         if(!ForgeSnapshot.safeBody(world,mc.thePlayer.posX,mc.thePlayer.boundingBox.minY,mc.thePlayer.posZ,true)) return "hazard_contact";
         boolean exit=false;
         for(int[] d:new int[][]{{1,0},{-1,0},{0,1},{0,-1}}) {
             BlockPos p=new BlockPos(fx+d[0],fy,fz+d[1]);
-            if(ForgeSnapshot.liveStandable(world,p) && !(target.x()==p.x()&&target.z()==p.z()&&target.y()==p.y()-1)) exit=true;
+            if(ForgeSnapshot.liveStandable(world,p) && !(target.getX()==p.getX()&&target.getZ()==p.getZ()&&target.getY()==p.getY()-1)) exit=true;
         }
         if(!exit) return "dry_escape_step_required";
-        if(world.getBlock(target.x(),target.y()+1,target.z()) instanceof BlockFalling) return "falling_block_above_target";
+        if(world.getBlock(target.getX(),target.getY()+1,target.getZ()) instanceof BlockFalling) return "falling_block_above_target";
         if(strict && !MiningTools.automaticBlock(world,target)) return "protected_or_unsupported_route_block";
         for(int[] d:new int[][]{{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}}) {
-            int x=target.x()+d[0],y=target.y()+d[1],z=target.z()+d[2];
+            int x=target.getX()+d[0],y=target.getY()+d[1],z=target.getZ()+d[2];
             byte cell=ForgeSnapshot.classify(world,x,y,z);
             if(cell==TerrainGrid.UNKNOWN) return "unknown_mining_neighbor";
             if(strict && (cell==TerrainGrid.WATER || cell==TerrainGrid.HAZARD)) return "route_mining_would_expose_fluid_or_hazard";
@@ -147,7 +147,7 @@ final class MiningJob implements Navigation.Job {
 
     private boolean matches(MovingObjectPosition hit) {
         return hit!=null && hit.typeOfHit==MovingObjectPosition.MovingObjectType.BLOCK
-            && hit.blockX==target.x()&&hit.blockY==target.y()&&hit.blockZ==target.z();
+            && hit.blockX==target.getX()&&hit.blockY==target.getY()&&hit.blockZ==target.getZ();
     }
     private Vec3 aim() {
         return reachable(mc,world,target);
@@ -157,13 +157,13 @@ final class MiningJob implements Navigation.Job {
     }
     static Vec3 reachable(Minecraft mc,World world,BlockPos target,Vec3 eye) {
         for(double y:new double[]{.95,.5,.05}) for(double x:new double[]{.5,.15,.85}) for(double z:new double[]{.5,.15,.85}) {
-            Vec3 point=Vec3.createVectorHelper(target.x()+x,target.y()+y,target.z()+z);
+            Vec3 point=Vec3.createVectorHelper(target.getX()+x,target.getY()+y,target.getZ()+z);
             if(eye.distanceTo(point)>mc.playerController.getBlockReachDistance()-.1) continue;
             // Match vanilla targeting and upstream RayTraceUtils: selectable
             // blocks can have no collision box. Ignoring them invents a line of
             // sight through plants and other modded non-colliding blocks.
             var hit=(net.minecraft.util.MovingObjectPosition)dev.modbench.api.ControlRegistry.targeting().trace(world,Vec3.createVectorHelper(eye.xCoord,eye.yCoord,eye.zCoord),point,false,false,true);
-            if(hit!=null&&hit.typeOfHit==MovingObjectPosition.MovingObjectType.BLOCK&&hit.blockX==target.x()&&hit.blockY==target.y()&&hit.blockZ==target.z()) return point;
+            if(hit!=null&&hit.typeOfHit==MovingObjectPosition.MovingObjectType.BLOCK&&hit.blockX==target.getX()&&hit.blockY==target.getY()&&hit.blockZ==target.getZ()) return point;
         }
         return null;
     }
@@ -181,7 +181,7 @@ final class MiningJob implements Navigation.Job {
     @Override public Map<String,Object> status() {
         Map<String,Object> out=new LinkedHashMap<>();
         out.put("available",true);out.put("state",state);out.put("reason",reason);out.put("action","mine_block");
-        out.put("target",List.of(target.x(),target.y(),target.z()));out.put("ticks",ticks);
+        out.put("target",List.of(target.getX(),target.getY(),target.getZ()));out.put("ticks",ticks);
         out.put("actualAim",actualAim);out.put("aimMismatchTicks",aimMismatchTicks);
         out.put("overrideProtection",overrideProtection);out.put("autoTool",autoTool);out.put("toolsUsed",toolsUsed);
         out.put("controlOwned",lease!=null&&lease.isActive());out.put("serverAcknowledged",false);
