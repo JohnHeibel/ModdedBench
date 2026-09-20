@@ -1,8 +1,12 @@
 # History
 
-Dated milestones, newest first. One to three lines each; the detailed records
-they summarise are in `docs/legacy/` until they are folded into the current
-docs or dropped.
+Dated milestones, newest first, one to three lines each.
+
+The 25 detailed records they summarise lived in `docs/legacy/`, last present
+at commit `01ab0b6` (`git show 01ab0b6:docs/legacy/<file>`): old README,
+ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
+audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
+contract notes. What was still true is now in the current docs.
 
 - **2026-09-19** Restructured into this repository from the ModdedBench
   workspace (Baritone fork branch `modbench-gtnh`, commit `a1c43ef4`).
