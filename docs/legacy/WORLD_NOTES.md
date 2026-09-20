@@ -1,5 +1,15 @@
 # Durable world notes
 
+> **Changed in the Python-seam phase (2026-09-19).** The store now lives in the hot-reloaded
+> module `harness/tools/notes.py` (`mbtools_gtnh.notes`); open SQLite handles survive reloads in
+> `mbtool.state["notes"]`. Notes also surface **as a side effect**: `mb_status` (session start),
+> `mb_obs` on a block/entity/player observation, and every work tool on arrival/completion attach
+> at most 5 compact notes under a `"notes"` key, nearest first, only when there are any, and never
+> the same (id, revision) twice within 10 minutes unless the player moved 48+ blocks. Work outcomes
+> (build/mine/process/resume done; any work failure) are journaled automatically as notes tagged
+> `auto`, keyed by kind and 4-block location cell, so repeats update rather than duplicate.
+> `.state/notes` remains the default directory (`MODBENCH_NOTES_DIR`).
+
 `mb_notes` reads, searches and captures attachments. `mb_note_write` saves guarded
 edits. These are primitives for model-written plans and adapters: notes do not
 execute code, control machines, or create region protection.
