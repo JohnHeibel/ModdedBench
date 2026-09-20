@@ -15,7 +15,7 @@ import baritone.pathing.movement.*;
 import baritone.pathing.movement.movements.*;
 import baritone.utils.*;
 import baritone.utils.pathing.Favoring;
-import dev.modbench.control.api.WorldMemory;
+import dev.modbench.api.WorldMemory;
 import net.minecraft.block.Block;
 import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;

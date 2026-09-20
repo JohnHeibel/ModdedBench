@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Modbench contributors
 package dev.modbench.client;
 
+import dev.modbench.api.ControlRegistry;
 import java.util.Map;
 import java.util.LinkedHashMap;
 
@@ -12,10 +13,9 @@ import cpw.mods.fml.client.FMLClientHandler;
 import dev.modbench.bridge.BridgeRuntime;
 import dev.modbench.bridge.Json;
 import dev.modbench.bridge.Request;
-import dev.modbench.control.ClientControls;
-import dev.modbench.control.api.InputArbiter;
-import dev.modbench.control.api.Navigation;
-import dev.modbench.control.api.NavigationRegistry;
+import dev.modbench.api.InputArbiter;
+import dev.modbench.api.Navigation;
+import dev.modbench.api.NavigationRegistry;
 import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiMainMenu;
@@ -173,7 +173,7 @@ public final class ClientRuntime extends BridgeRuntime {
             int x=Json.integer(r.params,"x",0,-30000000,30000000), y=Json.integer(r.params,"y",0,1,254), z=Json.integer(r.params,"z",0,-30000000,30000000);
             int timeout=Json.integer(r.params,"timeoutTicks",1200,1,72000);
             controlsChanged("superseded");
-            ClientControls.focusForInput();
+            ControlRegistry.controls().focusForInput();
             navigationJob=provider.goTo(x,y,z,timeout,Json.bool(r.params,"allowBreak",false),Json.bool(r.params,"allowPlace",false),Json.bool(r.params,"overrideProtection",false));
             navigationRequest=r;
             return null;
@@ -181,7 +181,7 @@ public final class ClientRuntime extends BridgeRuntime {
         register("baritone.route", "Follow saved route {name,reverse:false,startIndex:0,allowBreak:false,allowPlace:false,overrideProtection:false,timeoutTicks:1..72000}; approach first anchor, then stay inside each corridor", "interaction", r -> {
             requirePlayer();Navigation provider=NavigationRegistry.get();
             if(provider==null) throw new IllegalArgumentException("Baritone mod is not installed");
-            controlsChanged("superseded");ClientControls.focusForInput();
+            controlsChanged("superseded");ControlRegistry.controls().focusForInput();
             navigationJob=provider.route(Json.string(r.params,"name",""),Json.bool(r.params,"reverse",false),Json.integer(r.params,"startIndex",0,0,4095),
                 Json.integer(r.params,"timeoutTicks",1200,1,72000),Json.bool(r.params,"allowBreak",false),Json.bool(r.params,"allowPlace",false),Json.bool(r.params,"overrideProtection",false));
             navigationRequest=r;return null;
@@ -197,12 +197,12 @@ public final class ClientRuntime extends BridgeRuntime {
             controlsChanged("superseded");return ui.start(r);
         });
         for(String method:List.of("mine","build","resume")) register("baritone."+method,"Owned, checkpointed "+method+" process; timeoutTicks<=72000. Mine: blocks/items selectors, quantity, bounds/radius. Build: cells, selection or planId; mode blueprint/builder, origin, size, settings, replaceExisting, allowBreak/allowPlace. Resume: jobId. Explicit overrideProtection required each attempt.","interaction",r->{
-            requirePlayer();Navigation provider=navigation();Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");controlsChanged("superseded");ClientControls.focusForInput();
+            requirePlayer();Navigation provider=navigation();Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");controlsChanged("superseded");ControlRegistry.controls().focusForInput();
             navigationJob=method.equals("mine")?provider.mine(params):method.equals("build")?provider.build(params):provider.resume(Json.string(r.params,"jobId",""),params);navigationRequest=r;return null;
         });
         register("baritone.build_preview","Fresh read-only build diff and material allocation for {cells|selection|planId,mode,settings,origin,size,replaceExisting,overrideProtection}; no chunk loading","read",r->navigation().previewBuild(Json.GSON.fromJson(r.params,Map.class)));
         register("baritone.follow","Source FollowProcess: {target:{entityId|uuid|type|name},durationTicks:1..72000,radius,offsetDistance,offsetDirection,allowBreak:false,allowPlace:false,overrideProtection:false}. Follows loaded matches until duration/cancellation; fails when none remain loaded.","interaction",r->{
-            requirePlayer();Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");controlsChanged("superseded");ClientControls.focusForInput();
+            requirePlayer();Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");controlsChanged("superseded");ControlRegistry.controls().focusForInput();
             navigationJob=navigation().follow(params);navigationRequest=r;return null;
         });
         register("baritone.settings","Source settings {operation:get|set|reset,query,values,save}; typed values or source syntax, atomic edits while idle. Optional declarations do not promise runtime support.","interaction",r->navigation().settings(Json.GSON.fromJson(r.params,Map.class)));
@@ -210,7 +210,7 @@ public final class ClientRuntime extends BridgeRuntime {
         register("baritone.build_materials","Approximate placeable native inventory states; final state depends on native placement callbacks","read",r->navigation().buildMaterials());
         register("baritone.cache","Source terrain cache {operation:status|block(pos)|repack(range)|save|reload|locations(block,meta?,limit,regionDistanceSquared)|result(id)}. Disk operations return an id to poll. Cached states are approximate and need native verification.","interaction",r->navigation().cache(Json.GSON.fromJson(r.params,Map.class)));
         register("baritone.process","Source {process:goal|explore|get_to_block|farm,durationTicks:1..72000,goal:{type,...},center:[x,y,z],radius,block:{id,meta},allowBreak:false,allowPlace:false,exploreForBlocks:true,openOnArrival:false,enterPortal:false}. Goal types: block,near,adjacent,two_blocks,xz,y,axis,inverted,composite,run_away. Farm/explore run for a bounded duration; native source behavior and explicit mod crop adapters apply.","interaction",r->{
-            requirePlayer();Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");controlsChanged("superseded");ClientControls.focusForInput();
+            requirePlayer();Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");controlsChanged("superseded");ControlRegistry.controls().focusForInput();
             navigationJob=navigation().sourceProcess(params);navigationRequest=r;return null;
         });
         register("baritone.build_stage","Stage a large immutable plan: operation begin(spec), append(stageId,offset,cells), finish(stageId). Finish returns planId for build/preview.","interaction",r->{Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");return navigation().stageBuild(params);});
@@ -295,8 +295,8 @@ public final class ClientRuntime extends BridgeRuntime {
             "onGround", p.onGround, "inWater", p.isInWater(), "onLadder",p.isOnLadder(), "stepHeight",p.stepHeight, "dimension", p.dimension,
             "selectedSlot", p.inventory.currentItem, "held", stack(p.getHeldItem()),
             "gui", mc.currentScreen == null ? null : mc.currentScreen.getClass().getName(),
-            "sneaking", p.isSneaking(), "controlActive", ClientControls.arbiter().current().active(),
-            "controlOwner", ClientControls.arbiter().current().label());
+            "sneaking", p.isSneaking(), "controlActive", ControlRegistry.controls().arbiter().current().active(),
+            "controlOwner", ControlRegistry.controls().arbiter().current().label());
     }
 
     private JsonObject world() {
@@ -373,7 +373,7 @@ public final class ClientRuntime extends BridgeRuntime {
             codes.add(binding.getKeyCode());
         }
         if (codes.isEmpty()) throw new IllegalArgumentException("keys must not be empty");
-        ClientControls.focusForInput();
+        ControlRegistry.controls().focusForInput();
         return hold(r, codes);
     }
 
@@ -382,12 +382,12 @@ public final class ClientRuntime extends BridgeRuntime {
         controlsChanged("superseded");
         control = r;
         remaining = ticks;
-        ClientControls.focusForInput();
-        inputLease=ClientControls.arbiter().acquire("direct",reason -> {
+        ControlRegistry.controls().focusForInput();
+        inputLease=ControlRegistry.controls().arbiter().acquire("direct",reason -> {
             if (control == r) { release(); r.fail("cancelled", "input released: "+reason); }
         },Json.bool(r.params,"overrideProtection",false));
         if(codes.contains(mc.gameSettings.keyBindAttack.getKeyCode())&&!Json.bool(r.params,"allowRetarget",false))
-            ClientControls.guardBlockAttack(inputLease);
+            ControlRegistry.controls().guardBlockAttack(inputLease);
         inputLease.setKeys(codes);
         return null; // Completed at END after exactly the requested client ticks, or interrupted.
     }
@@ -408,7 +408,7 @@ public final class ClientRuntime extends BridgeRuntime {
     public void endTick() {
         ui.tick();
         interactions.tick();
-        dev.modbench.control.ClientMemory.sample();
+        dev.modbench.api.ControlRegistry.memory().sample();
         if (navigationRequest != null && navigationJob.done()) {
             Request r=navigationRequest; Navigation.Job job=navigationJob;
             navigationRequest=null; navigationJob=null;
@@ -424,7 +424,7 @@ public final class ClientRuntime extends BridgeRuntime {
             controlsChanged("world_changed"); return;
         }
         if (control.isDone() || !control.session.connected || control.expired()) { controlsChanged("cancelled"); return; }
-        boolean targetChanged=ClientControls.blockAttackChanged(inputLease);
+        boolean targetChanged=ControlRegistry.controls().blockAttackChanged(inputLease);
         if (--remaining <= 0 || targetChanged) {
             Request finished = control;
             release();
@@ -433,7 +433,7 @@ public final class ClientRuntime extends BridgeRuntime {
     }
 
     private void release() {
-        ClientControls.releaseBlockAttack(inputLease);
+        ControlRegistry.controls().releaseBlockAttack(inputLease);
         if (inputLease != null) inputLease.close();
         inputLease=null; control=null; remaining=0;
     }
@@ -447,7 +447,7 @@ public final class ClientRuntime extends BridgeRuntime {
         if (navigationJob != null) navigationJob.cancel(reason);
         if (navigationRequest != null) navigationRequest.fail(reason, "navigation released: " + reason);
         navigationRequest=null; navigationJob=null;
-        ClientControls.arbiter().revoke(reason);
+        ControlRegistry.controls().arbiter().revoke(reason);
     }
 
     private void cancelNavigation(String reason){var navigation=NavigationRegistry.get();if(navigation!=null)navigation.cancel(reason);}
@@ -466,7 +466,7 @@ public final class ClientRuntime extends BridgeRuntime {
         float yaw = (float) Json.number(r.params, "yaw", mc.thePlayer.rotationYaw, -360000, 360000);
         float pitch = (float) Json.number(r.params, "pitch", mc.thePlayer.rotationPitch, -90, 90);
         controlsChanged("superseded");
-        try (InputArbiter.Lease lease=ClientControls.arbiter().acquire("direct-look",reason -> {})) { lease.look(yaw,pitch); }
+        try (InputArbiter.Lease lease=ControlRegistry.controls().arbiter().acquire("direct-look",reason -> {})) { lease.look(yaw,pitch); }
         return player();
     }
 

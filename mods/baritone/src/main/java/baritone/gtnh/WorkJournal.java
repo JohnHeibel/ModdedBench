@@ -3,8 +3,8 @@
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh;
 
+import dev.modbench.api.ControlRegistry;
 import com.google.gson.*;
-import dev.modbench.control.ClientMemory;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
@@ -19,12 +19,12 @@ final class WorkJournal {
     final Map<String,Object> progress=new LinkedHashMap<>();
     private final Path file;
     WorkJournal(String kind,Map<String,Object> params) {
-        this.id=UUID.randomUUID().toString();this.kind=kind;scope=ClientMemory.memory().scope();
+        this.id=UUID.randomUUID().toString();this.kind=kind;scope=ControlRegistry.memory().memory().scope();
         spec=object(JSON.fromJson(JSON.toJson(params),Map.class));file=path(id);
     }
     WorkJournal(String id) {
         Map<String,Object> data=load(id);this.id=id;kind=string(data,"kind","");scope=string(data,"scope","");spec=child(data,"spec");progress.putAll(child(data,"progress"));file=path(id);
-        if(!scope.equals(ClientMemory.memory().scope()))throw new IllegalArgumentException("work belongs to another world/dimension");
+        if(!scope.equals(ControlRegistry.memory().memory().scope()))throw new IllegalArgumentException("work belongs to another world/dimension");
     }
     private static Path path(String id){UUID.fromString(id);return Minecraft.getMinecraft().mcDataDir.toPath().resolve("modbench/work").resolve(id+".json");}
     private static Map<String,Object> checkpoint(String id) throws java.io.IOException {

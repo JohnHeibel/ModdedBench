@@ -20,7 +20,7 @@ public final class World {
     public boolean mayPlace(net.minecraft.block.Block block,BlockPos pos,boolean ignoreCollision,EnumFacing side,Entity entity){
         return nativeWorld.canPlaceEntityOnSide(block,pos.getX(),pos.getY(),pos.getZ(),ignoreCollision,side.ordinal(),entity,net.minecraft.client.Minecraft.getMinecraft().thePlayer.getHeldItem());
     }
-    public RayTraceResult rayTraceBlocks(Vec3d start,Vec3d end,boolean liquid,boolean noBox,boolean last){return RayTraceResult.fromNative(dev.modbench.control.NativeTargeting.trace(nativeWorld,start.nativeVector(),end.nativeVector(),liquid,noBox,last));}
+    public RayTraceResult rayTraceBlocks(Vec3d start,Vec3d end,boolean liquid,boolean noBox,boolean last){return RayTraceResult.fromNative((net.minecraft.util.MovingObjectPosition)dev.modbench.api.ControlRegistry.targeting().trace(nativeWorld,start.nativeVector(),end.nativeVector(),liquid,noBox,last));}
     @SuppressWarnings("unchecked") public <T extends Entity> List<T> getEntitiesWithinAABB(Class<T> type,AxisAlignedBB box){return nativeWorld.getEntitiesWithinAABB(type,box.nativeBox());}
     public baritone.utils.pathing.BetterWorldBorder getWorldBorder(){return new baritone.utils.pathing.BetterWorldBorder();}
     public void sendQuittingDisconnectingPacket(){nativeWorld.sendQuittingDisconnectingPacket();}

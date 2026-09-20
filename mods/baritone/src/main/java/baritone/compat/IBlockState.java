@@ -40,7 +40,7 @@ public final class IBlockState {
         if(!net.minecraft.client.Minecraft.getMinecraft().func_152345_ab())throw new IllegalStateException("native selection bounds require the client thread");
         synchronized(block){
             block.setBlockBoundsBasedOnState(world.nativeWorld,p.getX(),p.getY(),p.getZ());
-            var selected=dev.modbench.control.NativeTargeting.withContext(()->block.getSelectedBoundingBoxFromPool(world.nativeWorld,p.getX(),p.getY(),p.getZ()));
+            var selected=dev.modbench.api.ControlRegistry.targeting().withContext(()->block.getSelectedBoundingBoxFromPool(world.nativeWorld,p.getX(),p.getY(),p.getZ()));
             if(selected!=null)return new AxisAlignedBB(selected.minX-p.getX(),selected.minY-p.getY(),selected.minZ-p.getZ(),selected.maxX-p.getX(),selected.maxY-p.getY(),selected.maxZ-p.getZ());
             return new AxisAlignedBB(block.getBlockBoundsMinX(),block.getBlockBoundsMinY(),block.getBlockBoundsMinZ(),block.getBlockBoundsMaxX(),block.getBlockBoundsMaxY(),block.getBlockBoundsMaxZ());
         }

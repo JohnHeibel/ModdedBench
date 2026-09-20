@@ -137,7 +137,7 @@ public final class InventoryBehavior extends Behavior implements Helper {
             return false;
         }
         if (ctx.player().inventory.getItemStack() != null) return false;
-        swap=new baritone.compat.LegacyInventorySwap(baritone.getInputOverrideHandler().lease(),inInventory,inHotbar);
+        swap=new baritone.compat.LegacyInventorySwap(baritone,inInventory,inHotbar);
         ticksSinceLastInventoryMove = 0;
         lastTickRequestedMove = null;
         return false; // Completion is published by onTick after native acknowledgement.
@@ -195,7 +195,7 @@ public final class InventoryBehavior extends Behavior implements Helper {
         IBlockState maybe = placementTarget.apply(x, y, z);
         if (maybe != null && throwaway(select, stack -> stack.getItem() instanceof ItemBlock
                 && Block.getBlockFromItem(stack.getItem()) == maybe.getBlock()
-                && dev.modbench.control.NativePlacement.initialMetadata(stack) == maybe.meta
+                && dev.modbench.api.ControlRegistry.placement().initialMetadata(stack) == maybe.meta
                 && builderMaterial(stack,maybe))) return true;
         if (maybe != null && throwaway(select, stack -> stack.getItem() instanceof ItemBlock
                 && Block.getBlockFromItem(stack.getItem()) == maybe.getBlock() && builderMaterial(stack,maybe))) return true;
@@ -211,7 +211,7 @@ public final class InventoryBehavior extends Behavior implements Helper {
         return throwaway(select, desired, Baritone.settings().allowInventory.value);
     }
     private boolean builderMaterial(ItemStack stack,IBlockState target){
-        return baritone.getBuilderProcess().stateValidator.valid(IBlockState.of(Block.getBlockFromItem(stack.getItem()),dev.modbench.control.NativePlacement.initialMetadata(stack)).withPlacementItem(stack),target,true);
+        return baritone.getBuilderProcess().stateValidator.valid(IBlockState.of(Block.getBlockFromItem(stack.getItem()),dev.modbench.api.ControlRegistry.placement().initialMetadata(stack)).withPlacementItem(stack),target,true);
     }
 
     public boolean throwaway(boolean select, Predicate<? super ItemStack> desired, boolean allowInventory) {

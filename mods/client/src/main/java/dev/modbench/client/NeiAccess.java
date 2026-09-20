@@ -118,7 +118,7 @@ final class NeiAccess {
     Object item(JsonObject p) throws Exception {
         requireReady();ItemStack item=resolve(p);JsonObject out=stack(item);
         out.add("tooltip",Json.GSON.toJsonTree(item.getTooltip(Minecraft.getMinecraft().thePlayer,true)));
-        if(item.getItem() instanceof net.minecraft.item.ItemBlock)out.add("placement",Json.GSON.toJsonTree(dev.modbench.control.NativePlacement.describe(item)));
+        if(item.getItem() instanceof net.minecraft.item.ItemBlock)out.add("placement",Json.GSON.toJsonTree(dev.modbench.api.ControlRegistry.placement().describe(item)));
         return out;
     }
     private ItemStack resolve(JsonObject p) throws Exception {

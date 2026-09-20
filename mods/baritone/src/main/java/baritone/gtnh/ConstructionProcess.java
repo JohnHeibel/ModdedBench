@@ -6,7 +6,7 @@ package baritone.gtnh;
 
 import baritone.gtnh.pathing.*;
 import static baritone.gtnh.pathing.WorkSpec.*;
-import dev.modbench.control.api.Navigation;
+import dev.modbench.api.Navigation;
 import java.util.*;
 import net.minecraft.block.Block;
 import net.minecraft.item.*;
@@ -212,7 +212,7 @@ final class ConstructionProcess extends BulkJob {
             ItemStack stack=mc.thePlayer.inventory.mainInventory[i];if(stack==null||!(stack.getItem() instanceof ItemBlock)||throwaways.stream().noneMatch(s->WorkAccess.item(stack,s)))continue;
             Block block=Block.getBlockFromItem(stack.getItem());if(block==null||!block.isNormalCube())continue;
             Map<String,Object> selector=new LinkedHashMap<>();selector.put("id",Item.itemRegistry.getNameForObject(stack.getItem()));selector.put("meta",stack.getItemDamage());if(stack.hasTagCompound())selector.put("nbt",stack.getTagCompound().toString());
-            return new Cell(p,Block.blockRegistry.getNameForObject(block),dev.modbench.control.NativePlacement.initialMetadata(stack),false,selector,Map.of(),Map.of());
+            return new Cell(p,Block.blockRegistry.getNameForObject(block),dev.modbench.api.ControlRegistry.placement().initialMetadata(stack),false,selector,Map.of(),Map.of());
         }
         return null;
     }

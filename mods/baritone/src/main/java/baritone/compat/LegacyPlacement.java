@@ -3,10 +3,10 @@
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.compat;
 
+import dev.modbench.api.ControlRegistry;
 import baritone.api.utils.IPlayerContext;
 import baritone.api.utils.Rotation;
 import baritone.gtnh.PlacementStateAdapters;
-import dev.modbench.control.NativePlacement;
 import net.minecraft.block.Block;
 import net.minecraft.item.ItemBlock;
 import net.minecraft.item.ItemStack;
@@ -20,7 +20,7 @@ public final class LegacyPlacement {
     private static IBlockState predict(IPlayerContext ctx,ItemStack stack,BlockPos target,EnumFacing face,float hitX,float hitY,float hitZ,float yaw,net.minecraft.util.Vec3 eye){
         if(stack==null||stack.stackSize<=0||!(stack.getItem() instanceof ItemBlock))return IBlockState.of(Blocks.AIR,0);
         Block block=Block.getBlockFromItem(stack.getItem());
-        int meta=block.onBlockPlaced(ctx.world().nativeWorld,target.getX(),target.getY(),target.getZ(),face.ordinal(),hitX,hitY,hitZ,NativePlacement.initialMetadata(stack));
+        int meta=block.onBlockPlaced(ctx.world().nativeWorld,target.getX(),target.getY(),target.getZ(),face.ordinal(),hitX,hitY,hitZ,ControlRegistry.placement().initialMetadata(stack));
         meta=PlacementStateAdapters.predict(block,ctx.world().nativeWorld,new baritone.gtnh.pathing.BlockPos(target.getX(),target.getY(),target.getZ()),meta,yaw,eye);
         return new IBlockState(block,meta,ctx.world().nativeWorld,target.getX(),target.getY(),target.getZ()).withPlacementItem(stack);
     }

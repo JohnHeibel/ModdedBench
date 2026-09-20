@@ -151,7 +151,7 @@ public class WorldProvider implements IWorldProvider {
      */
     private Optional<Tuple<Path, Path>> getSaveDirectories(World world) {
         String identity;
-        try { identity=dev.modbench.control.ClientMemory.memory().scope(); }
+        try { identity=dev.modbench.api.ControlRegistry.memory().memory().scope(); }
         catch (IllegalStateException notReady) { return Optional.empty(); }
         this.scope=identity;
         try {
@@ -167,7 +167,7 @@ public class WorldProvider implements IWorldProvider {
     private void detectAndHandleBrokenLoading() {
         World nativeWorld=ctx.minecraft().theWorld;
         String identity=null;
-        if(nativeWorld!=null&&ctx.player()!=null){try {identity=dev.modbench.control.ClientMemory.memory().scope();}catch(IllegalStateException notReady){}}
+        if(nativeWorld!=null&&ctx.player()!=null){try {identity=dev.modbench.api.ControlRegistry.memory().memory().scope();}catch(IllegalStateException notReady){}}
         if(this.mcWorld!=nativeWorld || !java.util.Objects.equals(scope,identity))closeWorld();
         if(currentWorld==null&&identity!=null)initWorld(nativeWorld);
     }
