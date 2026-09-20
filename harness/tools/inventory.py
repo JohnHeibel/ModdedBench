@@ -263,6 +263,8 @@ def mb_craft(pattern: list[list[dict | None]] | None = None, times: int = 1, at:
              inputs: list[dict] | None = None, wait_s: float = 0.0) -> Any:
     """Make something in ONE call, at any station with a GUI: it opens the station, moves the items, takes the result and closes.
 
+    Look the recipe up first (mb_recipes), every time it is new to you: assume no recipe in this pack,
+    vanilla ones least of all.
     Station: at=[x,y,z] is the block to open (crafting table or a variant, furnace, any machine);
     omit it for your inventory's own 2x2 grid. Stand within reach. A GUI that is already open is
     used as it is and left open.
