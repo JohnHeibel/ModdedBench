@@ -186,7 +186,7 @@ def assert_managed_instance(path: Path, *, allow_new: bool = False) -> None:
         raise RuntimeError_(f"refusing to modify existing unmarked Prism instance: {path}")
 
 
-def write_instance_config(path: Path, java: str, memory: int) -> None:
+def write_instance_config(path: Path, java: str, memory: int, window: str = "") -> None:
     # Prism's MultiMC-compatible instance format. Keep every pack-provided
     # component/metadata line rather than replacing instance.cfg wholesale.
     values = {
@@ -202,6 +202,10 @@ def write_instance_config(path: Path, java: str, memory: int) -> None:
         "OverrideConsole": "true",
         "ShowConsole": "false",
     }
+    if window:  # "1920x1080"; Prism otherwise opens 854x480, which is too small to record or to read GUIs from
+        width, _, height = window.lower().partition("x")
+        if not (width.isdigit() and height.isdigit()): raise RuntimeError_("window must look like 1920x1080")
+        values |= {"OverrideWindow": "true", "LaunchMaximized": "false", "MinecraftWinWidth": width, "MinecraftWinHeight": height}
     cfg = path / "instance.cfg"
     original = cfg.read_text(encoding="utf-8", errors="replace").splitlines() if cfg.is_file() else []
     seen: set[str] = set()
@@ -285,6 +289,8 @@ def prepare(args: argparse.Namespace) -> None:
         cfg["memoryMiB"] = args.memory
     if args.server_memory:
         cfg["serverMemoryMiB"] = args.server_memory
+    if args.window:
+        cfg["window"] = args.window
     for key in ("clientZip", "serverZip"):
         if not cfg.get(key) or not Path(cfg[key]).is_file():
             raise RuntimeError_(f"{key} must name an existing ZIP")
@@ -305,7 +311,7 @@ def prepare(args: argparse.Namespace) -> None:
     if not (client / MARKER).is_file():
         extract_zip(Path(cfg["clientZip"]), client, strip_root=True)
         save_json(client / MARKER, {"managedBy": "modbench", "kind": "prism-instance"})
-    write_instance_config(client, java, int(cfg["memoryMiB"]))
+    write_instance_config(client, java, int(cfg["memoryMiB"]), cfg.get("window", ""))
     set_client_options(client_game_dir(client))
     save_json(config_path(runtime), cfg)
     print(json.dumps({"runtime": str(runtime), "server": str(server), "instance": str(client)}, indent=2))
@@ -731,7 +737,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--runtime", default=str(RUNTIME))
     sub = parser.add_subparsers(dest="command", required=True)
-    p = sub.add_parser("prepare"); p.add_argument("--client-zip"); p.add_argument("--server-zip"); p.add_argument("--prism"); p.add_argument("--prism-data"); p.add_argument("--java"); p.add_argument("--username"); p.add_argument("--memory", type=int); p.add_argument("--server-memory", type=int); p.set_defaults(func=prepare)
+    p = sub.add_parser("prepare"); p.add_argument("--client-zip"); p.add_argument("--server-zip"); p.add_argument("--prism"); p.add_argument("--prism-data"); p.add_argument("--java"); p.add_argument("--username"); p.add_argument("--memory", type=int); p.add_argument("--server-memory", type=int); p.add_argument("--window", help="client window size, e.g. 1920x1080"); p.set_defaults(func=prepare)
     sub.add_parser("status").set_defaults(func=status)
     p = sub.add_parser("start-server"); p.add_argument("--accept-eula", action="store_true"); p.add_argument("--dev-fixtures", action="store_true", help="enable privileged, journaled development fixtures for smoke tests"); p.set_defaults(func=start_server)
     p = sub.add_parser("stop-server"); p.add_argument("--timeout", type=float, default=30); p.set_defaults(func=stop_server)
