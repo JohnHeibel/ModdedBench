@@ -58,7 +58,6 @@ abstract class BulkJob implements Navigation.Job {
     abstract void step();
     abstract String phase();
     void releaseProcess() {}
-    void move(BlockPos p) {child=navigation.travel(p,Math.min(remaining,1200),allowBreak,allowPlace,override,lease);}
     Map<String,Object> consumeChild() {
         Map<String,Object> receipt=child.status();if(history.size()>=32)history.remove(0);history.add(receipt);child=null;return receipt;
     }

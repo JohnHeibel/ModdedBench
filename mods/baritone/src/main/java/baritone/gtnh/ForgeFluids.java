@@ -3,6 +3,7 @@
 // Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package baritone.gtnh;
 
+import baritone.compat.Registry;
 import baritone.gtnh.pathing.FluidPolicy;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -42,7 +43,7 @@ final class ForgeFluids {
         Block b=world.getBlock(x,y,z);
         Map<String,Object> out=new LinkedHashMap<>();
         int meta=world.getBlockMetadata(x,y,z);
-        out.put("pos",List.of(x,y,z)); out.put("block",Block.blockRegistry.getNameForObject(b));
+        out.put("pos",List.of(x,y,z)); out.put("block",Registry.name(b));
         out.put("metadata",meta); out.put("fluid",fluid(b));
         if(!fluid(b)) return out;
         boolean vanilla=water(b)||b==Blocks.lava||b==Blocks.flowing_lava;

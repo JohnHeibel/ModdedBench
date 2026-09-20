@@ -32,7 +32,7 @@ final class ReferenceProcessJob implements Navigation.Job {
         duration=integer(params,"durationTicks",1200,1,72000);
         goal=kind.equals("goal")?ReferenceGoals.parse(child(params,"goal")):null;
         var feet=engine.getPlayerContext().playerFeet();
-        var center=params.containsKey("center")?pos(params.get("center")):new baritone.gtnh.pathing.BlockPos(feet.x,feet.y,feet.z);
+        var center=params.containsKey("center")?pos(params.get("center")):new baritone.compat.BlockPos(feet.x,feet.y,feet.z);
         int radius=integer(params,"radius",24,1,64);
         var blockSpec=child(params,"block");
         BlockOptionalMeta block=kind.equals("get_to_block")?new BlockOptionalMeta(String.valueOf(blockSpec.get("id"))+(blockSpec.containsKey("meta")?":"+integer(blockSpec,"meta",0,0,15):"")):null;
@@ -50,9 +50,9 @@ final class ReferenceProcessJob implements Navigation.Job {
             engine.getInputOverrideHandler().attach(lease);engine.bsi=new baritone.utils.BlockStateInterface(engine.getPlayerContext());
             switch(kind){
                 case "goal"->engine.getCustomGoalProcess().setGoalAndPath(goal);
-                case "explore"->engine.getExploreProcess().explore(center.x(),center.z());
+                case "explore"->engine.getExploreProcess().explore(center.getX(),center.getZ());
                 case "get_to_block"->engine.getGetToBlockProcess().getToBlock(block);
-                case "farm"->engine.getFarmProcess().farm(radius,new baritone.compat.BlockPos(center.x(),center.y(),center.z()));
+                case "farm"->engine.getFarmProcess().farm(radius,center);
             }
         }catch(RuntimeException failure){finish("failed","start_failed");throw failure;}
     }

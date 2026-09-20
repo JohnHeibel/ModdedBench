@@ -89,10 +89,9 @@ project(':baritone') {
     dependencies {
         // Only the api: the compiler enforces the seam between Baritone and the core mod.
         compileOnly project(':api')
-        implementation project(':baritone-core')
         // fastutil is not shipped by MC 1.7.10 or the pack, so the jar bundles it from a
         // detached configuration: resolving runtimeClasspath while wiring the jar task
-        // would run RFG's deobf transform on the unbuilt baritone-core jar.
+        // would run RFG's deobf transform on the unbuilt api jar.
         compileOnly 'it.unimi.dsi:fastutil:8.5.15'
         testRuntimeOnly 'it.unimi.dsi:fastutil:8.5.15'
         fastutilBundle 'it.unimi.dsi:fastutil:8.5.15'
@@ -104,7 +103,7 @@ project(':baritone') {
     }
     tasks.named('compileJava') { options.compilerArgs += ['-Xmaxerrs', '1000'] }
     tasks.named('test') {
-        dependsOn ':api:jar', ':baritone-core:jar'
+        dependsOn ':api:jar'
         // Resolved at execution time: .asPath here would run RFG's deobf transform on
         // sibling project jars before they are built.
         doFirst {
@@ -113,14 +112,13 @@ project(':baritone') {
         }
     }
     tasks.named('jar') {
-        from project(':baritone-core').sourceSets.main.output
         from({ configurations.fastutilBundle.collect { zipTree(it) } }) {
             include 'it/unimi/dsi/fastutil/**'
         }
         from(rootProject.file('LICENSE')) { into 'META-INF/licenses'; rename { 'Baritone-LGPL-3.0.txt' } }
         from(rootProject.file('mods/baritone/licenses')) { into 'META-INF/licenses' }
         from(rootProject.file('mods/baritone/UPSTREAM_SOURCES.json')) { into 'META-INF/modbench' }
-        from(rootProject.file('mods/baritone-core/PORT_ORIGIN.md')) { into 'META-INF' }
+        from(rootProject.file('mods/baritone/PORT_ORIGIN.md')) { into 'META-INF' }
     }
 }
 tasks.named('assemble') { dependsOn ':core:build', ':client:build', ':server:build', ':baritone:build' }
