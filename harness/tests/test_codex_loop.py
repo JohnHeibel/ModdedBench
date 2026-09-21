@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 # Copyright (c) 2026 ModdedBench contributors
 """codex_loop against a fake Codex command; no model is ever called."""
-import contextlib, io, json, sys, tempfile, unittest
+import contextlib, io, json, os, sys, tempfile, unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runner"))
@@ -25,7 +25,12 @@ class CodexLoopTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.repo = Path(self.tmp.name)
         (self.repo / "fake.py").write_text(FAKE); (self.repo / "PROMPT.md").write_text("the mission")
-    def tearDown(self): self.tmp.cleanup()
+        # The agent's own container sets MODBENCH_OUTBOX to the folder a live run's overlay is written to:
+        # a test run there would overwrite the feed a viewer is watching, and then not find its own.
+        self.outbox = os.environ.pop("MODBENCH_OUTBOX", None)
+    def tearDown(self):
+        if self.outbox is not None: os.environ["MODBENCH_OUTBOX"] = self.outbox
+        self.tmp.cleanup()
     def loop(self, plan, **kw):
         (self.repo / "plan.json").write_text(json.dumps(plan))
         with contextlib.redirect_stdout(io.StringIO()):
