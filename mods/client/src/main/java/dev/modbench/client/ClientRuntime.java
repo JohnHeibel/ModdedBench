@@ -51,8 +51,8 @@ public final class ClientRuntime extends BridgeRuntime {
     private InputArbiter.Lease inputLease;
     private Request navigationRequest;
     private Navigation.Job navigationJob;
-    private int remaining;
     private long refusalMark; // clicks the harness had refused when the current job or hold began
+    private InputChord inputChord;
     private Object lastWorld, lastPlayer, identity;
 
     public Object identity() {
@@ -123,7 +123,7 @@ public final class ClientRuntime extends BridgeRuntime {
         register("obs.gui", "Current screen class and dimensions", "read", r -> gui());
         register("obs.keys", "Registered key bindings", "read", r -> bindings());
         register("act.press_key", "Press registered binding {name,ticks:1..200,overrideProtection:false}", "interaction", r -> press(r));
-        register("act.input", "Hold vanilla controls {keys:[forward,back,left,right,jump,sneak,sprint,attack,use],ticks:1..200,overrideProtection:false,allowRetarget:false}; attack locks the initial block and ends on change", "interaction", r -> input(r));
+        register("act.input", "Hold vanilla controls {keys:[forward,back,left,right,jump,sneak,sprint,attack,use],ticks:1..200,overrideProtection:false,allowRetarget:false}; sneak+attack/use adds two pose ticks before the requested hold; attack locks the initial block and ends on change", "interaction", r -> input(r));
         register("act.look", "Set player view {yaw,pitch}", "interaction", r -> look(r));
         register("act.stop", "Release controls and cancel active or pending navigation, including Java API processes", "interaction", r -> {
             controlsChanged("cancelled");cancelNavigation("cancelled");return Json.object("stopped", true);
@@ -461,7 +461,8 @@ public final class ClientRuntime extends BridgeRuntime {
         int ticks = Json.integer(r.params, "ticks", 1, 1, 200);
         controlsChanged("superseded");
         control = r;
-        remaining = ticks;
+        inputChord = new InputChord(codes,ticks,mc.gameSettings.keyBindSneak.getKeyCode(),
+            mc.gameSettings.keyBindAttack.getKeyCode(),mc.gameSettings.keyBindUseItem.getKeyCode());
         ControlRegistry.controls().focusForInput();
         inputLease=ControlRegistry.controls().arbiter().acquire("direct",reason -> {
             if (control == r) {
@@ -473,8 +474,8 @@ public final class ClientRuntime extends BridgeRuntime {
         },Json.bool(r.params,"overrideProtection",false));
         if(codes.contains(mc.gameSettings.keyBindAttack.getKeyCode())&&!Json.bool(r.params,"allowRetarget",false))
             ControlRegistry.controls().guardBlockAttack(inputLease);
-        inputLease.setKeys(codes);
-        return null; // Completed at END after exactly the requested client ticks, or interrupted.
+        inputLease.setKeys(inputChord.keys());
+        return null; // Completed at END after the pose prelude and requested hold, or interrupted.
     }
 
     @Override protected void maintainControls() {
@@ -526,19 +527,19 @@ public final class ClientRuntime extends BridgeRuntime {
         }
         if (control.isDone() || !control.session.connected || control.expired()) { controlsChanged("cancelled"); return; }
         boolean targetChanged=ControlRegistry.controls().blockAttackChanged(inputLease);
-        if (--remaining <= 0 || targetChanged) {
+        if (inputChord.endTick() || targetChanged) {
             Request finished = control;
             release();
             JsonObject receipt=Json.object("completed", true, "outcome",targetChanged?"attack_target_changed":"duration_elapsed", "player", player(), "serverAcknowledged", false);
             ControlRegistry.memory().refusedSince(refusalMark).forEach((k,v)->receipt.add(k,Json.GSON.toJsonTree(v)));
             finished.reply(receipt);
-        }
+        } else inputLease.setKeys(inputChord.keys());
     }
 
     private void release() {
         ControlRegistry.controls().releaseBlockAttack(inputLease);
         if (inputLease != null) inputLease.close();
-        inputLease=null; control=null; remaining=0;
+        inputLease=null; control=null; inputChord=null;
     }
 
     @Override protected void controlsChanged(String reason) {
