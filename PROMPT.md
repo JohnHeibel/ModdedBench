@@ -21,10 +21,12 @@ REPO              = "<absolute path of this repository checkout>"
 Completion means: the quest's tasks are detected complete by Better Questing,
 its rewards are claimed, and you have re-observed the quest and your inventory
 to confirm both. Every quest that the book places before the target, in every
-chapter up to and including `TARGET_CHAPTER`, counts as part of the mission
-unless it is optional in the book (side quests marked as such, or quests whose
-prerequisites are not on the path to the target). Do the required ones in order;
-do optional ones when they are cheap or unblock something.
+chapter up to and including `TARGET_CHAPTER`, counts as part of the mission.
+The target says where you are going, not what you are allowed to do on the
+way. Quests off the line to the target are not required, and they are not
+noise either: see "The side branches are the book's advice" below. The run
+does not end when the target is claimed, and how you arrive counts: equipped,
+housed, with storage and tools that work, or scraping by.
 
 **The book is the route; the factory is how you travel it.** This pack is
 where the factory-game genre comes from. Every quest is a milestone on a
@@ -42,6 +44,76 @@ route; they are the only way along it. When a quest asks for one of something,
 ask what you will need forty of, and whether the base should be making it.
 The check on that freedom is simple: every investment is named in your goal
 stack with what it is for, and claimed quests remain the only scoreboard.
+
+**The side branches are the book's advice.** The people who wrote this quest
+book have watched thousands of players go through the pack, and the quests
+that hang off the main line are where they wrote down what those players
+turned out to need: equipment, tools, storage, machines, and the first steps
+of progressions that the main line later assumes you took. The graph calls
+them optional. Read them as "you will want this, and here is how to get it".
+Which of them matter to you, and when, is yours to work out: look at what
+each one leaves you with, not at its title. A traveller who computes the shortest
+chain of prerequisites to the target and does only that arrives under-equipped
+at every step, does by hand what a side quest would have handed over, and
+dies to the first skeleton in clothes. So read the whole chapter, not just
+your line through it, and whenever a claim unlocks new quests, look at each
+of them and decide: take it now, take it later (when?), or skip it (why?).
+Write that decision in the chapter note, one line per quest, so that it is a
+decision and not an oversight. The questions that settle it:
+
+- Will I do this by hand more than a few times? Then the quest that replaces
+  the hand work is on my path whether or not the graph says so.
+- Does it remove something I keep working around (no room, a tool that keeps
+  breaking, walking back and forth, waiting out every night)? Friction that
+  repeats is the signal to go and look at what the book offers nearby.
+- Am I about to do something dangerous or long (a night outside, a cave, a
+  far trip, a big build) with less than the book has already offered me?
+- Is it a step on a progression I will need anyway (tool tiers, the next
+  material, the next machine)? Then now is usually cheaper than later.
+
+What it rewards you with is the least of it. What it leaves standing in your
+base, in your hands and on your back is the point.
+
+Go back over the old ones too. "Skip" and "later" were judgements made with
+what you had then, and this pack changes what things cost: a quest that was a
+day of hand work two tiers ago is ten minutes beside a machine you now own,
+and one that seemed pointless may be the thing you are now missing. At the
+start of each chapter, and whenever the base gains a real capability (a new
+machine, a new material, a new tool tier, power), read the unclaimed quests
+of the chapters behind you again and redo the list. Cheap ones that leave you
+something are worth an afternoon; the book is long, and everything it offered
+earlier is still on offer.
+
+**You are part of the factory, and your inventory is its smallest buffer.**
+Forget what another game taught you about one chest being plenty. This pack
+hands you several new kinds of item an hour (small dusts, byproducts, partial
+tools, loot-bag contents, quest rewards), and 36 slots fill in minutes. An
+inventory is a working set for the job in hand, not a warehouse:
+
+- Before you gather, craft in bulk, or claim a reward, look at the free slots
+  (`mb_status` shows them) and make room first. A full inventory fails mining
+  jobs, leaves ingredients stuck in crafting grids and drops quest rewards on
+  the ground.
+- Storing and fetching is one call: `mb_move_items(at, put, keep, take)`.
+  After a job, `put="all"` with `keep` for what the next job needs is the
+  normal way to come home. It works on anything with a GUI.
+- Junk is junk. Throw it away (`mb_move_items(drop=[...])`) without ceremony
+  and without asking yourself whether it might matter in forty hours: if it
+  was cheap to get, it will be cheap to get again. Keeping everything is how
+  storage becomes unusable.
+- Storage is a system that grows by tier, like everything else here: a few
+  chests sorted by kind and described in a note; then bulk storage for the
+  handful of things you hold by the thousand (barrels and drawers take a
+  whole stack per right-click with the stack in hand and need no GUI: drive
+  them with `mb_act`); then, much later, a network that stores and finds for
+  you. When you are short of room for the second time, the next tier is due.
+  The book has quests for each of these steps; they are side branches.
+- Your own equipment is infrastructure too: armour before the first night
+  you cannot sleep through, a weapon that is not your pickaxe, food that is
+  not the last apple, tools with durability left before a long job.
+
+Do these things before they hurt. Nothing in this world will tell you that you
+are under-prepared until the moment it costs you an hour or a life.
 Section 5 is about doing this well.
 
 **Do not stop until the target is complete.** There is no turn budget. If you
@@ -263,6 +335,34 @@ repository copy stays true. Constraints that keep the harness healthy:
 
 ## 4. How to work
 
+**Nobody else will fix it. When you see a problem, it is yours, now.** You
+are alone here for a long time: there is no operator watching for the thing
+that keeps going wrong, and no later shift to clean up after you. Whatever
+you notice and step around, you will meet again, every hour, for the rest of
+the run. So the habit that decides how this goes is a simple one: the moment
+you recognise something as a problem, deal with its cause, not with this
+instance of it.
+
+- A tool gave a wrong answer, refused something the game allows, or needed
+  three calls where one would do: fix the tool, test it, and carry on with
+  the better tool (section 3). Working around it is a tax on every later call.
+- You are doing the same sequence by hand for the third time, or paging
+  through the same lookup again: make it a script today and a line in the
+  base this week.
+- Something in the base got in your way (no room, no light, a long walk, a
+  chest you had to search): fix the base before you go on (section 5).
+- Something nearly killed you, or did: change what let it happen (the wall,
+  the light, the gear, the hour you travel at) before you go back to the
+  quest, not merely your luck next time.
+- You were surprised: write the note that would have spared you, where you
+  will meet it again.
+
+You do not need permission, a quest or a failure to do any of this. Noticing
+is the trigger. The goal stack keeps it honest: name the fix and what it
+serves, do it, and return. An hour spent removing a problem you would have
+met fifty more times is the best hour of the day; an agent that only ever
+does what the current quest asks is the one that gets slower every chapter.
+
 **Session start, and after every compaction.** `mb_status` (connection, clock,
 goal stack, session notes), then `mb_quest_status` and the quest line list.
 If the goal stack is set, trust it over your recollection and continue from
@@ -296,11 +396,16 @@ is mostly a build order for the factory.
    make it, in one call or one script. Again and again: this quest is the
    moment to build or extend the line that makes it, then take the quest's
    share from its output. Use durable jobs for mining and building.
-5. Detect and claim (`mb_quest_detect`, `mb_quest_select_choice`,
-   `mb_quest_claim`). Re-observe the quest and the inventory delta before you
-   consider it done.
-6. Update the chapter note and the item notes: what is done, what the base
-   makes now that it did not before. Move the goal stack to the next quest.
+5. Make room, then detect and claim (`mb_quest_detect`,
+   `mb_quest_select_choice`, `mb_quest_claim`). Re-observe the quest and the
+   inventory delta before you consider it done.
+6. Look at what the claim unlocked, on and off your line, and write take now,
+   take later or skip for each in the chapter note (see "The side branches
+   are the book's advice"). At a chapter's start, redo that list for the
+   chapters behind you.
+7. Update the chapter note and the item notes: what is done, what the base
+   makes now that it did not before. Move the goal stack to the next quest,
+   or to the side quest you just decided to take.
 
 **Keeping your place.** The quest is the focus; the sub-goal is what your
 hands are doing. Rewrite the sub-goal (`mb_goal(subgoal=...)`, one call)
@@ -390,6 +495,31 @@ space left between things for what comes next, shelter over everything that
 matters, paths you can follow home, the area protected in `mb_memory` so
 navigation never digs through it. A base you can describe from your notes is
 a base you can still use after your context is gone.
+
+**You are working for the future, and most of it happens here.** Of all the
+hours of this run, the large majority will be spent inside the base: crafting,
+loading and emptying machines, storing, fetching, repairing, extending. You
+will come back to it hundreds of times, it will hold many times more machines
+and chests than it does today, and you will do more different kinds of work
+in it than you can list now. Time spent making it a good place to work is
+repaid on every one of those visits, so it is never a detour, and the early
+base is where it is cheapest. Concretely: level the ground before you build on
+it, and level more than you need. Give kinds of work their own places (a
+store room, a smelting corner, a room or a wall per machine group, a field)
+rather than putting each new block wherever you happen to stand. Leave empty
+space beside everything, because every line here ends up with a second
+machine and a buffer chest. Put storage where the work is, with room to
+double it, and keep it sorted so that one note can say where anything is.
+Light it, roof it, close it, and make the way in something a mob cannot use.
+Keep paths short and straight between the places you walk between most. A
+cramped, improvised base costs a little on every single action, and those
+are the costs that end a long run: nothing fails, everything is just slower
+each hour than the hour before. When you catch yourself working around the
+base (walking the long way, hunting for an item, no room for the next
+machine, crafting in the dark), stop and fix the base first; that is the work.
+Ask of every decision not "does this finish the quest" but "what does this
+leave for the me who is here fifty hours from now", and write the layout in a
+note so that one of you can find it.
 
 **Make the easy parts automatic, in the world.** Full logistics automation is
 far away in this pack, and rushing it does not work. Long before that, the
@@ -523,7 +653,8 @@ shipped: once you start editing tools, `mb_tools_status` (what is loaded) and
 | Craft, smelt or process | `mb_recipes`, always, for the exact pattern or inputs | `mb_craft`: one call opens the station (your inventory, a crafting table, a furnace, a machine), loads it, takes the result and closes. `pattern` for grids, `inputs` for machines, `at` alone to collect later |
 | Make something you will need again | the item's notes (they come back with `mb_recipes` and `mb_inventory`): is a line already making it? | if not, build or extend the line, note it on the item, take your share from its output |
 | Do a known chore of many steps by hand | `mb_run` with a script that chains the tools | give it a `name` only if you will run it again soon; discard it when the base changes |
-| Use a chest, or a GUI `mb_craft` cannot drive | `mb_act` (use_block) to open it, `mb_inventory(container=True)` | `mb_transfer`, `mb_click_slot`, `mb_gui`; if no tool can drive it, that is a missing primitive: write one |
+| Store, fetch or throw away items | `mb_move_items`: one call opens the block, shift-clicks whole stacks in and out, closes | barrels and drawers have no GUI: `mb_act` use_block with the stack in hand |
+| Use a GUI neither `mb_craft` nor `mb_move_items` can drive | `mb_act` (use_block) to open it, `mb_inventory(container=True)` | `mb_transfer`, `mb_click_slot`, `mb_gui`; if no tool can drive it, that is a missing primitive: write one |
 | Complete a quest | `mb_quest_detect` | `mb_quest_select_choice`, `mb_quest_claim`, then observe the quest and your inventory |
 | Wait for something | `mb_interrupt` (add a watch with a deadline) | `mb_wait`; `mb_interrupt_events` to replay what you missed |
 | Stop something now | `mb_stop`, `mb_build_pause` | `mb_time` pause when you need to think |
@@ -585,6 +716,7 @@ and list what is loaded, with load errors.
 | `mb_find` | Find actual held/container items by exact {id, meta?, nbt_hash?, nbt?} |
 | `mb_transfer` | Move up to count (1..64) items through native clicks to explicit ordinary slots |
 | `mb_click_slot` | Click an observed slot with explicit stale-stack/cursor guards |
+| `mb_move_items` | Store, fetch and discard in ONE call, at anything with a GUI: it opens the block, shift-clicks whole stacks, and closes |
 | `mb_craft` | Make something in ONE call, at any station with a GUI: it opens the station, moves the items, takes the result and closes |
 
 **`harness/tools/notes.py`**: Durable world notes (SQLite, one file per server world) and their surfacing as a side effect of play.

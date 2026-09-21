@@ -73,6 +73,8 @@ def mb_status() -> Any:
         clock = k.call("time.status", timeout=5).get("state", {})
         out["clock"] = {key: clock.get(key) for key in ("mode", "paused", "reason", "held", "simulationTicks")}
         out["goal"] = notes.goal(k)
+        free = k.call("obs.inventory", detail="counts", timeout=5).get("emptySlots")
+        out["inventory"] = f"{free} of 36 slots free" + ("" if free is None or free > 6 else ": store or discard (mb_move_items) before you gather, craft in bulk or claim rewards")
     except Exception as e:  # not in a world yet, or the clock is unreachable: status must still answer
         out["goal"] = {"unavailable": str(e)}
     return notes.attach(out, notes.surface(k, reason="session", radius=32))
