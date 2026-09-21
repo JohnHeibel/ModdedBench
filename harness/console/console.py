@@ -9,7 +9,7 @@ in your browser nor the agent (which has no route to the host) can press its but
 its own: each button is a command you could have typed, and the job log shows which.
 """
 from __future__ import annotations
-import argparse, json, re, secrets, shutil, subprocess, sys, threading, time
+import argparse, hashlib, json, os, re, secrets, shutil, subprocess, sys, threading, time, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -43,6 +43,41 @@ def fill_prompt(prompt, quest, chapter):
     return prompt
 
 
+class Shortener:
+    """Long goals and long remarks, shortened for the stream by a cheap model, off the request path and cached on disk.
+
+    It runs here on the host (OPENROUTER_API_KEY in the console's environment), never where the agent is, and the
+    agent never sees the result. Without a key, or until an answer arrives, or if the call fails, the page shows the original, clamped.
+    """
+    ASK = {"goal": (70, "This is an AI agent's current goal in a modded Minecraft factory run. Rewrite it as one short imperative goal of at most 9 words. Keep the specific item or machine. Add nothing that is not there. Answer with the goal only."),
+           "say": (220, "This is a remark by an AI agent playing a modded Minecraft factory game, shown to stream viewers. Rewrite it in the first person in at most two short plain sentences. Keep concrete items, numbers and the reason for what it does. Drop tables, lists and formatting. Add nothing that is not there. Answer with the rewrite only.")}
+
+    def __init__(self, path):
+        self.path, self.lock, self.pending, self.slots = path, threading.Lock(), set(), threading.Semaphore(2)
+        self.model = os.environ.get("MB_OVERLAY_MODEL", "mistralai/mistral-small-2603")
+        try: self.cache = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError): self.cache = {}
+
+    def get(self, kind, text):
+        text = str(text or ""); key = kind + hashlib.sha1(text.encode()).hexdigest()[:16]
+        if len(text) <= self.ASK[kind][0] or not os.environ.get("OPENROUTER_API_KEY"): return None
+        with self.lock:
+            if key in self.cache or key in self.pending: return self.cache.get(key)
+            self.pending.add(key)
+        threading.Thread(target=self.fetch, args=(kind, text, key), daemon=True).start()
+
+    def fetch(self, kind, text, key):
+        try:
+            with self.slots:
+                body = {"model": self.model, "max_tokens": 120, "temperature": 0.2, "messages": [{"role": "system", "content": self.ASK[kind][1]}, {"role": "user", "content": text[:4000]}]}
+                request = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions", json.dumps(body).encode(),
+                                                 {"Authorization": "Bearer " + os.environ["OPENROUTER_API_KEY"], "Content-Type": "application/json"})
+                with urllib.request.urlopen(request, timeout=30) as reply: short = json.load(reply)["choices"][0]["message"]["content"].strip().strip('"')
+            with self.lock:
+                if short and len(short) < len(text): self.cache[key] = short; self.path.parent.mkdir(parents=True, exist_ok=True); self.path.write_text(json.dumps(self.cache), encoding="utf-8")
+        except Exception: pass  # the original stays on screen; the key stays pending, so this text is not asked about again in this session
+
+
 def sh(cmd, stdin=None, timeout=30):
     return subprocess.run(cmd, cwd=REPO, input=stdin, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, creationflags=NO_WINDOW)
 
@@ -50,7 +85,7 @@ def sh(cmd, stdin=None, timeout=30):
 class Console:
     def __init__(self):
         self.lock = threading.Lock(); self.kernel = None; self.supervisor = None
-        self.job = {"name": "", "running": False, "ok": True, "log": ""}; self.login = (0.0, None); self.book = (0.0, [])
+        self.job = {"name": "", "running": False, "ok": True, "log": ""}; self.login = (0.0, None); self.book = (0.0, []); self.shorten = Shortener(runtime.RUNTIME / "overlay-short.json")
 
     # The bridge, read only: one long-lived session for the state panel.
     def call(self, method, **params):
@@ -94,7 +129,7 @@ class Console:
         """Everything the OBS pages show, read only: the loop's feed and totals, plus the clock and the quest book from the bridge."""
         try: live = json.loads((OVERLAY / "live.json").read_text(encoding="utf-8"))
         except (OSError, ValueError): live = {"goal": {}, "status": {}, "stats": {}}
-        try: feed = [json.loads(x) for x in (OVERLAY / "feed.jsonl").read_text(encoding="utf-8").splitlines()[-80:]]
+        try: feed = [json.loads(x) for x in (OVERLAY / "feed.jsonl").read_text(encoding="utf-8").splitlines()[-400:]]  # runs of one tool collapse on the page, so many lines make few rows
         except (OSError, ValueError): feed = []
         if time.monotonic() - self.book[0] > 20:  # 46 lines with their layouts: read rarely
             try:
@@ -109,7 +144,11 @@ class Console:
         if clock is None: status = {"state": "game_down", "text": "", "since": status.get("since")}
         elif clock.get("paused") and status.get("state") in ("thinking", "acting", "waiting"):  # between turns the world is always paused; that is not news
             status = {"state": "held" if clock.get("held") else "paused", "text": "" if clock.get("held") else str(clock.get("reason") or "").replace("_", " "), "since": status.get("since")}
-        return {"now": time.time(), "goal": live.get("goal"), "status": status, "stats": live.get("stats"), "feed": feed, "chapters": self.book[1]}
+        goal = dict(live.get("goal") or {}); goal["short"] = self.shorten.get("goal", goal.get("subgoal"))
+        for entry in [e for e in feed if e.get("kind") == "say"][-12:]: entry["short"] = self.shorten.get("say", entry.get("text"))
+        try: target = re.search(r'^TARGET_QUEST\s*=\s*"([^"<]+)"', (BRIEF / "PROMPT.md").read_text(encoding="utf-8"), re.M).group(1)
+        except (OSError, AttributeError): target = ""
+        return {"now": time.time(), "goal": goal, "status": status, "stats": live.get("stats"), "run": live.get("run"), "target": target, "feed": feed, "chapters": self.book[1]}
 
     # Actions. Anything slow runs as the single background job; its command lines and output are the job log.
     def run_job(self, name, steps):
@@ -188,6 +227,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/": return self.reply(200, (Path(__file__).with_name("console.html").read_text(encoding="utf-8").replace("__TOKEN__", TOKEN)).encode(), "text/html; charset=utf-8")
         # The overlay is for OBS browser sources, which cannot send the token: it is read only and says nothing the stream does not show.
         if self.path.split("?")[0] == "/overlay": return self.reply(200, Path(__file__).with_name("overlay.html").read_bytes(), "text/html; charset=utf-8")
+        if self.path == "/overlay/mock": return self.reply(200, Path(__file__).with_name("overlay_mock.html").read_bytes(), "text/html; charset=utf-8")
         if self.path == "/overlay/data":
             try: return self.reply(200, self.console.overlay())
             except Exception as e: return self.reply(500, {"error": f"{type(e).__name__}: {e}"})

@@ -34,6 +34,25 @@ class ConsoleTests(unittest.TestCase):
             self.assertEqual(post({"X-Console-Token": console.TOKEN}), 200)
         finally: server.shutdown(); server.server_close()
 
+    def test_long_goals_are_shortened_off_the_request_path_and_only_with_a_key(self):
+        import io, os, tempfile, time
+        from unittest import mock
+        asked = []
+        def fake(request, timeout):
+            asked.append(json.loads(request.data)); return io.BytesIO(json.dumps({"choices": [{"message": {"content": '"Mine copper for the smelter"'}}]}).encode())
+        long = "Mine thirty-two copper ore from the vein north of the base so that the second alloy smelter can be built beside the first"
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(console.urllib.request, "urlopen", fake):
+            with mock.patch.dict(os.environ, {"OPENROUTER_API_KEY": ""}):
+                self.assertIsNone(console.Shortener(Path(tmp) / "s.json").get("goal", long)); self.assertEqual([], asked)
+            with mock.patch.dict(os.environ, {"OPENROUTER_API_KEY": "k"}):
+                short = console.Shortener(Path(tmp) / "s.json")
+                self.assertIsNone(short.get("goal", "Mine copper")); self.assertIsNone(short.get("goal", long))  # short enough; then asked, not waited for
+                for _ in range(100):
+                    if short.get("goal", long): break
+                    time.sleep(0.02)
+                self.assertEqual("Mine copper for the smelter", short.get("goal", long)); self.assertEqual(1, len(asked)); self.assertEqual(long, asked[0]["messages"][1]["content"])
+                self.assertEqual("Mine copper for the smelter", console.Shortener(Path(tmp) / "s.json").get("goal", long))  # kept on disk
+
 
 if __name__ == "__main__":
     unittest.main()
