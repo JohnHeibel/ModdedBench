@@ -53,14 +53,16 @@ def mb_view(bounds: dict | None = None, radius: int = 10, below: int = 2, above:
     on blocks, locations and regions (with note ids), waypoints, protected regions, containers
     you have notes on. Regions are given as world boxes, not drawn, so that they hide nothing.
     look_down=True draws one layer instead: the highest block of each column in the box, as on
-    a map, for surveying ground rather than rooms.
+    a map, for surveying ground rather than rooms; its default box reaches 24 below and 24 above.
     The result is a drawing: edit its layers and hand it to mb_build(drawing=...) or
     mb_build_preview, or keep it as a plan by writing it to a region note's data.drawing
     (mb_note_write); the view then shows the unbuilt part of that plan as '+'.
     A note's data holds 16 KB: a large plan is several region notes, one per part.
     """
     k = kernel(); me = [int(v // 1) for v in k.call("obs.player")["pos"]]
-    if bounds is None: bounds = {"min": [me[0] - radius, max(0, me[1] - below), me[2] - radius], "max": [me[0] + radius, min(255, me[1] + above), me[2] + radius]}
+    if bounds is None:
+        if look_down and below == 2 and above == 2: below = above = 24  # a map is no use if it stops at the ceiling
+        bounds = {"min": [me[0] - radius, max(0, me[1] - below), me[2] - radius], "max": [me[0] + radius, min(255, me[1] + above), me[2] + radius]}
     lo, hi = bounds["min"], bounds["max"]; size = [hi[i] - lo[i] + 1 for i in range(3)]
     if min(size) < 1: raise ValueError("bounds min must not exceed max")
     if size[0] * size[1] * size[2] > MAX_CELLS * (4 if look_down else 1) or size[0] > 96 or size[2] > 96:
