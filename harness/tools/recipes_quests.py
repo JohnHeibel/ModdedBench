@@ -162,6 +162,8 @@ def mb_recipes(id: str = "", meta: int | None = None, nbt: str | None = None, mo
     Base power/time is before overclocking. Fake recipes may describe information
     rather than an executable process; inspect their native page.
     Custom non-GT handlers may expose additional requirements only through their GUI.
+    Summaries name the stations once per handler under "stations". detail='full' returns ONE recipe whatever limit says:
+    pick it with index.
     This observes recipes; it does not craft, spawn items or alter the current GUI.
     Your notes on the item and on any ingredient shown come back under "notes": read them before making an ingredient by hand.
     """
@@ -169,6 +171,12 @@ def mb_recipes(id: str = "", meta: int | None = None, nbt: str | None = None, mo
     result = kernel().call("nei.recipes", id=id, meta=meta, nbt=nbt, mode=mode, handler=handler,
                            offset=offset, limit=limit, alternativesOffset=alternatives_offset,
                            alternativesLimit=alternatives_limit, timeout=timeout_s, fluid=fluid, amount=amount, detail=detail, index=index)
+    if detail != "full" and isinstance(result.get("recipes"), list):
+        # Every recipe of a handler repeats that handler's station list (dozens of crafting-table variants): say it once, by name.
+        stations = result.setdefault("stations", {})
+        for recipe in result["recipes"]:
+            names = [e["name"] for c in recipe.pop("catalysts", None) or [] for e in c.get("examples", [])[:1]]
+            stations.setdefault(recipe.get("handlerKey"), names[:6] + ([f"+{len(names) - 6} more (detail='full' lists them)"] if len(names) > 6 else []))
     # Notes on the ingredients matter as much as notes on the target: "the base already makes this" belongs to the ingredient.
     return notes.with_item_notes(result)
 
