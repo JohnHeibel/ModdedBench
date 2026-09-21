@@ -272,7 +272,8 @@ def mb_craft(pattern: list[list[dict | None]] | None = None, times: int = 1, at:
     shows the shaped recipe, e.g. sticks: [[{"id":"minecraft:planks"}],[{"id":"minecraft:planks"}]].
     times (1..64) batches crafts. If the game shows no output the pattern is not a recipe in this
     pack (GTNH changes many vanilla recipes and often wants a tool in the grid): the ingredients
-    go back and the error says so. Returns {crafted, gained}.
+    go back and the error says so. Returns {crafted, gained}: crafted is what ONE craft yields, gained
+    is how many you now have more than before.
     Machines: inputs is [{id, meta?, count, slot?}] in the order to load. Each goes to the first
     slot the machine itself accepts it in (furnace: [ore, fuel]); slot forces one. Then every
     output slot is emptied into your inventory, again for up to wait_s seconds (0..300) while the
