@@ -63,4 +63,21 @@ class CodexLoopTests(unittest.TestCase):
         (self.repo / ".state" / "STOP").write_text(""); (self.repo / "calls.json").unlink()
         self.assertEqual("stop_file", codex_loop.run(self.repo, codex=["never-run"], backoff_s=0, ready=lambda: False))
 
+    def test_the_loop_leaves_a_feed_and_totals_for_the_overlay(self):
+        def call(tool, args, result, status="completed"):
+            return {"type": "item.completed", "item": {"type": "mcp_tool_call", "tool": tool, "arguments": args, "status": status, "error": None,
+                                                       "result": {"content": [{"type": "text", "text": json.dumps(result)}]}}}
+        goal = {"chapter": "Stone Age", "quest": "Your First Night", "subgoal": "get eight dirt", "serves": ""}
+        self.loop([{"events": [{"type": "turn.started"}, message("I will start with dirt."), call("mb_goal", {"subgoal": "get eight dirt"}, goal),
+                               call("mb_craft", {"times": 2}, {"crafted": {"id": "minecraft:stick", "name": "Stick"}, "gained": 8}),
+                               call("mb_scan", {"budget": 9}, {"ok": False}, "failed"), call("mb_quest_claim", {"quest_id": "q"}, {"accepted": True}),
+                               call("mb_made_up", {"x": 1}, "not a dict"), {"type": "item.started", "item": {"type": "mcp_tool_call", "tool": "mb_wait", "arguments": {}}},
+                               {"type": "turn.completed", "usage": {"input_tokens": 100, "cached_input_tokens": 60, "output_tokens": 7}}]}], max_turns=1)
+        folder = self.repo / ".state" / "overlay"; live = json.loads((folder / "live.json").read_text())
+        feed = [(x["kind"], x["text"]) for x in map(json.loads, (folder / "feed.jsonl").read_text(encoding="utf-8").splitlines())]
+        self.assertEqual([("say", "I will start with dirt."), ("tool", "goal: get eight dirt"), ("tool", "crafted 8 × Stick"), ("fail", "looking for blocks"),
+                          ("mark", "quest claimed: Your First Night"), ("tool", "made up 1")], feed)
+        self.assertEqual((goal, "ended", 1, 5, 1, 1, 107), (live["goal"], live["status"]["state"], live["stats"]["turns"], live["stats"]["calls"], live["stats"]["failed"],
+                                                           live["stats"]["claims"], live["stats"]["tokens"]["input"] + live["stats"]["tokens"]["output"]))
+
 if __name__ == "__main__": unittest.main()

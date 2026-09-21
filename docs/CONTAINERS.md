@@ -104,6 +104,25 @@ that directory, so it can neither block the hold nor undo it. Resume removes
 the file and the server resumes by itself; it also takes over a pause that the
 agent or a disconnect left behind.
 
+## Stream overlay
+
+The console also serves read-only pages for OBS browser sources, each transparent
+and each its own source:
+
+| URL | Shows |
+| --- | --- |
+| `http://127.0.0.1:47300/overlay?show=banner` | the agent's goal stack: sub-goal large, what it serves, quest, chapter |
+| `...?show=status` | what it is doing now: thinking, the running action, waiting on the base, world paused and why, operator hold, game down, sleeping after a failed turn |
+| `...?show=feed` | what it said and did, newest at the bottom; add `&words=0` for actions only |
+| `...?show=chapters` | quest book progress, chapter by chapter, up to the target chapter |
+| `...?show=stats` | run time, quests claimed, actions, failures, scripts, turns, tokens |
+
+`/overlay/data` is the same data as JSON, for a layout of your own. The loop writes
+it (`harness/runner/feed.py`) to `.runtime/outbox/overlay`: `feed.jsonl`, whose
+`mark` lines are the run's milestones with timestamps, and `live.json`. Nothing is
+asked of the model for this: the goal is the one it keeps with `mb_goal`, and
+action lines are templates over its tool calls. Initialize clears both files.
+
 ## Operating by hand
 
 | Task | Command |
