@@ -409,7 +409,22 @@ public final class ClientRuntime extends BridgeRuntime {
         for (KeyBinding key : mc.gameSettings.keyBindings) {
             if (key != found.get(0) && key.getKeyCode() == code) throw new IllegalArgumentException("binding conflicts with " + key.getKeyDescription());
         }
-        return hold(r, Set.of(code));
+        hold(r, Set.of(code), true);
+        // Setting KeyBinding state alone never wakes mods listening to FML input
+        // events. Supply the same event getters as a physical press, once per tap.
+        try {
+            if (code >= 0) {
+                dev.modbench.api.UiInput.postKey(code, '\0', true);
+                dev.modbench.api.UiInput.nextKey();
+                cpw.mods.fml.common.FMLCommonHandler.instance().fireKeyInput();
+            } else {
+                dev.modbench.api.UiInput.postMouse(org.lwjgl.input.Mouse.getX(),
+                    mc.displayHeight-1-org.lwjgl.input.Mouse.getY(), code+100, true, 0);
+                dev.modbench.api.UiInput.nextMouse();
+                cpw.mods.fml.common.FMLCommonHandler.instance().fireMouseInput();
+            }
+        } finally { dev.modbench.api.UiInput.clear(); }
+        return null;
     }
 
     private Object input(Request r) {
@@ -439,13 +454,22 @@ public final class ClientRuntime extends BridgeRuntime {
     }
 
     private Object hold(Request r, Set<Integer> codes) {
+        return hold(r, codes, false);
+    }
+
+    private Object hold(Request r, Set<Integer> codes, boolean bindingPress) {
         int ticks = Json.integer(r.params, "ticks", 1, 1, 200);
         controlsChanged("superseded");
         control = r;
         remaining = ticks;
         ControlRegistry.controls().focusForInput();
         inputLease=ControlRegistry.controls().arbiter().acquire("direct",reason -> {
-            if (control == r) { release(); r.fail("cancelled", "input released: "+reason); }
+            if (control == r) {
+                release();
+                if (bindingPress && ("gui_open".equals(reason) || "registered_gui_open".equals(reason)))
+                    r.reply(Json.object("completed", true, "outcome", "gui_open", "serverAcknowledged", false));
+                else r.fail("cancelled", "input released: "+reason);
+            }
         },Json.bool(r.params,"overrideProtection",false));
         if(codes.contains(mc.gameSettings.keyBindAttack.getKeyCode())&&!Json.bool(r.params,"allowRetarget",false))
             ControlRegistry.controls().guardBlockAttack(inputLease);
