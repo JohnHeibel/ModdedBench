@@ -48,10 +48,11 @@ stack with what it is for, and claimed quests remain the only scoreboard.
 **The side branches are the book's advice.** The people who wrote this quest
 book have watched thousands of players go through the pack, and the quests
 that hang off the main line are where they wrote down what those players
-turned out to need: the better crafting table, the backpack, the tool that
-can be repaired instead of remade, armour, a real food supply, the first
-storage that scales. The graph calls them optional. Read them as "you will
-want this, and here is how to get it". A traveller who computes the shortest
+turned out to need: equipment, tools, storage, machines, and the first steps
+of progressions that the main line later assumes you took. The graph calls
+them optional. Read them as "you will want this, and here is how to get it".
+Which of them matter to you, and when, is yours to work out: look at what
+each one leaves you with, not at its title. A traveller who computes the shortest
 chain of prerequisites to the target and does only that arrives under-equipped
 at every step, does by hand what a side quest would have handed over, and
 dies to the first skeleton in clothes. So read the whole chapter, not just
@@ -72,6 +73,16 @@ decision and not an oversight. The questions that settle it:
 
 What it rewards you with is the least of it. What it leaves standing in your
 base, in your hands and on your back is the point.
+
+Go back over the old ones too. "Skip" and "later" were judgements made with
+what you had then, and this pack changes what things cost: a quest that was a
+day of hand work two tiers ago is ten minutes beside a machine you now own,
+and one that seemed pointless may be the thing you are now missing. At the
+start of each chapter, and whenever the base gains a real capability (a new
+machine, a new material, a new tool tier, power), read the unclaimed quests
+of the chapters behind you again and redo the list. Cheap ones that leave you
+something are worth an afternoon; the book is long, and everything it offered
+earlier is still on offer.
 
 **You are part of the factory, and your inventory is its smallest buffer.**
 Forget what another game taught you about one chest being plenty. This pack
@@ -362,7 +373,8 @@ is mostly a build order for the factory.
    inventory delta before you consider it done.
 6. Look at what the claim unlocked, on and off your line, and write take now,
    take later or skip for each in the chapter note (see "The side branches
-   are the book's advice").
+   are the book's advice"). At a chapter's start, redo that list for the
+   chapters behind you.
 7. Update the chapter note and the item notes: what is done, what the base
    makes now that it did not before. Move the goal stack to the next quest,
    or to the side quest you just decided to take.
@@ -455,6 +467,31 @@ space left between things for what comes next, shelter over everything that
 matters, paths you can follow home, the area protected in `mb_memory` so
 navigation never digs through it. A base you can describe from your notes is
 a base you can still use after your context is gone.
+
+**You are working for the future, and most of it happens here.** Of all the
+hours of this run, the large majority will be spent inside the base: crafting,
+loading and emptying machines, storing, fetching, repairing, extending. You
+will come back to it hundreds of times, it will hold many times more machines
+and chests than it does today, and you will do more different kinds of work
+in it than you can list now. Time spent making it a good place to work is
+repaid on every one of those visits, so it is never a detour, and the early
+base is where it is cheapest. Concretely: level the ground before you build on
+it, and level more than you need. Give kinds of work their own places (a
+store room, a smelting corner, a room or a wall per machine group, a field)
+rather than putting each new block wherever you happen to stand. Leave empty
+space beside everything, because every line here ends up with a second
+machine and a buffer chest. Put storage where the work is, with room to
+double it, and keep it sorted so that one note can say where anything is.
+Light it, roof it, close it, and make the way in something a mob cannot use.
+Keep paths short and straight between the places you walk between most. A
+cramped, improvised base costs a little on every single action, and those
+are the costs that end a long run: nothing fails, everything is just slower
+each hour than the hour before. When you catch yourself working around the
+base (walking the long way, hunting for an item, no room for the next
+machine, crafting in the dark), stop and fix the base first; that is the work.
+Ask of every decision not "does this finish the quest" but "what does this
+leave for the me who is here fifty hours from now", and write the layout in a
+note so that one of you can find it.
 
 **Make the easy parts automatic, in the world.** Full logistics automation is
 far away in this pack, and rushing it does not work. Long before that, the
