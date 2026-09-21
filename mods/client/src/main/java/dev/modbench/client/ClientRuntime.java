@@ -129,6 +129,22 @@ public final class ClientRuntime extends BridgeRuntime {
         });
         register("nav.status", "Standalone Baritone navigation state and supported movement", "read", r ->
             NavigationRegistry.get() == null ? java.util.Map.of("available",false) : NavigationRegistry.get().status());
+        register("obs.light","Where mobs can spawn near you, from the light values F3 shows: {radius:8 (<=16),height:4,limit:32}. A spot is a solid top with two free cells above it and block light 7 or less; sky is its sky light (15 = open sky: dark only at night). Nearest first, plus the count of all of them; a torch gives 14 and loses 1 per block.","read",r->{
+            requirePlayer();var world=mc.theWorld;var me=mc.thePlayer;
+            int radius=Json.integer(r.params,"radius",8,1,16),height=Json.integer(r.params,"height",4,1,8),limit=Json.integer(r.params,"limit",32,1,256);
+            int px=(int)Math.floor(me.posX),py=(int)Math.floor(me.boundingBox.minY),pz=(int)Math.floor(me.posZ);
+            List<int[]> dark=new ArrayList<>();
+            for(int x=px-radius;x<=px+radius;x++)for(int z=pz-radius;z<=pz+radius;z++)for(int y=Math.max(1,py-height);y<=Math.min(253,py+height);y++) {
+                if(!world.blockExists(x,y,z)||!net.minecraft.world.World.doesBlockHaveSolidTopSurface(world,x,y-1,z))continue;
+                boolean free=true;for(int up=0;up<2;up++){var material=world.getBlock(x,y+up,z).getMaterial();free&=!material.blocksMovement()&&!material.isLiquid();}
+                int block=world.getSavedLightValue(net.minecraft.world.EnumSkyBlock.Block,x,y,z);
+                if(free&&block<=7)dark.add(new int[]{x,y,z,block,world.getSavedLightValue(net.minecraft.world.EnumSkyBlock.Sky,x,y,z)});
+            }
+            dark.sort(java.util.Comparator.comparingDouble(s->me.getDistanceSq(s[0]+.5,s[1],s[2]+.5)));
+            JsonArray spots=new JsonArray();
+            for(int[] s:dark.subList(0,Math.min(limit,dark.size())))spots.add(Json.object("pos",Json.array(s[0],s[1],s[2]),"blockLight",s[3],"sky",s[4]));
+            return Json.object("center",Json.array(px,py,pz),"radius",radius,"height",height,"spawnable",dark.size(),"underRoof",dark.stream().filter(s->s[4]<15).count(),"spots",spots);
+        });
         register("obs.terrain", "Loaded feet cell {x,y,z}: collision boxes, standing height and ladder attachment", "read", r -> {
             requirePlayer();
             if(NavigationRegistry.get()==null) throw new IllegalArgumentException("Baritone mod is not installed");
