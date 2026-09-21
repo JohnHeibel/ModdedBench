@@ -123,11 +123,17 @@ def mb_act(method: str, params: dict | None = None, timeout_s: float = 60.0) -> 
     in place; compose navigation separately. Native acceptance isn't proof that a
     machine changed; inspect before/after receipts and your own postconditions.
     eat is refused while the clock lists a threat (you cannot fight or run with food in
-    your hand); params {despiteThreat:true} eats anyway.
+    your hand); params {despiteThreat:true} eats anyway. use_block answers with `labels` when
+    the spot lies in or beside a region note of yours.
     """
     params = dict(params or {})
     if method_name("act", method) == "act.eat" and not params.pop("despiteThreat", False): no_threat("eat")
-    return kernel().call(method_name("act", method), timeout=timeout_s, **params)
+    result = kernel().call(method_name("act", method), timeout=timeout_s, **params)
+    if method_name("act", method) == "act.use_block" and isinstance(result, dict) and all(isinstance(params.get(a), int) for a in "xyz"):
+        from mbtools_gtnh import plan  # the block clicked and the cells around it, where a placed block lands
+        spot = [params[a] for a in "xyz"]; labels = plan.labels_at(kernel(), [v - 1 for v in spot], [v + 1 for v in spot])
+        if labels: result = {**result, "labels": labels}
+    return result
 
 
 def no_threat(what: str, k=None) -> None:

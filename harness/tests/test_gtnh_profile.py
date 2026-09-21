@@ -27,7 +27,7 @@ TOOLS = {
     "mb_act", "mb_call", "mb_gui", "mb_keys", "mb_map", "mb_methods", "mb_obs", "mb_screenshot", "mb_status", "mb_stop", "mb_time",
     "mb_recipe_status", "mb_item_search", "mb_item_info", "mb_recipes", "mb_fluid_search", "mb_recipe_handlers", "mb_recipe_view", "mb_recipe_inspect",
     "mb_memory", "mb_route", "mb_inventory", "mb_find", "mb_transfer", "mb_click_slot", "mb_notes", "mb_note_write",
-    "mb_follow", "mb_fight", "mb_process", "mb_settings", "mb_cache",
+    "mb_follow", "mb_fight", "mb_view", "mb_process", "mb_settings", "mb_cache",
     "mb_mine", "mb_build_preview", "mb_build", "mb_copy",
     "mb_schematic_import", "mb_schematic_build", "mb_scan", "mb_work_status",
     "mb_work_resume", "mb_build_pause", "mb_build_materials", "mb_quest_status", "mb_quest_sync", "mb_quest_search", "mb_quest_lines",
@@ -95,9 +95,9 @@ class GTNHProfileTests(unittest.TestCase):
     def test_tool_set_lanes_and_metadata(self):
         srv = self.loaded()
         self.assertEqual(set(srv.name_owner), TOOLS)
-        self.assertEqual(len(srv.modules), 8)
+        self.assertEqual(len(srv.modules), 9)
         self.assertEqual({os.path.basename(p) for p in srv.modules},
-                         {"core.py", "inventory.py", "work.py", "recipes_quests.py", "interrupts.py", "notes.py", "wiki.py", "scripts.py"})
+                         {"core.py", "inventory.py", "work.py", "recipes_quests.py", "interrupts.py", "notes.py", "wiki.py", "scripts.py", "plan.py"})
         for name in ("mb_selection", "mb_selection_build", "mb_coverage", "mb_load_inputs"):
             self.assertNotIn(name, srv.name_owner)
         lanes = {n: tm.tools[n]["lane"] for tm in srv.modules.values() for n in tm.tools}
@@ -110,7 +110,7 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertTrue(registered.annotations.readOnlyHint)
         self.assertFalse(srv._tool_manager._tools["mb_build"].annotations.readOnlyHint)
         status = srv._tool_manager._tools["mb_tools_status"].fn()
-        self.assertEqual(sum(len(m["tools"]) for m in status["modules"]), 60)
+        self.assertEqual(sum(len(m["tools"]) for m in status["modules"]), 61)
         json.dumps(status)
 
     def test_worker_picks_pool_from_lane_metadata(self):
@@ -317,6 +317,21 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual(fake.last("nav.fight"), ("nav.fight", {"timeout":20, "hold":False, "leash":16, "bailHealth":8,
             "maxAttackers":2, "durationTicks":600, "crit":True, "block":True, "entityId":7, "weaponSlot":0}))
         with self.assertRaises(ValueError): tools.mb_fight()
+        import mbtools_gtnh.plan as plan
+        def world(method, params):
+            if method == "obs.player": return {"pos": [10.5, 64.0, 20.5]}
+            if method == "nav.copy": return {"plan": {"cells": [{"pos": [x, 0, z], "id": "minecraft:stone"} for x in range(3) for z in range(3)] + [{"pos": [1, 1, 1], "id": "minecraft:chest", "meta": 2}]}}
+            if method == "memory.status": return {"waypoints": {"home": [10, 64, 20]}, "regions": {}}
+            raise RuntimeError(method)
+        self.use(FakeKernel(world))
+        seen = plan.mb_view(bounds={"min": [9, 63, 19], "max": [11, 64, 21]})
+        self.assertEqual([layer["rows"] for layer in seen["layers"]], [["###", "###", "###"], ["...", ".@.", "..."]])  # the player stands where the chest is drawn
+        self.assertEqual(seen["legend"]["#"], {"id": "minecraft:stone", "meta": 0, "count": 9})
+        self.assertIn({"what": "waypoint", "name": "home", "pos": [10, 64, 20]}, seen["things"])
+        built, origin = plan.from_drawing({"origin": [9, 63, 19], "layers": [["#.", "+ "], {"y": 64, "rows": ["c."]}], "legend": {"#": "minecraft:stone", "c": {"id": "minecraft:chest", "meta": 2}}})
+        self.assertEqual((built, origin), ([{"pos": [0, 0, 0], "id": "minecraft:stone"}, {"pos": [0, 1, 0], "id": "minecraft:chest", "meta": 2}], [9, 63, 19]))
+        with self.assertRaises(ValueError): plan.from_drawing({"origin": [0, 0, 0], "layers": [["x"]], "legend": {}})
+        fake = self.use(FakeKernel(lambda method, params: {"method": method, **params}))
         h, v, shot = 2.9, .6, []  # a vanilla arrow: drag .99, gravity .05
         for _ in range(6): shot.append([h, v]); h, v = h * .99, v * .99 - .05
         import mbtools_gtnh.work as work
