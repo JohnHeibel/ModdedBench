@@ -78,7 +78,9 @@ class Feed:
         except (OSError, ValueError): pass
 
     def _save(self):
-        tmp = self.folder / "live.tmp"; tmp.write_text(json.dumps(self.live), encoding="utf-8"); tmp.replace(self.folder / "live.json")
+        tmp = self.folder / "live.tmp"; tmp.write_text(json.dumps(self.live), encoding="utf-8")
+        try: tmp.replace(self.folder / "live.json")
+        except OSError: pass  # the console has it open for a read (Windows refuses the swap); the next save lands
 
     def add(self, kind, text, **more):
         text = re.sub("§.", "", text)  # Minecraft colour codes in quest titles
