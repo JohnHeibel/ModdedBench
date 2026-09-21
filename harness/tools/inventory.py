@@ -15,7 +15,7 @@ from typing import Any
 
 from mbtool import BridgeError, kernel, tool
 from mbtools_gtnh import notes
-from mbtools_gtnh.core import lane_by_method, method_name
+from mbtools_gtnh.core import lane_by_method, method_name, no_threat
 
 
 @tool(lane=lane_by_method("gui"), coverage=["meta"])
@@ -172,6 +172,8 @@ def _station(k, at):
     seen = k.call("obs.container")
     if seen["open"]:
         if at is None or not seen["class"].endswith("ContainerPlayer"): return False
+    no_threat("open a GUI", k)
+    if seen["open"]:
         k.call("gui.close")  # your own inventory left open (an interrupted craft does that) is not the station you named
     if at is None: k.call("gui.open_inventory")
     else: k.call("act.use_block", x=at[0], y=at[1], z=at[2])  # no face: the bridge clicks the one you can see

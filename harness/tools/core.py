@@ -122,8 +122,21 @@ def mb_act(method: str, params: dict | None = None, timeout_s: float = 60.0) -> 
     hostile=true, types=[exact entity type], entityId, stopWhenClear. Combat stays
     in place; compose navigation separately. Native acceptance isn't proof that a
     machine changed; inspect before/after receipts and your own postconditions.
+    eat is refused while the clock lists a threat (you cannot fight or run with food in
+    your hand); params {despiteThreat:true} eats anyway.
     """
-    return kernel().call(method_name("act", method), timeout=timeout_s, **(params or {}))
+    params = dict(params or {})
+    if method_name("act", method) == "act.eat" and not params.pop("despiteThreat", False): no_threat("eat")
+    return kernel().call(method_name("act", method), timeout=timeout_s, **params)
+
+
+def no_threat(what: str, k=None) -> None:
+    """Refuse something that ties the player's hands while the threat guard lists a mob that is after them."""
+    try: threats = (k or kernel()).call("time.status", timeout=5).get("state", {}).get("threats") or []
+    except Exception: return  # no clock, no opinion
+    if threats:
+        near = ", ".join(f"{t.get('type')} {t.get('distance')} blocks" for t in threats[:4])
+        raise ValueError(f"refusing to {what}: {len(threats)} mob(s) after you ({near}). Deal with them first (mb_fight, leave, or a block between you).")
 
 
 KEYS = {"list": "obs.keys", "press": "act.press_key"}
