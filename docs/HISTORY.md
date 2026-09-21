@@ -8,6 +8,9 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-09-21** Direct sneak+attack/use chords prime native sneaking for two
+  ticks before the mouse press; simultaneous input previously withdrew single
+  drawer items because the pose packet followed the click.
 - **2026-09-21** Named key presses now dispatch native FML input events with
   synthetic event state. Better Questing's key previously queued a binding but
   never opened its screen; a GUI opened by the press now completes that input.
