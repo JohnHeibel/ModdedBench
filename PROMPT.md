@@ -443,6 +443,9 @@ every mob after you, with distance, line of sight, and whether it shoots. The
 world is stopped, so decide before you resume: fight, leave, or put a block
 between you. `mb_fight` fights one mob you name and stops the moment the fight
 gets worse than the one you chose. It will not pick a second mob for you.
+With `ranged=True` it uses whatever bow, crossbow or throwable is in the slot you
+name, and learns that weapon from its own shots: what shoots at you, and what
+explodes, is better killed from a distance.
 Against several, do not chase: get to where only one can reach you (a doorway, a
 one-wide tunnel, two blocks up a pillar) and use `mb_fight(hold=True)`. Kill
 what shoots first or break its line of sight; a creeper is fought in the open,
