@@ -106,16 +106,29 @@ agent or a disconnect left behind.
 
 ## Stream overlay
 
-The console also serves read-only pages for OBS browser sources, each transparent
-and each its own source:
+`http://127.0.0.1:47300/overlay` is the whole stream frame as one read-only page,
+1920x1080 with a transparent hole for the game: the game shows through the top-left
+1440x810, the feed (what the agent said and did, and what it is doing now) runs down
+the right, and the goal stack and run totals sit along the bottom.
 
-| URL | Shows |
-| --- | --- |
-| `http://127.0.0.1:47300/overlay?show=banner` | the agent's goal stack: sub-goal large, what it serves, quest, chapter |
-| `...?show=status` | what it is doing now: thinking, the running action, waiting on the base, world paused and why, operator hold, game down, sleeping after a failed turn |
-| `...?show=feed` | what it said and did, newest at the bottom; add `&words=0` for actions only |
-| `...?show=chapters` | quest book progress, chapter by chapter, up to the target chapter |
-| `...?show=stats` | run time, quests claimed, actions, failures, scripts, turns, tokens |
+In OBS, with a 1920x1080 canvas:
+
+1. Add the game as a Window or Game Capture, resize it to 1440x810 and put it in the
+   top-left corner (Edit Transform: position 0, 0; size 1440 x 810).
+2. Add a Browser source above it: that URL, width 1920, height 1080, and empty the
+   Custom CSS box. Tick "Refresh browser when scene becomes active" if you like.
+3. The console must be running; the page polls it every second and keeps the last
+   picture while it is away.
+
+`/overlay#preview` in an ordinary browser paints a stand-in for the game and scales to
+the window, `#sample` shows built-in sample data, `#tier=stone|steam|lv` forces the
+accent colour that otherwise follows the agent's progress.
+
+With `OPENROUTER_API_KEY` in the console's environment, goals over 70 characters and
+the agent's remarks over 220 are shortened for the frame by a cheap model
+(`MB_OVERLAY_MODEL`, default `deepseek/deepseek-v4.1-flash`), cached in
+`.runtime/overlay-short.json`, and marked "in short" on screen. This runs on the host
+only; the agent never has the key and never sees a summary.
 
 `/overlay/data` is the same data as JSON, for a layout of your own. The loop writes
 it (`harness/runner/feed.py`) to `.runtime/outbox/overlay`: `feed.jsonl`, whose

@@ -228,7 +228,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/": return self.reply(200, (Path(__file__).with_name("console.html").read_text(encoding="utf-8").replace("__TOKEN__", TOKEN)).encode(), "text/html; charset=utf-8")
         # The overlay is for OBS browser sources, which cannot send the token: it is read only and says nothing the stream does not show.
         if self.path.split("?")[0] == "/overlay": return self.reply(200, Path(__file__).with_name("overlay.html").read_bytes(), "text/html; charset=utf-8")
-        if self.path == "/overlay/mock": return self.reply(200, Path(__file__).with_name("overlay_mock.html").read_bytes(), "text/html; charset=utf-8")
+        if self.path in ("/overlay/fonts/Monocraft.ttf", "/overlay/fonts/Monocraft-Bold.ttf"): return self.reply(200, (Path(__file__).parent / self.path[9:]).read_bytes(), "font/ttf")
         if self.path == "/overlay/data":
             try: return self.reply(200, self.console.overlay())
             except Exception as e: return self.reply(500, {"error": f"{type(e).__name__}: {e}"})

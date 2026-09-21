@@ -1,55 +1,117 @@
 <!doctype html>
 <!-- SPDX-License-Identifier: LGPL-3.0-or-later
-OBS browser sources for a run, one per URL, all transparent:
-  /overlay?show=banner    the agent's goal stack        /overlay?show=status    what it is doing right now
-  /overlay?show=feed      what it said and did          /overlay?show=chapters  quest book progress up to the target chapter
-  /overlay?show=stats     run totals                    add &words=0 to the feed to leave out the model's own sentences
-Without ?show= every panel is stacked, for a look in a browser. -->
-<meta charset="utf-8"><title>ModdedBench overlay</title>
+     The stream frame, 1920x1080, as one OBS browser source over the game capture: the game shows through the top-left 1440x810.
+     It is a dark GregTech machine casing; its accent colour follows the agent's tier. Live data comes from /overlay/data.
+     Switches go in the URL hash: #preview paints a stand-in for the game and scales the frame to the window,
+     #sample shows the built-in sample instead of live data, #tier=stone|steam|lv forces an accent. -->
+<meta charset="utf-8"><title>ModdedBench frame</title>
 <style>
-  :root{--ink:#f4f1ea;--dim:#b9b4a8;--accent:#ffb454;--ok:#8fd694;--bad:#ff7b72;--mark:#7cc4ff;--panel:rgba(16,18,22,.72)}
-  html,body{margin:0;background:transparent;color:var(--ink);font:500 20px/1.35 "Segoe UI",system-ui,sans-serif}
-  section{display:none;box-sizing:border-box;padding:14px 18px;background:var(--panel);border-radius:12px;margin:8px;backdrop-filter:blur(3px)}
-  body.all section,section.on{display:block}
-  small,.dim{color:var(--dim);font-weight:400}
-  #banner .sub{font-size:30px;font-weight:650;line-height:1.2}
-  #banner .up{font-size:17px;margin-top:4px}
-  #status{font-size:22px}
-  .dot{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:10px;background:var(--dim)}
-  .thinking .dot{background:var(--accent);animation:p 1.2s infinite}.acting .dot{background:var(--ok)}.waiting .dot{background:var(--mark);animation:p 2.4s infinite}
-  .paused .dot,.held .dot,.game_down .dot,.backing_off .dot{background:var(--bad)}
-  @keyframes p{50%{opacity:.25}}
-  #feed{height:calc(100vh - 16px);overflow:hidden;display:none;flex-direction:column;justify-content:flex-end}
-  #feed.on,body.all #feed{display:flex} body.all #feed{height:420px}
-  #feed div{flex:none;padding:3px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;animation:in .35s}
-  #feed .say{white-space:normal;color:var(--ink);border-left:3px solid var(--accent);padding-left:10px;margin:6px 0;font-weight:400;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical}
-  #feed .tool{color:var(--dim)} #feed .fail{color:var(--bad)} #feed .mark{color:var(--mark);font-weight:650}
-  #feed time{font-size:14px;margin-right:8px;opacity:.6;font-variant-numeric:tabular-nums}
-  @keyframes in{from{opacity:0;transform:translateY(8px)}}
-  .bar{height:8px;border-radius:4px;background:rgba(255,255,255,.14);margin:4px 0 10px;overflow:hidden}.bar i{display:block;height:100%;background:var(--ok);transition:width 1s}
-  #stats{font-variant-numeric:tabular-nums}#stats span{margin-right:22px;white-space:nowrap}#stats b{font-weight:650}
+  /* Monocraft: the Minecraft typeface redrawn, under the OFL (fonts/LICENSE-Monocraft.txt) */
+  @font-face{font-family:Monocraft;font-weight:400;src:url(/overlay/fonts/Monocraft.ttf)}
+  @font-face{font-family:Monocraft;font-weight:700;src:url(/overlay/fonts/Monocraft-Bold.ttf)}
+  /* one dark grey casing (tinted a little toward blue, never neutral); only the accent follows the agent's tier */
+  #canvas{--face:#34363c;--hi:#575a63;--lo:#17181c;--seam:#282a2f;--ink:#ecebe6;--ink2:#a4a7b0;--screen:#0e0f12;--txt:#e9eaee;--dim:#858893;--bad:#ff6b5e}
+  [data-tier=stone]{--key:#ffe066} [data-tier=steam]{--key:#ffb547} [data-tier=lv]{--key:#7fe3ff}
+  html,body{margin:0;height:100%;background:transparent;overflow:hidden}
+  ::selection{background:var(--key);color:var(--screen)}
+  #canvas{position:absolute;left:0;top:0;width:1920px;height:1080px;transform-origin:0 0;display:grid;grid-template-columns:1440px 480px;grid-template-rows:810px 270px;
+          font:400 16px/1.5 Monocraft,monospace;color:var(--ink);-webkit-font-smoothing:none}
+  #side,#bottom{background:repeating-linear-gradient(90deg,transparent 0 158px,var(--seam) 158px 160px),repeating-linear-gradient(0deg,transparent 0 88px,var(--seam) 88px 90px),var(--face)}
+  #game{position:relative;box-shadow:inset -4px -4px 0 var(--hi),inset 4px 4px 0 var(--lo)}
+  .preview #game{background:linear-gradient(160deg,#79b0e2 0%,#a5cdec 45%,#5d8d3b 45.2%,#3f6a2a 100%)} body.preview{background:#000}
+  .screen{background:var(--screen);color:var(--txt);box-shadow:inset 4px 4px 0 var(--lo),inset -4px -4px 0 var(--hi);padding:16px 18px}
+  .rivet{position:absolute;width:8px;height:8px;background:var(--lo);box-shadow:inset 2px 2px 0 var(--hi)}
+  /* right column */
+  #side{grid-row:1/3;grid-column:2;display:flex;flex-direction:column;padding:20px 20px 20px 16px;gap:14px;min-height:0;position:relative}
+  #title{display:flex;justify-content:space-between;align-items:baseline;padding:0 4px}
+  #title b{font-size:32px;font-weight:700} #title span{font-size:32px;font-variant-numeric:tabular-nums}
+  #who{padding:0 4px;margin-top:-12px;color:var(--ink2);display:flex;justify-content:space-between}
+  #log{flex:1;min-height:0;display:flex;flex-direction:column}
+  #run{flex:none;padding-bottom:14px;margin-bottom:10px;border-bottom:2px solid color-mix(in srgb,var(--dim) 35%,transparent)}
+  #run .state{color:var(--key)} #run.stopped .state{color:var(--bad)} #run.idle .state{color:var(--dim)}
+  #run .what{font-size:24px;line-height:1.25;margin:2px 0 12px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:30px}
+  #run.quiet .what{display:none} #run.quiet{display:flex;justify-content:space-between;align-items:baseline} #run.quiet .bar i{display:none}
+  #run .bar{display:flex;gap:4px;align-items:center;color:var(--dim)} #run .bar em{margin-left:auto;font-style:normal}
+  #run .bar i{width:12px;height:12px;background:color-mix(in srgb,var(--dim) 30%,transparent)}
+  #run.busy .bar i{animation:chase 1.6s steps(1) infinite} @keyframes chase{0%,24%{background:var(--key)}25%,100%{background:color-mix(in srgb,var(--dim) 30%,transparent)}}
+  #feed{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;gap:4px}
+  #feed p{margin:0;flex:none;display:grid;grid-template-columns:1fr auto;gap:0 8px;color:var(--dim)}
+  #feed p>span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis} #feed em{font-style:normal;opacity:.8}
+  #feed .fail{color:var(--bad)}
+  #feed .say{display:-webkit-box;-webkit-line-clamp:7;-webkit-box-orient:vertical;overflow:hidden;color:var(--txt);margin:10px 0} #feed .say b{color:var(--key);font-weight:400}
+  #feed .mark{display:block;background:var(--key);color:var(--screen);font-weight:700;padding:4px 10px;margin:8px -6px}
+  /* bottom row */
+  #bottom{grid-row:2;grid-column:1;display:grid;grid-template-columns:1fr 372px;gap:18px;padding:22px 4px 20px 28px;min-height:0;position:relative}
+  #goal{min-width:0;display:flex;flex-direction:column;justify-content:center}
+  #goal h2{margin:0 0 10px;font-size:48px;line-height:1.1;font-weight:700;text-wrap:balance;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  #goal h2.long{font-size:32px;-webkit-line-clamp:3}
+  #goal .serves{font-size:24px;line-height:1.3;color:var(--ink2);display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+  #goal .serves.long{font-size:16px;line-height:1.5;-webkit-line-clamp:2}
+  #goal .crumbs{color:var(--ink2);margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} #goal .crumbs b{color:var(--ink);font-weight:700}
+  #readout{display:grid;grid-template-columns:auto 1fr;gap:0 16px;align-content:center;margin:0}
+  #readout dt{color:var(--dim)} #readout dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} #readout .bad{color:var(--bad)} #readout .key{color:var(--key)}
 </style>
-<section id="banner"></section><section id="status"></section><section id="feed"></section><section id="chapters"></section><section id="stats"></section>
+<div id="canvas" data-tier="steam">
+  <div id="game"></div>
+  <div id="side">
+    <i class="rivet" style="right:8px;top:8px"></i><i class="rivet" style="right:8px;bottom:8px"></i>
+    <div id="title"><b>ModdedBench</b><span id="clock">07:42:15</span></div>
+    <div id="who"><span id="model">gpt-6-astra, low effort</span><span id="turn">turn 212</span></div>
+    <div id="log" class="screen">
+      <div id="run" class="busy"><div class="state">Running</div><div class="what">mining 32 × Copper Ore</div>
+        <div class="bar"><i></i><i style="animation-delay:.2s"></i><i style="animation-delay:.4s"></i><i style="animation-delay:.6s"></i><i style="animation-delay:.8s"></i><i style="animation-delay:1s"></i><i style="animation-delay:1.2s"></i><i style="animation-delay:1.4s"></i><em>1m 12s</em></div></div>
+      <div id="feed">
+        <p><span>recipe lookup: Bronze Plate</span></p><p><span>checking inventory</span></p><p><span>going to 212 64 -140</span></p><p><span>crafted 6 × Bronze Plate</span></p>
+        <p class="fail"><span>machine: loaded Bronze Ingot (output full)</span></p><p><span>note: bronze plate: forge hammer by the north door</span></p>
+        <p class="say"><b>&lt;astra&gt;</b> The alloy smelter is the bottleneck: every plate waits on it. A second one next to the first, sharing the fuel chest, takes this chore off my hands for the rest of the chapter.</p>
+        <p><span>goal: Second alloy smelter beside the first</span></p><p><span>planning a build</span></p><p><span>building 14 blocks</span></p>
+        <p class="mark">quest claimed: Bronze Age</p>
+        <p><span>reading the quest book</span></p><p><span>recipe lookup: Small Coal Boiler</span><em>x3</em></p><p><span>script feed_smelters</span></p><p><span>looking for oreCopper</span><em>x4</em></p><p><span>mining 32 × Copper Ore</span></p>
+      </div>
+    </div>
+  </div>
+  <div id="bottom">
+    <i class="rivet" style="left:8px;bottom:8px"></i>
+    <div id="goal"><h2>Mine copper for the second alloy smelter</h2>
+      <div class="serves">so that bronze makes itself: plates for the next six quests</div>
+      <div class="crumbs">quest <b>Small Coal Boiler</b>, in Tier 0.5 - Steam (31 of 114)</div></div>
+    <dl id="readout" class="screen">
+      <dt>target</dt><dd class="key">Steam Macerator</dd>
+      <dt>quests claimed</dt><dd>164</dd><dt>actions</dt><dd>3,912</dd><dt>failed</dt><dd class="bad">47</dd>
+      <dt>scripts</dt><dd>38</dd><dt>turns</dt><dd>212</dd><dt>tokens</dt><dd>1.84B</dd></dl>
+  </div>
+</div>
 <script>
-const q=new URLSearchParams(location.search),show=q.get("show"),words=q.get("words")!=="0",$=id=>document.getElementById(id);
-if(show&&$(show))$(show).classList.add("on");else document.body.classList.add("all");
+const opts=new URLSearchParams(location.hash.slice(1)),$=id=>document.getElementById(id),canvas=$("canvas");
+if(opts.has("preview")){document.body.classList.add("preview");const fit=()=>canvas.style.transform=`scale(${Math.min(innerWidth/1920,innerHeight/1080)})`;addEventListener("resize",fit);setInterval(fit,500);fit()}
 const esc=s=>String(s??"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
-const span=s=>{s=Math.max(0,Math.floor(s));const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h?`${h}h ${String(m).padStart(2,"0")}m`:m?`${m}m`:`${s}s`};
-const big=n=>n>=1e9?(n/1e9).toFixed(2)+"B":n>=1e6?(n/1e6).toFixed(1)+"M":n>=1e3?(n/1e3).toFixed(0)+"k":String(n||0);
-const STATES={thinking:"thinking",acting:"",waiting:"waiting on the base",between_turns:"between turns",paused:"world paused",held:"operator hold",game_down:"game is down",backing_off:"sleeping after a failed turn",ended:"run ended"};
+const two=n=>String(n).padStart(2,"0"),hms=s=>{s=Math.max(0,Math.floor(s));return `${two(Math.floor(s/3600))}:${two(Math.floor(s%3600/60))}:${two(s%60)}`};
+const span=s=>{s=Math.max(0,Math.floor(s));const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h?`${h}h ${two(m)}m`:m?`${m}m ${two(s%60)}s`:`${s}s`};
+const big=n=>n>=1e9?(n/1e9).toFixed(2)+"B":n>=1e6?(n/1e6).toFixed(1)+"M":n>=1e4?(n/1e3).toFixed(0)+"k":(n||0).toLocaleString("en-US");
+const STATES={thinking:["Thinking","busy"],acting:["Running","busy"],waiting:["Waiting on the base","busy"],between_turns:["Between turns","idle"],paused:["World paused","stopped"],
+              held:["Operator hold","stopped"],game_down:["Game is down","stopped"],backing_off:["Sleeping after a failed turn","stopped"],ended:["Run ended","idle"]};
+function tierOf(chapters){const done=n=>(chapters||[]).some(c=>c.name.startsWith(n)&&c.completed>0);return done("Tier 1")?"lv":done("Tier 0.5")?"steam":"stone"}
 function draw(d){
-  const g=d.goal||{},st=d.status||{},s=d.stats||{},t=s.tokens||{};
-  $("banner").innerHTML=`<div class="sub">${esc(g.subgoal||"no goal set yet")}</div><div class="up dim">${[g.serves&&"for: "+g.serves,g.quest,g.chapter].filter(Boolean).map(esc).join("  ‹  ")}</div>`;
-  $("status").className=(show==="status"||!show?"on ":"")+(st.state||"");
-  $("status").innerHTML=`<span class="dot"></span>${esc([STATES[st.state]??st.state,st.text].filter(Boolean).join(": ")||"idle")} <small>${st.since?span(d.now-st.since):""}</small>`;
+  const g=d.goal||{},st=d.status||{},s=d.stats||{},t=s.tokens||{},run=d.run||{};
+  canvas.dataset.tier=opts.get("tier")||tierOf(d.chapters);
+  $("clock").textContent=hms(s.startedAt?d.now-s.startedAt:0); $("turn").textContent="turn "+(s.turns||0);
+  $("model").textContent=[run.model,run.effort&&run.effort+" effort"].filter(Boolean).join(", ");
+  const [label,cls]=STATES[st.state]||[st.state||"Idle","idle"];
+  $("run").className=cls+(st.text?"":" quiet"); $("run").querySelector(".state").textContent=label; $("run").querySelector(".what").textContent=st.text||""; $("run").querySelector("em").textContent=st.since?span(d.now-st.since):"";
+  const sub=g.short||g.subgoal||g.quest||"No goal set yet",serves=g.serves?"for "+g.serves.replace(/^for:?\s*/i,""):"";
+  const ch=(d.chapters||[]).find(c=>g.chapter&&(g.chapter.includes(c.name)||c.name.includes(g.chapter)))||[...(d.chapters||[])].reverse().find(c=>c.completed>0);
+  $("goal").innerHTML=`<h2 class="${sub.length>84?"long":""}">${esc(sub)}</h2><div class="serves ${serves.length>56?"long":""}">${esc(serves)}</div>`+
+    `<div class="crumbs">${g.quest&&g.subgoal?`quest <b>${esc(g.quest)}</b>, in `:""}${esc(ch?ch.name:g.chapter||"")}${ch?` (${ch.completed} of ${ch.total})`:""}</div>`;
   const rows=[];  // consecutive calls of one tool collapse into the newest, with a count
-  for(const e of d.feed){if(e.kind==="say"&&!words)continue;const last=rows[rows.length-1];
-    if(last&&e.kind==="tool"&&last.kind==="tool"&&last.tool===e.tool){last.text=e.text;last.ts=e.ts;last.n++}else rows.push({...e,n:1})}
-  const html=rows.slice(-30).map(e=>`<div class="${esc(e.kind)}"><time>${new Date(e.ts*1000).toTimeString().slice(0,5)}</time>${esc(e.text.replace(/[*#`]/g,""))}${e.n>1?` <small>×${e.n}</small>`:""}</div>`).join("");
+  for(const e of d.feed||[]){const last=rows[rows.length-1];
+    if(last&&e.kind==="tool"&&last.kind==="tool"&&last.tool===e.tool){last.text=e.text;last.n++}else rows.push({...e,n:1})}
+  const name=(run.model||"model").split("-").pop();
+  const html=rows.slice(-40).map(e=>e.kind==="say"?`<p class="say"><b>&lt;${esc(name)}${e.short?", in short":""}&gt;</b> ${esc((e.short||e.text).replace(/[*#`|]/g,"").replace(/\s+/g," "))}</p>`:
+    e.kind==="mark"?`<p class="mark">${esc(e.text)}</p>`:`<p class="${e.kind==="fail"?"fail":""}"><span>${esc(e.text)}</span>${e.n>1?`<em>x${e.n}</em>`:""}</p>`).join("");
   if($("feed").dataset.html!==html){$("feed").dataset.html=html;$("feed").innerHTML=html}
-  $("chapters").innerHTML=(d.chapters||[]).map(c=>`<div>${esc(c.name)} <small>${c.completed}/${c.total}</small></div><div class="bar"><i style="width:${100*c.completed/Math.max(1,c.total)}%"></i></div>`).join("")||"<small>quest book not read yet</small>";
-  $("stats").innerHTML=`<span><b>${s.startedAt?span(d.now-s.startedAt):"0s"}</b> <small>run</small></span><span><b>${s.claims||0}</b> <small>quests</small></span><span><b>${s.calls||0}</b> <small>actions</small></span><span><b>${s.failed||0}</b> <small>failed</small></span><span><b>${s.scripts||0}</b> <small>scripts</small></span><span><b>${s.turns||0}</b> <small>turns</small></span><span><b>${big((t.input||0)+(t.output||0))}</b> <small>tokens</small></span>`;
+  $("readout").innerHTML=`<dt>target</dt><dd class="key">${esc(d.target||"")}</dd><dt>quests claimed</dt><dd>${big(s.claims)}</dd><dt>actions</dt><dd>${big(s.calls)}</dd>`+
+    `<dt>failed</dt><dd class="bad">${big(s.failed)}</dd><dt>scripts</dt><dd>${big(s.scripts)}</dd><dt>turns</dt><dd>${big(s.turns)}</dd><dt>tokens</dt><dd>${big((t.input||0)+(t.output||0))}</dd>`;
 }
 async function tick(){try{draw(await (await fetch("/overlay/data",{cache:"no-store"})).json())}catch(e){}setTimeout(tick,1000)}
-tick();
+if(!opts.has("sample"))tick();else if(opts.get("tier"))canvas.dataset.tier=opts.get("tier");
 </script>

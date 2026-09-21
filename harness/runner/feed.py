@@ -17,7 +17,19 @@ def _name(x):
     """An item selector or stack as a viewer would say it: its display name, else its id without the mod."""
     if isinstance(x, list): return ", ".join(dict.fromkeys(_name(i) for i in x if i))[:80]
     if not isinstance(x, dict): return str(x)
-    return str(x.get("name") or x.get("ore") or str(x.get("id", "?")).split(":")[-1].replace("_", " "))
+    if x.get("name"): return str(x["name"])
+    if x.get("ore"): words = re.findall("[A-Za-z][a-z]*|[0-9]+", str(x["ore"])); return " ".join(words[1:] + words[:1]).lower()  # oreCopper: copper ore
+    last = str(x.get("id", "?")).split(":")[-1]
+    return IDS.get(last) or last.replace("_", " ")
+
+IDS = {"gt.blockores": "GregTech ore", "gt.blockmachines": "GregTech machine", "gt.metaitem.01": "GregTech item"}  # ids that say nothing to a viewer
+SAID = {  # bridge method -> what a viewer reads; a method that is absent is shown with its underscores as spaces
+    "eat": "eating", "use_block": "using a block", "use_item": "using the held item", "select_hotbar": "changing the held item", "attack": "attacking", "drop": "dropping items",
+    "close": "closing the menu", "open_inventory": "opening the inventory", "click_slot": "in a menu: moving items",
+    "pause": "paused the world to think", "resume": "let the world run again", "configure": "setting its survival guards", "status": "",
+    "protect": "marking an area as its own", "waypoint": "saving a waypoint"}
+def _said(method, prefix=""):
+    method = str(method or ""); return SAID[method] if method in SAID else prefix + method.replace("_", " ")
 
 def _pos(p): return " ".join(str(int(v)) for v in p) if isinstance(p, list) else ""
 
@@ -31,22 +43,22 @@ LINES = {  # tool -> line from (arguments, result); anything absent gets the gen
     "mb_mine": lambda a, r: f"mining {a.get('quantity', 1)} × {_name(a.get('items') or a.get('blocks'))}" + (f" ({r['state']})" if r.get("state") not in (None, "succeeded") else ""),
     "mb_build": lambda a, r: f"building {len(a.get('cells') or []) or ''} blocks".replace("  ", " ") + (f" ({r['state']})" if r.get("state") not in (None, "succeeded") else ""),
     "mb_build_preview": lambda a, r: "planning a build",
-    "mb_process": lambda a, r: ("going to " + _pos([v for k, v in sorted((a.get("goal") or {}).items()) if k in "xyz"]) if a.get("process") == "goal" else str(a.get("process", "")).replace("_", " ")),
+    "mb_process": lambda a, r: (("going to " + _pos([v for k, v in sorted((a.get("goal") or {}).items()) if k in "xyz"])).removesuffix("going to ") or "walking" if a.get("process") == "goal" else str(a.get("process", "")).replace("_", " ")),
     "mb_route": lambda a, r: "following route " + str(a.get("name")),
     "mb_scan": lambda a, r: "looking for " + _name(a.get("blocks") or [{"id": "blocks"}]),
     "mb_inventory": lambda a, r: "checking inventory", "mb_find": lambda a, r: "looking for " + _name(a.get("selector")),
     "mb_transfer": lambda a, r: f"moving {a.get('count', '')} {_name(a.get('expected'))}".replace("  ", " "),
     "mb_note_write": lambda a, r: "note: " + str((a.get("patch") or {}).get("title") or a.get("id")),
-    "mb_notes": lambda a, r: "reading notes", "mb_memory": lambda a, r: "map memory: " + str(a.get("method", "status")),
+    "mb_notes": lambda a, r: "reading notes", "mb_memory": lambda a, r: _said(a.get("method") or "status", "map memory: "),
     "mb_quest_claim": lambda a, r: "claimed a quest", "mb_quest_detect": lambda a, r: "handing in a quest",
     "mb_quest_observe": lambda a, r: "reading a quest: " + str(r.get("title") or r.get("name") or ""), "mb_quest_lines": lambda a, r: "reading the quest book",
     "mb_quest_search": lambda a, r: "quest search: " + str(a.get("query")),
-    "mb_wait": lambda a, r: "waiting on the base" + (": woke" if r.get("woke") else ""), "mb_interrupt": lambda a, r: f"watch {a.get('operation')}: {a.get('name', '')}",
+    "mb_wait": lambda a, r: "waiting on the base" + (": woke" if r.get("woke") else ""), "mb_interrupt": lambda a, r: ("set a watch: " if a.get("operation") == "add" else f"watch {a.get('operation')}: ") + str(a.get("name", "")),
     "mb_run": lambda a, r: "script" + (f" {a['name']}" if a.get("name") else "") + (": stopped, " + str(r["stopped"])[:80] if r.get("stopped") else ""),
     "mb_wiki_search": lambda a, r: "wiki search: " + str(a.get("query")), "mb_wiki_read": lambda a, r: "wiki: " + str(a.get("title")),
-    "mb_obs": lambda a, r: "observing", "mb_gui": lambda a, r: "in a menu: " + str(a.get("method", "")).replace("_", " "),
-    "mb_act": lambda a, r: str(a.get("method", "acting")).replace("_", " "), "mb_call": lambda a, r: str(a.get("method", "")),
-    "mb_time": lambda a, r: "clock: " + str(a.get("method", "status")), "mb_screenshot": lambda a, r: "looking at the screen", "mb_map": lambda a, r: "looking at the map",
+    "mb_obs": lambda a, r: "looking around", "mb_gui": lambda a, r: _said(a.get("method"), "in a menu: "), "mb_click_slot": lambda a, r: "in a menu: moving " + _name(a.get("expected") or {"id": "items"}),
+    "mb_act": lambda a, r: _said(a.get("method") or "acting"), "mb_call": lambda a, r: str(a.get("method", "")),
+    "mb_time": lambda a, r: _said(a.get("method") or "status", "clock: "), "mb_item_info": lambda a, r: "looking up " + _name(a), "mb_quest_status": lambda a, r: "checking its quests", "mb_screenshot": lambda a, r: "looking at the screen", "mb_map": lambda a, r: "looking at the map",
 }
 
 def line(tool, args, result):
@@ -105,5 +117,9 @@ class Feed:
             if tool == "mb_run": stats["scripts"] += 1
             if tool == "mb_quest_claim" and not failed and isinstance(result, dict) and result.get("accepted"):
                 stats["claims"] += 1; self.add("mark", "quest claimed: " + str(self.live["goal"].get("quest") or "?"))
-            else: self.add("fail" if failed or isinstance(result, dict) and result.get("stopped") else "tool", line(tool, item.get("arguments"), result), tool=tool)
+            else:
+                why = result.get("error") if isinstance(result, dict) and isinstance(result.get("error"), dict) else {}
+                why = "" if not failed else ": bad arguments" if why.get("code") == "bad_request" else ": " + str(why.get("code") or "failed").replace("_", " ")
+                text = line(tool, item.get("arguments"), result)
+                self.add("fail" if failed or isinstance(result, dict) and result.get("stopped") else "tool", text and text + why, tool=tool)
             self.status("thinking")
