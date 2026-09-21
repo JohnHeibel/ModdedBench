@@ -129,7 +129,14 @@ public abstract class Movement implements IMovement, MovementHelper {
         ctx.player().capabilities.isFlying = false;
         currentState = updateState(currentState);
         if (MovementHelper.isLiquid(ctx, ctx.playerFeet())) {
-            currentState.setInput(Input.JUMP, true);
+            // ModdedBench: a bobbing player is off the ground, and the game breaks blocks five times slower then. In water
+            // one deep (air at head height, solid bottom) stand on the bottom while a block is being broken.
+            boolean standToBreak = Boolean.TRUE.equals(currentState.getInputStates().get(Input.CLICK_LEFT))
+                    && !MovementHelper.isLiquid(ctx, ctx.playerFeet().up())
+                    && MovementHelper.canWalkOn(ctx, ctx.playerFeet().down());
+            if (!standToBreak) {
+                currentState.setInput(Input.JUMP, true);
+            }
         }
         if (ctx.player().isEntityInsideOpaqueBlock()) {
             ctx.getSelectedBlock().ifPresent(pos -> MovementHelper.switchToBestToolFor(ctx, BlockStateInterface.get(ctx, pos)));

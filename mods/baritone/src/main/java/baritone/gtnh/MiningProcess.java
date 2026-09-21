@@ -20,7 +20,7 @@ final class MiningProcess extends BulkJob {
     private boolean started;
     private Integer finalCount;
     private String finalGoal;
-    private int inactiveTicks;
+    private int inactiveTicks,pathlessTicks;
     private record DropLocation(int entityId,baritone.compat.BlockPos position){}
     private final Set<DropLocation> retriedDrops=new HashSet<>();
     private List<Map<String,Object>> diagnostics=List.of();
@@ -97,6 +97,12 @@ final class MiningProcess extends BulkJob {
             lastRejected=process.rejectedLocations().stream().map(MiningProcess::point).toList();
         }
         state=engine.getInputOverrideHandler().isInputForcedDown(baritone.api.utils.input.Input.CLICK_LEFT)?"mining":"pathing";
+        // MineProcess keeps its goal while every remaining target is one it may not break (beside still water, say) or
+        // cannot reach, and the player would stand there until the timeout. Five seconds with no path and none being
+        // planned is that case: end with the reason instead.
+        boolean pathless=state.equals("pathing")&&engine.getPathingBehavior().getCurrent()==null&&!engine.getPathingBehavior().getInProgress().isPresent();
+        pathlessTicks=pathless?pathlessTicks+1:0;
+        if(pathlessTicks>100)finish("failed","no_path_to_remaining_targets");
     }
     @Override void releaseProcess(){
         finalCount=mc.thePlayer==player?WorkAccess.count(items):null;
