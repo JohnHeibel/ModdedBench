@@ -63,6 +63,8 @@ def run(repo=REPO, prompt=None, max_turns=50, state=None, codex=None, extra=(), 
     for d in (repo / ".state", state.parent): d.mkdir(parents=True, exist_ok=True)
     thread = json.loads(state.read_text(encoding="utf-8")).get("thread") if state.exists() else None
     failures = 0; feed = Feed(Path(os.environ.get("MODBENCH_OUTBOX", repo / ".state")) / "overlay")
+    effort = [x.split("=", 1)[1].strip('"') for x in extra if x.startswith("model_reasoning_effort=")]  # what the viewer is watching, from the arguments for codex
+    feed.live["run"] = {"model": extra[extra.index("-m") + 1] if "-m" in extra[:-1] else "", "effort": effort[-1] if effort else ""}
     def end(reason): feed.status("ended", reason); return reason
     def idle(seconds):  # sleep that the stop file cuts short
         until = time.monotonic() + seconds
