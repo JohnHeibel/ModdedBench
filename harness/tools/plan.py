@@ -107,8 +107,11 @@ def mb_view(bounds: dict | None = None, radius: int = 10, below: int = 2, above:
     try: memory = k.call("memory.status")
     except Exception: memory = {}
     for name, pos in (memory.get("waypoints") or {}).items():
+        if isinstance(pos, dict): pos = [pos[axis] for axis in ("x", "y", "z")]
         if all(lo[i] <= pos[i] <= hi[i] for i in range(3)): things.append({"what": "waypoint", "name": name, "pos": pos})
     for name, box in (memory.get("regions") or {}).items():
+        if isinstance(box, dict):
+            box = {**box, **{edge: [box[edge][axis] for axis in ("x", "y", "z")] if isinstance(box[edge], dict) else box[edge] for edge in ("min", "max")}}
         if isinstance(box, dict) and all(box["min"][i] <= hi[i] and box["max"][i] >= lo[i] for i in range(3)):
             things.append({"what": "protected region", "name": name, "box": {"min": box["min"], "max": box["max"]}, "mode": box.get("mode")})
     here = [me[0] - lo[0], 0 if look_down else me[1] - lo[1], me[2] - lo[2]]

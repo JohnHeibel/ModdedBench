@@ -8,6 +8,9 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-09-21** Saving a survival camp waypoint exposed `mb_view` assuming array
+  coordinates. It now accepts the native world-memory coordinate objects for
+  waypoints and protected regions, retaining spatial filtering.
 - **2026-09-21** Stone Age mortar batches exposed a crafting composition gap.
   `mb_craft` now accepts explicit per-cell counts for retained tools and returns
   remaining ingredients after crafting; verified with a 19-clay batch in survival.
