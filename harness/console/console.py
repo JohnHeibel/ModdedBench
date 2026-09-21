@@ -50,7 +50,7 @@ class Shortener:
     agent never sees the result. Without a key, or until an answer arrives, or if the call fails, the page shows the original, clamped.
     """
     ASK = {"goal": (70, "This is an AI agent's current goal in a modded Minecraft factory run. Rewrite it as one short imperative goal of at most 9 words. Keep the specific item or machine. Add nothing that is not there. Answer with the goal only."),
-           "say": (220, "This is a remark by an AI agent playing a modded Minecraft factory game, shown to stream viewers. Rewrite it in the first person in at most two short plain sentences. Keep concrete items, numbers and the reason for what it does. Drop tables, lists and formatting. Add nothing that is not there. Answer with the rewrite only.")}
+           "say": (220, "This is a remark by an AI agent playing a modded Minecraft factory game, shown to stream viewers. Rewrite it in the first person in at most two short plain sentences, 30 words in all. Keep concrete items, numbers and the reason for what it does. Drop tables, lists and formatting. Add nothing that is not there. Answer with the rewrite only.")}
 
     def __init__(self, path):
         self.path, self.lock, self.pending, self.slots = path, threading.Lock(), set(), threading.Semaphore(2)
