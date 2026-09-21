@@ -467,9 +467,11 @@ mining trip. Finding a few blocks of the wrong ore usually means you are in the
 wrong layer of the right vein, so look the vein up before you walk away from it.
 A vein you have found is an asset for the rest of the run: note its position,
 extent and contents, give it a safe lit entrance, and take from it what the next
-chapter needs, not only what this quest counts. When `mb_mine` ends with targets
-left, read `refused` in its receipt before concluding the ore ran out: blocks
-beside fluid are skipped, not absent.
+chapter needs, not only what this quest counts: `mb_mine(vein=[x,y,z])` takes one
+ore block you have seen and works the whole vein around it. With `allow_place`
+and cobblestone in the hotbar it mines beside water and oil and plugs each hole
+behind it. When a job ends with targets left, read `refused` in its receipt
+before concluding the ore ran out.
 
 **Stuck.** If the same approach has failed twice, stop repeating it. Change
 one variable: the tool, the target, the route, the recipe, the time of day, or
