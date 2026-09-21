@@ -479,7 +479,7 @@ def item_subjects(result, limit=64):
         value = stack.pop()
         if isinstance(value, dict):
             if isinstance(value.get("id"), str) and ":" in value["id"]:
-                out += [f'{value["id"]}:{value.get("meta", 0)}', value["id"]]
+                out += [f'{value["id"]}:{value.get("meta", 0)}'.casefold(), value["id"].casefold()]
             stack.extend(value.values())
         elif isinstance(value, list):
             stack.extend(value)
@@ -663,7 +663,7 @@ def goal(kernel, changes=None):
     watch["ticks"] = ticks
     out = {**{k: data.get(k, "") for k in GOAL_FIELDS}, "setAt": data.get("setAt"), "quietGameMinutes": round(watch["quiet"] / 1200, 1)}
     if watch["quiet"] >= STALE_TICKS:
-        out["stale"] = "same sub-goal and same inventory for a game day of running time: say in one sentence why, then change something or re-scope. A running job or an armed wait is a fine reason; put it in the sub-goal."
+        out["stale"] = "same sub-goal and same inventory for a game day of running time: say in one sentence why, then change something or re-scope. A running job, an armed wait, or work on the base that does not pass through your hands (wiring, configuring, reading before a build) is a fine reason; put it in the sub-goal."
     return out
 
 

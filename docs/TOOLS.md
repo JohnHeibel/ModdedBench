@@ -226,6 +226,7 @@ custom-predicate example.
 | `mb_notes` | read | `capture` an attachment (block, entity, location, region, item type, topic), `search`, `get`, `history`, `status`, `resolve`. |
 | `mb_note_write` | action | Creates or updates a note with a revision guard and an operation id. |
 | `mb_craft` | action | One call per craft at any GUI station: opens `at` (or the inventory grid), then either lays out a shaped `pattern` `times` times and takes the output, or loads machine `inputs` into the slots the machine itself accepts them in and empties its output slots for up to `wait_s`; `at` alone collects. Returns ingredients if the pack has no such recipe; closes what it opened. |
+| `mb_run` | privileged | Runs a model-written Python script (`main(**args)`, every `mb_*` tool in scope, `log`) as one call; stops at the first error with the line and the log. Runs once unless given a `name`, which keeps it under `harness/scripts/` for re-running. Disposable by design: not listed in `mb_status`, no library. |
 | `mb_goal` | action | Reads or updates the goal stack (chapter, quest, sub-goal, serves) kept in the note `goal-stack`; `mb_status` returns it with a stall signal. |
 
 Notes surface as a side effect, under a `notes` key, with at most five compact

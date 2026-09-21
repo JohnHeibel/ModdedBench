@@ -163,12 +163,14 @@ def mb_recipes(id: str = "", meta: int | None = None, nbt: str | None = None, mo
     rather than an executable process; inspect their native page.
     Custom non-GT handlers may expose additional requirements only through their GUI.
     This observes recipes; it does not craft, spawn items or alter the current GUI.
+    Your notes on the item and on any ingredient shown come back under "notes": read them before making an ingredient by hand.
     """
     if detail == "full": limit = min(limit, 1) if limit else limit  # a full recipe is thousands of tokens: one at a time, by index
     result = kernel().call("nei.recipes", id=id, meta=meta, nbt=nbt, mode=mode, handler=handler,
                            offset=offset, limit=limit, alternativesOffset=alternatives_offset,
                            alternativesLimit=alternatives_limit, timeout=timeout_s, fluid=fluid, amount=amount, detail=detail, index=index)
-    return notes.attach(result, notes.surface(kernel(), subjects=[f"{id}:{meta or 0}".casefold(), id.casefold()], reason="item")) if id else result
+    # Notes on the ingredients matter as much as notes on the target: "the base already makes this" belongs to the ingredient.
+    return notes.with_item_notes(result)
 
 
 @tool(lane="read", coverage=["recipes"])

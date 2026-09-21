@@ -9,7 +9,8 @@ which of two situations you are in.
 
 ## You have `mb_*` tools and a mission (a target quest)
 
-You are the player in a run that lasts far longer than your context. You have probably been here
+You are the player in a factory game, in a run that lasts far longer than your context: what
+counts is what your base makes without you. You have probably been here
 before and do not remember it. Do this, in order, before anything else:
 
 1. Read your standing brief in full: `/brief/PROMPT.md` if it exists (a contained run; it is
