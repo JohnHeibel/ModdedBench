@@ -197,12 +197,16 @@ def _grid(session, pattern, times):
         raise ValueError(f"pattern does not fit this {width}x{width} grid" + ("; pass at=[x,y,z] of a crafting table for 3x3 recipes" if width == 2 else ""))
     if any(s.get("stack") for s in grid):
         raise ValueError("the crafting grid must be empty before mb_craft")
+    for row in pattern:
+        for want in row:
+            if want and (type(want.get("count", times)) is not int or not 1 <= want.get("count", times) <= 64):
+                raise ValueError("pattern cell count must be an integer in 1..64")
     stacks = {s["i"]: s["stack"] for s in _player(view) if s.get("stack")}
     have = {i: st["count"] for i, st in stacks.items()}
     try:
         for r, row in enumerate(pattern):
             for c, want in enumerate(row):
-                need = times if want else 0
+                need = want.get("count", times) if want else 0
                 while need:
                     source = next((i for i, st in stacks.items() if have[i] and _matches(st, want)), None)
                     if source is None:
@@ -218,6 +222,11 @@ def _grid(session, pattern, times):
         for s in session.observe()["slots"]:  # put the ingredients back so the next attempt starts clean and closing drops nothing
             if s["i"] in {g["i"] for g in grid} and s.get("stack"): session.click(s["i"], "quick_move")
         raise
+    for s in session.observe()["slots"]:
+        if s["i"] in {g["i"] for g in grid} and s.get("stack"):
+            session.click(s["i"], "quick_move")
+    if any(s.get("stack") for s in session.observe()["slots"] if s["i"] in {g["i"] for g in grid}):
+        raise ProcedureStopped("craft finished but ingredients remain in the grid; make inventory space", session.receipts)
     gained = sum(s["stack"]["count"] for s in _player(session.observe()) if _matches(s.get("stack"), result))
     return {"crafted": result, "gained": gained - sum(st["count"] for st in stacks.values() if _matches(st, result))}
 
@@ -273,7 +282,10 @@ def mb_craft(pattern: list[list[dict | None]] | None = None, times: int = 1, at:
     used as it is and left open.
     Grid crafting: pattern is rows of cells, each {id, meta?} or null, laid out as mb_recipes
     shows the shaped recipe, e.g. sticks: [[{"id":"minecraft:planks"}],[{"id":"minecraft:planks"}]].
-    times (1..64) batches crafts. If the game shows no output the pattern is not a recipe in this
+    times (1..64) loads that many items per cell; a cell's count overrides its total load
+    (e.g. count:1 for a retained mortar). The native shift-click decides how many crafts
+    actually run; gained reports the observed result. Remaining tools/ingredients are returned.
+    If the game shows no output the pattern is not a recipe in this
     pack (GTNH changes many vanilla recipes and often wants a tool in the grid): the ingredients
     go back and the error says so. Returns {crafted, gained}: crafted is what ONE craft yields, gained
     is how many you now have more than before.
