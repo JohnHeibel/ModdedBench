@@ -457,7 +457,7 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual(done["loaded"], [{"slot": 0, "id": "minecraft:cobblestone", "count": 3}, {"slot": 1, "id": "minecraft:coal", "count": 1}])
         self.assertEqual(done["collected"], [{"id": "minecraft:stone", "meta": 0, "count": 2}])  # only the slot that rejects its own contents is an output
         self.assertEqual([s["slot"] for s in done["inside"]], [0, 1]); self.assertFalse(gui["open"])
-        self.assertEqual(fake.last("act.use_block")[1], {"x": 1, "y": 64, "z": 1, "face": 1})
+        self.assertEqual(fake.last("act.use_block")[1], {"x": 1, "y": 64, "z": 1})  # no face: the bridge clicks the visible one
         with self.assertRaises(ValueError): tools.mb_craft(pattern=[[cobble]], inputs=[cobble])
         build = module_with(self.srv, "mb_build")
         build.mb_build_preview(cells=[{"pos": [0, 0, 0], "id": "minecraft:furnace"}, {"pos": [1, 0, 0], "id": "minecraft:wool", "meta": 3}])

@@ -192,7 +192,7 @@ final class GuiOperations {
                 if(index>=container.inventorySlots.size()||InventoryView.slot(container,index)!=slot||!Stacks.expected(slot.getStack(),p.get("expected")))
                     throw new IllegalStateException("stale_stack before native press; virtual results may have reordered");
             };
-            String type=Json.string(p,"type",p.has("mode")&&Json.integer(p,"mode",0,0,1)==1?"quick_move":"pickup");
+            String type=Json.string(p,"type",new String[]{"pickup","quick_move","swap","clone","throw","","pickup_all"}[Json.integer(p,"mode",0,0,6)]); // mode: the vanilla click number, for those who know it
             int mode=switch(type) {case "pickup"->0;case "quick_move"->1;case "swap"->2;case "clone"->3;case "throw"->4;case "pickup_all"->6;default->throw new IllegalArgumentException("unsupported click type; use gui.drag for drag distribution");};
             int button=Json.integer(p,"button",0,0,mode==2?8:mode==3?2:1);
             if(!slot.func_111238_b()) throw new IllegalArgumentException("slot disabled");

@@ -25,8 +25,7 @@ final class InteractionOperations {
 
     String handle(Entity e) {return handles.computeIfAbsent(e,key->UUID.randomUUID().toString());}
     static boolean hostile(Entity e,EntityPlayer p) {
-        return e instanceof IMob || e instanceof EntityLiving living && living.getAttackTarget()==p ||
-            e instanceof EntityLivingBase living && living.getAITarget()==p;
+        return e instanceof IMob; // by type: whom a mob is targeting is server state the client never receives
     }
     JsonObject entity(Entity e) {
         JsonObject out=Json.object("entityId",e.getEntityId(),"handle",handle(e),"handleScope","client_instance",
@@ -99,17 +98,9 @@ final class InteractionOperations {
                 if(!p.has("x")||!p.has("y")||!p.has("z")) throw new IllegalArgumentException("x,y,z required");
                 x=Json.integer(p,"x",0,-30000000,30000000);y=Json.integer(p,"y",0,0,255);z=Json.integer(p,"z",0,-30000000,30000000);
                 if(!world.blockExists(x,y,z)||world.getChunkFromChunkCoords(x>>4,z>>4).isEmpty()) throw new IllegalArgumentException("target block is not loaded");
-                blockTarget=true;fluidTarget=Json.bool(p,"fluid",false);face=Json.integer(p,"face",1,0,5);
-                double[] hit={.5,.5,.5};int axis=face/2;axis=axis==0?1:axis==1?2:0;hit[axis]=face%2;
-                if(!fluidTarget) {
-                    Block block=world.getBlock(x,y,z);block.setBlockBoundsBasedOnState(world,x,y,z);
-                    var box=dev.modbench.api.ControlRegistry.targeting().withContext(()->block.getSelectedBoundingBoxFromPool(world,x,y,z));
-                    if(box!=null) {
-                        double[] low={box.minX-x,box.minY-y,box.minZ-z},high={box.maxX-x,box.maxY-y,box.maxZ-z};
-                        for(int i=0;i<3;i++)hit[i]=(low[i]+high[i])/2;
-                        hit[axis]=face%2==0?low[axis]:high[axis];
-                    }
-                }
+                blockTarget=true;fluidTarget=Json.bool(p,"fluid",false);
+                face=p.has("face")||p.has("hit")||fluidTarget?Json.integer(p,"face",1,0,5):visibleFace();
+                double[] hit=facePoint(face);
                 if(p.has("hit")) {JsonArray a=p.getAsJsonArray("hit");if(a.size()!=3) throw new IllegalArgumentException("hit must have 3 local coordinates");for(int i=0;i<3;i++){hit[i]=a.get(i).getAsDouble();if(!Double.isFinite(hit[i])||Math.abs(hit[i])>16)throw new IllegalArgumentException("hit coordinates must be finite and within 16 blocks of the target");}}
                 point=Vec3.createVectorHelper(x+hit[0],y+hit[1],z+hit[2]);checkBlock();
             }
@@ -137,10 +128,34 @@ final class InteractionOperations {
             if(kind.equals("select_hotbar")) {
                 int slot=Json.integer(p,"slot",-1,0,8);
                 if(p.has("expected")&&!Stacks.expected(player.inventory.mainInventory[slot],p.get("expected"))) throw new IllegalArgumentException("stale slot stack");
-                player.inventory.currentItem=slot;mc.playerController.updateController();accepted=true;finish("completed",null);return;
+                player.inventory.currentItem=slot;mc.playerController.updateController();accepted=true;
+                delivered=true;deliveredAt=elapsed;lease.close();return; // settles like the other actions; tick() confirms the slot is still selected
             }
             if(sneak) lease.setKeys(Set.of(mc.gameSettings.keyBindSneak.getKeyCode()));
             if(target!=null) aimEntity();else if(point!=null) aim(point);
+        }
+        /** Block-local centre of one face of the target's selection box: where a native click on that face lands. */
+        double[] facePoint(int face) {
+            double[] hit={.5,.5,.5};int axis=face/2;axis=axis==0?1:axis==1?2:0;hit[axis]=face%2;
+            if(fluidTarget)return hit;
+            Block block=world.getBlock(x,y,z);block.setBlockBoundsBasedOnState(world,x,y,z);
+            var box=dev.modbench.api.ControlRegistry.targeting().withContext(()->block.getSelectedBoundingBoxFromPool(world,x,y,z));
+            if(box!=null) {
+                double[] low={box.minX-x,box.minY-y,box.minZ-z},high={box.maxX-x,box.maxY-y,box.maxZ-z};
+                for(int i=0;i<3;i++)hit[i]=(low[i]+high[i])/2;
+                hit[axis]=face%2==0?low[axis]:high[axis];
+            }
+            return hit;
+        }
+        /** No face given: the one a player standing here would click, top first. Top when none is in sight, so delivery reports it. */
+        int visibleFace() {
+            for(int f:new int[]{1,2,3,4,5,0}) {
+                double[] h=facePoint(f);Vec3 eye=eyes();
+                double dx=x+h[0]-eye.xCoord,dy=y+h[1]-eye.yCoord,dz=z+h[2]-eye.zCoord,far=1+.05/Math.max(.05,Math.sqrt(dx*dx+dy*dy+dz*dz));
+                MovingObjectPosition m=world.rayTraceBlocks(eye,Vec3.createVectorHelper(eye.xCoord+dx*far,eye.yCoord+dy*far,eye.zCoord+dz*far));
+                if(m!=null&&m.typeOfHit==MovingObjectPosition.MovingObjectType.BLOCK&&m.blockX==x&&m.blockY==y&&m.blockZ==z&&m.sideHit==f)return f;
+            }
+            return 1;
         }
         // Forge 1.7's local player eyeHeight is an offset from its stance, not feet.
         // The native override includes that offset and matches Item's own ray.
@@ -214,6 +229,7 @@ final class InteractionOperations {
                     boolean changed=!held.equals(before.get("held"))||player.getFoodStats().getFoodLevel()!=before.get("food").getAsInt();
                     if(!changed){finish("failed","no consumption observed");return;}
                 }
+                if(kind.equals("select_hotbar")&&player.inventory.currentItem!=Json.integer(p,"slot",-1,0,8)){finish("failed","selection changed while settling: another job (mining picks its own tool) or the game moved it");return;}
                 finish("completed",null);
             }
         }

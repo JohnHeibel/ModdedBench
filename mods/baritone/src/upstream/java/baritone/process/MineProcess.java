@@ -85,7 +85,6 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             int curr = Arrays.stream(ctx.player().inventory.mainInventory).filter(Objects::nonNull)
                     .filter(stack -> filter.has(stack))
                     .mapToInt(stack -> stack.stackSize).sum();
-            System.out.println("Currently have " + curr + " valid items");
             if (curr >= desiredQuantity) {
                 logDirect("Have " + curr + " valid items");
                 cancel();

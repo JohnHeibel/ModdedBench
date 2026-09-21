@@ -55,6 +55,9 @@ import static baritone.pathing.precompute.Ternary.*;
  */
 public interface MovementHelper extends ActionCosts, Helper {
 
+    /** ModdedBench: blocks already reported as needing a special case; a modded block that throws is otherwise printed on every check. */
+    java.util.Set<Object> WARNED = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     static boolean avoidBreaking(BlockStateInterface bsi, int x, int y, int z, IBlockState state) {
         if (!bsi.worldBorder.canPlaceAt(x, z)) {
             return true;
@@ -170,7 +173,7 @@ public interface MovementHelper extends ActionCosts, Helper {
                 return NO;
             }
         } catch (Throwable exception) {
-            System.out.println("The block " + state.getBlock().getLocalizedName() + " requires a special case due to the exception " + exception.getMessage());
+            if (WARNED.add(state.getBlock())) System.out.println("The block " + state.getBlock().getLocalizedName() + " requires a special case due to the exception " + exception.getMessage());
             return MAYBE;
         }
     }
@@ -248,7 +251,7 @@ public interface MovementHelper extends ActionCosts, Helper {
             }
         } catch (Throwable exception) {
             // see PR #1087 for why
-            System.out.println("The block " + state.getBlock().getLocalizedName() + " requires a special case due to the exception " + exception.getMessage());
+            if (WARNED.add(state.getBlock())) System.out.println("The block " + state.getBlock().getLocalizedName() + " requires a special case due to the exception " + exception.getMessage());
             return MAYBE;
         }
     }

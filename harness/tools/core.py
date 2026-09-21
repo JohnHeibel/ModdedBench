@@ -105,8 +105,9 @@ def mb_obs(method: str, params: dict | None = None) -> Any:
 @tool(lane=lane_by_method("act"), coverage=["move"])
 def mb_act(method: str, params: dict | None = None, timeout_s: float = 60.0) -> Any:
     """Native act.* input/look/stop, use_block, use_entity, attack_entity, use_item,
-    eat, select_hotbar, combat and status. Target blocks with x/y/z, face 0..5 and
-    optional block-local hit [x,y,z] (default native face center); use_item
+    eat, select_hotbar, combat and status. Target blocks with x/y/z; face 0..5 names the side
+    to click (placing against it), omit it to click whichever side you can see; optional
+    block-local hit [x,y,z] (default native face center); use_item
     fluid=true includes collidable fluids in the targeting ray.
     Raw input attack locks to the initial block and stops when it changes;
     allowRetarget=true explicitly enables continuous block attacking.
