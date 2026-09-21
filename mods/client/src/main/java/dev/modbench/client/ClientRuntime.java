@@ -92,7 +92,7 @@ public final class ClientRuntime extends BridgeRuntime {
                 return MemoryMethods.call(method,r.params);
             });
         for(String method:new String[]{"time.status","time.pause","time.resume","time.configure","time.report_failure"})
-            register(method,"Server time control; configure {healthDrop,healthBelow,airBelow,foodBelow,burning,actionFailed,pauseOnDisconnect}",
+            register(method,"Server time control; configure {healthDrop,healthBelow,airBelow,foodBelow,burning,threatWithin,actionFailed,pauseOnDisconnect}; threatWithin N (-1 off, at most 32) pauses with reason threat when a mob takes you as its target within N blocks (2N in line of sight) or a creeper starts to swell, and status.threats lists them",
                 method.equals("time.status")?"read":"interaction",r->clock.command(r));
         register("nei.status","NEI catalogue readiness and available search/recipe operations","read",r->nei.status());
         register("nei.handlers","List all registered NEI categories and machine catalysts {query,offset,limit}","read",r->nei.handlers(r.params));

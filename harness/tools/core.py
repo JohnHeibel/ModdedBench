@@ -71,7 +71,7 @@ def mb_status() -> Any:
     out = dict(out, brief=f"Your standing brief is {brief if os.path.isfile(brief) else 'PROMPT.md at the repository root'}. If you cannot recall its mission and rules, re-read it now.")
     try:
         clock = k.call("time.status", timeout=5).get("state", {})
-        out["clock"] = {key: clock.get(key) for key in ("mode", "paused", "reason", "held", "simulationTicks")}
+        out["clock"] = {key: clock.get(key) for key in ("mode", "paused", "reason", "held", "simulationTicks", "threats")}
         out["goal"] = notes.goal(k)
         free = k.call("obs.inventory", detail="counts", timeout=5).get("emptySlots")
         out["inventory"] = f"{free} of 36 slots free" + ("" if free is None or free > 6 else ": store or discard (mb_move_items) before you gather, craft in bulk or claim rewards")
@@ -186,8 +186,12 @@ def mb_time(method: str = "status", params: dict | None = None, timeout_s: float
     available during pause. Exact stepping is not supported yet.
     configure params: healthDrop, burning, actionFailed, pauseOnDisconnect are booleans;
     healthBelow (health points), airBelow (air ticks, 300 is full) and foodBelow (food
-    points) are numeric thresholds, and -1 disables one. A usual set: {healthDrop:true,
-    healthBelow:8,airBelow:60,foodBelow:6,burning:true,pauseOnDisconnect:true}. Conditions pause globally
+    points) are numeric thresholds, and -1 disables one. threatWithin N (blocks, at most 32)
+    pauses with reason threat the moment a mob takes you as its target within N blocks, or
+    2N with a clear line of sight, or a creeper starts to swell: once per mob, before it has
+    hurt you. status.threats lists every mob after you now: entityId, type, distance, pos,
+    lineOfSight, ranged, swelling, health. A usual set: {healthDrop:true,healthBelow:8,
+    airBelow:60,foodBelow:6,burning:true,threatWithin:12,pauseOnDisconnect:true}. Conditions pause globally
     and report a reason. Baritone terminal failures signal actionFailed automatically;
     agent-written tools can call report_failure to signal their own failures.
     pauseOnDisconnect defaults true; set false for a planned

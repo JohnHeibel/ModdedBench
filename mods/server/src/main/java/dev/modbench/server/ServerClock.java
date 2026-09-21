@@ -107,7 +107,30 @@ public final class ServerClock implements ClockHooks.Driver, PauseCoordinator.Ho
         }
     }
     private void observe() {
-        if(connected()) clock.observe(client.playerEntity.getHealth(),client.playerEntity.getAir(),client.playerEntity.getFoodStats().getFoodLevel(),client.playerEntity.isBurning());
+        if(!connected()) return;
+        clock.observe(client.playerEntity.getHealth(),client.playerEntity.getAir(),client.playerEntity.getFoodStats().getFoodLevel(),client.playerEntity.isBurning());
+        if(clock.threatWithin()>=0) clock.threats(threats(client.playerEntity,clock.threatWithin()));
+    }
+    /**
+     * What a player at the keyboard would have noticed by ear and eye, which this player has neither of: a mob that has
+     * taken it as its target within `within` blocks, or up to twice that with a clear line of sight, and a creeper that
+     * has begun to swell. Whom a mob targets exists on the server only.
+     */
+    static com.google.gson.JsonArray threats(EntityPlayerMP player,double within) {
+        com.google.gson.JsonArray out=new com.google.gson.JsonArray();
+        for(Object value:player.worldObj.getEntitiesWithinAABB(net.minecraft.entity.EntityLiving.class,player.boundingBox.expand(within*2,within*2,within*2))) {
+            net.minecraft.entity.EntityLiving mob=(net.minecraft.entity.EntityLiving)value;
+            if(mob.isDead||mob.getHealth()<=0) continue;
+            boolean after=mob.getAttackTarget()==player||mob instanceof net.minecraft.entity.EntityCreature creature&&creature.getEntityToAttack()==player;
+            if(!after) continue;
+            double distance=mob.getDistanceToEntity(player);boolean sight=mob.canEntityBeSeen(player);
+            if(distance>within&&!(sight&&distance<=within*2)) continue;
+            boolean swelling=mob instanceof net.minecraft.entity.monster.EntityCreeper creeper&&creeper.getCreeperState()>0;
+            out.add(Json.object("key",mob.getEntityId()+(swelling?"!":""),"entityId",mob.getEntityId(),"type",net.minecraft.entity.EntityList.getEntityString(mob),
+                "distance",Math.round(distance*10)/10.0,"pos",Json.array(Math.floor(mob.posX),Math.floor(mob.boundingBox.minY),Math.floor(mob.posZ)),
+                "lineOfSight",sight,"ranged",mob instanceof net.minecraft.entity.IRangedAttackMob,"swelling",swelling,"health",mob.getHealth()));
+        }
+        return out;
     }
     @Override public boolean before() {
         runtime.service(server);
