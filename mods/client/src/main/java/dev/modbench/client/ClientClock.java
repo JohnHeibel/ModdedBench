@@ -44,6 +44,9 @@ public final class ClientClock implements ClockHooks.Driver {
         return null;
     }
     public void actionFailed() { if(supported) send(Json.object("type","action_failed")); }
+    public void expectThreat(int entityId) { if(supported) send(Json.object("type","expect_threat","entityId",entityId)); }
+    /** Paused by a guard, which wants the model's attention, rather than by a request or a lost connection, which a job waits out. */
+    boolean guardPause() { return paused && java.util.Set.of("threat","health_dropped","health_threshold","air_threshold","food_threshold","burning").contains(pauseReason()); }
     void interruptPause(Request original,JsonObject receipt,String reason) {
         Request pause=new Request(new com.google.gson.JsonPrimitive("interrupt-pause-"+java.util.UUID.randomUUID()),"time.pause",
             Json.object("reason","interrupt:"+reason,"_timeout_ms",10000),original.session,runtime,envelope->{

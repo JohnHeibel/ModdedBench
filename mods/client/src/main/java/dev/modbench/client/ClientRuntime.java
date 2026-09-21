@@ -223,7 +223,9 @@ public final class ClientRuntime extends BridgeRuntime {
         });
         register("nav.fight","One fight as a job: {entityId (from obs.entities or time.status threats), hold:false, durationTicks:600 (<=6000), leash:16 blocks from where you stood, bailHealth:8, maxAttackers:2, weaponSlot:0..8, crit:true, block:true, intervalTicks:10, ranged:{drawTicks,reloadTicks,minRange:6,maxRange:20,clickAfterLoad,speed,gravity,drag}}. ranged fights with the launcher or throwable in hand: usage is found by trying (hold and release, else click), ballistics are measured from its own shots and kept per weapon name; fails no_projectile_fired after three tries. Paths to the mob without breaking or placing, then in reach blocks with a sword and swings while falling for critical hits; backs away from its target creeper while it swells. hold:true never moves: it hits the chosen mob, or with no entityId the nearest hostile in sight, when one comes into reach, and succeeds once none is in sight. Fails, which the actionFailed guard turns into a pause, on health_at_bail_line, outnumbered, creeper_swelling (another one), target_beyond_leash, target_lost, cannot_reach_target, duration_elapsed.","interaction",r->{
             requirePlayer();Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");controlsChanged("superseded");ControlRegistry.controls().focusForInput();
-            navigationJob=navigation().fight(params);navigationRequest=r;return null;
+            navigationJob=navigation().fight(params);navigationRequest=r;
+            if(params.get("entityId") instanceof Number id)clock.expectThreat(id.intValue()); // the threat guard warns of mobs the model has not answered yet
+            return null;
         });
         register("nav.settings","Source settings {operation:get|set|reset,query,values,save}; typed values or source syntax, atomic edits while idle. Optional declarations do not promise runtime support.","interaction",r->navigation().settings(Json.GSON.fromJson(r.params,Map.class)));
         register("nav.build_pause","Pause active construction and release controls; retains jobId for nav.resume. Server time continues.","interaction",r->navigation().pauseBuild());
@@ -424,6 +426,11 @@ public final class ClientRuntime extends BridgeRuntime {
         if (navigationRequest != null && (navigationRequest.isDone() || !navigationRequest.session.connected || navigationRequest.expired())) {
             navigationJob.cancel("cancelled");
             navigationRequest.fail("cancelled", "navigation owner disconnected or cancelled");
+            navigationRequest=null; navigationJob=null;
+        }
+        if (navigationRequest != null && clock.guardPause()) { // no tick will end this job: hand back what it did, now, with why
+            navigationJob.cancel("world_paused: "+clock.pauseReason());
+            navigationRequest.fail("cancelled","world paused by a guard ("+clock.pauseReason()+"): read mb_time status, decide, resume",navigationJob.status());
             navigationRequest=null; navigationJob=null;
         }
         if (control == null) return;

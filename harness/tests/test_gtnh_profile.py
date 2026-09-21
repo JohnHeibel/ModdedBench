@@ -317,6 +317,13 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual(fake.last("nav.fight"), ("nav.fight", {"timeout":20, "hold":False, "leash":16, "bailHealth":8,
             "maxAttackers":2, "durationTicks":600, "crit":True, "block":True, "entityId":7, "weaponSlot":0}))
         with self.assertRaises(ValueError): tools.mb_fight()
+        h, v, shot = 2.9, .6, []  # a vanilla arrow: drag .99, gravity .05
+        for _ in range(6): shot.append([h, v]); h, v = h * .99, v * .99 - .05
+        import mbtools_gtnh.work as work
+        learned = work.fit_ballistics({}, {"shots":1, "ballistics":{"drawTicks":30, "clickAfterLoad":True}, "tracks":[shot]})
+        self.assertAlmostEqual(learned["drag"], .99, 3); self.assertAlmostEqual(learned["gravity"], .05, 3)
+        self.assertEqual((learned["drawTicks"], learned["clickAfterLoad"], learned["shotsMeasured"]), (30, True, 1))
+        self.assertIsNone(work.fit_ballistics({}, {"shots":0}))
         tools.mb_mine([{"id":"gregtech:gt.blockores"}], vein=[33,56,-70], quantity=128, allow_break=True, allow_place=True)
         mine = fake.last("nav.mine")[1]  # chunk 1 is the ore chunk nearest x=33, chunk -4 nearest z=-70
         self.assertEqual((mine["bounds"], mine["besideFluid"], mine["items"]),

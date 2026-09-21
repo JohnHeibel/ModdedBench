@@ -15,7 +15,7 @@ public final class SimulationClock {
     private boolean healthDrop, actionFailed, burning, pauseOnDisconnect = true;
     private int airBelow = -1, foodBelow = -1;
     private double healthBelow = -1, threatWithin = -1;
-    private java.util.Set<String> knownThreats = new java.util.HashSet<>();
+    private final java.util.Map<String,Long> knownThreats = new java.util.HashMap<>(); // key -> tick last seen
     private com.google.gson.JsonArray threats = new com.google.gson.JsonArray();
     private Float lastHealth;
     private String reason = "startup";
@@ -60,10 +60,13 @@ public final class SimulationClock {
      * A key that was not there on the last look pauses ("threat"); one the agent already resumed past does not,
      * so a fight is not re-paused every tick by the mob being fought.
      */
+    /** The mob a fight job was sent after is expected to notice the player: not news for as long as a fight can last. */
+    public void expectThreat(int entityId) { knownThreats.put(String.valueOf(entityId), simulationTicks+6000); knownThreats.put(entityId+"!", simulationTicks+6000); }
     public void threats(com.google.gson.JsonArray now) {
-        java.util.Set<String> keys = new java.util.HashSet<>(); boolean fresh = false;
-        for (com.google.gson.JsonElement t : now) { String key = t.getAsJsonObject().get("key").getAsString(); keys.add(key); fresh |= !knownThreats.contains(key); }
-        knownThreats = keys; threats = now;
+        boolean fresh = false; knownThreats.values().removeIf(seen -> simulationTicks - seen > 200);
+        // A mob that is hit drops its target for a few ticks: it is the same threat when it comes back, not a new one.
+        for (com.google.gson.JsonElement t : now) fresh |= knownThreats.put(t.getAsJsonObject().get("key").getAsString(), simulationTicks) == null;
+        threats = now;
         if (fresh && !paused && threatWithin >= 0) pause("threat");
     }
     public void configure(JsonObject p) {

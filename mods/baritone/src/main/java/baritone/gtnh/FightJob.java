@@ -36,17 +36,20 @@ final class FightJob implements Navigation.Job {
     private String state="fighting",reason="",phase="starting";
     private Entity target;
     private int ticks,lastAttack=-100,lastUseful,attacks,crits,kills,clearTicks;
-    // Ranged: nothing here knows a weapon. How it is used is found by trying (hold and release; if nothing flies, click),
-    // and how its projectile flies is measured from the player's own shots, kept per weapon name in the game directory.
-    private final boolean ranged;
+    // Ranged: nothing here knows a weapon. How it is used is found by trying (hold and release; if nothing flies, click); how
+    // its projectile flies comes in as numbers, and each shot's velocity samples go back out for the caller to fit them from.
+    private boolean ranged;
+    private Integer meleeSlot;
+    private float lastHealth=-1;
     private double minRange=6,maxRange=20,speed=3,gravity=.05,drag=.99;
-    private int drawTicks=20,reloadTicks=5,samples,shotPhase,phaseTicks,shots,hits,duds,lastHurt;
+    private int drawTicks=20,reloadTicks=5,shotPhase,phaseTicks,shots,hits,duds;
     private boolean clickAfterLoad;
     private String weaponKey="";
     private final Set<Integer> seenProjectiles=new HashSet<>();
     private Entity tracked;
-    private final List<double[]> track=new ArrayList<>();
-    private static final java.lang.reflect.Type PROFILES=new com.google.gson.reflect.TypeToken<Map<String,Map<String,Double>>>(){}.getType();
+    private List<double[]> track=new ArrayList<>();
+    private final List<List<double[]>> tracks=new ArrayList<>();
+
 
     FightJob(Baritone engine,Map<String,Object> params){
         this.engine=engine;
@@ -61,10 +64,10 @@ final class FightJob implements Navigation.Job {
         if(ranged){
             var held=me.getHeldItem();if(held==null)throw new IllegalArgumentException("ranged fight needs the weapon in hand: pass weaponSlot");
             weaponKey=net.minecraft.item.Item.itemRegistry.getNameForObject(held.getItem())+"|"+held.getDisplayName();
-            var known=profiles().getOrDefault(weaponKey,Map.of());var asked=child(params,"ranged");
-            speed=number(asked,"speed",known.getOrDefault("speed",3d),.1,20);gravity=number(asked,"gravity",known.getOrDefault("gravity",.05),0,1);drag=number(asked,"drag",known.getOrDefault("drag",.99),.5,1);
-            drawTicks=integer(asked,"drawTicks",known.getOrDefault("drawTicks",20d).intValue(),1,200);reloadTicks=integer(asked,"reloadTicks",known.getOrDefault("reloadTicks",5d).intValue(),0,400);
-            clickAfterLoad=bool(asked,"clickAfterLoad",known.getOrDefault("clickAfterLoad",0d)>0);samples=known.getOrDefault("samples",0d).intValue();
+            var asked=child(params,"ranged");
+            speed=number(asked,"speed",3,.1,20);gravity=number(asked,"gravity",.05,0,1);drag=number(asked,"drag",.99,.5,1);
+            drawTicks=integer(asked,"drawTicks",20,1,200);reloadTicks=integer(asked,"reloadTicks",5,0,400);clickAfterLoad=bool(asked,"clickAfterLoad",false);
+            if(asked.containsKey("meleeSlot"))meleeSlot=integer(asked,"meleeSlot",0,0,8);
             minRange=number(asked,"minRange",6,0,32);maxRange=number(asked,"maxRange",20,4,48);
             for(Object o:mc.theWorld.loadedEntityList)if(o instanceof net.minecraft.entity.IProjectile)seenProjectiles.add(((Entity)o).getEntityId());
         }
@@ -103,6 +106,11 @@ final class FightJob implements Navigation.Job {
         }
         if(ticks-lastUseful>200){finish("failed","cannot_reach_target");return;}
 
+        if(ranged&&shotPhase!=1&&shotPhase!=2&&!hostiles(3.5).isEmpty()){ // a mob walks faster than a player backs away: a launcher is no use at arm's length
+            if(meleeSlot==null){finish("failed","hostile_in_melee_range: the ranged fight is over, "+shots+" shots; fight on with a melee weapon (or pass ranged.meleeSlot) or leave");return;}
+            ranged=false;me.inventory.currentItem=meleeSlot;mc.playerController.updateController();rest(Set.of());
+            if(chosen==null||reach(target)>REACH)target=hostiles(3.5).get(0);
+        }
         if(ranged){rangedTick((EntityLivingBase)target);return;}
         boolean inReach=reach(target)<=REACH&&me.canEntityBeSeen(target);
         if(!inReach&&!hold){phase="pursuing";engine.tickStart();return;}
@@ -146,20 +154,11 @@ final class FightJob implements Navigation.Job {
             if(value instanceof IMob&&value instanceof EntityLivingBase e&&!e.isDead&&e.getHealth()>0&&e.getDistanceToEntity(me)<=radius&&me.canEntityBeSeen(e))out.add(e);
         out.sort(Comparator.comparingDouble(e->e.getDistanceSqToEntity(me)));return out;
     }
-    private java.io.File profileFile(){return new java.io.File(mc.mcDataDir,"modbench-ballistics.json");}
-    private Map<String,Map<String,Double>> profiles(){
-        try(var in=new java.io.FileReader(profileFile())){Map<String,Map<String,Double>> read=new com.google.gson.Gson().fromJson(in,PROFILES);return read==null?new LinkedHashMap<>():read;}
-        catch(Exception missing){return new LinkedHashMap<>();}
-    }
-    private void remember(){
-        var all=profiles();all.put(weaponKey,Map.of("speed",speed,"gravity",gravity,"drag",drag,"drawTicks",(double)drawTicks,"reloadTicks",(double)reloadTicks,"clickAfterLoad",clickAfterLoad?1d:0d,"samples",(double)samples));
-        try(var out=new java.io.FileWriter(profileFile())){new com.google.gson.Gson().toJson(all,out);}catch(Exception e){/* the next shot measures again */}
-    }
     private void rangedTick(EntityLivingBase t){
         var me=mc.thePlayer;var game=mc.gameSettings;int use=game.keyBindUseItem.getKeyCode();
         watchShot();
-        if(t.hurtTime>lastHurt&&shots>0)hits++;
-        lastHurt=t.hurtTime;
+        if(lastHealth>=0&&t.getHealth()<lastHealth&&shots>0)hits++;
+        lastHealth=t.getHealth();
         double distance=me.getDistanceToEntity(t);boolean sight=me.canEntityBeSeen(t);
         if((!sight||distance>maxRange)&&shotPhase==0&&!hold){phase="closing";phaseTicks=0;engine.tickStart();return;}
         Set<Integer> keys=new LinkedHashSet<>();
@@ -199,27 +198,16 @@ final class FightJob implements Navigation.Job {
             if(!(o instanceof net.minecraft.entity.IProjectile)||!seenProjectiles.add(((Entity)o).getEntityId()))continue;
             Entity e=(Entity)o;
             if((shotPhase==1||shotPhase==2)&&tracked==null&&e.getDistanceToEntity(me)<4){
-                tracked=e;track.clear();shots++;duds=0;clickAfterLoad=shotPhase==2;shotPhase=3;phaseTicks=0;lastUseful=ticks;
+                tracked=e;shots++;duds=0;clickAfterLoad=shotPhase==2;shotPhase=3;phaseTicks=0;lastUseful=ticks;
             }
         }
         if(tracked==null)return;
+        // The projectile's own velocity, which its client copy steps with the weapon's real constants; positions jitter with every server correction.
         double[] last=track.isEmpty()?null:track.get(track.size()-1);
-        boolean stopped=tracked.isDead||last!=null&&Math.abs(tracked.posX-last[0])+Math.abs(tracked.posY-last[1])+Math.abs(tracked.posZ-last[2])<.01;
-        if(!stopped)track.add(new double[]{tracked.posX,tracked.posY,tracked.posZ});
-        if(stopped||track.size()>=8){fit();tracked=null;}
-    }
-    private void fit(){
-        if(track.size()>=4){
-            int n=track.size()-1;double[] h=new double[n],vy=new double[n];
-            for(int i=0;i<n;i++){double dx=track.get(i+1)[0]-track.get(i)[0],dz=track.get(i+1)[2]-track.get(i)[2];h[i]=Math.sqrt(dx*dx+dz*dz);vy[i]=track.get(i+1)[1]-track.get(i)[1];}
-            double d=0,g=0;int dn=0;
-            for(int i=0;i+1<n;i++)if(h[i]>.05){d+=h[i+1]/h[i];dn++;}
-            double newDrag=dn==0?drag:Math.max(.9,Math.min(1,d/dn));
-            for(int i=0;i+1<n;i++)g+=vy[i]*newDrag-vy[i+1];
-            double newGravity=Math.max(0,Math.min(.3,g/(n-1))),newSpeed=Math.sqrt(h[0]*h[0]+vy[0]*vy[0]),keep=samples==0?0:.5;
-            speed=speed*keep+newSpeed*(1-keep);gravity=gravity*keep+newGravity*(1-keep);drag=drag*keep+newDrag*(1-keep);samples++;
-        }
-        remember();
+        double h=Math.sqrt(tracked.motionX*tracked.motionX+tracked.motionZ*tracked.motionZ);
+        boolean stopped=tracked.isDead||h<.05||last!=null&&h>last[0]*1.02; // landed, or knocked about by something
+        if(!stopped)track.add(new double[]{h,tracked.motionY});
+        if(stopped||track.size()>=8){if(track.size()>=3)tracks.add(track);track=new ArrayList<>();tracked=null;}
     }
     /** Height reached, and ticks taken, when a shot launched at `angle` has covered `far` blocks of ground. */
     private double[] fly(double angle,double far){
@@ -255,8 +243,9 @@ final class FightJob implements Navigation.Job {
         var out=new LinkedHashMap<String,Object>();var me=mc.thePlayer;
         out.put("action","fight");out.put("state",state);out.put("reason",reason);out.put("phase",phase);out.put("ticks",ticks);
         out.put("attacks",attacks);out.put("criticalHits",crits);out.put("kills",kills);
-        if(ranged){out.put("shots",shots);out.put("hitsObserved",hits);out.put("weapon",weaponKey);
-            out.put("ballistics",Map.of("speed",speed,"gravity",gravity,"drag",drag,"drawTicks",drawTicks,"reloadTicks",reloadTicks,"clickAfterLoad",clickAfterLoad,"shotsMeasured",samples));}
+        if(shots>0||ranged){out.put("shots",shots);out.put("hitsObserved",hits);out.put("weapon",weaponKey);
+            out.put("ballistics",Map.of("speed",speed,"gravity",gravity,"drag",drag,"drawTicks",drawTicks,"reloadTicks",reloadTicks,"clickAfterLoad",clickAfterLoad));
+            out.put("tracks",tracks.stream().map(t->t.stream().map(s->List.of(s[0],s[1])).toList()).toList());} // per shot, per tick: [horizontal speed, vertical speed]
         if(me==player){
             out.put("health",me.getHealth());
             out.put("target",target instanceof EntityLivingBase t?Map.of("entityId",t.getEntityId(),"type",String.valueOf(net.minecraft.entity.EntityList.getEntityString(t)),"health",t.getHealth(),"distance",Math.round(t.getDistanceToEntity(me)*10)/10.0):null);
