@@ -335,6 +335,34 @@ repository copy stays true. Constraints that keep the harness healthy:
 
 ## 4. How to work
 
+**Nobody else will fix it. When you see a problem, it is yours, now.** You
+are alone here for a long time: there is no operator watching for the thing
+that keeps going wrong, and no later shift to clean up after you. Whatever
+you notice and step around, you will meet again, every hour, for the rest of
+the run. So the habit that decides how this goes is a simple one: the moment
+you recognise something as a problem, deal with its cause, not with this
+instance of it.
+
+- A tool gave a wrong answer, refused something the game allows, or needed
+  three calls where one would do: fix the tool, test it, and carry on with
+  the better tool (section 3). Working around it is a tax on every later call.
+- You are doing the same sequence by hand for the third time, or paging
+  through the same lookup again: make it a script today and a line in the
+  base this week.
+- Something in the base got in your way (no room, no light, a long walk, a
+  chest you had to search): fix the base before you go on (section 5).
+- Something nearly killed you, or did: change what let it happen (the wall,
+  the light, the gear, the hour you travel at) before you go back to the
+  quest, not merely your luck next time.
+- You were surprised: write the note that would have spared you, where you
+  will meet it again.
+
+You do not need permission, a quest or a failure to do any of this. Noticing
+is the trigger. The goal stack keeps it honest: name the fix and what it
+serves, do it, and return. An hour spent removing a problem you would have
+met fifty more times is the best hour of the day; an agent that only ever
+does what the current quest asks is the one that gets slower every chapter.
+
 **Session start, and after every compaction.** `mb_status` (connection, clock,
 goal stack, session notes), then `mb_quest_status` and the quest line list.
 If the goal stack is set, trust it over your recollection and continue from
