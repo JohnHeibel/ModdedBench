@@ -80,6 +80,8 @@ public interface MovementHelper extends ActionCosts, Helper {
         // we assume that it's ALWAYS okay to break the block thats ABOVE liquid
         IBlockState state = bsi.get0(x, y, z);
         Block block = state.getBlock();
+        // ModdedBench: the mining job plugs the hole on the next tick, before the fluid has moved
+        if (Baritone.besideFluid && block.getMaterial().isLiquid() && block.getMaterial() != net.minecraft.block.material.Material.lava) return false;
         if (baritone.compat.LegacyFluids.unsupportedForSwimming(block)) return true;
         if (!directlyAbove // it is fine to mine a block that has a falling block directly above, this (the cost of breaking the stacked fallings) is included in cost calculations
                 // therefore if directlyAbove is true, we will actually ignore if this is falling
@@ -89,7 +91,6 @@ public interface MovementHelper extends ActionCosts, Helper {
             return true; // dont break a block that is adjacent to unsupported gravel because it can cause really weird stuff
         }
         if (block instanceof BlockLiquid) {
-            if (Baritone.besideWater) return false; // water: everything else left above as unsupportedForSwimming
             if (directlyAbove || Baritone.settings().strictLiquidCheck.value) {
                 return true;
             }

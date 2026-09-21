@@ -228,11 +228,12 @@ def mb_cache(operation: str = "status", pos: list[int] | None = None, range: int
 
 
 @tool(rung=1, coverage=["move"])
-def mb_mine(blocks: list[dict], items: list[dict], quantity: int = 1,
+def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, quantity: int = 1,
             bounds: dict | None = None, radius: int = 24,
             allow_break: bool = False, allow_place: bool = False,
             override_protection: bool = False, timeout_ticks: int = 12000,
-            timeout_s: float = 600.0, beside_water: bool = False) -> Any:
+            timeout_s: float = 600.0, beside_fluid: bool | None = None,
+            vein: list[int] | None = None) -> Any:
     """Run bounded native quantity mining and return its terminal receipt.
 
     blocks and items are explicit block/item selectors; quantity means net matching
@@ -243,16 +244,27 @@ def mb_mine(blocks: list[dict], items: list[dict], quantity: int = 1,
     block with collection. A returned jobId is durable; inspect with mb_work_status
     and use mb_work_resume after correcting a blocked job. Protection override and
     terrain permissions apply only to this attempt.
-    It will not break a block with fluid beside or above it, and those targets simply
-    look unreachable: the receipt's refused lists each one with the fluid block beside
-    it. Water is a nuisance, not a danger: beside_water=True mines next to it (keep the
-    air guard armed, expect the tunnel to get wet). Oil and lava stay refused: plug the
-    listed fluid cell with a throwaway block (mb_build, one cell), or come at the ore from a dry side.
+    vein=[x,y,z], one ore block you have seen, mines the vein it belongs to: bounds become
+    the ore chunk that block's vein is centred on plus the chunks around it, 8 blocks up
+    and down; blocks defaults to that block's id and items to GregTech raw ore. Ask for the
+    quantity the next chapter needs, with allow_break and allow_place.
+    beside_fluid (default: on whenever allow_place is) breaks blocks that have water or oil
+    beside or above them and, on the next tick, before the fluid moves, puts a throwaway
+    block (cobblestone, dirt: keep a stack in the hotbar) where the broken one was; plugged
+    lists them. Lava is never mined beside. Without it such targets just look unreachable:
+    the receipt's refused lists each with the fluid cell beside it.
     """
     params = dict(blocks=blocks, items=items, quantity=quantity, radius=radius,
                   allowBreak=allow_break, allowPlace=allow_place,
                   overrideProtection=override_protection, timeoutTicks=timeout_ticks)
-    if beside_water: params["besideWater"] = True
+    if vein is not None:
+        chunk = lambda v: min((c for c in range((v >> 4) - 2, (v >> 4) + 3) if abs(c) % 3 == 1), key=lambda c: abs(c * 16 + 8 - v))  # veins centre on chunks where |c| % 3 == 1
+        cx, cz = chunk(vein[0]), chunk(vein[2])
+        bounds = {"min": [(cx - 1) * 16, max(1, vein[1] - 8), (cz - 1) * 16], "max": [(cx + 2) * 16 - 1, min(254, vein[1] + 8), (cz + 2) * 16 - 1]}
+        params["blocks"] = blocks or [{"id": kernel().call("obs.block", x=vein[0], y=vein[1], z=vein[2])["id"]}]
+        params["items"] = items or [{"id": "gregtech:gt.metaitem.03"}]
+    elif not blocks or not items: raise ValueError("blocks and items are required unless vein is given")
+    if allow_place if beside_fluid is None else beside_fluid: params["besideFluid"] = True
     if bounds is not None: params["bounds"] = bounds
     return notes.tracked("nav.mine", timeout_s, **params)
 

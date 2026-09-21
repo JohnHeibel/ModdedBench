@@ -317,6 +317,11 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual(fake.last("nav.fight"), ("nav.fight", {"timeout":20, "hold":False, "leash":16, "bailHealth":8,
             "maxAttackers":2, "durationTicks":600, "crit":True, "block":True, "entityId":7, "weaponSlot":0}))
         with self.assertRaises(ValueError): tools.mb_fight()
+        tools.mb_mine([{"id":"gregtech:gt.blockores"}], vein=[33,56,-70], quantity=128, allow_break=True, allow_place=True)
+        mine = fake.last("nav.mine")[1]  # chunk 1 is the ore chunk nearest x=33, chunk -4 nearest z=-70
+        self.assertEqual((mine["bounds"], mine["besideFluid"], mine["items"]),
+            ({"min":[0,48,-80],"max":[47,64,-33]}, True, [{"id":"gregtech:gt.metaitem.03"}]))
+        with self.assertRaises(ValueError): tools.mb_mine()
         tools.mb_process("goal", goal={"type":"near","pos":[1,64,2],"radius":2}, duration_ticks=80, timeout_s=14)
         self.assertEqual(fake.last("nav.process")[1]["goal"]["type"], "near")
         tools.mb_cache("locations", block="minecraft:diamond_ore", meta=0, limit=12, region_distance_squared=4)

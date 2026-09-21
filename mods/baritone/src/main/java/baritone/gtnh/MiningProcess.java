@@ -26,10 +26,16 @@ final class MiningProcess extends BulkJob {
     private List<Map<String,Object>> diagnostics=List.of();
     private List<List<Integer>> lastKnown=List.of(),lastRejected=List.of();
     private List<Map<String,Object>> refused=List.of();
+    private final boolean besideFluid;
+    private BlockPos breaking;
+    private final Set<BlockPos> plugged=new HashSet<>();
+    private int unplugged;
     MiningProcess(BaritoneNavigation nav,WorkJournal journal,Map<String,Object> options){
         super(nav,journal,options);engine=nav.reference();
         var blocks=WorkAccess.selectors(params.get("blocks"));items=WorkAccess.itemSelectors(params.get("items"));
         quantity=integer(params,"quantity",1,1,1000000);
+        besideFluid=bool(params,"besideFluid",false);
+        if(besideFluid&&!allowPlace)throw new IllegalArgumentException("besideFluid plugs the holes it opens: it needs allowPlace and a throwaway block (cobblestone, dirt) in the hotbar");
         BlockPos origin=WorkAccess.feet();int radius=integer(params,"radius",24,1,64);
         Map<String,Object> scan=params.containsKey("bounds")?child(params,"bounds"):Map.of("min",List.of(origin.getX()-radius,Math.max(1,origin.getY()-16),origin.getZ()-radius),"max",List.of(origin.getX()+radius,Math.min(254,origin.getY()+16),origin.getZ()+radius));
         bounds=bounds(scan);if(bounds.volume()>262144)throw new IllegalArgumentException("mining scan exceeds 262144 cells");
@@ -46,7 +52,9 @@ final class MiningProcess extends BulkJob {
         Baritone.settings().exploreForBlocks.value=false;Baritone.settings().legitMine.value=false;
         engine.overrideProtection=override;engine.positionAllowed=p->true;
         engine.explicitMiningTargets=observation::capture;
-        Baritone.besideWater=bool(params,"besideWater",false);
+        Baritone.besideFluid=besideFluid;
+        // A plug is never walked back through: the search may not stand in one, nor under one.
+        if(besideFluid)engine.positionAllowed=p->!plugged.contains(p)&&!plugged.contains(new BlockPos(p.getX(),p.getY()+1,p.getZ()));
         engine.getInputOverrideHandler().attach(lease);
     }
     int gained(){return Math.max(0,WorkAccess.count(items)-baseline);}
@@ -93,7 +101,9 @@ final class MiningProcess extends BulkJob {
             }
         }
         inactiveTicks=0;
+        if(besideFluid&&plug())return; // this tick belongs to the plug
         engine.tickStart();
+        if(besideFluid)watch();
         if(process.isActive()){
             lastKnown=process.knownLocations().stream().map(MiningProcess::point).toList();
             lastRejected=process.rejectedLocations().stream().map(MiningProcess::point).toList();
@@ -117,7 +127,7 @@ final class MiningProcess extends BulkJob {
         finalCount=mc.thePlayer==player?WorkAccess.count(items):null;
         finalGoal=String.valueOf(engine.getPathingBehavior().getGoal());
         engine.getPathingBehavior().forceCancel();engine.getInputOverrideHandler().release();
-        engine.explicitMiningTargets=()->s->false;Baritone.besideWater=false;
+        engine.explicitMiningTargets=()->s->false;Baritone.besideFluid=false;
         refused=refused();
         scopedSettings.forEach(ReferenceSettings::copy);
     }
@@ -132,6 +142,7 @@ final class MiningProcess extends BulkJob {
         out.put("initialTargetDiagnostics",diagnostics);
         // Targets it will not break, and the fluid beside each: plug or drain that, or for water pass besideWater.
         out.put("refused",done()?refused:List.of());
+        out.put("plugged",plugged.stream().map(MiningProcess::point).toList());out.put("plugFailures",unplugged);
         if(engine!=null){
             var current=engine.getPathingBehavior().getCurrent();
             out.put("goal",done()?finalGoal:String.valueOf(engine.getPathingBehavior().getGoal()));
@@ -139,6 +150,35 @@ final class MiningProcess extends BulkJob {
             out.put("planning",engine.getPathingBehavior().getInProgress().isPresent());
         }
         out.put("completionMeaning","net matching inventory gain since this job began, including across explicit resume");return out;
+    }
+    private boolean wet(BlockPos p){
+        for(int[] d:new int[][]{{0,1,0},{1,0,0},{-1,0,0},{0,0,1},{0,0,-1}})if(world.getBlock(p.getX()+d[0],p.getY()+d[1],p.getZ()+d[2]).getMaterial().isLiquid())return true;
+        return false;
+    }
+    /** Remember the block under the pick while it has fluid beside it; once it is gone it stays remembered until plugged. */
+    private void watch(){
+        if(breaking!=null&&!world.getBlock(breaking.getX(),breaking.getY(),breaking.getZ()).getMaterial().blocksMovement())return;
+        var over=mc.objectMouseOver;breaking=null;
+        if(!engine.getInputOverrideHandler().isInputForcedDown(baritone.api.utils.input.Input.CLICK_LEFT)||over==null||over.typeOfHit!=net.minecraft.util.MovingObjectPosition.MovingObjectType.BLOCK)return;
+        var p=new BlockPos(over.blockX,over.blockY,over.blockZ);if(wet(p))breaking=p;
+    }
+    /** The tick after a block beside fluid breaks, before the fluid has moved: put a throwaway block where it was. */
+    private boolean plug(){
+        if(breaking==null||world.getBlock(breaking.getX(),breaking.getY(),breaking.getZ()).getMaterial().blocksMovement())return false;
+        BlockPos p=breaking;breaking=null;
+        if(!wet(p))return false;
+        if(!engine.getInventoryBehavior().selectThrowawayForLocation(true,p.getX(),p.getY(),p.getZ())){unplugged++;finish("failed","no_throwaway_block_to_plug_fluid");return true;}
+        // {neighbour offset, the face of that neighbour which looks at the hole}: floor first, as a player would click
+        for(int[] n:new int[][]{{0,-1,0,1},{-1,0,0,5},{1,0,0,4},{0,0,-1,3},{0,0,1,2},{0,1,0,0}}){
+            int x=p.getX()+n[0],y=p.getY()+n[1],z=p.getZ()+n[2];var material=world.getBlock(x,y,z).getMaterial();
+            if(!material.isSolid()||material.isLiquid())continue;
+            var hit=net.minecraft.util.Vec3.createVectorHelper(x+.5-n[0]*.5,y+.5-n[1]*.5,z+.5-n[2]*.5);
+            var me=mc.thePlayer;double dx=hit.xCoord-me.posX,dy=hit.yCoord-(me.boundingBox.minY+me.getEyeHeight()),dz=hit.zCoord-me.posZ;
+            me.rotationYaw=(float)(Math.toDegrees(Math.atan2(dz,dx))-90);me.rotationPitch=(float)-Math.toDegrees(Math.atan2(dy,Math.sqrt(dx*dx+dz*dz)));
+            engine.getInputOverrideHandler().clearAllKeys();engine.getInputOverrideHandler().getBlockBreakHelper().stopBreakingBlock();
+            if(mc.playerController.onPlayerRightClick(me,world,me.getHeldItem(),x,y,z,n[3],hit)){me.swingItem();plugged.add(p);return true;}
+        }
+        unplugged++;return false;
     }
     /** Matching blocks the engine refuses to break because of what is beside them, with that neighbour named. */
     private List<Map<String,Object>> refused(){
