@@ -168,6 +168,7 @@ def mb_recipes(id: str = "", meta: int | None = None, nbt: str | None = None, mo
     Your notes on the item and on any ingredient shown come back under "notes": read them before making an ingredient by hand.
     """
     if detail == "full": limit = min(limit, 1) if limit else limit  # a full recipe is thousands of tokens: one at a time, by index
+    if index >= 0: limit = 1  # an index names one recipe; the bridge refuses the lookup with limit=0
     if index >= 0 and "|" not in handler:  # an index counts within ONE handler: a name that fits exactly one is completed, else the error lists the keys
         found = kernel().call("nei.recipes", id=id, meta=meta, nbt=nbt, mode=mode, handler="", offset=0, limit=0, timeout=timeout_s, fluid=fluid, amount=amount, detail="summary", index=-1)
         keys = [h["key"] for h in found.get("handlers", []) if handler.lower() in h["key"].lower()]
