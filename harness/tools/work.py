@@ -47,6 +47,8 @@ def _with(receipt: Any, key: str, fact: Any) -> Any:
 
 def _build_call(method: str, params: dict, timeout_s: float | None = None) -> Any:
     """Direct request for small plans; bounded staging (nav.build_stage) for large cell lists."""
+    if params.get("mode") == "builder":
+        params = {**params, "settings": {"restricted": True, **(params.get("settings") or {})}}
     cells = params.get("cells")
     if not isinstance(cells, list) or len(cells) <= STAGE:
         return notes.tracked(method, timeout_s, **params)
@@ -459,6 +461,8 @@ def mb_build_preview(cells: list[dict] | None = None, selection: dict | None = N
     east, legend {char: {id, meta?}}; '.', ' ' and '+' are left alone. It is for bulk: floors, walls,
     roofs, rows of plain blocks. Place what faces, connects or is configured with the precise tools.
     Preview does not load chunks, reserve inventory, prove reachability or mutate the world.
+    Builder mode defaults to settings.restricted=true, confining edits to plan cells;
+    explicit false permits outside access excavation/scaffolding with terrain permissions.
     """
     if drawing is not None:
         if cells is not None or selection is not None: raise ValueError("provide exactly one of cells, selection or drawing")
@@ -486,8 +490,10 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
 
     Preview first. Native preflight checks loaded cells, conflicts, protection,
     supported placement items and a shared inventory allocation. Placement and
-    clearing use ordinary player input; no outside scaffolding/access excavation is
-    created. Completion means a fresh ID/metadata comparison of every selected cell.
+    clearing use ordinary player input and default to edits inside the plan only.
+    Builder mode can opt into outside scaffolding/access excavation with
+    settings.restricted=false and terrain permissions. Completion means a fresh
+    comparison of selected cells against the plan's predicates.
     Tile configuration, multiblock formation and machine state require separate
     normal-interaction adapters. Retain jobId for status or resume. A finished or
     failed build is journaled as an auto world note at its location. drawing: see mb_build_preview.

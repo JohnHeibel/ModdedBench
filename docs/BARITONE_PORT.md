@@ -109,6 +109,8 @@ metadata. `tileNbt` and `nbt` on a cell are rejected, never dropped silently.
 | Completion | Fresh comparison of every cell's registry id and metadata, plus `verify.pickedItem` | Predicate based (see settings) |
 
 Both modes place through native right-click handling and never write blocks.
+Python build tools default builder mode to `settings.restricted: true`; explicitly
+set false to authorize edits outside plan cells. Raw Java builder defaults are unchanged.
 Preview is a fresh loaded-world diff with conflicts, protection, unsupported
 mappings and a shared-stack material allocation. A `replace` selection is
 filtered once at job creation and journaled. Requested air that starts empty is deferred while temporary

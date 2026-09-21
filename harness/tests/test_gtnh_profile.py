@@ -432,6 +432,20 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertIsInstance(inspect.content[1], ImageContent)
         self.assertEqual(fake.calls[2], ("nei.inspect", {"x": 31, "y": 47, "scroll": -1}))
 
+    def test_builder_defaults_confine_edits_but_preserve_explicit_opt_out(self):
+        tools = module_with(self.loaded(), "mb_build")
+        fake = self.use(FakeKernel(lambda method, params: {"state":"completed"}))
+        cells = [{"pos":[0,0,0], "id":"minecraft:stone", "meta":0}]
+        for call, method in ((tools.mb_build, "nav.build"), (tools.mb_build_preview, "nav.build_preview")):
+            settings = {"breakFromAbove":True}
+            call(cells=cells, mode="builder", settings=settings)
+            self.assertEqual(fake.last(method)[1]["settings"], {"restricted":True, "breakFromAbove":True})
+            self.assertEqual(settings, {"breakFromAbove":True})
+            call(cells=cells, mode="builder", settings={"restricted":False})
+            self.assertFalse(fake.last(method)[1]["settings"]["restricted"])
+            call(cells=cells)
+            self.assertNotIn("settings", fake.last(method)[1])
+
     def test_large_build_staging_uses_guarded_offsets_without_truncation(self):
         tools = module_with(self.loaded(), "mb_build")
         count = [0]
@@ -447,6 +461,7 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual([x["offset"] for x in appends],[0,4096])
         self.assertEqual(sum(len(x["cells"]) for x in appends),4097)
         begin=fake.calls[0][1]; self.assertNotIn("cells",begin["spec"]); self.assertEqual(begin["spec"]["mode"],"builder")
+        self.assertTrue(begin["spec"]["settings"]["restricted"])
         build = fake.last("nav.build")[1]
         self.assertEqual(build["planId"],"p"); self.assertTrue(build["allowBreak"])
 
