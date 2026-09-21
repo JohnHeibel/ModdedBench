@@ -8,6 +8,9 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-09-21** Python build tools confine builder-mode edits to plan cells by
+  default, including staged plans. Unrestricted access excavation uprooted a
+  workshop station; explicit `settings.restricted: false` remains available.
 - **2026-09-21** Builder source-fluid replacement now uses its native reachable-face
   placement adapter. The upstream BuilderProcess previously required standing
   directly above water, stalling safe side placement beneath an overhang.
