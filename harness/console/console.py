@@ -129,6 +129,7 @@ class Console:
         elif name == "supervisor.stop":
             if self.supervisor: self.supervisor.terminate()
         elif name == "agent.start":
+            self.act("supervisor.start", {})  # the brief promises the agent a deploy supervisor; a request nobody answers looks like a hang
             extra = ["--", "-m", a["model"]] if re.fullmatch(r"[\w.\-]{1,64}", a.get("model") or "") else []
             if a.get("effort") in ("minimal", "low", "medium", "high", "xhigh"): extra = [*(extra or ["--"]), "-c", f'model_reasoning_effort="{a["effort"]}"']
             turns = str(max(1, min(int(a.get("maxTurns") or 200), 10000)))

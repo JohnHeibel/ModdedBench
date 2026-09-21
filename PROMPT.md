@@ -200,7 +200,8 @@ tool-building is not progress by itself: a primitive earns its cost when it
 is used many times, so name it in your goal stack like any other investment.
 
 **The fairness line.** The harness already gives you privileges a player does
-not have, and they are documented: the world pauses while you think, guards
+not have, and they are documented: you can pause the world to think (it does
+not pause by itself: while you deliberate, night falls and mobs move), guards
 stop the clock when you are in danger, targeting and movement are precise, and
 navigation and scans read every loaded block. That set is the allowance; do
 not widen it. A new primitive may expose only what a player at this keyboard

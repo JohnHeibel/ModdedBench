@@ -29,7 +29,7 @@ class CodexLoopTests(unittest.TestCase):
     def loop(self, plan, **kw):
         (self.repo / "plan.json").write_text(json.dumps(plan))
         with contextlib.redirect_stdout(io.StringIO()):
-            reason = codex_loop.run(self.repo, codex=[sys.executable, str(self.repo / "fake.py")], backoff_s=0, **kw)
+            reason = codex_loop.run(self.repo, codex=[sys.executable, str(self.repo / "fake.py")], backoff_s=0, **{"ready": lambda: True, **kw})
         return reason, json.loads((self.repo / "calls.json").read_text())
 
     def test_captures_thread_id_resumes_and_stops_on_mission_complete_line(self):
@@ -50,9 +50,17 @@ class CodexLoopTests(unittest.TestCase):
         reason, calls = self.loop([{"events": [{"type": "thread.started", "thread_id": "T-1"}], "stop": True}])
         self.assertEqual(("stop_file", 1), (reason, len(calls)))
 
-    def test_three_consecutive_failures_stop_and_a_success_resets_the_count(self):
+    def test_twelve_consecutive_failures_stop_and_a_success_resets_the_count(self):
         reason, calls = self.loop([{"exit": 1}, {"exit": 1}, {"exit": 0}, {"exit": 1}])
-        self.assertEqual(("failed", 6), (reason, len(calls)))
+        self.assertEqual(("failed", 15), (reason, len(calls)))
         self.assertFalse((self.repo / ".state" / "codex-loop.json").exists())  # no id was ever reported
+
+    def test_no_turn_starts_while_the_game_is_down(self):
+        answers = iter([False, False, True])
+        reason, calls = self.loop([{}], max_turns=1, ready=lambda: next(answers))
+        self.assertEqual(("max_turns", 1), (reason, len(calls)))
+        self.assertEqual(1, (self.repo / ".state" / "codex-loop.log").read_text().count("waiting for the game"))
+        (self.repo / ".state" / "STOP").write_text(""); (self.repo / "calls.json").unlink()
+        self.assertEqual("stop_file", codex_loop.run(self.repo, codex=["never-run"], backoff_s=0, ready=lambda: False))
 
 if __name__ == "__main__": unittest.main()

@@ -38,8 +38,11 @@ def mb_run(code: str | None = None, args: dict | None = None, name: str | None =
     Write steps as "make sure X holds" (check, then act), so that after an interruption you
     deal with the cause and can simply run it again. The first tool error stops the script:
     you get the error, the line, and what you logged, never a retry. One run must finish inside
-    20 minutes: start long mining or building jobs and return rather than waiting on them. Try
-    a new script on a small count before a large one.
+    20 minutes: start long mining or building jobs and return rather than waiting on them.
+    Nothing stops a script that never ends, and until the 20 minutes are up you can do nothing
+    else: give every loop in it a count or a deadline of its own (time.monotonic()), and let a
+    wait that has run out return what it saw instead of going round again. Try a new script on
+    a small count before a large one.
     """
     if name is not None and not re.fullmatch(r"[a-z][a-z0-9_]{0,48}", name):
         raise ValueError("name is lower_snake_case, at most 49 characters")
