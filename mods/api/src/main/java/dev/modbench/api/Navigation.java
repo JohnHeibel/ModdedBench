@@ -29,6 +29,7 @@ public interface Navigation {
     default Job route(String name,boolean reverse,int startIndex,int timeoutTicks,boolean allowBreak,boolean allowPlace,boolean overrideProtection) {throw new UnsupportedOperationException("saved routes unavailable");}
     default Job mine(Map<String,Object> params){throw new UnsupportedOperationException("quantity mining unavailable");}
     default Job follow(Map<String,Object> params){throw new UnsupportedOperationException("entity following unavailable");}
+    default Job fight(Map<String,Object> params){throw new UnsupportedOperationException("fighting unavailable");}
     default Job sourceProcess(Map<String,Object> params){throw new UnsupportedOperationException("source resource processes unavailable");}
     default Map<String,Object> cache(Map<String,Object> params){throw new UnsupportedOperationException("terrain cache unavailable");}
     default Job build(Map<String,Object> params){throw new UnsupportedOperationException("schematic building unavailable");}

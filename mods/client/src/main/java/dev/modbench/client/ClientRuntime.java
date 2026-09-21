@@ -205,6 +205,10 @@ public final class ClientRuntime extends BridgeRuntime {
             requirePlayer();Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");controlsChanged("superseded");ControlRegistry.controls().focusForInput();
             navigationJob=navigation().follow(params);navigationRequest=r;return null;
         });
+        register("nav.fight","One fight as a job: {entityId (from obs.entities or time.status threats), hold:false, durationTicks:600 (<=6000), leash:16 blocks from where you stood, bailHealth:8, maxAttackers:2, weaponSlot:0..8, crit:true, block:true, intervalTicks:10}. Paths to the mob without breaking or placing, then in reach blocks with a sword and swings while falling for critical hits; backs away from its target creeper while it swells. hold:true never moves: it hits the chosen mob, or with no entityId the nearest hostile in sight, when one comes into reach, and succeeds once none is in sight. Fails, which the actionFailed guard turns into a pause, on health_at_bail_line, outnumbered, creeper_swelling (another one), target_beyond_leash, target_lost, cannot_reach_target, duration_elapsed.","interaction",r->{
+            requirePlayer();Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");controlsChanged("superseded");ControlRegistry.controls().focusForInput();
+            navigationJob=navigation().fight(params);navigationRequest=r;return null;
+        });
         register("nav.settings","Source settings {operation:get|set|reset,query,values,save}; typed values or source syntax, atomic edits while idle. Optional declarations do not promise runtime support.","interaction",r->navigation().settings(Json.GSON.fromJson(r.params,Map.class)));
         register("nav.build_pause","Pause active construction and release controls; retains jobId for nav.resume. Server time continues.","interaction",r->navigation().pauseBuild());
         register("nav.build_materials","Approximate placeable native inventory states; final state depends on native placement callbacks","read",r->navigation().buildMaterials());

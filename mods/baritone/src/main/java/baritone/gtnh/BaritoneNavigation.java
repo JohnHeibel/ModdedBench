@@ -107,6 +107,11 @@ public final class BaritoneNavigation implements Navigation {
         if(active!=null&&!active.done())active.cancel("superseded");
         active=new ReferenceFollowJob(reference,params);return active;
     }
+    @Override public Job fight(Map<String,Object> params){
+        WorkAccess.player();
+        if(active!=null&&!active.done())active.cancel("superseded");
+        active=new FightJob(reference,params);return active;
+    }
     @Override public Job sourceProcess(Map<String,Object> params){
         WorkAccess.player();if(active!=null&&!active.done())active.cancel("superseded");
         active=new ReferenceProcessJob(reference,params);return active;
@@ -159,7 +164,7 @@ public final class BaritoneNavigation implements Navigation {
         }
         Map<String,Object> out=new LinkedHashMap<>();out.put("matches",found);out.put("cursor",cursor);out.put("done",cursor==bounds.volume());out.put("scanned",cursor-start);out.put("unloaded",unloaded);out.put("volume",bounds.volume());return out;
     }
-    void tickChild(Job job) {if(job instanceof ReferenceProcessJob process)process.tick();else if(job instanceof ReferenceFollowJob follow)follow.tick();else if(job instanceof ReferenceNavigationJob run)run.tick();else if(job instanceof MiningJob mine)mine.tick();else if(job instanceof PlacingJob place)place.tick();}
+    void tickChild(Job job) {if(job instanceof ReferenceProcessJob process)process.tick();else if(job instanceof ReferenceFollowJob follow)follow.tick();else if(job instanceof FightJob fight)fight.tick();else if(job instanceof ReferenceNavigationJob run)run.tick();else if(job instanceof MiningJob mine)mine.tick();else if(job instanceof PlacingJob place)place.tick();}
     void afterTick(){reference.tickEnd();}
     void tick() {
         reference.getWorldProvider().tick();
