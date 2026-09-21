@@ -54,7 +54,7 @@ class Shortener:
 
     def __init__(self, path):
         self.path, self.lock, self.pending, self.slots = path, threading.Lock(), set(), threading.Semaphore(2)
-        self.model = os.environ.get("MB_OVERLAY_MODEL", "mistralai/mistral-small-2603")
+        self.model = os.environ.get("MB_OVERLAY_MODEL", "deepseek/deepseek-v4.1-flash")
         try: self.cache = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError): self.cache = {}
 
@@ -69,7 +69,8 @@ class Shortener:
     def fetch(self, kind, text, key):
         try:
             with self.slots:
-                body = {"model": self.model, "max_tokens": 120, "temperature": 0.2, "messages": [{"role": "system", "content": self.ASK[kind][1]}, {"role": "user", "content": text[:4000]}]}
+                body = {"model": self.model, "max_tokens": 120, "temperature": 0.2, "reasoning": {"enabled": False},  # a hybrid model would spend the 120 tokens thinking
+                        "messages": [{"role": "system", "content": self.ASK[kind][1]}, {"role": "user", "content": text[:4000]}]}
                 request = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions", json.dumps(body).encode(),
                                                  {"Authorization": "Bearer " + os.environ["OPENROUTER_API_KEY"], "Content-Type": "application/json"})
                 with urllib.request.urlopen(request, timeout=30) as reply: short = json.load(reply)["choices"][0]["message"]["content"].strip().strip('"')
