@@ -169,7 +169,10 @@ def _player(view):
 
 def _station(k, at):
     """The GUI one mb_craft call works in: the one already open, else the block at `at`, else your inventory. True if this call opened it."""
-    if k.call("obs.container")["open"]: return False
+    seen = k.call("obs.container")
+    if seen["open"]:
+        if at is None or not seen["class"].endswith("ContainerPlayer"): return False
+        k.call("gui.close")  # your own inventory left open (an interrupted craft does that) is not the station you named
     if at is None: k.call("gui.open_inventory")
     else: k.call("act.use_block", x=at[0], y=at[1], z=at[2], face=1)
     deadline = time.monotonic() + 3
@@ -191,7 +194,7 @@ def _grid(session, pattern, times):
         raise ValueError("this GUI has no crafting grid: give pattern for your inventory (2x2) or a crafting table at `at` (3x3), inputs for a machine")
     width = {4: 2, 9: 3}[len(grid)]
     if len(pattern) > width or max(map(len, pattern)) > width:
-        raise ValueError(f"pattern does not fit this {width}x{width} grid; pass at=[x,y,z] of a crafting table for 3x3 recipes")
+        raise ValueError(f"pattern does not fit this {width}x{width} grid" + ("; pass at=[x,y,z] of a crafting table for 3x3 recipes" if width == 2 else ""))
     if any(s.get("stack") for s in grid):
         raise ValueError("the crafting grid must be empty before mb_craft")
     stacks = {s["i"]: s["stack"] for s in _player(view) if s.get("stack")}
