@@ -444,6 +444,11 @@ one-wide tunnel, two blocks up a pillar) and use `mb_fight(hold=True)`. Kill
 what shoots first or break its line of sight; a creeper is fought in the open,
 never in your base. Never eat, craft or open a GUI with a threat listed.
 
+Most fights are avoidable. Mobs spawn where block light is 7 or less:
+`mb_obs light` lists those spots around you, so torch a cave before you mine in
+it and torch the base until the list is empty under its roof. `mb_settings` set
+`avoidance` true makes every path cost more near hostile mobs and spawners.
+
 Eat before hunger becomes a problem. Retreat, sleep, or light the
 area before fighting at night. Death is expensive in this pack; avoid it, and
 if it happens, write a note with the death position immediately, then recover

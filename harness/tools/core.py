@@ -99,6 +99,8 @@ def mb_obs(method: str, params: dict | None = None) -> Any:
     {queries:{alias:{method,params}}}. Tile data and NBT provenance come from the
     authoritative server; server aliases in a batch share serverTick. Missing
     tanks do not prove no fluid, and reported side views may overlap.
+    light {radius:8,height:4,limit:32} lists where mobs can spawn near you (block light 7 or
+    less on a solid top), nearest first: what to torch before you work, sleep or build there.
     Observing a block or entity that carries a world note returns it under "notes".
     """
     return notes.tracked(method_name("obs", method), None, **(params or {}))
