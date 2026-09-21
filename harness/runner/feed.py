@@ -117,8 +117,8 @@ class Feed:
                 if goal.get("chapter") and self.live["goal"].get("chapter") not in (None, goal["chapter"]): self.add("mark", "new chapter: " + str(goal["chapter"]))
                 self.live["goal"] = {k: goal.get(k) or "" for k in ("chapter", "quest", "subgoal", "serves")}
             if tool == "mb_run": stats["scripts"] += 1
-            if tool == "mb_quest_claim" and not failed and isinstance(result, dict) and result.get("accepted"):
-                stats["claims"] += 1; self.add("mark", "quest claimed: " + str(self.live["goal"].get("quest") or "?"))
+            if tool == "mb_quest_claim" and not failed and isinstance(result, dict) and (result.get("claimed") or result.get("accepted")):
+                stats["claims"] += 1; self.add("mark", "quest claimed: " + str((result.get("quest") or {}).get("name") or self.live["goal"].get("quest") or "?"))
             else:
                 why = result.get("error") if isinstance(result, dict) and isinstance(result.get("error"), dict) else {}
                 why = "" if not failed else ": bad arguments" if why.get("code") == "bad_request" else ": " + str(why.get("code") or "failed").replace("_", " ")
