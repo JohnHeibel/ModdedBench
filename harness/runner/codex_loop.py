@@ -11,8 +11,9 @@ loop resumes the same conversation; delete that file to start a new one. Argumen
 ``codex exec`` (for example ``-- -m <model> -s workspace-write``).
 """
 from __future__ import annotations
-import argparse, json, shutil, subprocess, sys, time
+import argparse, json, os, shutil, subprocess, sys, time
 from pathlib import Path
+from feed import Feed
 
 REPO = Path(__file__).resolve().parents[2]
 BACKOFF = (1, 10, 60, 120)  # times backoff_s: 30 s, 5 min, 30 min, then hourly
@@ -39,7 +40,7 @@ def _in_world():
         with Kernel(timeout=10) as k: return k.call("obs.world").get("inWorld") is True
     except Exception: return False
 
-def turn(cmd, prompt, cwd, log):
+def turn(cmd, prompt, cwd, log, feed=None):
     """One Codex turn, streamed to the log and stdout: (exit code, thread id or None, last agent message)."""
     thread, last = None, ""
     with subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace") as p:
@@ -50,6 +51,8 @@ def turn(cmd, prompt, cwd, log):
             except ValueError: continue
             if not isinstance(event, dict): continue
             thread = thread or _find_id(event); item = event.get("item")
+            try: feed and feed.event(event)
+            except Exception as e: log.write("# feed: %r\n" % e)  # the overlay never costs a turn
             if event.get("type") == "item.completed" and isinstance(item, dict) and item.get("type") == "agent_message" and isinstance(item.get("text"), str): last = item["text"]
     return p.returncode, thread, last
 
@@ -59,28 +62,29 @@ def run(repo=REPO, prompt=None, max_turns=50, state=None, codex=None, extra=(), 
     codex = list(codex or [shutil.which("codex") or "codex"])  # the npm shim is codex.cmd on Windows
     for d in (repo / ".state", state.parent): d.mkdir(parents=True, exist_ok=True)
     thread = json.loads(state.read_text(encoding="utf-8")).get("thread") if state.exists() else None
-    failures = 0
+    failures = 0; feed = Feed(Path(os.environ.get("MODBENCH_OUTBOX", repo / ".state")) / "overlay")
+    def end(reason): feed.status("ended", reason); return reason
     def idle(seconds):  # sleep that the stop file cuts short
-        end = time.monotonic() + seconds
-        while time.monotonic() < end and not (repo / ".state" / "STOP").exists(): time.sleep(min(5, max(0, end - time.monotonic())))
+        until = time.monotonic() + seconds
+        while time.monotonic() < until and not (repo / ".state" / "STOP").exists(): time.sleep(min(5, max(0, until - time.monotonic())))
     with open(repo / ".state" / "codex-loop.log", "a", encoding="utf-8") as log:
         for _ in range(max_turns):
             waited = False
             while not (repo / ".state" / "STOP").exists() and not ready():
                 if not waited: log.write("# %s waiting for the game: no bridge, or the player is not in the world\n" % time.strftime("%Y-%m-%dT%H:%M:%S")); log.flush()
-                waited = True; idle(backoff_s)
-            if (repo / ".state" / "STOP").exists(): return "stop_file"
+                waited = True; feed.status("game_down"); idle(backoff_s)
+            if (repo / ".state" / "STOP").exists(): return end("stop_file")
             # Options go before ``resume``: that subcommand does not accept all of them (-C, -s) after it.
             cmd = [*codex, "exec", "--json", "-C", str(repo), *extra, *(["resume", thread] if thread else []), "-"]
             log.write("# %s %s\n" % (time.strftime("%Y-%m-%dT%H:%M:%S"), " ".join(cmd)))
-            code, found, last = turn(cmd, CONTINUE if thread else prompt.read_text(encoding="utf-8"), repo, log)
+            code, found, last = turn(cmd, CONTINUE if thread else prompt.read_text(encoding="utf-8"), repo, log, feed)
             if found and not thread:
                 thread = found; state.write_text(json.dumps({"thread": thread}), encoding="utf-8")
-            if "MISSION COMPLETE" in [x.strip() for x in last.splitlines()]: return "complete"
+            if "MISSION COMPLETE" in [x.strip() for x in last.splitlines()]: feed.add("mark", "MISSION COMPLETE"); return end("complete")
             failures = failures + 1 if code else 0
-            if failures == max_failures: return "failed"
-            if code: idle(backoff_s * BACKOFF[min(failures, len(BACKOFF)) - 1])
-    return "max_turns"
+            if failures == max_failures: return end("failed")
+            if code: feed.status("backing_off", "turn failed %d in a row" % failures); idle(backoff_s * BACKOFF[min(failures, len(BACKOFF)) - 1])
+        return end("max_turns")
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)

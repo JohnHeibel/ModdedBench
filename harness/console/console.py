@@ -23,6 +23,7 @@ COMPOSE = [DOCKER, "compose", "-f", str(REPO / "docker" / "compose.yaml"), "--en
 PY = [sys.executable, "-u"]
 LAUNCHER, DEPLOY = str(REPO / "harness" / "launcher" / "runtime.py"), str(REPO / "harness" / "launcher" / "deploy.py")
 BRIEF = REPO / ".runtime" / "brief"
+OVERLAY = REPO / ".runtime" / "outbox" / "overlay"  # written by the loop (harness/runner/feed.py)
 TOKEN = secrets.token_urlsafe(24)
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 # One line of JSON about the loop, produced inside the agent container.
@@ -49,7 +50,7 @@ def sh(cmd, stdin=None, timeout=30):
 class Console:
     def __init__(self):
         self.lock = threading.Lock(); self.kernel = None; self.supervisor = None
-        self.job = {"name": "", "running": False, "ok": True, "log": ""}; self.login = (0.0, None)
+        self.job = {"name": "", "running": False, "ok": True, "log": ""}; self.login = (0.0, None); self.book = (0.0, [])
 
     # The bridge, read only: one long-lived session for the state panel.
     def call(self, method, **params):
@@ -88,6 +89,27 @@ class Console:
             deploys.append({"time": folder.name, "components": req.get("components"), "reason": req.get("reason"), "ok": res.get("ok"), "error": res.get("error")})
         return {"docker": ps.returncode == 0, "dockerError": ps.stderr[-300:], "services": services, "agent": agent, "game": self.game(), "deploys": deploys,
                 "supervisor": self.supervisor is not None and self.supervisor.poll() is None, "job": self.job}
+
+    def overlay(self):
+        """Everything the OBS pages show, read only: the loop's feed and totals, plus the clock and the quest book from the bridge."""
+        try: live = json.loads((OVERLAY / "live.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError): live = {"goal": {}, "status": {}, "stats": {}}
+        try: feed = [json.loads(x) for x in (OVERLAY / "feed.jsonl").read_text(encoding="utf-8").splitlines()[-80:]]
+        except (OSError, ValueError): feed = []
+        if time.monotonic() - self.book[0] > 20:  # 46 lines with their layouts: read rarely
+            try:
+                lines = self.call("quest.lines", query="", offset=0, limit=100)["lines"]
+                target = re.search(r'^TARGET_CHAPTER\s*=\s*"([^"<]+)"', (BRIEF / "PROMPT.md").read_text(encoding="utf-8"), re.M)
+                last = next((i for i, l in enumerate(lines) if target and (l["name"] in target.group(1) or target.group(1) in l["name"])), 3)
+                self.book = (time.monotonic(), [{"name": l["name"], "completed": l["completed"], "total": l["quests"]} for l in lines[:last + 1]])
+            except Exception: self.book = (time.monotonic(), self.book[1])
+        try: clock = self.call("time.status")["state"]
+        except Exception: clock = None
+        status = dict(live.get("status") or {})
+        if clock is None: status = {"state": "game_down", "text": "", "since": status.get("since")}
+        elif clock.get("paused") and status.get("state") in ("thinking", "acting", "waiting"):  # between turns the world is always paused; that is not news
+            status = {"state": "held" if clock.get("held") else "paused", "text": str(clock.get("reason") or "").replace("_", " "), "since": status.get("since")}
+        return {"now": time.time(), "goal": live.get("goal"), "status": status, "stats": live.get("stats"), "feed": feed, "chapters": self.book[1]}
 
     # Actions. Anything slow runs as the single background job; its command lines and output are the job log.
     def run_job(self, name, steps):
@@ -145,6 +167,7 @@ class Console:
             if a.get("freshWorld"): steps += [[*COMPOSE, "rm", "-sf", "server"], [DOCKER, "volume", "rm", "-f", "moddedbench_server-data"]]
             if a.get("freshAgent"): steps += [[*COMPOSE, "rm", "-sf", "agent"], [DOCKER, "volume", "rm", "-f", "moddedbench_agent-work"]]
             # The brief lives on the host and is mounted read-only at /brief: the agent can read its mission and rules but not rewrite them.
+            shutil.rmtree(OVERLAY, ignore_errors=True)  # a new run starts a new feed and new totals
             BRIEF.mkdir(parents=True, exist_ok=True); (BRIEF / "PROMPT.md").write_text(prompt, encoding="utf-8", newline="")
             steps += [[*COMPOSE, "up", "-d"], [*agent, "sh", "-c", "mkdir -p .state && rm -f .state/STOP .state/codex-loop.json .state/run-prompt.md"]]
             self.run_job(name, steps)
@@ -163,6 +186,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self.trusted(): return self.reply(403, {"error": "forbidden"})
         if self.path == "/": return self.reply(200, (Path(__file__).with_name("console.html").read_text(encoding="utf-8").replace("__TOKEN__", TOKEN)).encode(), "text/html; charset=utf-8")
+        # The overlay is for OBS browser sources, which cannot send the token: it is read only and says nothing the stream does not show.
+        if self.path.split("?")[0] == "/overlay": return self.reply(200, Path(__file__).with_name("overlay.html").read_bytes(), "text/html; charset=utf-8")
+        if self.path == "/overlay/data":
+            try: return self.reply(200, self.console.overlay())
+            except Exception as e: return self.reply(500, {"error": f"{type(e).__name__}: {e}"})
         if self.path == "/api/state" and self.headers.get("X-Console-Token") == TOKEN:
             try: return self.reply(200, self.console.state())
             except Exception as e: return self.reply(500, {"error": f"{type(e).__name__}: {e}"})

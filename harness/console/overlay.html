@@ -1,0 +1,55 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: LGPL-3.0-or-later
+OBS browser sources for a run, one per URL, all transparent:
+  /overlay?show=banner    the agent's goal stack        /overlay?show=status    what it is doing right now
+  /overlay?show=feed      what it said and did          /overlay?show=chapters  quest book progress up to the target chapter
+  /overlay?show=stats     run totals                    add &words=0 to the feed to leave out the model's own sentences
+Without ?show= every panel is stacked, for a look in a browser. -->
+<meta charset="utf-8"><title>ModdedBench overlay</title>
+<style>
+  :root{--ink:#f4f1ea;--dim:#b9b4a8;--accent:#ffb454;--ok:#8fd694;--bad:#ff7b72;--mark:#7cc4ff;--panel:rgba(16,18,22,.72)}
+  html,body{margin:0;background:transparent;color:var(--ink);font:500 20px/1.35 "Segoe UI",system-ui,sans-serif}
+  section{display:none;box-sizing:border-box;padding:14px 18px;background:var(--panel);border-radius:12px;margin:8px;backdrop-filter:blur(3px)}
+  body.all section,section.on{display:block}
+  small,.dim{color:var(--dim);font-weight:400}
+  #banner .sub{font-size:30px;font-weight:650;line-height:1.2}
+  #banner .up{font-size:17px;margin-top:4px}
+  #status{font-size:22px}
+  .dot{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:10px;background:var(--dim)}
+  .thinking .dot{background:var(--accent);animation:p 1.2s infinite}.acting .dot{background:var(--ok)}.waiting .dot{background:var(--mark);animation:p 2.4s infinite}
+  .paused .dot,.held .dot,.game_down .dot,.backing_off .dot{background:var(--bad)}
+  @keyframes p{50%{opacity:.25}}
+  #feed{height:calc(100vh - 16px);overflow:hidden;display:none;flex-direction:column;justify-content:flex-end}
+  #feed.on,body.all #feed{display:flex} body.all #feed{height:420px}
+  #feed div{flex:none;padding:3px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;animation:in .35s}
+  #feed .say{white-space:normal;color:var(--ink);border-left:3px solid var(--accent);padding-left:10px;margin:6px 0;font-weight:400;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical}
+  #feed .tool{color:var(--dim)} #feed .fail{color:var(--bad)} #feed .mark{color:var(--mark);font-weight:650}
+  #feed time{font-size:14px;margin-right:8px;opacity:.6;font-variant-numeric:tabular-nums}
+  @keyframes in{from{opacity:0;transform:translateY(8px)}}
+  .bar{height:8px;border-radius:4px;background:rgba(255,255,255,.14);margin:4px 0 10px;overflow:hidden}.bar i{display:block;height:100%;background:var(--ok);transition:width 1s}
+  #stats{font-variant-numeric:tabular-nums}#stats span{margin-right:22px;white-space:nowrap}#stats b{font-weight:650}
+</style>
+<section id="banner"></section><section id="status"></section><section id="feed"></section><section id="chapters"></section><section id="stats"></section>
+<script>
+const q=new URLSearchParams(location.search),show=q.get("show"),words=q.get("words")!=="0",$=id=>document.getElementById(id);
+if(show&&$(show))$(show).classList.add("on");else document.body.classList.add("all");
+const esc=s=>String(s??"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const span=s=>{s=Math.max(0,Math.floor(s));const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h?`${h}h ${String(m).padStart(2,"0")}m`:m?`${m}m`:`${s}s`};
+const big=n=>n>=1e9?(n/1e9).toFixed(2)+"B":n>=1e6?(n/1e6).toFixed(1)+"M":n>=1e3?(n/1e3).toFixed(0)+"k":String(n||0);
+const STATES={thinking:"thinking",acting:"",waiting:"waiting on the base",between_turns:"between turns",paused:"world paused",held:"operator hold",game_down:"game is down",backing_off:"sleeping after a failed turn",ended:"run ended"};
+function draw(d){
+  const g=d.goal||{},st=d.status||{},s=d.stats||{},t=s.tokens||{};
+  $("banner").innerHTML=`<div class="sub">${esc(g.subgoal||"no goal set yet")}</div><div class="up dim">${[g.serves&&"for: "+g.serves,g.quest,g.chapter].filter(Boolean).map(esc).join("  ‹  ")}</div>`;
+  $("status").className=(show==="status"||!show?"on ":"")+(st.state||"");
+  $("status").innerHTML=`<span class="dot"></span>${esc([STATES[st.state]??st.state,st.text].filter(Boolean).join(": ")||"idle")} <small>${st.since?span(d.now-st.since):""}</small>`;
+  const rows=[];  // consecutive calls of one tool collapse into the newest, with a count
+  for(const e of d.feed){if(e.kind==="say"&&!words)continue;const last=rows[rows.length-1];
+    if(last&&e.kind==="tool"&&last.kind==="tool"&&last.tool===e.tool){last.text=e.text;last.ts=e.ts;last.n++}else rows.push({...e,n:1})}
+  const html=rows.slice(-30).map(e=>`<div class="${esc(e.kind)}"><time>${new Date(e.ts*1000).toTimeString().slice(0,5)}</time>${esc(e.text.replace(/[*#`]/g,""))}${e.n>1?` <small>×${e.n}</small>`:""}</div>`).join("");
+  if($("feed").dataset.html!==html){$("feed").dataset.html=html;$("feed").innerHTML=html}
+  $("chapters").innerHTML=(d.chapters||[]).map(c=>`<div>${esc(c.name)} <small>${c.completed}/${c.total}</small></div><div class="bar"><i style="width:${100*c.completed/Math.max(1,c.total)}%"></i></div>`).join("")||"<small>quest book not read yet</small>";
+  $("stats").innerHTML=`<span><b>${s.startedAt?span(d.now-s.startedAt):"0s"}</b> <small>run</small></span><span><b>${s.claims||0}</b> <small>quests</small></span><span><b>${s.calls||0}</b> <small>actions</small></span><span><b>${s.failed||0}</b> <small>failed</small></span><span><b>${s.scripts||0}</b> <small>scripts</small></span><span><b>${s.turns||0}</b> <small>turns</small></span><span><b>${big((t.input||0)+(t.output||0))}</b> <small>tokens</small></span>`;
+}
+async function tick(){try{draw(await (await fetch("/overlay/data",{cache:"no-store"})).json())}catch(e){}setTimeout(tick,1000)}
+tick();
+</script>
