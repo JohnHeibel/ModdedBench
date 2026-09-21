@@ -23,7 +23,7 @@ from kernel import bridge_url
 from mcp.types import ImageContent
 
 TOOLS = {
-    "mb_interrupt", "mb_interrupt_events", "mb_wait", "mb_wiki_search", "mb_wiki_read", "mb_goal", "mb_craft",
+    "mb_interrupt", "mb_interrupt_events", "mb_wait", "mb_wiki_search", "mb_wiki_read", "mb_goal", "mb_craft", "mb_run",
     "mb_act", "mb_call", "mb_gui", "mb_keys", "mb_map", "mb_methods", "mb_obs", "mb_screenshot", "mb_status", "mb_stop", "mb_time",
     "mb_recipe_status", "mb_item_search", "mb_item_info", "mb_recipes", "mb_fluid_search", "mb_recipe_handlers", "mb_recipe_view", "mb_recipe_inspect",
     "mb_memory", "mb_route", "mb_inventory", "mb_find", "mb_transfer", "mb_click_slot", "mb_notes", "mb_note_write",
@@ -95,9 +95,9 @@ class GTNHProfileTests(unittest.TestCase):
     def test_tool_set_lanes_and_metadata(self):
         srv = self.loaded()
         self.assertEqual(set(srv.name_owner), TOOLS)
-        self.assertEqual(len(srv.modules), 7)
+        self.assertEqual(len(srv.modules), 8)
         self.assertEqual({os.path.basename(p) for p in srv.modules},
-                         {"core.py", "inventory.py", "work.py", "recipes_quests.py", "interrupts.py", "notes.py", "wiki.py"})
+                         {"core.py", "inventory.py", "work.py", "recipes_quests.py", "interrupts.py", "notes.py", "wiki.py", "scripts.py"})
         for name in ("mb_selection", "mb_selection_build", "mb_coverage", "mb_load_inputs"):
             self.assertNotIn(name, srv.name_owner)
         lanes = {n: tm.tools[n]["lane"] for tm in srv.modules.values() for n in tm.tools}
@@ -110,7 +110,7 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertTrue(registered.annotations.readOnlyHint)
         self.assertFalse(srv._tool_manager._tools["mb_build"].annotations.readOnlyHint)
         status = srv._tool_manager._tools["mb_tools_status"].fn()
-        self.assertEqual(sum(len(m["tools"]) for m in status["modules"]), 57)
+        self.assertEqual(sum(len(m["tools"]) for m in status["modules"]), 58)
         json.dumps(status)
 
     def test_worker_picks_pool_from_lane_metadata(self):
@@ -462,6 +462,21 @@ class GTNHProfileTests(unittest.TestCase):
         build = module_with(self.srv, "mb_build")
         build.mb_build_preview(cells=[{"pos": [0, 0, 0], "id": "minecraft:furnace"}, {"pos": [1, 0, 0], "id": "minecraft:wool", "meta": 3}])
         self.assertEqual(fake.last("nav.build_preview")[1]["settings"], {"metadataMasks": {"minecraft:furnace": 0}})
+
+    def test_run_chains_tools_in_one_call_and_reports_where_a_script_stopped(self):
+        tools = module_with(self.loaded(), "mb_run")
+        with tempfile.TemporaryDirectory() as folder, patch.object(tools, "SCRIPTS", Path(folder) / "scripts"):
+            fake = self.use(FakeKernel(lambda method, params: {"id": "minecraft:dirt"} if method == "obs.block" else {"stopped": True}))
+            code = "def main(n=1):\n    for i in range(n):\n        log(mb_obs('block', {'x': i, 'y': 0, 'z': 0})['id'])\n    mb_stop()\n    return n\n"
+            self.assertEqual(tools.mb_run(code, {"n": 2}), {"result": 2, "log": ["minecraft:dirt"] * 2})
+            self.assertEqual([c[0] for c in fake.calls if c[0] != "memory.context"], ["obs.block", "obs.block", "act.stop"])
+            self.assertFalse((Path(folder) / "scripts").exists())  # a script runs once and is gone unless it is given a name
+            tools.mb_run(code, name="probe")
+            self.assertEqual(tools.mb_run(name="probe", args={"n": 3})["result"], 3)
+            stopped = tools.mb_run("def main():\n    log('one')\n    mb_time('nonsense')\n")
+            self.assertEqual((stopped["stopped"], stopped["line"], stopped["source"], stopped["log"]), ("ValueError: unknown time method", 3, "mb_time('nonsense')", ["one"]))
+            for bad in ({"name": "Bad"}, {"name": "../x"}, {"name": "missing"}, {}):
+                with self.assertRaises(ValueError): tools.mb_run(**bad)
 
 
 if __name__ == "__main__":
