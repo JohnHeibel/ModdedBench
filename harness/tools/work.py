@@ -8,9 +8,11 @@ pass through ``notes.tracked`` so nearby world notes surface and important outco
 
 from __future__ import annotations
 
+import json
 import time
 from typing import Any
 
+from kernel import BridgeError
 from mbtool import kernel, tool
 from mbtools_gtnh import notes
 
@@ -133,10 +135,13 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, leash: float = 16
     weapon by name: it holds use and releases; if nothing flies it clicks (a crossbow loads,
     then fires); if still nothing it winds longer, and after three tries ends with
     no_projectile_fired (no ammunition?). It watches its own projectile to measure speed,
-    gravity and drag, aims by simulating that flight, leads a moving target, and remembers
-    the numbers per weapon name, so the first shot with a new weapon is the calibration.
+    gravity and drag, aims by simulating that flight and leads a moving target. After each
+    fight fit_ballistics (this file: yours to improve) turns the shots into numbers kept per
+    weapon name in notes/ballistics.json, so a new weapon's first fight is its calibration.
     It closes only until it has a line of sight within maxRange and steps back inside
-    minRange when the ground behind is safe. ranged={drawTicks, reloadTicks, minRange:6,
+    minRange when the ground behind is safe. A mob within 3.5 blocks ends the ranged fight
+    (hostile_in_melee_range) unless ranged={meleeSlot: n} names the hotbar slot of a melee
+    weapon to finish with. ranged={drawTicks, reloadTicks, minRange:6,
     maxRange:20, clickAfterLoad, speed, gravity, drag} overrides what it has learned; the
     result reports shots, hitsObserved and ballistics.
     The result lists hostilesInSight: decide again from there (fight the next, retreat, eat, wall
@@ -148,8 +153,37 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, leash: float = 16
               "durationTicks": duration_ticks, "crit": crit, "block": block}
     if entity_id is not None: params["entityId"] = entity_id
     if weapon_slot is not None: params["weaponSlot"] = weapon_slot
-    if ranged: params["ranged"] = ranged if isinstance(ranged, dict) else {}
-    return notes.tracked("nav.fight", timeout_s, **params)
+    if not ranged: return notes.tracked("nav.fight", timeout_s, **params)
+    book = notes.notes_dir() / "ballistics.json"  # what each weapon has taught so far: yours to read and correct
+    known = json.loads(book.read_text()) if book.is_file() else {}
+    held = kernel().call("obs.inventory")["main"][weapon_slot if weapon_slot is not None else kernel().call("obs.player")["selectedSlot"]].get("stack") or {}
+    weapon = f"{held.get('id')}|{held.get('name')}"
+    params["ranged"] = {**known.get(weapon, {}), **(ranged if isinstance(ranged, dict) else {})}
+    try: result = notes.tracked("nav.fight", timeout_s, **params)
+    except BridgeError as error: result = ((error.reply or {}).get("error") or {}).get("receipt") or {}; raise
+    finally:
+        learned = fit_ballistics(known.get(weapon, {}), result if isinstance(result, dict) else {})
+        if learned: known[weapon] = learned; book.parent.mkdir(parents=True, exist_ok=True); book.write_text(json.dumps(known, indent=1))
+    return result
+
+
+def fit_ballistics(before: dict, receipt: dict) -> dict | None:
+    """One weapon's numbers after a fight: how it was used, and speed, gravity and drag from each shot's velocity samples.
+
+    A projectile steps v = v * drag - gravity (vertical) and v * drag (horizontal) each tick, so consecutive samples
+    give both; the first sample is about a tick old, so launch speed is that sample with one tick of drag undone.
+    """
+    if not receipt.get("shots"): return None
+    out = {**before, **{k: v for k, v in receipt.get("ballistics", {}).items() if k in ("drawTicks", "reloadTicks", "clickAfterLoad")}}
+    for shot in receipt.get("tracks", []):
+        pairs = list(zip(shot, shot[1:]))
+        drag = min(1.0, max(.9, sum(b[0] / a[0] for a, b in pairs) / len(pairs)))
+        gravity = min(.3, max(0.0, sum(a[1] * drag - b[1] for a, b in pairs) / len(pairs)))
+        new = {"speed": (shot[0][0] ** 2 + shot[0][1] ** 2) ** .5 / drag, "gravity": gravity, "drag": drag}
+        n = out.get("shotsMeasured", 0)
+        for key, value in new.items(): out[key] = round(value if not n else (out[key] * min(n, 4) + value) / (min(n, 4) + 1), 5)
+        out["shotsMeasured"] = n + 1
+    return out
 
 
 @tool(rung=1, coverage=["move"])

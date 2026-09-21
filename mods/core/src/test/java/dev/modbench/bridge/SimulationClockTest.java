@@ -87,7 +87,11 @@ public class SimulationClockTest {
 
         clock.resume();
         clock.threats(threats("9"));
-        clock.threats(threats("9", "7")); // One that lost interest and came back is new again.
+        clock.threats(threats("9", "7")); // A mob that was hit drops its target for a moment: the same threat.
+        assertFalse(clock.paused());
+        clock.threats(threats("9"));
+        for (int i = 0; i < 201; i++) clock.tickFinished();
+        clock.threats(threats("9", "7")); // One that lost interest for ten seconds and came back is new again.
         assertTrue(clock.paused());
 
         clock.resume();

@@ -31,7 +31,7 @@ final class InteractionOperations {
         JsonObject out=Json.object("entityId",e.getEntityId(),"handle",handle(e),"handleScope","client_instance",
             "type",EntityList.getEntityString(e),"name",e.getCommandSenderName(),"pos",Json.array(e.posX,e.boundingBox.minY,e.posZ),
             "distance",e.getDistanceToEntity(mc.thePlayer),"visible",mc.thePlayer.canEntityBeSeen(e),"hostile",hostile(e,mc.thePlayer),"dead",e.isDead);
-        if(e instanceof EntityLivingBase living) {out.addProperty("health",living.getHealth());out.addProperty("maxHealth",living.getMaxHealth());out.addProperty("hurtTime",living.hurtTime);}
+        if(e instanceof EntityLivingBase living) {out.addProperty("health",finite(living.getHealth()));out.addProperty("maxHealth",finite(living.getMaxHealth()));out.addProperty("hurtTime",living.hurtTime);}
         if(e instanceof net.minecraft.entity.item.EntityItem drop) out.add("stack",Stacks.json(drop.getEntityItem()));
         return out;
     }
@@ -301,4 +301,6 @@ final class InteractionOperations {
             if(state.equals("completed"))r.reply(last);else r.fail(state,reason,last);
         }
     }
+    /** Some modded mobs report NaN health; JSON has no NaN, and one such mob must not blind the whole observation. */
+    private static float finite(float value){return Float.isNaN(value)||Float.isInfinite(value)?0:value;}
 }

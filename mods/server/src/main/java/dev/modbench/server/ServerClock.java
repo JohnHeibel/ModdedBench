@@ -80,6 +80,7 @@ public final class ServerClock implements ClockHooks.Driver, PauseCoordinator.Ho
                             case "paused" -> coordinator.clientPaused(data.get("generation").getAsLong());
                             case "agent_lost" -> { if(clock.pauseOnDisconnect()) clock.pause("agent_disconnected"); }
                             case "action_failed" -> { if(clock.actionFailed()) clock.pause("action_failed"); }
+                            case "expect_threat" -> clock.expectThreat(data.get("entityId").getAsInt());
                             case "entity_observation" -> {
                                 JsonObject result;
                                 try {result=EntityObservation.read(client.playerEntity,data.getAsJsonObject("params"));}
