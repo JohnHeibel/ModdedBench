@@ -45,6 +45,8 @@ public final class Baritone implements IBaritone {
     private final baritone.cache.WorldProvider worlds=new baritone.cache.WorldProvider(this);
     public BlockStateInterface bsi;
     public boolean overrideProtection;
+    /** A mining job may accept water (never lava, never a fluid it cannot swim in) beside what it breaks, as a player does. */
+    public static volatile boolean besideWater;
     public java.util.function.Predicate<BlockPos> positionAllowed=p->true;
     public java.util.function.Supplier<java.util.function.Predicate<IBlockState>> explicitMiningTargets=()->s->false;
     /** The single native inventory swap in flight; acknowledged through the core packet hook. */

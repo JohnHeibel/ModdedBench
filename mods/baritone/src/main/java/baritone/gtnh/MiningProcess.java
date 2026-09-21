@@ -25,6 +25,7 @@ final class MiningProcess extends BulkJob {
     private final Set<DropLocation> retriedDrops=new HashSet<>();
     private List<Map<String,Object>> diagnostics=List.of();
     private List<List<Integer>> lastKnown=List.of(),lastRejected=List.of();
+    private List<Map<String,Object>> refused=List.of();
     MiningProcess(BaritoneNavigation nav,WorkJournal journal,Map<String,Object> options){
         super(nav,journal,options);engine=nav.reference();
         var blocks=WorkAccess.selectors(params.get("blocks"));items=WorkAccess.itemSelectors(params.get("items"));
@@ -45,6 +46,7 @@ final class MiningProcess extends BulkJob {
         Baritone.settings().exploreForBlocks.value=false;Baritone.settings().legitMine.value=false;
         engine.overrideProtection=override;engine.positionAllowed=p->true;
         engine.explicitMiningTargets=observation::capture;
+        Baritone.besideWater=bool(params,"besideWater",false);
         engine.getInputOverrideHandler().attach(lease);
     }
     int gained(){return Math.max(0,WorkAccess.count(items)-baseline);}
@@ -115,7 +117,8 @@ final class MiningProcess extends BulkJob {
         finalCount=mc.thePlayer==player?WorkAccess.count(items):null;
         finalGoal=String.valueOf(engine.getPathingBehavior().getGoal());
         engine.getPathingBehavior().forceCancel();engine.getInputOverrideHandler().release();
-        engine.explicitMiningTargets=()->s->false;
+        engine.explicitMiningTargets=()->s->false;Baritone.besideWater=false;
+        refused=refused();
         scopedSettings.forEach(ReferenceSettings::copy);
     }
     @Override public Map<String,Object> status(){
@@ -127,6 +130,8 @@ final class MiningProcess extends BulkJob {
         out.put("scanPasses",observation==null?0:observation.passes);out.put("scanCursor",observation==null?0:observation.cursor);
         out.put("scanVolume",bounds==null?0:bounds.volume());out.put("targets",lastKnown);out.put("rejected",lastRejected);
         out.put("initialTargetDiagnostics",diagnostics);
+        // Targets it will not break, and the fluid beside each: plug or drain that, or for water pass besideWater.
+        out.put("refused",done()?refused:List.of());
         if(engine!=null){
             var current=engine.getPathingBehavior().getCurrent();
             out.put("goal",done()?finalGoal:String.valueOf(engine.getPathingBehavior().getGoal()));
@@ -134,6 +139,19 @@ final class MiningProcess extends BulkJob {
             out.put("planning",engine.getPathingBehavior().getInProgress().isPresent());
         }
         out.put("completionMeaning","net matching inventory gain since this job began, including across explicit resume");return out;
+    }
+    /** Matching blocks the engine refuses to break because of what is beside them, with that neighbour named. */
+    private List<Map<String,Object>> refused(){
+        List<Map<String,Object>> out=new ArrayList<>();
+        if(mc.thePlayer!=player||observation==null)return out;
+        for(var p:observation.observedLocations()){
+            if(out.size()>=16)break;
+            for(int[] d:new int[][]{{0,1,0},{1,0,0},{-1,0,0},{0,0,1},{0,0,-1}}){
+                var beside=mc.theWorld.getBlock(p.getX()+d[0],p.getY()+d[1],p.getZ()+d[2]);
+                if(beside.getMaterial().isLiquid()){out.add(Map.of("pos",point(p),"beside",String.valueOf(net.minecraft.block.Block.blockRegistry.getNameForObject(beside)),"at",List.of(p.getX()+d[0],p.getY()+d[1],p.getZ()+d[2])));break;}
+            }
+        }
+        return out;
     }
     private static List<Integer> point(baritone.compat.BlockPos p){return List.of(p.getX(),p.getY(),p.getZ());}
 }

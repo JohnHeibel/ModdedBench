@@ -54,9 +54,10 @@ def mb_wiki_search(query: str, limit: int = 8) -> Any:
 def mb_wiki_read(title: str, section: str = "", offset: int = 0, limit: int = 6000) -> Any:
     """Read a wiki page from the offline snapshot as wikitext. Titles and redirects match case-insensitively.
 
-    Without section you get the text from offset (limit 500..20000 characters) plus the
-    page's section list; with section (a heading from that list) you get that section
-    only. Long pages: keep reading with offset=next. Tables and {{templates}} are raw
+    A page longer than limit (500..20000 characters) answers first with its lead and an
+    outline of every section and its size: read the sections you need, which are rarely
+    the first table. With section (a heading from the outline, or an unambiguous part of
+    one) you get that section only. Keep reading with offset=next. Tables and {{templates}} are raw
     wikitext; they hold the multiblock and recipe details.
     """
     with closing(_db()) as db:
@@ -66,13 +67,19 @@ def mb_wiki_read(title: str, section: str = "", offset: int = 0, limit: int = 60
             if alias: row = db.execute("select title, revid, text from page where title = ?", (alias[0],)).fetchone()
         if row is None: raise ValueError(f"no page titled {title!r}; use mb_wiki_search")
         name, revid, text = row; source = _source(db, name, revid)
-    heads = [(m.start(), m.group(2).strip(), len(m.group(1))) for m in re.finditer(r"^(={2,4})\s*(.+?)\s*\1\s*$", text, flags=re.M)]
+    heads = [(m.start(), m.group(2).strip(), len(m.group(1))) for m in re.finditer(r"^(={1,4})\s*(.+?)\s*\1\s*$", text, flags=re.M)]
+    ends = [next((h[0] for h in heads[i + 1:] if h[2] <= head[2]), len(text)) for i, head in enumerate(heads)]  # subsections belong to it
+    limit = max(500, min(limit, 20000)); offset = max(0, offset)
+    if not section and not offset and len(text) > limit and heads:
+        outline = [{"section": "  " * (h[2] - 1) + h[1], "chars": end - h[0]} for h, end in zip(heads, ends)]
+        return {"title": name, "length": len(text), "note": "long page: read it by section", "outline": outline,
+                "lead": text[:min(heads[0][0], limit)], "source": source}
     if section:
-        at = next((i for i, h in enumerate(heads) if h[1].lower() == section.strip().lower()), None)
+        want = section.strip().lower(); partial = [i for i, h in enumerate(heads) if want in h[1].lower()]
+        at = next((i for i, h in enumerate(heads) if h[1].lower() == want), partial[0] if len(partial) == 1 else None)
         if at is None: raise ValueError(f"no section {section!r}; sections: {[h[1] for h in heads]}")
-        end = next((h[0] for h in heads[at + 1:] if h[2] <= heads[at][2]), len(text))  # subsections belong to it
-        text = text[heads[at][0]:end]
-    limit = max(500, min(limit, 20000)); offset = max(0, offset); part = text[offset:offset + limit]
-    out = {"title": name, "text": part, "length": len(text), "sections": [h[1] for h in heads], "source": source}
+        text = text[heads[at][0]:ends[at]]
+    part = text[offset:offset + limit]
+    out = {"title": name, "sections": [h[1] for h in heads], "text": part, "length": len(text), "source": source}
     if offset + limit < len(text): out["next"] = offset + limit
     return out

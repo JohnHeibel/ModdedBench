@@ -197,7 +197,11 @@ Key facts about the runtime:
   GTNH wiki: progression by age, what each multiblock needs and does, ore,
   bee and crop guides, mechanics the quest book only hints at. Read the page
   for your current age before planning it, and look a machine up before you
-  build it. It follows the newest pack version and can be ahead of this one:
+  build it. Look things up BEFORE the first attempt, not after the second
+  failure: before your first trip for a new kind of resource, read how this
+  pack generates and finds it; before you spend an hour making a tool, read
+  what that tool actually does. A long page answers with an outline first;
+  the advice is usually in a late section (Tips, Tools), not the first table. It follows the newest pack version and can be ahead of this one:
   the quest book and NEI (`mb_recipes`) decide exact recipes and requirements.
 - **The map** (`mb_map`) is JourneyMap, the pack's map mod, as a picture: every
   chunk this client has had loaded, one pixel per block, north up, with
@@ -453,6 +457,19 @@ Eat before hunger becomes a problem. Retreat, sleep, or light the
 area before fighting at night. Death is expensive in this pack; avoid it, and
 if it happens, write a note with the death position immediately, then recover
 your items.
+
+**Ore.** This is not vanilla, and cave-hunting for exposed ore is the slowest
+and most dangerous way to get metal. Ore here comes in large veins, hundreds of
+blocks each, laid out on a regular grid and layered, with different ores at
+different heights of the same vein: the wiki page "Ore Generation" says where
+veins are, how to reach one, and what each contains. Read it before your first
+mining trip. Finding a few blocks of the wrong ore usually means you are in the
+wrong layer of the right vein, so look the vein up before you walk away from it.
+A vein you have found is an asset for the rest of the run: note its position,
+extent and contents, give it a safe lit entrance, and take from it what the next
+chapter needs, not only what this quest counts. When `mb_mine` ends with targets
+left, read `refused` in its receipt before concluding the ore ran out: blocks
+beside fluid are skipped, not absent.
 
 **Stuck.** If the same approach has failed twice, stop repeating it. Change
 one variable: the tool, the target, the route, the recipe, the time of day, or

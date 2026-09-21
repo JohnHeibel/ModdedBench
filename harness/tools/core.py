@@ -199,11 +199,16 @@ def mb_time(method: str = "status", params: dict | None = None, timeout_s: float
     pauseOnDisconnect defaults true; set false for a planned
     client restart with continued server production, then restore it after reconnect.
     A controlling session must stay connected; observation-only sessions do not own time.
+    The reply keeps the three latest pause events; params {events:true} on status returns all 32.
     """
     name = method.removeprefix("time.")
     if name not in {"status", "pause", "resume", "configure", "report_failure"}:
         raise ValueError("unknown time method")
-    return kernel().call(f"time.{name}", timeout=timeout_s, **(params or {}))
+    params = dict(params or {}); every = params.pop("events", False)
+    out = kernel().call(f"time.{name}", timeout=timeout_s, **params)
+    state = out.get("state") if isinstance(out, dict) else None
+    if not every and isinstance(state, dict) and len(state.get("events") or []) > 3: state["events"] = state["events"][-3:]
+    return out
 
 
 @tool(lane=lane_by_method("memory"), coverage=["move"])

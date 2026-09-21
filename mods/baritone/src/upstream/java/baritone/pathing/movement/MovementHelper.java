@@ -89,6 +89,7 @@ public interface MovementHelper extends ActionCosts, Helper {
             return true; // dont break a block that is adjacent to unsupported gravel because it can cause really weird stuff
         }
         if (block instanceof BlockLiquid) {
+            if (Baritone.besideWater) return false; // water: everything else left above as unsupportedForSwimming
             if (directlyAbove || Baritone.settings().strictLiquidCheck.value) {
                 return true;
             }

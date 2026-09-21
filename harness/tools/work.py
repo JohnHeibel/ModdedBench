@@ -232,7 +232,7 @@ def mb_mine(blocks: list[dict], items: list[dict], quantity: int = 1,
             bounds: dict | None = None, radius: int = 24,
             allow_break: bool = False, allow_place: bool = False,
             override_protection: bool = False, timeout_ticks: int = 12000,
-            timeout_s: float = 600.0) -> Any:
+            timeout_s: float = 600.0, beside_water: bool = False) -> Any:
     """Run bounded native quantity mining and return its terminal receipt.
 
     blocks and items are explicit block/item selectors; quantity means net matching
@@ -243,10 +243,16 @@ def mb_mine(blocks: list[dict], items: list[dict], quantity: int = 1,
     block with collection. A returned jobId is durable; inspect with mb_work_status
     and use mb_work_resume after correcting a blocked job. Protection override and
     terrain permissions apply only to this attempt.
+    It will not break a block with fluid beside or above it, and those targets simply
+    look unreachable: the receipt's refused lists each one with the fluid block beside
+    it. Water is a nuisance, not a danger: beside_water=True mines next to it (keep the
+    air guard armed, expect the tunnel to get wet). Oil and lava stay refused: plug the
+    listed fluid cell with a throwaway block (mb_build, one cell), or come at the ore from a dry side.
     """
     params = dict(blocks=blocks, items=items, quantity=quantity, radius=radius,
                   allowBreak=allow_break, allowPlace=allow_place,
                   overrideProtection=override_protection, timeoutTicks=timeout_ticks)
+    if beside_water: params["besideWater"] = True
     if bounds is not None: params["bounds"] = bounds
     return notes.tracked("nav.mine", timeout_s, **params)
 
@@ -367,7 +373,7 @@ def mb_copy(bounds: dict, origin: list[int] | None = None, include_air: bool = F
 
 @tool(lane="read", coverage=["move", "machine"])
 def mb_scan(blocks: list[dict] | None = None, bounds: dict | None = None, cursor: list[int] | None = None,
-            limit: int = 256, max_s: float = 20.0) -> Any:
+            limit: int = 256, max_s: float = 20.0, detail: str = "summary") -> Any:
     """Scan loaded blocks in bounds {min:[x,y,z],max:[x,y,z]} for selectors {id, meta?} / {ore:"oreIron"} / {item:{...}}.
 
     One call covers the whole volume: it is split into layers and paged for you, and stops at
@@ -379,6 +385,9 @@ def mb_scan(blocks: list[dict] | None = None, bounds: dict | None = None, cursor
     id "gregtech:gt.blockores" to learn THAT ore is there and prospect to learn WHAT it is.
     Unloaded cells are counted, never loaded or generated. Matches are observations, not
     proof that mining will succeed (you may lack the tool to harvest them).
+    detail="summary" (default) answers per kind of block: count, bounding box and the 8
+    positions nearest you. "rows" lists every match as pos/id/meta/name; "full" adds the
+    picked and placement items with their NBT, which is large: ask for it on a small box.
     """
     if bounds is None: raise ValueError("bounds are required")
     lo, hi = bounds["min"], bounds["max"]
@@ -397,6 +406,17 @@ def mb_scan(blocks: list[dict] | None = None, bounds: dict | None = None, cursor
         layer, inner = (layer + 1, 0) if page["done"] else (layer, page["cursor"])
     out["done"] = layer >= len(layers)
     if not out["done"]: out["cursor"] = [layer, inner]
+    if detail == "full": return out
+    rows = [{"pos": m.get("pos"), "id": m.get("id"), "meta": m.get("meta"), "name": (m.get("pickedItem") or {}).get("name")} for m in out["matches"]]
+    out["found"] = len(rows)
+    if detail == "rows": out["matches"] = rows; return out
+    me = kernel().call("obs.player").get("pos") or [0, 0, 0]; kinds = {}
+    for row in rows: kinds.setdefault((row["id"], row["meta"], row["name"]), []).append(row["pos"])
+    del out["matches"]
+    out["kinds"] = [{"id": k[0], "meta": k[1], "name": k[2], "count": len(at),
+                     "box": {"min": [min(p[i] for p in at) for i in range(3)], "max": [max(p[i] for p in at) for i in range(3)]},
+                     "nearest": sorted(at, key=lambda p: sum((p[i] - me[i]) ** 2 for i in range(3)))[:8]}
+                    for k, at in sorted(kinds.items(), key=lambda kv: -len(kv[1]))]
     return out
 
 
