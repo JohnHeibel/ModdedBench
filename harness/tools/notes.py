@@ -36,7 +36,7 @@ SHOWN_TTL_S = 600.0      # a note shown less than this ago is not repeated...
 MOVE_RESET = 48.0        # ...unless the player has moved this far since it was shown
 GATE_S, GATE_BLOCKS = 3.0, 4.0  # skip the store entirely when polled again from the same spot
 DEFAULT_DIR = Path(__file__).resolve().parents[2] / ".state" / "notes"
-WORK = {"nav.goto": "goto", "nav.route": "route", "nav.process": "process", "nav.follow": "follow",
+WORK = {"nav.goto": "goto", "nav.route": "route", "nav.process": "process", "nav.follow": "follow", "nav.fight": "fight",
         "nav.mine": "mine", "nav.build": "build", "nav.resume": "resume"}
 JOURNALED = {"mine", "build", "process", "resume"}   # route/goto/follow are journaled on failure only
 

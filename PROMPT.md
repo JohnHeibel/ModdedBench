@@ -144,8 +144,8 @@ are about to change the harness.
 Key facts about the runtime:
 
 - **Time control.** The dedicated server can be paused as a whole simulation
-  tick gate. Guards (health drop, low health, low air, hunger, burning,
-  disconnect) pause the game at the tick boundary; they never act for you.
+  tick gate. Guards (a mob taking you as its target, health drop, low health,
+  low air, hunger, burning, disconnect) pause the game at the tick boundary; they never act for you.
   Observations work while paused; gameplay actions are deferred until you
   resume. Resume explicitly after you have decided what to do.
 - **Receipts are not acknowledgements.** Clicks, transfers, quest actions and
@@ -369,7 +369,7 @@ If the goal stack is set, trust it over your recollection and continue from
 the sub-goal; if it is empty, find the first incomplete required quest in book
 order and set it with `mb_goal`. Read your notes for the current chapter. Check the time
 guard configuration and set one if none is active (health drop, health below 8,
-air below 60, food below 6, burning, pause on disconnect). Arm a survival watch
+air below 60, food below 6, burning, threat within 12, pause on disconnect). Arm a survival watch
 with a prompt so that danger wakes you with context.
 
 **Per chapter.** Read the whole chapter once (`mb_quest_lines`, then observe
@@ -431,7 +431,20 @@ prompt, observe, then `mb_interrupt("ack", event_id=...)` if it latched.
 **Danger.** When a guard pauses the game or a survival watch fires: observe,
 decide, act with the minimum override (temporarily disable only the guard that
 would immediately re-trigger, for one bounded action), verify, restore the
-guard, resume. Eat before hunger becomes a problem. Retreat, sleep, or light the
+guard, resume.
+
+A `threat` pause is the early one: a mob has just taken you as its target and
+has not hurt you yet. The clock's `threats` (in `mb_status` and `mb_time`) list
+every mob after you, with distance, line of sight, and whether it shoots. The
+world is stopped, so decide before you resume: fight, leave, or put a block
+between you. `mb_fight` fights one mob you name and stops the moment the fight
+gets worse than the one you chose. It will not pick a second mob for you.
+Against several, do not chase: get to where only one can reach you (a doorway, a
+one-wide tunnel, two blocks up a pillar) and use `mb_fight(hold=True)`. Kill
+what shoots first or break its line of sight; a creeper is fought in the open,
+never in your base. Never eat, craft or open a GUI with a threat listed.
+
+Eat before hunger becomes a problem. Retreat, sleep, or light the
 area before fighting at night. Death is expensive in this pack; avoid it, and
 if it happens, write a note with the death position immediately, then recover
 your items.
@@ -657,6 +670,7 @@ shipped: once you start editing tools, `mb_tools_status` (what is loaded) and
 | Use a GUI neither `mb_craft` nor `mb_move_items` can drive | `mb_act` (use_block) to open it, `mb_inventory(container=True)` | `mb_transfer`, `mb_click_slot`, `mb_gui`; if no tool can drive it, that is a missing primitive: write one |
 | Complete a quest | `mb_quest_detect` | `mb_quest_select_choice`, `mb_quest_claim`, then observe the quest and your inventory |
 | Wait for something | `mb_interrupt` (add a watch with a deadline) | `mb_wait`; `mb_interrupt_events` to replay what you missed |
+| Deal with a hostile mob | the clock's `threats`, `mb_obs` entities | `mb_fight` (one named mob, or `hold=True` at a chokepoint); `mb_process` goal `run_away` to leave |
 | Stop something now | `mb_stop`, `mb_build_pause` | `mb_time` pause when you need to think |
 | Remember something | `mb_note_write` (after `mb_notes` capture) | `mb_goal` for where you are; `mb_memory` for waypoints, routes, protected regions |
 | Learn how the pack works | `mb_wiki_search` | `mb_wiki_read`, then a topic note |
@@ -767,6 +781,7 @@ and list what is loaded, with load errors.
 | --- | --- |
 | `mb_route` | Follow a saved route, approaching its first anchor then following bounded corridors |
 | `mb_follow` | Follow loaded native entities through source FollowProcess for a bounded duration |
+| `mb_fight` | Fight one mob as a job, the way mb_mine mines: you choose the mob and the limits, it does the footwork |
 | `mb_process` | Run one bounded source process: goal, explore, get_to_block, or farm |
 | `mb_settings` | Read, atomically set, or reset pinned source settings while the source engine is idle |
 | `mb_cache` | Inspect or administer the source terrain cache; cached cells are approximate evidence |

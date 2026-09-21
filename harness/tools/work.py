@@ -108,6 +108,38 @@ def mb_follow(target: dict, duration_ticks: int = 1200, radius: int = 2,
                          allowBreak=allow_break, allowPlace=allow_place, overrideProtection=override_protection)
 
 
+@tool(rung=1, coverage=["combat"])
+def mb_fight(entity_id: int | None = None, hold: bool = False, leash: float = 16, bail_health: float = 8,
+             max_attackers: int = 2, weapon_slot: int | None = None, duration_ticks: int = 600,
+             crit: bool = True, block: bool = True, timeout_s: float = 60.0) -> Any:
+    """Fight one mob as a job, the way mb_mine mines: you choose the mob and the limits, it does the footwork.
+
+    entity_id comes from mb_obs entities or the clock's threats. It paths to the mob (never breaking
+    or placing), and in reach blocks with a sword between swings and times each swing to land while
+    falling, a critical hit at the fastest rate the game counts. It backs away from a creeper it is
+    fighting while that creeper swells. hold=True never moves: it hits the chosen mob, or with no
+    entity_id the nearest hostile in sight, whenever one comes into reach, and succeeds once none is
+    in sight. Against more than one melee mob, first stand where only one can reach you (a doorway,
+    a one-wide tunnel, a pillar two blocks up) and use hold; pursuing one mob of a group walks you
+    into the others. It never chooses to chase a different mob.
+    weapon_slot is the hotbar slot to fight with (default: whatever is in hand). leash is how far
+    from where you started the mob may be before the job stops chasing; bail_health is the health
+    at which it stops; max_attackers is how many hostile mobs may be within 4 blocks.
+    It stops, as a failure that the actionFailed guard turns into a pause, the moment the fight
+    gets worse than the one you chose: health_at_bail_line, outnumbered, creeper_swelling (a
+    different creeper), target_beyond_leash, target_lost, cannot_reach_target, duration_elapsed.
+    The result lists hostilesInSight: decide again from there (fight the next, retreat, eat, wall
+    in). Arrows are not blocked by chasing: close on a skeleton along cover, or break line of sight.
+    """
+    if entity_id is None and not hold:
+        raise ValueError("entity_id is required unless hold=True")
+    params = {"hold": hold, "leash": leash, "bailHealth": bail_health, "maxAttackers": max_attackers,
+              "durationTicks": duration_ticks, "crit": crit, "block": block}
+    if entity_id is not None: params["entityId"] = entity_id
+    if weapon_slot is not None: params["weaponSlot"] = weapon_slot
+    return notes.tracked("nav.fight", timeout_s, **params)
+
+
 @tool(rung=1, coverage=["move"])
 def mb_process(process: str, duration_ticks: int = 1200, goal: dict | None = None,
                center: list[int] | None = None, radius: int = 24, block: dict | None = None,

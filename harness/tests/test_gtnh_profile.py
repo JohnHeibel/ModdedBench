@@ -27,7 +27,7 @@ TOOLS = {
     "mb_act", "mb_call", "mb_gui", "mb_keys", "mb_map", "mb_methods", "mb_obs", "mb_screenshot", "mb_status", "mb_stop", "mb_time",
     "mb_recipe_status", "mb_item_search", "mb_item_info", "mb_recipes", "mb_fluid_search", "mb_recipe_handlers", "mb_recipe_view", "mb_recipe_inspect",
     "mb_memory", "mb_route", "mb_inventory", "mb_find", "mb_transfer", "mb_click_slot", "mb_notes", "mb_note_write",
-    "mb_follow", "mb_process", "mb_settings", "mb_cache",
+    "mb_follow", "mb_fight", "mb_process", "mb_settings", "mb_cache",
     "mb_mine", "mb_build_preview", "mb_build", "mb_copy",
     "mb_schematic_import", "mb_schematic_build", "mb_scan", "mb_work_status",
     "mb_work_resume", "mb_build_pause", "mb_build_materials", "mb_quest_status", "mb_quest_sync", "mb_quest_search", "mb_quest_lines",
@@ -110,7 +110,7 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertTrue(registered.annotations.readOnlyHint)
         self.assertFalse(srv._tool_manager._tools["mb_build"].annotations.readOnlyHint)
         status = srv._tool_manager._tools["mb_tools_status"].fn()
-        self.assertEqual(sum(len(m["tools"]) for m in status["modules"]), 59)
+        self.assertEqual(sum(len(m["tools"]) for m in status["modules"]), 60)
         json.dumps(status)
 
     def test_worker_picks_pool_from_lane_metadata(self):
@@ -313,6 +313,10 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual(fake.last("nav.follow"), ("nav.follow", {"timeout":12, "target":{"entityId":7,"type":"Item"},
             "durationTicks":40,"radius":3,"offsetDistance":2.5,"offsetDirection":90,
             "allowBreak":False,"allowPlace":False,"overrideProtection":False}))
+        tools.mb_fight(7, weapon_slot=0, timeout_s=20)
+        self.assertEqual(fake.last("nav.fight"), ("nav.fight", {"timeout":20, "hold":False, "leash":16, "bailHealth":8,
+            "maxAttackers":2, "durationTicks":600, "crit":True, "block":True, "entityId":7, "weaponSlot":0}))
+        with self.assertRaises(ValueError): tools.mb_fight()
         tools.mb_process("goal", goal={"type":"near","pos":[1,64,2],"radius":2}, duration_ticks=80, timeout_s=14)
         self.assertEqual(fake.last("nav.process")[1]["goal"]["type"], "near")
         tools.mb_cache("locations", block="minecraft:diamond_ore", meta=0, limit=12, region_distance_squared=4)
