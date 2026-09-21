@@ -285,10 +285,10 @@ class GTNHProfileTests(unittest.TestCase):
             end = min(params["cursor"] + params["budget"], volume)
             return {"matches": [{"at": end}] if end == volume else [], "cursor": end, "done": end == volume, "scanned": end - params["cursor"], "unloaded": 0}
         scanning = self.use(FakeKernel(scan))
-        found = work.mb_scan([{"ore":"oreIron"}], {"min":[0,0,0],"max":[63,199,63]}, limit=9)
+        found = work.mb_scan([{"ore":"oreIron"}], {"min":[0,0,0],"max":[63,199,63]}, limit=9, detail="full")
         self.assertEqual((found["done"], len(found["matches"]), found["scanned"], found["volume"]), (True, 4, 819200, 819200))
         self.assertTrue(all(c[1]["bounds"]["max"][1] - c[1]["bounds"]["min"][1] + 1 <= 64 for c in scanning.calls))
-        part = work.mb_scan(None, {"min":[0,0,0],"max":[63,199,63]}, limit=1)
+        part = work.mb_scan(None, {"min":[0,0,0],"max":[63,199,63]}, limit=1, detail="full")
         self.assertEqual((part["done"], part["cursor"]), (False, [1, 0]))
         with self.assertRaisesRegex(ValueError, "512x512"): work.mb_scan(None, {"min":[0,0,0],"max":[600,1,600]})
         self.use(fake)
