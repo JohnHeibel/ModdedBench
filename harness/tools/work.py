@@ -111,7 +111,8 @@ def mb_follow(target: dict, duration_ticks: int = 1200, radius: int = 2,
 @tool(rung=1, coverage=["combat"])
 def mb_fight(entity_id: int | None = None, hold: bool = False, leash: float = 16, bail_health: float = 8,
              max_attackers: int = 2, weapon_slot: int | None = None, duration_ticks: int = 600,
-             crit: bool = True, block: bool = True, timeout_s: float = 60.0) -> Any:
+             crit: bool = True, block: bool = True, ranged: dict | bool | None = None,
+             timeout_s: float = 60.0) -> Any:
     """Fight one mob as a job, the way mb_mine mines: you choose the mob and the limits, it does the footwork.
 
     entity_id comes from mb_obs entities or the clock's threats. It paths to the mob (never breaking
@@ -128,6 +129,16 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, leash: float = 16
     It stops, as a failure that the actionFailed guard turns into a pause, the moment the fight
     gets worse than the one you chose: health_at_bail_line, outnumbered, creeper_swelling (a
     different creeper), target_beyond_leash, target_lost, cannot_reach_target, duration_elapsed.
+    ranged=True fights with whatever launcher or throwable is in weapon_slot, and knows no
+    weapon by name: it holds use and releases; if nothing flies it clicks (a crossbow loads,
+    then fires); if still nothing it winds longer, and after three tries ends with
+    no_projectile_fired (no ammunition?). It watches its own projectile to measure speed,
+    gravity and drag, aims by simulating that flight, leads a moving target, and remembers
+    the numbers per weapon name, so the first shot with a new weapon is the calibration.
+    It closes only until it has a line of sight within maxRange and steps back inside
+    minRange when the ground behind is safe. ranged={drawTicks, reloadTicks, minRange:6,
+    maxRange:20, clickAfterLoad, speed, gravity, drag} overrides what it has learned; the
+    result reports shots, hitsObserved and ballistics.
     The result lists hostilesInSight: decide again from there (fight the next, retreat, eat, wall
     in). Arrows are not blocked by chasing: close on a skeleton along cover, or break line of sight.
     """
@@ -137,6 +148,7 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, leash: float = 16
               "durationTicks": duration_ticks, "crit": crit, "block": block}
     if entity_id is not None: params["entityId"] = entity_id
     if weapon_slot is not None: params["weaponSlot"] = weapon_slot
+    if ranged: params["ranged"] = ranged if isinstance(ranged, dict) else {}
     return notes.tracked("nav.fight", timeout_s, **params)
 
 
