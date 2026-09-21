@@ -174,7 +174,7 @@ def _station(k, at):
         if at is None or not seen["class"].endswith("ContainerPlayer"): return False
         k.call("gui.close")  # your own inventory left open (an interrupted craft does that) is not the station you named
     if at is None: k.call("gui.open_inventory")
-    else: k.call("act.use_block", x=at[0], y=at[1], z=at[2], face=1)
+    else: k.call("act.use_block", x=at[0], y=at[1], z=at[2])  # no face: the bridge clicks the one you can see
     deadline = time.monotonic() + 3
     while not k.call("obs.container")["open"]:
         if time.monotonic() > deadline:

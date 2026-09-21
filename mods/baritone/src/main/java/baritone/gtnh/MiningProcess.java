@@ -20,7 +20,7 @@ final class MiningProcess extends BulkJob {
     private boolean started;
     private Integer finalCount;
     private String finalGoal;
-    private int inactiveTicks,pathlessTicks;
+    private int inactiveTicks,pathlessTicks,rejectedSeen,rejections,haveAtReject=-1;
     private record DropLocation(int entityId,baritone.compat.BlockPos position){}
     private final Set<DropLocation> retriedDrops=new HashSet<>();
     private List<Map<String,Object>> diagnostics=List.of();
@@ -95,6 +95,13 @@ final class MiningProcess extends BulkJob {
         if(process.isActive()){
             lastKnown=process.knownLocations().stream().map(MiningProcess::point).toList();
             lastRejected=process.rejectedLocations().stream().map(MiningProcess::point).toList();
+        }
+        // A failed search blacklists ONE target and plans again, seconds apiece. Four in a row with nothing gained between
+        // them is a deposit this player cannot reach: end with the reason instead of working through every block of it.
+        if(lastRejected.size()>rejectedSeen){
+            rejectedSeen=lastRejected.size();int have=WorkAccess.count(items);
+            rejections=have==haveAtReject?rejections+1:1;haveAtReject=have;
+            if(rejections>=4){finish("failed","no_path_to_targets");return;}
         }
         state=engine.getInputOverrideHandler().isInputForcedDown(baritone.api.utils.input.Input.CLICK_LEFT)?"mining":"pathing";
         // MineProcess keeps its goal while every remaining target is one it may not break (beside still water, say) or
