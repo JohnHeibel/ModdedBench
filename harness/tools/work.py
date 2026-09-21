@@ -15,6 +15,7 @@ from typing import Any
 from kernel import BridgeError
 from mbtool import kernel, tool
 from mbtools_gtnh import notes
+from mbtools_gtnh import plan
 
 STAGE = 4096
 REPORT_KEYS = ("size", "count", "skipped", "tileEntities")
@@ -320,7 +321,8 @@ def mb_build_preview(cells: list[dict] | None = None, selection: dict | None = N
                      origin: list[int] | None = None, replace_existing: bool = False,
                      override_protection: bool = False, allow_break: bool = False,
                      allow_place: bool = False, mode: str = "blueprint",
-                     settings: dict | None = None, size: list[int] | None = None) -> Any:
+                     settings: dict | None = None, size: list[int] | None = None,
+                     drawing: dict | None = None) -> Any:
     """Read-only fresh build diff and shared-inventory material allocation.
 
     Provide exactly one of cells or selection. Cells use {pos,id,meta?,item?,
@@ -329,8 +331,15 @@ def mb_build_preview(cells: list[dict] | None = None, selection: dict | None = N
     replace selector. A cell without meta accepts any meta, which is what you want for blocks that face
     the way they are placed (furnace, chest, machines); give meta to demand a variant or a facing.
     Explicit registry IDs are required. Tile NBT is rejected rather than ignored.
+    drawing={origin:[x,y,z], layers, legend} is the third way to say what to build, in the format
+    mb_view returns: layers bottom first, rows north to south, one character per block west to
+    east, legend {char: {id, meta?}}; '.', ' ' and '+' are left alone. It is for bulk: floors, walls,
+    roofs, rows of plain blocks. Place what faces, connects or is configured with the precise tools.
     Preview does not load chunks, reserve inventory, prove reachability or mutate the world.
     """
+    if drawing is not None:
+        if cells is not None or selection is not None: raise ValueError("provide exactly one of cells, selection or drawing")
+        cells, origin = plan.from_drawing(drawing)
     if (cells is None) == (selection is None): raise ValueError("provide exactly one of cells or selection")
     params = {"replaceExisting": replace_existing, "overrideProtection": override_protection,
               "allowBreak": allow_break, "allowPlace": allow_place, "mode": mode,
@@ -347,7 +356,8 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
              override_protection: bool = False, timeout_ticks: int = 12000,
              timeout_s: float = 600.0, allow_break: bool = False,
              allow_place: bool = False, mode: str = "blueprint",
-             settings: dict | None = None, size: list[int] | None = None) -> Any:
+             settings: dict | None = None, size: list[int] | None = None,
+             drawing: dict | None = None) -> Any:
     """Execute a bounded, explicit-cell or selection build and return its receipt.
 
     Preview first. Native preflight checks loaded cells, conflicts, protection,
@@ -356,8 +366,12 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
     created. Completion means a fresh ID/metadata comparison of every selected cell.
     Tile configuration, multiblock formation and machine state require separate
     normal-interaction adapters. Retain jobId for status or resume. A finished or
-    failed build is journaled as an auto world note at its location.
+    failed build is journaled as an auto world note at its location. drawing: see mb_build_preview.
+    The receipt's `labels` names the region notes of yours that the build touches.
     """
+    if drawing is not None:
+        if cells is not None or selection is not None: raise ValueError("provide exactly one of cells, selection or drawing")
+        cells, origin = plan.from_drawing(drawing)
     if (cells is None) == (selection is None): raise ValueError("provide exactly one of cells or selection")
     params = {"replaceExisting": replace_existing, "overrideProtection": override_protection,
               "allowBreak": allow_break, "allowPlace": allow_place, "mode": mode, "timeoutTicks": timeout_ticks,
@@ -365,7 +379,18 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
     if origin is not None: params["origin"] = origin
     if settings is not None: params["settings"] = settings
     if size is not None: params["size"] = size
-    return _build_call("nav.build", _any_facing(params), timeout_s)
+    return _labelled(_build_call("nav.build", _any_facing(params), timeout_s), params)
+
+
+def _labelled(receipt: Any, params: dict) -> Any:
+    """Name the region notes of the model's own that a build touched: its plan, said back to it, never a refusal."""
+    if not isinstance(receipt, dict): return receipt
+    at = params.get("origin") or [0, 0, 0]
+    if "cells" in params: spots = [[at[i] + c["pos"][i] for i in range(3)] for c in params["cells"]]
+    else: spots = [params["selection"].get("min"), params["selection"].get("max")]
+    if not spots or not all(isinstance(s, list) for s in spots): return receipt
+    labels = plan.labels_at(kernel(), [min(s[i] for s in spots) for i in range(3)], [max(s[i] for s in spots) for i in range(3)])
+    return {**receipt, "labels": labels} if labels else receipt
 
 
 @tool(lane="read", coverage=["machine"])

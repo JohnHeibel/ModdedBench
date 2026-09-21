@@ -544,6 +544,21 @@ matters, paths you can follow home, the area protected in `mb_memory` so
 navigation never digs through it. A base you can describe from your notes is
 a base you can still use after your context is gone.
 
+**You cannot see your base unless you look.** A player carries a picture of
+their base in their head; you lose yours with every context, and a block placed
+without the picture goes wherever you happen to be standing. A base grown that
+way ends up with machines you cannot reach, lines you cannot extend and no room
+where the next chapter needs it. `mb_view` draws a place as layers of
+characters, floor and underfloor included, with your notes, waypoints and
+protected regions listed on it. Look before you place. How you lay the base out
+is yours to decide and nothing enforces it; what helps is that the decision
+exists somewhere other than in your context: a region note says what a piece
+of ground is for ("boilers, grows east", "keep clear"), and a drawing kept in
+that note is a plan that `mb_view` shows you, unbuilt part included, every time
+you look. The same drawing is a build input: `mb_build(drawing=...)` for the
+bulk of a structure, the precise tools for anything that faces, connects or is
+configured. Placements tell you which of your own region notes they landed in.
+
 **You are working for the future, and most of it happens here.** Of all the
 hours of this run, the large majority will be spent inside the base: crafting,
 loading and emptying machines, storing, fetching, repairing, extending. You
@@ -697,7 +712,8 @@ shipped: once you start editing tools, `mb_tools_status` (what is loaded) and
 | See the region, choose a direction, find a vein you prospected | `mb_map` | `mb_memory` waypoints, location notes |
 | Go somewhere | `mb_process` (goal, explore, get_to_block) | `mb_route` for a saved corridor; `mb_follow` for entities |
 | Gather blocks or ore | `mb_mine` | `mb_work_status`, `mb_work_resume` when it blocks |
-| Build | `mb_build_preview` | `mb_build`; `mb_copy` and `mb_schematic_build` to repeat a structure |
+| See or plan a place | `mb_view` | a region note with `data.drawing` keeps the plan |
+| Build | `mb_build_preview` | `mb_build` (cells, selection or an `mb_view` drawing); `mb_copy` and `mb_schematic_build` to repeat a structure |
 | Craft, smelt or process | `mb_recipes`, always, for the exact pattern or inputs | `mb_craft`: one call opens the station (your inventory, a crafting table, a furnace, a machine), loads it, takes the result and closes. `pattern` for grids, `inputs` for machines, `at` alone to collect later |
 | Make something you will need again | the item's notes (they come back with `mb_recipes` and `mb_inventory`): is a line already making it? | if not, build or extend the line, note it on the item, take your share from its output |
 | Do a known chore of many steps by hand | `mb_run` with a script that chains the tools | give it a `name` only if you will run it again soon; discard it when the base changes |
@@ -775,6 +791,12 @@ and list what is loaded, with load errors.
 | `mb_notes` | Durable world notes: context, status, capture, search, get, history, resolve |
 | `mb_note_write` | Create/update a durable note with history and a retry-safe receipt |
 | `mb_goal` | Read or update your goal stack: chapter > current quest > working sub-goal |
+
+**`harness/tools/plan.py`**: The drawing: one format to look at a place, to plan in it and to build from.
+
+| Tool | What it does |
+| --- | --- |
+| `mb_view` | Look at a place as a drawing, with everything you have recorded there on it |
 
 **`harness/tools/recipes_quests.py`**: Better Questing progression and native NEI catalogue/recipe tools.
 
