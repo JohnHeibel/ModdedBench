@@ -270,6 +270,64 @@ def _machine(session, inputs, wait_s):
     return {"loaded": loaded, "collected": collected, "inside": inside}
 
 
+def _shift(session, slot):
+    """Shift-click one slot; how many items left it. The GUI's own routing decides where they go and whether they fit."""
+    before = slot["stack"]["count"]; session.click(slot["i"], "quick_move")
+    left = next(s for s in session.observe()["slots"] if s["i"] == slot["i"]).get("stack")
+    return before - (left["count"] if left and _matches(left, slot["stack"]) else 0)
+
+
+@tool(coverage=["inventory"])
+def mb_move_items(at: list[int] | None = None, put: list[dict] | str | None = None, keep: list[dict] | None = None,
+                  take: list[dict] | None = None, drop: list[dict] | None = None) -> Any:
+    """Store, fetch and discard in ONE call, at anything with a GUI: it opens the block, shift-clicks whole stacks, and closes.
+
+    It knows no container by name. A shift-click hands the stack to the GUI, and the GUI decides where it goes and
+    whether it fits: chests of any mod, crates, backpacks, a machine's input, a storage terminal taking items in.
+    at=[x,y,z] is the block to open (stand within reach); omit it to work in the GUI that is already open, or,
+    for drop alone, in your own inventory.
+    put: [{id, meta?}] stacks to move in, or "all" for everything outside your hotbar; keep: [{id, meta?}] never moved
+    by put. take: [{id, meta?, count?}] whole stacks to bring out until at least count (all of it without count).
+    drop: [{id, meta?}] stacks to throw on the ground in front of you: for junk, which you may discard freely
+    (walk away from it, or it comes back). Order: put, take, drop.
+    Returns {put, took, dropped, unmoved, free: {you, there}}: unmoved is what found no room, free counts empty
+    slots on each side afterwards. Blocks that store without a GUI (barrels, drawers: right-click with the stack
+    in hand, left-click to take) are driven with mb_act, not with this.
+    """
+    if not (put or take or drop): raise ValueError("give put, take or drop")
+    if put is not None and put != "all" and not isinstance(put, list): raise ValueError('put is a list of {id, meta?} or "all"')
+    k = kernel(); opened = _station(k, at)
+    try:
+        session = ContainerSession(k); view = session.observe()
+        if view.get("cursor"): raise ValueError("the cursor must be empty before mb_move_items")
+        if (put or take) and str(view.get("class", "")).endswith("ContainerPlayer"):
+            raise ValueError("put and take need a container: pass at=[x,y,z] of one, or open it first")
+        wanted = lambda stack, selectors: any(_matches(stack, w) for w in selectors or [])
+        moved = {"put": [], "took": [], "dropped": [], "unmoved": []}
+        def note(key, stack, count):
+            if count: moved[key].append({"id": stack["id"], "meta": stack.get("meta"), "count": count})
+        for s in _player(view) if put else []:
+            stack = s.get("stack")
+            if not stack or wanted(stack, keep) or (put == "all" and s["kind"] == "hotbar") or (put != "all" and not wanted(stack, put)): continue
+            count = _shift(session, s); note("put", stack, count); note("unmoved", stack, stack["count"] - count)
+        for want in take or []:
+            need = want.get("count")
+            for s in session.observe()["slots"]:
+                if s["kind"] != "container" or not _matches(s.get("stack"), want) or need is not None and need <= 0: continue
+                count = _shift(session, s); note("took", s["stack"], count); note("unmoved", s["stack"], s["stack"]["count"] - count)
+                if need is not None: need -= count
+            if need is not None and need > 0: raise ProcedureStopped(f"{need} {want['id']} short: not there, or no room in your inventory", session.receipts)
+        for s in _player(session.observe()) if drop else []:
+            if wanted(s.get("stack"), drop): session.click(s["i"], "throw", button=1); note("dropped", s["stack"], s["stack"]["count"])
+        after = session.observe()["slots"]
+        free = lambda kinds: sum(1 for s in after if s["kind"] in kinds and not s.get("stack"))
+        return dict(moved, free={"you": free(("main", "hotbar")), "there": free(("container",))}, clicks=len(session.receipts))
+    finally:
+        if opened:
+            try: k.call("gui.close")
+            except BridgeError: pass
+
+
 @tool(coverage=["inventory"])
 def mb_craft(pattern: list[list[dict | None]] | None = None, times: int = 1, at: list[int] | None = None,
              inputs: list[dict] | None = None, wait_s: float = 0.0) -> Any:
