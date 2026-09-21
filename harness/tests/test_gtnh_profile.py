@@ -321,13 +321,16 @@ class GTNHProfileTests(unittest.TestCase):
         def world(method, params):
             if method == "obs.player": return {"pos": [10.5, 64.0, 20.5]}
             if method == "nav.copy": return {"plan": {"cells": [{"pos": [x, 0, z], "id": "minecraft:stone"} for x in range(3) for z in range(3)] + [{"pos": [1, 1, 1], "id": "minecraft:chest", "meta": 2}]}}
-            if method == "memory.status": return {"waypoints": {"home": [10, 64, 20]}, "regions": {}}
+            if method == "memory.status": return {"waypoints": {"home": {"x": 10, "y": 64, "z": 20}, "outside": {"x": 50, "y": 64, "z": 20}},
+                "regions": {"home": {"min": {"x": 9, "y": 63, "z": 19}, "max": {"x": 11, "y": 65, "z": 21}, "mode": "automation"}}}
             raise RuntimeError(method)
         self.use(FakeKernel(world))
         seen = plan.mb_view(bounds={"min": [9, 63, 19], "max": [11, 64, 21]})
         self.assertEqual([layer["rows"] for layer in seen["layers"]], [["###", "###", "###"], ["...", ".@.", "..."]])  # the player stands where the chest is drawn
         self.assertEqual(seen["legend"]["#"], {"id": "minecraft:stone", "meta": 0, "count": 9})
         self.assertIn({"what": "waypoint", "name": "home", "pos": [10, 64, 20]}, seen["things"])
+        self.assertIn({"what": "protected region", "name": "home", "box": {"min": [9, 63, 19], "max": [11, 65, 21]}, "mode": "automation"}, seen["things"])
+        self.assertFalse(any(t.get("name") == "outside" for t in seen["things"]))
         built, origin = plan.from_drawing({"origin": [9, 63, 19], "layers": [["#.", "+ "], {"y": 64, "rows": ["c."]}], "legend": {"#": "minecraft:stone", "c": {"id": "minecraft:chest", "meta": 2}}})
         self.assertEqual((built, origin), ([{"pos": [0, 0, 0], "id": "minecraft:stone"}, {"pos": [0, 1, 0], "id": "minecraft:chest", "meta": 2}], [9, 63, 19]))
         with self.assertRaises(ValueError): plan.from_drawing({"origin": [0, 0, 0], "layers": [["x"]], "legend": {}})
