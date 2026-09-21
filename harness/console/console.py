@@ -108,7 +108,7 @@ class Console:
         status = dict(live.get("status") or {})
         if clock is None: status = {"state": "game_down", "text": "", "since": status.get("since")}
         elif clock.get("paused") and status.get("state") in ("thinking", "acting", "waiting"):  # between turns the world is always paused; that is not news
-            status = {"state": "held" if clock.get("held") else "paused", "text": str(clock.get("reason") or "").replace("_", " "), "since": status.get("since")}
+            status = {"state": "held" if clock.get("held") else "paused", "text": "" if clock.get("held") else str(clock.get("reason") or "").replace("_", " "), "since": status.get("since")}
         return {"now": time.time(), "goal": live.get("goal"), "status": status, "stats": live.get("stats"), "feed": feed, "chapters": self.book[1]}
 
     # Actions. Anything slow runs as the single background job; its command lines and output are the job log.
