@@ -8,6 +8,9 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-09-21** Named key presses now dispatch native FML input events with
+  synthetic event state. Better Questing's key previously queued a binding but
+  never opened its screen; a GUI opened by the press now completes that input.
 - **2026-09-22** Detecting an already completed Better Questing quest sent an
   empty task request that the native adapter rejected. `mb_quest_detect` now
   returns the observed completion without sending a detect packet.
