@@ -706,7 +706,9 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
                 toPlace.add(placementGoal(pos, bcc));
             }
         });
-        sourceLiquids.forEach(pos -> toPlace.add(new GoalBlock(pos.up())));
+        // Use the same native reachable-face adapter as dry placements; a source
+        // beneath an overhang can be filled from the side without standing above it.
+        sourceLiquids.forEach(pos -> toPlace.add(placementGoal(pos, bcc)));
 
         if (!toPlace.isEmpty()) {
             return new JankyGoalComposite(new GoalComposite(toPlace.toArray(new Goal[0])), new GoalComposite(toBreak.toArray(new Goal[0])));
