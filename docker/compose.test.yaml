@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+# A throwaway stack beside the real one: its own world and agent checkout, the same Codex login (a copy would fork the
+# rotating token and log one of the two out). Stop the real server first: both publish 25575.
+#   OUTBOX=../.runtime/test/outbox BRIEF=../.runtime/test/brief \
+#   docker compose -p mbtest -f docker/compose.yaml -f docker/compose.test.yaml --env-file docker/.env up -d
+volumes:
+  agent-home: {external: true, name: moddedbench_agent-home}
