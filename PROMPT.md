@@ -446,7 +446,15 @@ gets worse than the one you chose. It will not pick a second mob for you.
 Against several, do not chase: get to where only one can reach you (a doorway, a
 one-wide tunnel, two blocks up a pillar) and use `mb_fight(hold=True)`. Kill
 what shoots first or break its line of sight; a creeper is fought in the open,
-never in your base. Never eat, craft or open a GUI with a threat listed.
+never in your base. Never eat, craft or open a GUI with a threat listed: the
+tools refuse. When you leave a fight, leave TO somewhere: keep a waypoint
+(`mb_memory`) at a lit, walled, roofed spot with a door, near every place you
+work, and retreat there, not toward your machines.
+
+Armour is infrastructure. Every hit in this pack lands harder than vanilla, and
+the best armour your current metal allows roughly halves it. The moment you
+hold the ingots for a better set, make it, before the next trip underground;
+the same goes for a real sword and a ranged weapon.
 
 Most fights are avoidable. Mobs spawn where block light is 7 or less:
 `mb_obs light` lists those spots around you, so torch a cave before you mine in
