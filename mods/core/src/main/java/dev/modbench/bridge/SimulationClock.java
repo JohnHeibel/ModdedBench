@@ -14,7 +14,9 @@ public final class SimulationClock {
     private volatile boolean paused;
     private boolean healthDrop, actionFailed, burning, pauseOnDisconnect = true;
     private int airBelow = -1, foodBelow = -1;
-    private double healthBelow = -1;
+    private double healthBelow = -1, threatWithin = -1;
+    private java.util.Set<String> knownThreats = new java.util.HashSet<>();
+    private com.google.gson.JsonArray threats = new com.google.gson.JsonArray();
     private Float lastHealth;
     private String reason = "startup";
     private final ArrayDeque<JsonObject> events = new ArrayDeque<>();
@@ -52,6 +54,18 @@ public final class SimulationClock {
         }
         lastHealth=health;
     }
+    public double threatWithin() { return threatWithin; }
+    /**
+     * Mobs that are after the player right now, as the server knows them: [{key,...what a player would perceive}].
+     * A key that was not there on the last look pauses ("threat"); one the agent already resumed past does not,
+     * so a fight is not re-paused every tick by the mob being fought.
+     */
+    public void threats(com.google.gson.JsonArray now) {
+        java.util.Set<String> keys = new java.util.HashSet<>(); boolean fresh = false;
+        for (com.google.gson.JsonElement t : now) { String key = t.getAsJsonObject().get("key").getAsString(); keys.add(key); fresh |= !knownThreats.contains(key); }
+        knownThreats = keys; threats = now;
+        if (fresh && !paused && threatWithin >= 0) pause("threat");
+    }
     public void configure(JsonObject p) {
         boolean hd=Json.bool(p,"healthDrop",healthDrop), af=Json.bool(p,"actionFailed",actionFailed);
         boolean disconnect=Json.bool(p,"pauseOnDisconnect",pauseOnDisconnect);
@@ -59,8 +73,9 @@ public final class SimulationClock {
         int ab=Json.integer(p,"airBelow",airBelow,-1,300);
         int fb=Json.integer(p,"foodBelow",foodBelow,-1,20);
         boolean fire=Json.bool(p,"burning",burning);
+        double tw=Json.number(p,"threatWithin",threatWithin,-1,32);
         healthDrop=hd; actionFailed=af; pauseOnDisconnect=disconnect; healthBelow=hb; airBelow=ab;
-        foodBelow=fb; burning=fire;
+        foodBelow=fb; burning=fire; threatWithin=tw; knownThreats.clear();
         lastHealth=null;
     }
     private void transition(boolean value) {
@@ -75,7 +90,7 @@ public final class SimulationClock {
             "simulationTicks",simulationTicks,"reason",reason,
             "wallMs",(now-started)/1_000_000L,"pausedMs",(pausedNanos+(paused?now-changed:0))/1_000_000L,
             "conditions",Json.object("healthDrop",healthDrop,"healthBelow",healthBelow,"airBelow",airBelow,
-                "foodBelow",foodBelow,"burning",burning,
-                "actionFailed",actionFailed,"pauseOnDisconnect",pauseOnDisconnect),"events",events);
+                "foodBelow",foodBelow,"burning",burning,"threatWithin",threatWithin,
+                "actionFailed",actionFailed,"pauseOnDisconnect",pauseOnDisconnect),"threats",threats,"events",events);
     }
 }

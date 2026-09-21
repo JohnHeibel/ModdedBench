@@ -66,6 +66,42 @@ public class SimulationClockTest {
     }
 
     @Test
+    public void aNewThreatPausesOnceAndTheSameOneDoesNotPauseAgain() {
+        SimulationClock clock = new SimulationClock(() -> 0L);
+        clock.threats(threats("7")); // Off by default: seen, listed, not a reason to stop.
+        assertFalse(clock.paused());
+        JsonObject config = new JsonObject();
+        config.addProperty("threatWithin", 12.0);
+        clock.configure(config);
+
+        clock.threats(threats("7"));
+        assertTrue(clock.paused());
+        assertEquals("threat", clock.status().get("reason").getAsString());
+        assertEquals(1, clock.status().getAsJsonArray("threats").size());
+
+        clock.resume();
+        clock.threats(threats("7")); // The mob being fought.
+        assertFalse(clock.paused());
+        clock.threats(threats("7", "9")); // A second one joins.
+        assertTrue(clock.paused());
+
+        clock.resume();
+        clock.threats(threats("9"));
+        clock.threats(threats("9", "7")); // One that lost interest and came back is new again.
+        assertTrue(clock.paused());
+
+        clock.resume();
+        clock.threats(threats("9", "7", "4!")); // A creeper that starts to swell changes its key.
+        assertTrue(clock.paused());
+    }
+
+    private static JsonArray threats(String... keys) {
+        JsonArray out = new JsonArray();
+        for (String key : keys) out.add(Json.object("key", key));
+        return out;
+    }
+
+    @Test
     public void airThresholdPausesAtItsInclusiveBoundary() {
         SimulationClock clock = new SimulationClock(() -> 0L);
         JsonObject config = new JsonObject();
