@@ -974,11 +974,6 @@ public final class Settings {
     public final Setting<Boolean> replantCrops = new Setting<>(true);
 
     /**
-     * Replant nether wart while farming. This setting only has an effect when replantCrops is also enabled
-     */
-    public final Setting<Boolean> replantNetherWart = new Setting<>(false);
-
-    /**
      * When the cache scan gives less blocks than the maximum threshold (but still above zero), scan the main world too.
      * <p>
      * Only if you have a beefy CPU and automatically mine blocks that are in cache
