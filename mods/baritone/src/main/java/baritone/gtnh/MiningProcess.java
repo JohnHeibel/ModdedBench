@@ -12,6 +12,8 @@ import java.util.*;
 /** Journal, native selectors and action ownership around the actual upstream MineProcess. */
 final class MiningProcess extends BulkJob {
     private final List<Map<String,Object>> items;
+    // With no items named, any gain counts: the inventory at this session's start, per identity (MiningProcess.identity).
+    private final Map<String,Integer> start;
     private final int quantity,baseline,gainedBefore;
     private final Bounds bounds;
     private final Baritone engine;
@@ -48,7 +50,8 @@ final class MiningProcess extends BulkJob {
     private Integer dropsLeft;
     MiningProcess(BaritoneNavigation nav,WorkJournal journal,Map<String,Object> options){
         super(nav,journal,options);engine=nav.reference();
-        var blocks=WorkAccess.selectors(params.get("blocks"));items=WorkAccess.itemSelectors(params.get("items"));
+        var blocks=WorkAccess.selectors(params.get("blocks"));items=params.containsKey("items")?WorkAccess.itemSelectors(params.get("items")):List.of();
+        start=items.isEmpty()?stacks():null;
         quantity=integer(params,"quantity",1,1,1000000);
         besideFluid=bool(params,"besideFluid",false);
         // toolSlot forces the tool in that slot now, wherever a swap later moves it; what it breaks is still measured.
@@ -62,7 +65,7 @@ final class MiningProcess extends BulkJob {
         journal.spec.put("bounds",scan);
         // Gain is summed over sessions, each measured from its own start, so ore smelted or stored between a pause and
         // the resume still counts and ore fetched from a chest meanwhile does not.
-        int now=WorkAccess.count(items),legacy=journal.progress.containsKey("initialCount")?Math.max(0,now-integer(journal.progress,"initialCount",now,0,1000000)):0;
+        int now=have(),legacy=journal.progress.containsKey("initialCount")?Math.max(0,now-integer(journal.progress,"initialCount",now,0,1000000)):0;
         gainedBefore=integer(journal.progress,"gained",legacy,0,1000000);baseline=now-gainedBefore;
         observation=new MiningObservation(world,bounds,blocks,items);
         if(!bool(options,"retry",false))for(Object p:list(journal.progress.getOrDefault("unreachable",List.of())))unreachable.add(pos(p));
@@ -84,7 +87,21 @@ final class MiningProcess extends BulkJob {
         if(besideFluid)engine.positionAllowed=p->!plugged.contains(p)&&!plugged.contains(new BlockPos(p.getX(),p.getY()+1,p.getZ()));
         engine.getInputOverrideHandler().attach(lease);
     }
-    int gained(){return Math.max(0,WorkAccess.count(items)-baseline);}
+    int gained(){return Math.max(0,have()-baseline);}
+    /** The named items held, or with none named the sum of each identity's gain since this session started. */
+    private int have(){
+        if(start==null)return WorkAccess.count(items);
+        int gain=0;for(var e:stacks().entrySet())gain+=Math.max(0,e.getValue()-start.getOrDefault(e.getKey(),0));return gain;
+    }
+    /** An item's identity is its id, meta and NBT; a stack of one (a tool, whose wear some mods keep in NBT) is its id and meta. */
+    static String identity(net.minecraft.item.ItemStack s){
+        return baritone.compat.Registry.name(s.getItem())+":"+s.getItemDamage()+(s.getMaxStackSize()>1&&s.hasTagCompound()?s.getTagCompound().toString():"");
+    }
+    private static Map<String,Integer> stacks(){
+        Map<String,Integer> out=new HashMap<>();
+        for(var s:WorkAccess.MC.thePlayer.inventory.mainInventory)if(s!=null&&s.stackSize>0)out.merge(identity(s),s.stackSize,Integer::sum);
+        return out;
+    }
     @Override int progress(){return mc.thePlayer==player?gained():progressSeen;}
     // Digging toward a target is work before any ore arrives, and so is the first scan of the bounds, which stands still.
     @Override long activity(){return progress()+(long)broken+(observation.passes==0?observation.cursor:0);}
@@ -143,7 +160,7 @@ final class MiningProcess extends BulkJob {
         // A failed search blacklists ONE target and plans again, seconds apiece. Four in a row with nothing gained between
         // them is a deposit this player cannot reach: end with the reason instead of working through every block of it.
         if(lastRejected.size()>rejectedSeen){
-            rejectedSeen=lastRejected.size();int have=WorkAccess.count(items);
+            rejectedSeen=lastRejected.size();int have=have();
             rejections=have==haveAtReject?rejections+1:1;haveAtReject=have;
             if(rejections>=4){finish("failed","no_path_to_targets");return;}
         }
@@ -156,7 +173,7 @@ final class MiningProcess extends BulkJob {
         if(pathlessTicks>100)finish("failed","no_path_to_remaining_targets");
     }
     @Override void releaseProcess(){
-        finalCount=mc.thePlayer==player?WorkAccess.count(items):null;
+        finalCount=mc.thePlayer==player?have():null;
         if(finalCount!=null)journal.progress.put("gained",Math.max(0,finalCount-baseline));
         if(mc.thePlayer==player&&observation!=null){int left=0;
             for(Object entity:world.loadedEntityList)if(entity instanceof net.minecraft.entity.item.EntityItem drop&&!drop.isDead&&observation.has(drop.getEntityItem())
@@ -172,7 +189,7 @@ final class MiningProcess extends BulkJob {
         Map<String,Object> out=super.status();
         out.put("engine","baritone-1.2.19-source-port");out.put("process","MineProcess");
         out.put("quantity",quantity);out.put("gainedBefore",gainedBefore);
-        Integer count=done()?finalCount:mc.thePlayer==player?WorkAccess.count(items):null;
+        Integer count=done()?finalCount:mc.thePlayer==player?have():null;out.put("items",start==null?items:"any");
         out.put("currentCount",count);out.put("gained",count==null?null:Math.max(0,count-baseline));
         out.put("scanPasses",observation==null?0:observation.passes);out.put("scanCursor",observation==null?0:observation.cursor);
         out.put("scanVolume",bounds==null?0:bounds.volume());out.put("targets",lastKnown);out.put("bounds",journal.spec.get("bounds"));
@@ -187,7 +204,7 @@ final class MiningProcess extends BulkJob {
             out.put("path",current==null?List.of():current.getPath().positions().stream().map(MiningProcess::point).toList());
             out.put("planning",engine.getPathingBehavior().getInProgress().isPresent());
         }
-        out.put("completionMeaning","matching inventory gain, summed over this job's sessions (each measured from its own start)");return out;
+        out.put("completionMeaning",start==null?"matching inventory gain, summed over this job's sessions (each measured from its own start)":"with no items named: any inventory gain, the sum of each item identity's increase (id+meta+NBT; a stack-of-one item by id+meta) since the session's start, summed over sessions; currentCount is that gain");return out;
     }
     /** Watch the block under the pick; a few ticks after it goes (the server's word on what else broke arrives late),
      *  count every solid neighbour that went with it. A tool the game says breaks the block, held on it three times as long

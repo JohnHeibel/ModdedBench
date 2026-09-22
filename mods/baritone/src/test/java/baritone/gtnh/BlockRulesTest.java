@@ -62,4 +62,10 @@ public class BlockRulesTest {
         assertFalse(shape(new double[]{0,0,0,1,.3125,1},new double[]{0,0,0,.125,1,1}).standable()); // a cauldron's rim
         assertFalse(shape(new double[]{0,0,0,1,.1875,1}).empty());                                // a closed trapdoor
     }
+    @Test public void anyItemGainKeysAStackByIdMetaAndNbtButAToolByIdAndMeta(){
+        var pick=new net.minecraft.item.ItemStack(net.minecraft.init.Items.iron_pickaxe);var worn=pick.copy();worn.setTagCompound(new net.minecraft.nbt.NBTTagCompound());worn.getTagCompound().setInteger("wear",3);
+        assertEquals(MiningProcess.identity(pick),MiningProcess.identity(worn));
+        var stone=new net.minecraft.item.ItemStack(Blocks.stone);var tagged=stone.copy();tagged.setTagCompound(worn.getTagCompound());
+        assertNotEquals(MiningProcess.identity(stone),MiningProcess.identity(tagged));
+    }
 }

@@ -39,7 +39,8 @@ final class MiningObservation extends BlockOptionalMetaLookup {
     }
     Predicate<IBlockState> capture(){var snapshot=published;return state->matches(snapshot,state);}
     @Override public boolean has(IBlockState state){return matches(published,state);}
-    @Override public boolean has(ItemStack stack){return items.stream().anyMatch(selector->WorkAccess.item(stack,selector));}
+    /** With no item selectors, every drop is wanted. */
+    @Override public boolean has(ItemStack stack){return items.isEmpty()?stack!=null&&stack.stackSize>0:items.stream().anyMatch(selector->WorkAccess.item(stack,selector));}
     @Override public List<BlockOptionalMeta> blocks(){return published.values().stream().distinct().map(key->new BlockOptionalMeta(key.block(),key.meta())).toList();}
     @Override public List<baritone.compat.BlockPos> observedLocations(){return new ArrayList<>(published.keySet());}
     @Override public boolean acceptsDrop(baritone.compat.BlockPos p){
