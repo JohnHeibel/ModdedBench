@@ -102,7 +102,7 @@ final class MiningTools {
     }
     /** Once a game tick: answer what the path search asked since the last one. */
     static void answer() {
-        gameThread=Thread.currentThread();
+        gameThread=Thread.currentThread();BlockIdentity.answer();
         if(answers.size()>8192) answers.clear();
         if(asked.isEmpty()) return;
         int n=0;

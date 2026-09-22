@@ -42,7 +42,7 @@ import java.util.*;
 
 public final class GetToBlockProcess extends BaritoneProcessHelper implements IGetToBlockProcess {
 
-    private BlockOptionalMeta gettingTo;
+    private BlockOptionalMetaLookup gettingTo;
     private List<BlockPos> knownLocations;
     private List<BlockPos> blacklist; // locations we failed to calc to
     private BlockPos start;
@@ -57,6 +57,11 @@ public final class GetToBlockProcess extends BaritoneProcessHelper implements IG
 
     @Override
     public void getToBlock(BlockOptionalMeta block) {
+        getToBlock(new BlockOptionalMetaLookup(block));
+    }
+
+    /** ModdedBench: any lookup, such as a job's scan of blocks named by picked identity. */
+    public void getToBlock(BlockOptionalMetaLookup block) {
         onLostControl();
         gettingTo = block;
         start = ctx.playerFeet();
@@ -119,7 +124,7 @@ public final class GetToBlockProcess extends BaritoneProcessHelper implements IG
         if (goal.isInGoal(ctx.playerFeet()) && goal.isInGoal(baritone.getPathingBehavior().pathStart()) && isSafeToCancel) {
             // we're there
             arrived=true;
-            if (rightClickOnArrival(gettingTo.getBlock())) {
+            if (rightClickOnArrival()) {
                 if (rightClick()) {
                     onLostControl();
                     return new PathingCommand(null, PathingCommandType.CANCEL_AND_SET_GOAL);
@@ -199,16 +204,17 @@ public final class GetToBlockProcess extends BaritoneProcessHelper implements IG
     }
 
     private synchronized void rescan(List<BlockPos> known, CalculationContext context) {
-        List<BlockPos> positions = MineProcess.searchWorld(context, new BlockOptionalMetaLookup(gettingTo), 64, known, blacklist, new ArrayList<>());
+        List<BlockPos> positions = MineProcess.searchWorld(context, gettingTo, 64, known, blacklist, new ArrayList<>());
         positions.removeIf(blacklist::contains);
         knownLocations = positions;
     }
 
     private Goal createGoal(BlockPos pos) {
-        if (walkIntoInsteadOfAdjacent(gettingTo.getBlock())) {
+        Block block = baritone.bsi.get0(pos).getBlock();
+        if (walkIntoInsteadOfAdjacent(block)) {
             return new GoalTwoBlocks(pos);
         }
-        if (blockOnTopMustBeRemoved(gettingTo.getBlock()) && baritone.bsi.get0(pos.up()).isBlockNormalCube()) {
+        if (blockOnTopMustBeRemoved(block) && baritone.bsi.get0(pos.up()).isBlockNormalCube()) {
             return new GoalBlock(pos.up());
         }
         return new GoalGetToBlock(pos);
@@ -244,15 +250,13 @@ public final class GetToBlockProcess extends BaritoneProcessHelper implements IG
         return block == Blocks.PORTAL;
     }
 
-    private boolean rightClickOnArrival(Block block) {
-        if (!Baritone.settings().rightClickContainerOnArrival.value) {
-            return false;
-        }
-        return block == Blocks.CRAFTING_TABLE || block == Blocks.FURNACE || block == Blocks.LIT_FURNACE || block == Blocks.ENDER_CHEST || block == Blocks.CHEST || block == Blocks.TRAPPED_CHEST;
+    // ModdedBench: the caller asked to open what it named; whether it opens is the game's answer, not a list of vanilla containers.
+    private boolean rightClickOnArrival() {
+        return Baritone.settings().rightClickContainerOnArrival.value;
     }
 
     private boolean blockOnTopMustBeRemoved(Block block) {
-        if (!rightClickOnArrival(block)) { // only if we plan to actually open it on arrival
+        if (!rightClickOnArrival()) { // only if we plan to actually open it on arrival
             return false;
         }
         // only these chests; you can open a crafting table or furnace even with a block on top

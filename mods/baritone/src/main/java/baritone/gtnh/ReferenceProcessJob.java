@@ -26,7 +26,10 @@ final class ReferenceProcessJob implements Navigation.Job {
     private InputArbiter.Lease lease;
     private String state="running",reason="";
     private int ticks;
+    private boolean started;
     private final Set<String> movements=new LinkedHashSet<>();
+    // A get_to_block target named by picked identity (item or ore) is found by this scan on the game thread, as mining's are.
+    private final MiningObservation scan;
     ReferenceProcessJob(Baritone engine,Map<String,Object> params){
         this.engine=engine;kind=String.valueOf(params.get("process"));
         duration=integer(params,"durationTicks",1200,1,72000);
@@ -35,7 +38,10 @@ final class ReferenceProcessJob implements Navigation.Job {
         var center=params.containsKey("center")?pos(params.get("center")):new baritone.compat.BlockPos(feet.x,feet.y,feet.z);
         int radius=integer(params,"radius",24,1,64);
         var blockSpec=child(params,"block");
-        BlockOptionalMeta block=kind.equals("get_to_block")?new BlockOptionalMeta(String.valueOf(blockSpec.get("id"))+(blockSpec.containsKey("meta")?":"+integer(blockSpec,"meta",0,0,15):"")):null;
+        boolean picked=kind.equals("get_to_block")&&(blockSpec.containsKey("item")||blockSpec.containsKey("ore"));
+        if(picked)WorkAccess.validateBlockSelector(blockSpec);
+        BlockOptionalMeta block=kind.equals("get_to_block")&&!picked?new BlockOptionalMeta(String.valueOf(blockSpec.get("id"))+(blockSpec.containsKey("meta")?":"+integer(blockSpec,"meta",0,0,15):"")):null;
+        scan=picked?new MiningObservation(mc.theWorld,bounds(Map.of("min",List.of(center.getX()-radius,Math.max(1,center.getY()-16),center.getZ()-radius),"max",List.of(center.getX()+radius,Math.min(254,center.getY()+16),center.getZ()+radius))),List.of(blockSpec),List.of()):null;
         process=switch(kind){case "goal"->engine.getCustomGoalProcess();case "explore"->engine.getExploreProcess();case "get_to_block"->engine.getGetToBlockProcess();case "farm"->engine.getFarmProcess();default->throw new IllegalArgumentException("process must be goal, explore, get_to_block or farm");};
         if(kind.equals("explore")&&engine.getWorldProvider().getCurrentWorld()==null)throw new IllegalArgumentException("exploration requires the server world identity and cache");
         var settings=Baritone.settings();
@@ -51,7 +57,7 @@ final class ReferenceProcessJob implements Navigation.Job {
             switch(kind){
                 case "goal"->engine.getCustomGoalProcess().setGoalAndPath(goal);
                 case "explore"->engine.getExploreProcess().explore(center.getX(),center.getZ());
-                case "get_to_block"->engine.getGetToBlockProcess().getToBlock(block);
+                case "get_to_block"->{if(scan==null)engine.getGetToBlockProcess().getToBlock(block);}
                 case "farm"->engine.getFarmProcess().farm(radius,center);
             }
         }catch(RuntimeException failure){finish("failed","start_failed");throw failure;}
@@ -63,6 +69,11 @@ final class ReferenceProcessJob implements Navigation.Job {
         if(mc.currentScreen!=null&&!ControlRegistry.controls().ownsPlayerInventory(lease)){cancel("gui_open");return;}
         if(mc.thePlayer.isDead||mc.thePlayer.getHealth()<=0){cancel("player_unavailable");return;}
         if(ticks++>=duration){finish(kind.equals("farm")||kind.equals("explore")?"succeeded":"failed","duration_complete");return;}
+        if(scan!=null){
+            scan.tick();
+            if(scan.passes==0)return;
+            if(!started){engine.getGetToBlockProcess().getToBlock(scan);started=true;}
+        }
         engine.tickStart();var current=engine.getPathingBehavior().getCurrent();
         if(current!=null)current.getPath().movements().forEach(m->movements.add(m.getClass().getSimpleName()));
         if(!process.isActive()){
@@ -81,6 +92,8 @@ final class ReferenceProcessJob implements Navigation.Job {
     @Override public Map<String,Object> status(){
         var out=new LinkedHashMap<String,Object>();out.put("engine","baritone-1.2.19-source-port");out.put("action",kind);out.put("state",state);out.put("reason",reason);
         out.put("ticks",ticks);out.put("controlOwned",!done()&&lease!=null&&lease.isActive());out.put("scope",scope);out.put("movementTypes",List.copyOf(movements));
-        out.put("goal",String.valueOf(engine.getPathingBehavior().getGoal()));return out;
+        out.put("goal",String.valueOf(engine.getPathingBehavior().getGoal()));
+        if(scan!=null){out.put("scanPasses",scan.passes);out.put("scanMatches",scan.observedLocations().size());}
+        return out;
     }
 }
