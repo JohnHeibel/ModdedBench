@@ -137,7 +137,8 @@ def mb_follow(target: dict, duration_ticks: int = 1200, radius: int = 2,
 def mb_fight(entity_id: int | None = None, hold: bool = False, leash: float = 16, bail_health: float = 8,
              max_attackers: int = 2, weapon_slot: int | None = None, duration_ticks: int = 600,
              crit: bool = True, block: bool = True, ranged: dict | bool | None = None,
-             timeout_s: float = 60.0) -> Any:
+             timeout_s: float = 60.0, target: dict | None = None, hostile: list[dict] | None = None,
+             allow_break: bool = False, allow_place: bool = False) -> Any:
     """Fight one mob as a job, the way mb_mine mines: you choose the mob and the limits, it does the footwork.
 
     entity_id comes from mb_obs entities or the clock's threats. It paths to the mob (never breaking
@@ -169,13 +170,23 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, leash: float = 16
     result reports shots, hitsObserved and ballistics.
     The result lists hostilesInSight: decide again from there (fight the next, retreat, eat, wall
     in). Arrows are not blocked by chasing: close on a skeleton along cover, or break line of sight.
+    target {entityId|uuid|type|name|class} names any entity instead of entity_id (class matches
+    superclasses and interfaces). hostile [selectors, same form] is what counts as hostile for hold
+    and max_attackers (default [{class:"net.minecraft.entity.monster.IMob"}]); it never refuses a
+    target. allow_break / allow_place let the approach dig or pillar. The receipt shows jobSettings
+    (settings forced for the job, restored after), hostileRule, target class/hostile/health, and for
+    ranged fights adjustments and shotEntities (a shot is any new non-living entity flying away from you).
     """
-    if entity_id is None and not hold:
-        raise ValueError("entity_id is required unless hold=True")
+    if entity_id is None and target is None and not hold:
+        raise ValueError("entity_id or target is required unless hold=True")
     params = {"hold": hold, "leash": leash, "bailHealth": bail_health, "maxAttackers": max_attackers,
               "durationTicks": duration_ticks, "crit": crit, "block": block}
     if entity_id is not None: params["entityId"] = entity_id
     if weapon_slot is not None: params["weaponSlot"] = weapon_slot
+    if target is not None: params["target"] = target
+    if hostile is not None: params["hostile"] = hostile
+    if allow_break: params["allowBreak"] = True
+    if allow_place: params["allowPlace"] = True
     if not ranged: return notes.tracked("nav.fight", timeout_s, **params)
     book = notes.notes_dir() / "ballistics.json"  # what each weapon has taught so far: yours to read and correct
     known = json.loads(book.read_text()) if book.is_file() else {}
@@ -217,7 +228,9 @@ def mb_process(process: str, duration_ticks: int = 1200, goal: dict | None = Non
                allow_break: bool = False, allow_place: bool = False,
                explore_for_blocks: bool = True, open_on_arrival: bool = False,
                enter_portal: bool = False, override_protection: bool = False,
-               timeout_s: float = 90.0, stall_ticks: int | None = None) -> Any:
+               timeout_s: float = 90.0, stall_ticks: int | None = None,
+               crops: list[dict] | None = None, soils: list[dict] | None = None, seeds: list[dict] | None = None,
+               fertilizers: list[dict] | None = None, collect: list[dict] | None = None) -> Any:
     """Run one bounded source process: goal, explore, get_to_block, or farm.
 
     goal needs a structured source goal for process='goal': block, near, adjacent,
@@ -234,6 +247,12 @@ def mb_process(process: str, duration_ticks: int = 1200, goal: dict | None = Non
     on ground already covered with no progress (for farm: no inventory change) end it as
     stalled_no_progress_near_x,y,z.
     pathRules: which of your block rules decided about which block, as in mb_mine.
+    get_to_block also takes block {item:{id,meta?}} or {ore}: found by what pick-block returns
+    (GregTech ores and machines keep their kind there, not in meta).
+    Farm: crops, soils, seeds, fertilizers, collect are selectors; the receipt's farmRules shows the
+    defaults it used (vanilla crops, farmland and soul sand, bone meal, any item on the ground; seed:
+    any plantable the soil accepts) and farmSeen what it could not work (openSoilWithoutSeed,
+    cropSelectorsMatchingNothing). A crop selector with meta names its ripe state.
     """
     if process not in {"goal", "explore", "get_to_block", "farm"}:
         raise ValueError("process must be goal, explore, get_to_block or farm")
@@ -250,6 +269,8 @@ def mb_process(process: str, duration_ticks: int = 1200, goal: dict | None = Non
     if block is not None: params["block"] = block
     if process == "farm": params["radius"] = radius
     if stall_ticks is not None: params["stallTicks"] = stall_ticks
+    for key, value in (("crops", crops), ("soils", soils), ("seeds", seeds), ("fertilizers", fertilizers), ("collect", collect)):
+        if value is not None: params[key] = value
     return notes.tracked("nav.process", timeout_s, **params)
 
 
@@ -270,6 +291,9 @@ def mb_settings(operation: str = "get", query: str = "", values: dict | None = N
     neverStandOn wins), blocksToDisallowBreaking (defaults ice, silverfish stone). Otherwise the
     path search stands on a block whose collision box tops out near its top and walks through one
     with no collision box. A job's symptoms show what hurt or slowed you, and where.
+    hazards also takes "item=modid:item[:damage]": matched against what pick-block returns there
+    (GregTech ores and machines). toolsToAvoid: item ids never swung (the tools measured breaking
+    nothing are listed separately by mb_obs tools, per slot with the game's strength and harvestable).
     """
     if operation not in {"get", "set", "reset"}:
         raise ValueError("operation must be get, set or reset")
@@ -331,7 +355,8 @@ def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, q
             allow_break: bool = False, allow_place: bool = False,
             override_protection: bool = False, timeout_ticks: int = 12000,
             timeout_s: float = 600.0, beside_fluid: bool | None = None,
-            vein: list[int] | None = None, vein_grid: dict | None = None, stall_ticks: int | None = None) -> Any:
+            vein: list[int] | None = None, vein_grid: dict | None = None, stall_ticks: int | None = None,
+            tool_slot: int | None = None) -> Any:
     """Run bounded native quantity mining and return its terminal receipt.
 
     blocks are the block selectors to mine: {id, meta?}, or {id, item:{id, meta?}} to match by the block's
@@ -379,6 +404,8 @@ def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, q
     block (cobblestone, dirt: keep a stack in the hotbar) where the broken one was; plugged
     lists them. Lava is never mined beside. Without it such targets are skipped as
     will_not_break_here, with the fluid beside each.
+    tool_slot (0..35) forces the tool in that slot for this job (the kind, so a swap to the hotbar
+    keeps it); the receipt shows forcedTool, and a tool measured breaking nothing is still reported.
     symptoms: what happened to you during the job (damage and its type, effects gained or
     lost, air lost, burning, webbed, slowed), each first seen with the feet/head/under blocks
     there and a count. pathRules: which of your block rules (hazards, standOn, neverStandOn,
@@ -397,6 +424,7 @@ def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, q
         bounds = bounds if bounds is not None else vein_bounds(vein, grid)
         items = items or VEIN_ITEMS
     elif not blocks: raise ValueError("blocks are required unless vein is given")
+    if tool_slot is not None: params["toolSlot"] = tool_slot
     if items is not None: params["items"] = items  # absent: the job counts any gain (the Java side decides what that means)
     if allow_place if beside_fluid is None else beside_fluid: params["besideFluid"] = True
     if bounds is not None: params["bounds"] = bounds

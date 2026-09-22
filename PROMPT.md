@@ -509,9 +509,11 @@ chapter needs, not only what this quest counts: `mb_mine(vein=[x,y,z])` takes on
 ore block you have seen and works the whole vein around it. The receipt's
 `veinDefaults` says which bounds, blocks and items it chose; your own `bounds`
 or `vein_grid` replace them, and `VEIN_GRID` in work.py is yours to correct.
-Without `items` any gain counts; `dropsObserved` shows what actually arrived,
-so read it rather than predicting drops, and name `items` when the vein is
-mixed. It mines with whatever in your inventory the game says harvests each
+A vein counts `VEIN_ITEMS` unless you name `items`; any other `mb_mine`
+without `items` counts any gain. `dropsObserved` shows what actually arrived,
+so read it rather than predicting drops. `mb_obs tools` shows, per slot, what
+the game says each tool does to a block; `toolsToAvoid` and `tool_slot` are
+how you disagree. It mines with whatever in your inventory the game says harvests each
 block fastest, and reports what really broke: `extraBroken` when your tool
 takes more than its target, `dropsLeftInBounds` for drops it left lying.
 With `allow_place`
@@ -537,11 +539,15 @@ pause the game. Receipts say what the harness decided so you can disagree:
 `refused` (a click refused, e.g. a protected region), `skipped`, `clamped` (a
 parameter it limited), `symptoms` (what hurt, slowed or affected you, with the
 block at your feet, head and underfoot), `pathRules` (which of your block rules
-decided a path). Block rules are yours, set with `mb_settings`: `hazards`
+decided a path), `jobSettings` (settings a job forced, restored after).
+Block rules are yours, set with `mb_settings`: `hazards`
 (never walked into or stood on; defaults fire, cactus, web, tripwire, end
 portal, any of which you may remove), `standOn` / `neverStandOn` (override the
 game's collision box; neverStandOn wins), `blocksToDisallowBreaking` (defaults
-ice, silverfish stone). Entries are "modid:name" or "modid:name:meta". When a
+ice, silverfish stone). Entries are "modid:name" or "modid:name:meta";
+`hazards` also takes "item=modid:item[:damage]", what pick-block returns
+(GregTech ores and machines keep their kind there). `mb_fight(target=...)`
+fights any entity you name, and `hostile` is yours to redefine. When a
 block keeps coinciding with damage or slowness in `symptoms`, add it to
 `hazards`.
 
