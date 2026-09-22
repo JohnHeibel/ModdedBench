@@ -467,6 +467,16 @@ public final class ClientRuntime extends BridgeRuntime {
             navigationRequest.fail("cancelled","world paused by a guard ("+clock.pauseReason()+"): read mb_time status, decide, resume",refused(navigationJob.status()));
             navigationRequest=null; navigationJob=null;
         }
+        if (clock.guardPause()) { // the same for a click in progress and a held input: no tick will finish them either
+            String why="world paused by a guard ("+clock.pauseReason()+"): read mb_time status, decide, resume";
+            interactions.cancel(why);
+            if (control != null) {
+                Request held=control; release();
+                JsonObject receipt=Json.object("completed",false,"outcome","world_paused","player",player(),"serverAcknowledged",false);
+                ControlRegistry.memory().refusedSince(refusalMark).forEach((k,v)->receipt.add(k,Json.GSON.toJsonTree(v)));
+                held.fail("cancelled",why,receipt);
+            }
+        }
         if (control == null) return;
         if (control.isDone() || !control.session.connected || control.expired()) controlsChanged("cancelled");
     }
