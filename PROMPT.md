@@ -403,8 +403,10 @@ is mostly a build order for the factory.
 5. Make room, then detect and claim (`mb_quest_detect`,
    `mb_quest_select_choice`, `mb_quest_claim`). Detect is the book's button:
    it ticks checkbox tasks too, and both calls wait for the answer and report
-   it. The quest book GUI is never needed. Re-observe the quest and the
-   inventory delta before you consider it done.
+   it. The quest book GUI is never needed. `mb_quest_observe` shows, for each
+   item a task wants, how many you have; the claim's `received` is the rewards
+   that arrived. A quest is done when the claim says claimed and received is
+   what the rewards promised.
 6. Look at what the claim unlocked, on and off your line, and write take now,
    take later or skip for each in the chapter note (see "The side branches
    are the book's advice"). At a chapter's start, redo that list for the

@@ -47,8 +47,10 @@ def mb_quest_lines(query: str = "", offset: int = 0, limit: int = 10) -> Any:
 def mb_quest_observe(quest_id: str) -> Any:
     """Observe one quest UUID: prerequisites, task progress/config and rewards.
 
-    Reward choices expose native indices. Task/reward NBT is descriptive SNBT and
-    never authorizes direct state mutation.
+    A retrieval task lists items: each required item with need, submitted (already
+    handed in) and have (what you carry that the task's own matcher accepts, ore
+    dictionary and NBT rules included). Reward choices expose native indices.
+    Task/reward NBT is descriptive SNBT and never authorizes direct state mutation.
     """
     return kernel().call("quest.observe", questId=quest_id)
 
@@ -96,15 +98,39 @@ def mb_quest_claim(quest_id: str, reward_ids: list[int],
     to wait_s seconds (0 disables) and returns claimed true/false with the observed
     state, so one call usually settles it. claimed false is not a failure: the server
     has not answered yet (always the case while time is paused). Observe again later;
-    never blindly retry a claim. Check your inventory for the rewards either way.
+    never blindly retry a claim. received lists what your inventory gained and lost
+    across the claim, by name: that is the rewards arriving, no separate check needed.
     """
-    receipt = kernel().call("quest.claim", questId=quest_id, rewardIds=reward_ids, choices=choices or {})
+    k = kernel(); before = _held(k)
+    receipt = k.call("quest.claim", questId=quest_id, rewardIds=reward_ids, choices=choices or {})
     deadline, state = time.monotonic() + max(0.0, min(wait_s, 60.0)), None
     while wait_s > 0:
-        state = kernel().call("quest.observe", questId=quest_id)
+        state = k.call("quest.observe", questId=quest_id)
         if _claimed(state) or time.monotonic() >= deadline: break
         time.sleep(0.5)
-    return receipt if state is None else {"receipt": receipt, "claimed": _claimed(state), "quest": state}
+    received = {}
+    for _ in range(4 if state is not None and _claimed(state) else 1):  # the items can land a tick after the claim is recorded
+        received = _delta(before, _held(k))
+        if received: break
+        time.sleep(0.5)
+    if state is None: return {**receipt, "received": received} if isinstance(receipt, dict) else receipt
+    return {"receipt": receipt, "claimed": _claimed(state), "received": received, "quest": state}
+
+
+def _held(k) -> dict:
+    """Inventory totals by identity: {(id, meta, nbt hash): (name, count)}."""
+    try: totals = k.call("obs.inventory", detail="counts").get("totals") or []
+    except Exception: return {}
+    return {(t["identity"].get("id"), t["identity"].get("meta"), t["identity"].get("nbt_hash")): (t["identity"].get("name"), t["count"]) for t in totals if t.get("identity")}
+
+
+def _delta(before: dict, after: dict) -> dict:
+    """{name: +n or -n} for every identity whose count changed."""
+    out = {}
+    for key in before.keys() | after.keys():
+        n = after.get(key, (None, 0))[1] - before.get(key, (None, 0))[1]
+        if n: name = (after.get(key) or before.get(key))[0] or key[0]; out[name] = out.get(name, 0) + n
+    return {name: n for name, n in out.items() if n}
 
 
 def _claimed(value) -> bool:
