@@ -136,9 +136,9 @@ final class MiningJob implements Navigation.Job {
         return null;
     }
     private void selectTool() {
-        MiningTools.Choice choice=MiningTools.best(world,target,null);
-        if(choice==null) throw new IllegalArgumentException("no_eligible_harvest_tool");
-        selection=new InventorySelection(choice.slot());
+        var choice=MiningTools.choose(world,target,null);
+        if(choice.get("bestSlot")==null||!Boolean.TRUE.equals(choice.get("harvestable"))) throw new IllegalArgumentException("no_eligible_harvest_tool");
+        selection=new InventorySelection((Integer)choice.get("bestSlot"));
     }
 
     private boolean matches(MovingObjectPosition hit) {

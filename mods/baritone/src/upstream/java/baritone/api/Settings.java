@@ -100,6 +100,12 @@ public final class Settings {
     public final Setting<Boolean> autoTool = new Setting<>(true);
 
     /**
+     * ModdedBench: tools never swung to mine, each an item id (every subtype) or id:meta (one subtype, as obs.tools names it).
+     * The model's own list; tools a mining job measured breaking nothing are kept apart and shown beside it.
+     */
+    public final Setting<List<String>> toolsToAvoid = new Setting<>(new ArrayList<>());
+
+    /**
      * It doesn't actually take twenty ticks to place a block, this cost is so high
      * because we want to generally conserve blocks which might be limited.
      * <p>
@@ -1309,9 +1315,9 @@ public final class Settings {
     public final Setting<Boolean> renderSelectionCorners = new Setting<>(true);
 
     /**
-     * Use sword to mine.
+     * Use sword to mine. ModdedBench: off by default, so the weapon's durability is kept for fighting.
      */
-    public final Setting<Boolean> useSwordToMine = new Setting<>(true);
+    public final Setting<Boolean> useSwordToMine = new Setting<>(false);
 
     /**
      * Desktop notifications

@@ -15,4 +15,12 @@ public class MiningToolsTest {
         for(double strength:new double[]{Double.NaN,Double.NEGATIVE_INFINITY,-1,0})
             assertEquals(Double.POSITIVE_INFINITY,MiningTools.breakTicks(strength),0);
     }
+    @Test public void onePickPrefersHarvestThenSpeedThenTheHeldSlot() {
+        var slow=new ReferenceToolPolicy.Answer(.1,true);var fast=new ReferenceToolPolicy.Answer(.5,false);var none=new ReferenceToolPolicy.Answer(0,true);
+        var answers=new ReferenceToolPolicy.Answer[]{fast,slow,slow,none,null};boolean[] all={true,true,true,true,true};
+        assertEquals(1,MiningTools.pick(answers,all,MiningTools.order(0,5)));
+        assertEquals(2,MiningTools.pick(answers,all,MiningTools.order(2,5)));
+        assertEquals(0,MiningTools.pick(answers,new boolean[]{true,false,false,true,true},MiningTools.order(0,5)));
+        assertEquals(-1,MiningTools.pick(new ReferenceToolPolicy.Answer[]{none,null},new boolean[]{true,true},MiningTools.order(0,2)));
+    }
 }

@@ -5,28 +5,35 @@ package baritone.utils;
 
 import baritone.Baritone;
 import baritone.compat.IBlockState;
-import net.minecraft.block.Block;
+import baritone.gtnh.ReferenceToolPolicy;
 import net.minecraft.client.entity.EntityPlayerSP;
-import net.minecraft.enchantment.Enchantment;
-import net.minecraft.enchantment.EnchantmentHelper;
 import net.minecraft.item.ItemStack;
-import net.minecraft.item.ItemSword;
 import net.minecraft.potion.Potion;
 
-/** Snapshot of native hotbar stacks, retaining metadata/NBT and Forge dig-speed hooks. */
+/** Snapshot of the stacks the player may swing (the whole inventory when allowInventory, else the hotbar), with metadata and
+ *  NBT. Every answer about them is the game's own and the choice is the one pick of ReferenceToolPolicy. */
 public final class ToolSet {
-    private final ItemStack[] stacks=new ItemStack[9];
-    private final boolean[] eligible=new boolean[9];
-    private final int selected;
+    /** Who answers what a stack does to a block: the game (ReferenceToolPolicy.answers), or a test standing in for it. */
+    public interface Answers {ReferenceToolPolicy.Answer[] of(ItemStack[] stacks,IBlockState state);}
+    private record Pick(int slot,double strength,boolean harvest) {}
+    private record Cell(IBlockState.StateKey state,long cell) {}
+    private final ItemStack[] stacks;
+    private final boolean[] eligible;
+    private final int selected,forced;
     private final double amplifier;
-    private final java.util.Map<IBlockState.StateKey,Double> breakStrengthCache=new java.util.HashMap<>();
-    public ToolSet(ItemStack[] hotbar,int selected,double amplifier){
-        if(hotbar.length!=9||selected<0||selected>8)throw new IllegalArgumentException("nine hotbar slots and selected index required");
-        for(int i=0;i<9;i++){stacks[i]=hotbar[i]==null?null:hotbar[i].copy();eligible[i]=baritone.gtnh.ReferenceToolPolicy.eligible(stacks[i]);}this.selected=selected;this.amplifier=amplifier;
+    private final Answers game;
+    private final java.util.Map<Cell,Pick> picks=new java.util.concurrent.ConcurrentHashMap<>();
+    public ToolSet(ItemStack[] stacks,int selected,double amplifier,Answers game){
+        if(selected<0||selected>=stacks.length)throw new IllegalArgumentException("selected slot outside the stacks");
+        this.stacks=new ItemStack[stacks.length];eligible=new boolean[stacks.length];
+        for(int i=0;i<stacks.length;i++){this.stacks[i]=stacks[i]==null?null:stacks[i].copy();eligible[i]=ReferenceToolPolicy.eligible(this.stacks[i]);}
+        this.selected=selected;this.amplifier=amplifier;this.game=game;forced=-1;
     }
     public ToolSet(EntityPlayerSP player){
-        for(int i=0;i<9;i++){ItemStack s=player.inventory.getStackInSlot(i);stacks[i]=s==null?null:s.copy();eligible[i]=baritone.gtnh.ReferenceToolPolicy.eligible(stacks[i]);}
-        selected=player.inventory.currentItem;
+        int size=Baritone.settings().allowInventory.value?36:9;stacks=new ItemStack[size];eligible=new boolean[size];
+        for(int i=0;i<size;i++){ItemStack s=player.inventory.getStackInSlot(i);stacks[i]=s==null?null:s.copy();eligible[i]=ReferenceToolPolicy.eligible(stacks[i]);}
+        selected=player.inventory.currentItem;game=ReferenceToolPolicy::answers;
+        forced=ReferenceToolPolicy.forced(stacks,selected);
         double speed=1;
         if(Baritone.settings().considerPotionEffects.value){
             if(player.isPotionActive(Potion.digSpeed))speed*=1+(player.getActivePotionEffect(Potion.digSpeed).getAmplifier()+1)*0.2;
@@ -35,56 +42,20 @@ public final class ToolSet {
         }
         amplifier=speed;
     }
-    public double getStrVsBlock(IBlockState state){
-        return breakStrengthCache.computeIfAbsent(state.key(),ignored->bestStrength(state));
+    /** A forced tool (a mining job's toolSlot) is swung whatever the harness thinks of it; without autoTool the held stack is, if it is eligible. */
+    private Pick pick(IBlockState state){
+        return picks.computeIfAbsent(new Cell(state.key(),ReferenceToolPolicy.cell(state)),ignored->{
+            var answers=game.of(stacks,state);
+            int slot=forced>=0?forced:!Baritone.settings().autoTool.value?(eligible[selected]?selected:-1):ReferenceToolPolicy.pick(answers,eligible,selected);
+            var answer=slot<0?null:answers[slot];
+            return new Pick(slot<0?selected:slot,answer==null?0:answer.strength(),answer!=null&&answer.harvest());
+        });
     }
-    private double bestStrength(IBlockState state){
-        int slot=Baritone.settings().autoTool.value?getBestSlot(state,false):selected;
-        if(!eligible[slot])return 0;
-        double speed=calculateSpeedVsBlock(stacks[slot],state)*amplifier;
+    public double getStrVsBlock(IBlockState state){
+        double speed=pick(state).strength()*amplifier;
         return Baritone.settings().blocksToAvoidBreaking.value.contains(state.getBlock())?speed*Baritone.settings().avoidBreakingMultiplier.value:speed;
     }
-    public int getBestSlot(IBlockState state,boolean preferSilkTouch){
-        int best=selected,lowestCost=Integer.MAX_VALUE;double highestSpeed=Double.NEGATIVE_INFINITY;boolean bestSilk=false;
-        for(int i=0;i<9;i++){
-            if(!eligible[i])continue;
-            ItemStack stack=stacks[i];
-            if(stack!=null&&(!Baritone.settings().useSwordToMine.value&&stack.getItem() instanceof ItemSword||Baritone.settings().itemSaver.value&&stack.getMaxDamage()>1&&stack.getItemDamage()+Baritone.settings().itemSaverThreshold.value>=stack.getMaxDamage()))continue;
-            double speed=calculateSpeedVsBlock(stack,state);
-            boolean silk=stack!=null&&EnchantmentHelper.getEnchantmentLevel(Enchantment.silkTouch.effectId,stack)>0;
-            String tool=state.getBlock().getHarvestTool(state.meta);
-            int cost=stack==null||tool==null?-1:Math.max(-1,stack.getItem().getHarvestLevel(stack,tool));
-            if(speed>highestSpeed||speed==highestSpeed&&(cost<lowestCost&&(silk||!bestSilk)||preferSilkTouch&&!bestSilk&&silk)){
-                highestSpeed=speed;best=i;lowestCost=cost;bestSilk=silk;
-            }
-        }
-        return best;
-    }
-    public boolean canHarvest(IBlockState state){
-        int slot=Baritone.settings().autoTool.value?getBestSlot(state,false):selected;
-        return eligible[slot]&&harvestable(stacks[slot],state);
-    }
-    private static boolean harvestable(ItemStack stack,IBlockState state){
-        if(state.getMaterial().isToolNotRequired())return true;
-        if(stack==null)return false;
-        // Forge 1.7's player harvest path falls back to the stack callback when
-        // a tool does not advertise a numeric harvest level. Generated mod tools
-        // can implement that callback without implementing getHarvestLevel.
-        String tool=state.getBlock().getHarvestTool(state.meta);
-        int level=tool==null?-1:stack.getItem().getHarvestLevel(stack,tool);
-        return level<0?stack.func_150998_b(state.getBlock()):level>=state.getBlock().getHarvestLevel(state.meta);
-    }
-    public static double calculateSpeedVsBlock(ItemStack stack,IBlockState state){
-        // The game's own answer when it has given one: a pack rewrites break speed in events this formula cannot see.
-        Double game=baritone.gtnh.ReferenceToolPolicy.strength(stack,state,state.hasAccess());
-        if(game!=null) return game;
-        float hardness;
-        try{hardness=state.getBlock().getBlockHardness(null,state.x,state.y,state.z);}
-        catch(RuntimeException unsupported){return 0;} // Position-dependent hardness needs a captured native cost; never invent one.
-        if(hardness<0)return -1;
-        float speed=stack==null?1:stack.getItem().getDigSpeed(stack,state.getBlock(),state.meta);
-        if(stack!=null&&speed>1){int e=EnchantmentHelper.getEnchantmentLevel(Enchantment.efficiency.effectId,stack);if(e>0)speed+=e*e+1;}
-        boolean harvest=harvestable(stack,state);
-        return speed/hardness/(harvest?30:100);
-    }
+    /** The inventory slot to swing at this block: 0..8 is the hotbar, 9..35 needs a swap first. */
+    public int getBestSlot(IBlockState state){return pick(state).slot();}
+    public boolean canHarvest(IBlockState state){return pick(state).harvest();}
 }

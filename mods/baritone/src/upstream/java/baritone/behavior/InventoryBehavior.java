@@ -24,7 +24,6 @@ import baritone.compat.LegacyInventorySwap;
 import baritone.Baritone;
 import baritone.api.event.events.TickEvent;
 import baritone.api.utils.Helper;
-import baritone.utils.ToolSet;
 import baritone.gtnh.ReferenceToolPolicy;
 import net.minecraft.block.Block;
 import baritone.compat.IBlockState;
@@ -80,10 +79,6 @@ public final class InventoryBehavior extends Behavior implements Helper {
         ticksSinceLastInventoryMove++;
         if (firstValidThrowaway() >= 9) { // aka there are none on the hotbar, but there are some in main inventory
             requestSwapWithHotBar(firstValidThrowaway(), 8);
-        }
-        int pick = bestToolAgainst(Blocks.STONE);
-        if (pick >= 9) {
-            requestSwapWithHotBar(pick, 0);
         }
         if (lastTickRequestedMove != null) {
             logDebug("Remembering to move " + lastTickRequestedMove[0] + " " + lastTickRequestedMove[1] + " from a previous tick");
@@ -154,27 +149,16 @@ public final class InventoryBehavior extends Behavior implements Helper {
         return -1;
     }
 
-    private int bestToolAgainst(Block against) {
-        ItemStack[] invy = ctx.player().inventory.mainInventory;
-        int bestInd = -1;
-        double bestSpeed = ToolSet.calculateSpeedVsBlock(null, new IBlockState(against, 0, null, 0, 0, 0));
-        for (int i = 0; i < invy.length; i++) {
-            ItemStack stack = invy[i];
-            if (empty(stack)) {
-                continue;
-            }
-            if (Baritone.settings().itemSaver.value && (stack.getItemDamage() + Baritone.settings().itemSaverThreshold.value) >= stack.getMaxDamage() && stack.getMaxDamage() > 1) {
-                continue;
-            }
-            if (ReferenceToolPolicy.eligible(stack)) {
-                double speed = ToolSet.calculateSpeedVsBlock(stack, new IBlockState(against, 0, null, 0, 0, 0)); // takes into account enchants
-                if (speed > bestSpeed) {
-                    bestSpeed = speed;
-                    bestInd = i;
-                }
-            }
+    /** ModdedBench: hold inventory slot `slot`, swapping one from the main inventory into an empty hotbar slot, else the held one. */
+    public void select(int slot) {
+        ItemStack[] inv = ctx.player().inventory.mainInventory;
+        if (slot < 9) {
+            ctx.player().inventory.currentItem = slot;
+            return;
         }
-        return bestInd;
+        int hotbar = ctx.player().inventory.currentItem;
+        for (int i = 0; i < 9; i++) if (empty(inv[i])) {hotbar = i; break;}
+        requestSwapWithHotBar(slot, hotbar);
     }
 
     public boolean hasGenericThrowaway() {
