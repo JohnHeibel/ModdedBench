@@ -164,17 +164,6 @@ def pos_of(x: int | list | tuple, y: int | None = None, z: int | None = None) ->
     return [int(x), int(y), int(z)]
 
 
-def compact(obj: Any, max_len: int = 4000) -> Any:
-    """Trims very long strings inside a JSON-ish value so tool outputs stay turn-sized."""
-    if isinstance(obj, str):
-        return obj if len(obj) <= max_len else obj[:max_len] + f"...(+{len(obj) - max_len} chars)"
-    if isinstance(obj, list):
-        return [compact(v, max_len) for v in obj]
-    if isinstance(obj, dict):
-        return {k: compact(v, max_len) for k, v in obj.items()}
-    return obj
-
-
 def cached(fn):
     """Per-process memo for expensive registry reads (cleared on module reload)."""
     return functools.lru_cache(maxsize=32)(fn)
