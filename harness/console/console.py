@@ -194,9 +194,10 @@ class Console:
             self.act("supervisor.start", {})  # the brief promises the agent a deploy supervisor; a request nobody answers looks like a hang
             extra = ["--", "-m", a["model"]] if re.fullmatch(r"[\w.\-]{1,64}", a.get("model") or "") else []
             if a.get("effort") in ("minimal", "low", "medium", "high", "xhigh"): extra = [*(extra or ["--"]), "-c", f'model_reasoning_effort="{a["effort"]}"']
-            turns = str(max(1, min(int(a.get("maxTurns") or 200), 10000)))
-            loop = "rm -f .state/STOP; p=PROMPT.md; [ -f /brief/PROMPT.md ] && p=/brief/PROMPT.md; exec python3 harness/runner/codex_loop.py --prompt $p --max-turns \"$0\" \"$@\" >/dev/null 2>&1"
-            self.run_job(name, [[*COMPOSE, "up", "-d", "gateway", "agent"], [*COMPOSE, "exec", "-d", "agent", "sh", "-c", loop, turns, *extra]])
+            # Turns are recovery, not a unit of the run: the run is sized in minutes and tokens, and a turn is cut where it stands.
+            budget = ["--max-turns", "200", "--max-minutes", str(max(1, min(float(a.get("maxMinutes") or 120), 100000))), "--max-tokens", str(max(100000, min(int(a.get("maxTokens") or 50_000_000), 10**11)))]
+            loop = "rm -f .state/STOP; p=PROMPT.md; [ -f /brief/PROMPT.md ] && p=/brief/PROMPT.md; exec python3 harness/runner/codex_loop.py --prompt $p \"$@\" >/dev/null 2>&1"
+            self.run_job(name, [[*COMPOSE, "up", "-d", "gateway", "agent"], [*COMPOSE, "exec", "-d", "agent", "sh", "-c", loop, "sh", *budget, *extra]])
         elif name == "agent.stop": self.run_job(name, [[*agent, "sh", "-c", "mkdir -p .state && touch .state/STOP"]])
         elif name == "agent.kill": self.run_job(name, [[*agent, "sh", "-c", "pkill -f '[c]odex_loop.py'; pkill -x codex; pkill -f '[h]arness/mcp/server.py'; true"]])
         elif name == "agent.down": self.run_job(name, [[*COMPOSE, "stop", "agent", "gateway"]])
