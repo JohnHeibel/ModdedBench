@@ -16,10 +16,6 @@ Conventions that hold across all tools:
   the lane per call from the raw method's declared effect.
 - **Receipts, not acknowledgements.** Actions return what was sent and what
   was observed immediately afterwards. Verify by observing again.
-- **`you` rides on every action.** Each action-lane receipt carries one line
-  read right after it (`at x,y,z | hp food air | holding | slots free | day
-  hh:mm | burning...`), the HUD and F3 in a sentence, so position, health and
-  inventory room never need a separate read after a call. Reads carry no `you`.
 - **Notes ride along.** A `notes` key appears on results when a note is
   relevant to the transition (see the notes section).
 - **Long calls.** Mining, building, routing and following stay open until a

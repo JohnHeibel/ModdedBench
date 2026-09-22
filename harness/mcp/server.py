@@ -160,16 +160,6 @@ class Server(FastMCP):
         if inspect.iscoroutinefunction(fn):
             return fn
         lane = fn._mb_tool["lane"]  # noqa: SLF001
-        acts = fn._mb_tool["effect"] != "read"  # noqa: SLF001
-
-        def run(**kwargs):
-            result = fn(**kwargs)
-            # An action's receipt carries you (position, health, held item, free slots, time) read right after it, in the
-            # same worker: outcome and state arrive together, and the model has no reason to poll after every call.
-            if acts and isinstance(result, dict) and "you" not in result:
-                you = mbtool.digest()
-                if you: result = {**result, "you": you}
-            return result
 
         @functools.wraps(fn)
         async def call(**kwargs):
@@ -181,7 +171,7 @@ class Server(FastMCP):
                     chosen = "act"
             pool = self._pools.get(chosen, self._pools["act"])
             context = contextvars.copy_context()
-            return await asyncio.get_running_loop().run_in_executor(pool, context.run, functools.partial(run, **kwargs))
+            return await asyncio.get_running_loop().run_in_executor(pool, context.run, functools.partial(fn, **kwargs))
         # Resolve string annotations in the original module, not this wrapper's globals.
         hints = typing.get_type_hints(fn)
         sig = inspect.signature(fn)

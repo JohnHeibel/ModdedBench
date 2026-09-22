@@ -376,10 +376,6 @@ guard configuration and set one if none is active (health drop, health below 8,
 air below 60, food below 6, burning, threat within 12, pause on disconnect). Arm a survival watch
 with a prompt so that danger wakes you with context.
 
-Every action's receipt ends with `you`: where you stand, health, food, what you
-hold, free slots, the time of day. Read it there; do not call `mb_obs` or
-`mb_inventory` after an action to learn what its receipt already says.
-
 **Per chapter.** Read the whole chapter once (`mb_quest_lines`, then observe
 each quest). Write a short plan as a note attached to your base location: the
 order you intend, the machines you will need, the materials they cost, and the
