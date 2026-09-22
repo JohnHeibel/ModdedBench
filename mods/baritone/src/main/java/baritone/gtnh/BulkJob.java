@@ -22,7 +22,8 @@ abstract class BulkJob implements Navigation.Job {
     final Map<String,Object> params;
     final boolean override,allowBreak,allowPlace;
     final float health=mc.thePlayer.getHealth();
-    int remaining,ticks;
+    int remaining,ticks,stillTicks,progressSeen;
+    double stallX,stallY,stallZ;
     String state="preparing",reason="";
     InputArbiter.Lease lease;
     BulkJob(BaritoneNavigation navigation,WorkJournal journal,Map<String,Object> options) {
@@ -40,7 +41,13 @@ abstract class BulkJob implements Navigation.Job {
             if(mc.theWorld!=world||mc.thePlayer!=player||!journal.scope.equals(ControlRegistry.memory().memory().scope())){cancel("world_or_player_changed");return;}
             if(!lease.isActive()){cancel("superseded");return;}
             if(mc.currentScreen!=null&&!ControlRegistry.controls().ownsPlayerInventory(lease)||mc.thePlayer.getHealth()<=0){cancel("gui_or_death");return;}
-            if(--remaining<=0){finish("failed","timeout");return;}ticks++;
+            // The deadline is a budget, not a verdict: a job that has produced something stops as paused, with its rate in the
+            // receipt, and mb_work_resume continues it. Only a job that produced nothing at all has failed.
+            if(--remaining<=0){finish(progress()>0?"paused":"failed",progress()>0?"timeout_with_progress":"timeout_without_progress");return;}ticks++;
+            // The upstream engine re-plans for ever around a target it cannot reach (bobbing in a pond, say): forty seconds
+            // within two blocks of one spot with nothing to show for it is that, whatever the planner believes.
+            if(progress()!=progressSeen||mc.thePlayer.getDistanceSq(stallX,stallY,stallZ)>4){progressSeen=progress();stillTicks=0;stallX=mc.thePlayer.posX;stallY=mc.thePlayer.posY;stallZ=mc.thePlayer.posZ;}
+            else if(++stillTicks>=800&&stalled()){finish(progress()>0?"paused":"failed","stalled_no_progress_near_"+(int)Math.floor(stallX)+","+(int)Math.floor(stallY)+","+(int)Math.floor(stallZ));return;}
             if(mc.thePlayer.getHealth()<health||mc.thePlayer.isBurning()||mc.thePlayer.getAir()<120){finish("failed","damage_fire_or_low_air");return;}
             for(int transitions=0;transitions<8&&!done();transitions++) {
                 String oldPhase=phase();step();
@@ -50,6 +57,10 @@ abstract class BulkJob implements Navigation.Job {
     }
     abstract void step();
     abstract String phase();
+    /** What the job has produced so far (blocks gained or placed): the receipt's rate and what makes a deadline a pause. */
+    int progress(){return 0;}
+    /** Whether standing still without progress is a stall for this job; a builder waiting on the model is not. */
+    boolean stalled(){return true;}
     void releaseProcess() {}
     final void finish(String terminal,String why) {
         if(done())return;state=terminal;reason=why;
@@ -62,6 +73,7 @@ abstract class BulkJob implements Navigation.Job {
     @Override public boolean succeeded(){return state.equals("succeeded");}
     @Override public Map<String,Object> status() {
         Map<String,Object> out=new LinkedHashMap<>();out.put("available",true);out.put("action",journal.kind);out.put("jobId",journal.id);out.put("state",state);out.put("reason",reason);out.put("ticks",ticks);out.put("remainingTicks",remaining);
+        out.put("progress",progress());out.put("blocksPerMinute",ticks<20?null:Math.round(progress()*1200.0/ticks*10)/10.0);
         out.put("overrideProtection",override);out.put("scope",journal.scope);out.put("controlOwned",lease!=null&&lease.isActive());out.put("serverAcknowledged",false);return out;
     }
 }

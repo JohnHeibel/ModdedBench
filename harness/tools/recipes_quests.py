@@ -54,13 +54,25 @@ def mb_quest_observe(quest_id: str) -> Any:
 
 
 @tool(rung=1, coverage=["progression"])
-def mb_quest_detect(quest_id: str, task_ids: list[int]) -> Any:
-    """Send Better Questing's normal quest-wide detection request.
+def mb_quest_detect(quest_id: str, task_ids: list[int] | None = None, wait_s: float = 10.0) -> Any:
+    """Hand a quest its tasks: the quest book's detect button, checkboxes included.
 
-    The receipt only means the packet was queued. Re-observe after synchronization;
-    supplied task IDs validate intent but do not force per-task completion.
+    Clicks every unfinished checkbox task (task_ids narrows which; default all), then
+    sends the normal quest-wide detect, which counts what you carry (and consumes it
+    where the task says so). Then watches the quest for up to wait_s seconds (0 disables)
+    and returns complete true/false with each task's state, so one call usually settles
+    it; false is not a failure while time is paused, the server has not answered yet.
+    A quest that stays incomplete is missing something: read its tasks' config.
     """
-    return kernel().call("quest.detect", questId=quest_id, taskIds=task_ids)
+    receipt = kernel().call("quest.detect", questId=quest_id, taskIds=task_ids or [])
+    deadline, state = time.monotonic() + max(0.0, min(wait_s, 60.0)), None
+    while wait_s > 0:
+        state = kernel().call("quest.observe", questId=quest_id)
+        if state.get("complete") or time.monotonic() >= deadline: break
+        time.sleep(0.5)
+    if state is None: return receipt
+    tasks = [{k: t.get(k) for k in ("id", "name", "complete")} for t in state.get("tasks") or []]
+    return {"receipt": receipt, "complete": bool(state.get("complete")), "canClaim": state.get("canClaim"), "tasks": tasks}
 
 
 @tool(rung=1, coverage=["progression"])
