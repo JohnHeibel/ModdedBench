@@ -53,6 +53,25 @@ class MoveItemsTests(unittest.TestCase):
         self.assertIn(('gui.click_slot', 'throw', 1), [(m, p.get('type'), p.get('button')) for m, p in k.calls])
         with self.assertRaises(ValueError): self.run_tool(ChestKernel('net.minecraft.inventory.ContainerPlayer'), put='all')
 
+    def test_drop_spares_worked_tools_unless_named_and_says_so(self):
+        k = ChestKernel('net.minecraft.inventory.ContainerPlayer')
+        k.slots[5]['stack'] = dict(id='dye', meta=3, count=1, name='Lucky Dye', nbt='{display:{Name:"Lucky Dye"}}', nbt_hash='h1')
+        k.slots[6]['stack'] = dict(id='dye', meta=3, count=1, name='Worn Dye', dmg=[5, 100])
+        out = self.run_tool(k, drop=[dict(id='dye', meta=3)])
+        self.assertEqual(out['dropped'], [dict(id='dye', meta=3, count=5)])
+        self.assertEqual([(x['name'], x['why']) for x in out['skipped']], [('Lucky Dye', 'carries NBT'), ('Worn Dye', 'damaged')])
+        out = self.run_tool(k, drop=[dict(name='lucky')])  # by display name, any case
+        self.assertEqual((out['dropped'], out['skipped']), ([dict(id='dye', meta=3, count=1)], []))
+        out = self.run_tool(k, drop=[dict(id='dye', withNbt=True)])
+        self.assertEqual(out['dropped'], [dict(id='dye', meta=3, count=1)])
+
+    def test_threat_refusal_is_a_fact_with_an_override(self):
+        k = ChestKernel(); threat = dict(type='Zombie', distance=5)
+        call = k.call; k.call = lambda method, **p: {'state': {'threats': [threat]}} if method == 'time.status' else call(method, **p)
+        with self.assertRaises(ValueError) as refused: self.run_tool(k, at=[1, 64, 1], put='all')
+        self.assertEqual(refused.exception.receipts[0]['refused'], dict(action='open a GUI', reason='no_threat', threats=[threat], override='despiteThreat'))
+        self.assertEqual(self.run_tool(k, at=[1, 64, 1], put='all', despite_threat=True)['put'], [dict(id='dirt', meta=0, count=64), dict(id='dye', meta=3, count=5)])
+
 
 if __name__ == '__main__':
     unittest.main()

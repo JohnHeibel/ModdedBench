@@ -47,7 +47,8 @@ def mb_wiki_search(query: str, limit: int = 8) -> Any:
         alias = db.execute("select title from alias where name = ?", (query.strip(),)).fetchone()
         exact = db.execute("select title, substr(text, 1, 160) from page where title = ? collate nocase", (query.strip(),)).fetchone()
     if exact: rows = [exact, *(r for r in rows if r[0] != exact[0])]  # a page named exactly like the query comes first
-    return {"results": [{"title": t, "snippet": s} for t, s in rows], **({"redirect": alias[0]} if alias else {})}
+    return {"results": [{"title": t, "snippet": s} for t, s in rows], **({"redirect": alias[0]} if alias else {}),
+            **({"clamped": {"limit": {"asked": limit, "used": max(1, min(limit, 25))}}} if not 1 <= limit <= 25 else {})}
 
 
 @tool(lane="read", coverage=["meta"])
@@ -69,7 +70,7 @@ def mb_wiki_read(title: str, section: str = "", offset: int = 0, limit: int = 60
         name, revid, text = row; source = _source(db, name, revid)
     heads = [(m.start(), m.group(2).strip(), len(m.group(1))) for m in re.finditer(r"^(={1,4})\s*(.+?)\s*\1\s*$", text, flags=re.M)]
     ends = [next((h[0] for h in heads[i + 1:] if h[2] <= head[2]), len(text)) for i, head in enumerate(heads)]  # subsections belong to it
-    limit = max(500, min(limit, 20000)); offset = max(0, offset)
+    asked, limit, offset = limit, max(500, min(limit, 20000)), max(0, offset)
     if not section and not offset and len(text) > limit and heads:
         outline = [{"section": "  " * (h[2] - 1) + h[1], "chars": end - h[0]} for h, end in zip(heads, ends)]
         return {"title": name, "length": len(text), "note": "long page: read it by section", "outline": outline,
@@ -82,4 +83,5 @@ def mb_wiki_read(title: str, section: str = "", offset: int = 0, limit: int = 60
     part = text[offset:offset + limit]
     out = {"title": name, "sections": [h[1] for h in heads], "text": part, "length": len(text), "source": source}
     if offset + limit < len(text): out["next"] = offset + limit
+    if asked != limit: out["clamped"] = {"limit": {"asked": asked, "used": limit}}
     return out
