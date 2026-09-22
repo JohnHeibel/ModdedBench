@@ -401,7 +401,9 @@ is mostly a build order for the factory.
    moment to build or extend the line that makes it, then take the quest's
    share from its output. Use durable jobs for mining and building.
 5. Make room, then detect and claim (`mb_quest_detect`,
-   `mb_quest_select_choice`, `mb_quest_claim`). Re-observe the quest and the
+   `mb_quest_select_choice`, `mb_quest_claim`). Detect is the book's button:
+   it ticks checkbox tasks too, and both calls wait for the answer and report
+   it. The quest book GUI is never needed. Re-observe the quest and the
    inventory delta before you consider it done.
 6. Look at what the claim unlocked, on and off your line, and write take now,
    take later or skip for each in the chapter note (see "The side branches
@@ -482,7 +484,11 @@ chapter needs, not only what this quest counts: `mb_mine(vein=[x,y,z])` takes on
 ore block you have seen and works the whole vein around it. With `allow_place`
 and cobblestone in the hotbar it mines beside water and oil and plugs each hole
 behind it. When a job ends with targets left, read `refused` in its receipt
-before concluding the ore ran out.
+before concluding the ore ran out. Mining is slow, a few blocks a minute
+walking and digging included, and the receipt's `blocksPerMinute` tells you
+how slow: give a job the budget that rate implies. A job that runs out of
+budget with something gained is paused, not failed; `mb_work_resume` carries
+on where it stood.
 
 **Stuck.** If the same approach has failed twice, stop repeating it. Change
 one variable: the tool, the target, the route, the recipe, the time of day, or
@@ -807,7 +813,7 @@ and list what is loaded, with load errors.
 | `mb_quest_search` | Search localized quest UUIDs, titles and descriptions with pagination |
 | `mb_quest_lines` | Read native quest-line order, layout and per-player state totals |
 | `mb_quest_observe` | Observe one quest UUID: prerequisites, task progress/config and rewards |
-| `mb_quest_detect` | Send Better Questing's normal quest-wide detection request |
+| `mb_quest_detect` | Hand a quest its tasks: the quest book's detect button, checkboxes included |
 | `mb_quest_select_choice` | Select one observed native reward option through the normal BQ packet |
 | `mb_quest_claim` | Request a normal quest-wide claim with explicit reward IDs and choices |
 | `mb_recipe_status` | Check whether GTNH NEI's full item catalogue and recipe handlers are ready |

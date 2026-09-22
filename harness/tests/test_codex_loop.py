@@ -39,6 +39,16 @@ class CodexLoopTests(unittest.TestCase):
             reason = codex_loop.run(self.repo, codex=[sys.executable, str(self.repo / "fake.py")], backoff_s=0, **{"ready": lambda: True, **kw})
         return reason, json.loads((self.repo / "calls.json").read_text())
 
+    def test_a_screenshot_is_estimated_by_its_tiles_not_its_base64(self):
+        from feed import Feed
+        with tempfile.TemporaryDirectory() as d:
+            f = Feed(Path(d))
+            f.event({"type": "turn.started"})
+            f.event({"type": "item.completed", "item": {"type": "mcp_tool_call", "tool": "mb_screenshot", "result": {"content": [{"type": "image", "data": "A" * 133000}]}}})
+            self.assertLess(f.billed(), 2000)
+            f.event({"type": "item.completed", "item": {"type": "mcp_tool_call", "tool": "mb_recipes", "result": {"content": [{"type": "text", "text": "x y " * 4000}]}}})
+            self.assertGreater(f.billed(), 5000)
+
     def test_token_budget_ends_the_turn_where_it_stands_and_the_thread_resumes(self):
         call = {"type": "item.completed", "item": {"id": "c", "type": "mcp_tool_call", "tool": "mb_obs", "arguments": {}, "result": {"content": [{"type": "text", "text": "x" * 4000}]}}}
         reason, calls = self.loop([{"events": [{"type": "thread.started", "thread_id": "T-1"}, *[dict(call) for _ in range(4)], {"sleep": 30}, message("never")]}], max_tokens=3000)

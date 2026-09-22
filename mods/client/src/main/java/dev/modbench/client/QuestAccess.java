@@ -35,13 +35,15 @@ public final class QuestAccess {
     private static final String CHAPTER_SYNC = "betterquesting.network.handlers.NetChapterSync";
     private static final String CHOICE_REWARD = "bq_standard.rewards.RewardChoice";
     private static final String CHOICE_ACTION = "bq_standard.network.handlers.NetRewardChoice";
+    private static final String CHECKBOX_TASK = "bq_standard.tasks.TaskCheckbox";
+    private static final String CHECKBOX_ACTION = "bq_standard.network.handlers.NetTaskCheckbox";
 
     public Map<String, Object> status() {
         try {
             Map<?, ?> quests = questDatabase();
             Map<?, ?> lines = lineDatabase();
             return map("available", true, "implementation", "BetterQuesting-3.7 reflective", "quests", quests.size(),
-                    "lines", lines.size(), "actions", List.of("sync", "detect", "selectChoice", "claim"), "serverAcknowledged", false);
+                    "lines", lines.size(), "actions", List.of("sync", "detect", "checkbox", "selectChoice", "claim"), "serverAcknowledged", false);
         } catch (ReflectiveOperationException | LinkageError ex) {
             return map("available", false, "reason", ex.getClass().getSimpleName() + ": " + ex.getMessage());
         }
@@ -102,11 +104,27 @@ public final class QuestAccess {
     }
 
     /**
-     * Queues BQ's normal quest-scoped detect packet. taskIds are validated intent only: the native packet detects
-     * all tasks belonging to the quest and this method never mutates one task directly.
+     * Queues BQ's normal quest-scoped detect packet, after clicking each unfinished checkbox task the way the
+     * book's button does (its own packet). taskIds narrow which checkboxes are clicked (none given: all of the
+     * quest's); detection itself is quest-wide and this method never mutates a task directly.
      */
     public Map<String, Object> detect(EntityPlayer player, String questId, List<Integer> taskIds) {
-        return action(player, questId, taskIds, List.of(), "requestDetect");
+        Objects.requireNonNull(player, "player"); Objects.requireNonNull(taskIds, "taskIds");
+        UUID id = uuid(questId);
+        List<Integer> clicked = new ArrayList<>();
+        try {
+            UUID user = questingUuid(player);
+            for (Object entry : entries(taskDatabase(requireQuest(id)))) {
+                int taskId = (Integer) invoke(entry, "getID"); Object task = invoke(entry, "getValue");
+                if (!taskIds.isEmpty() && !taskIds.contains(taskId)) continue;
+                if (!task.getClass().getName().equals(CHECKBOX_TASK) || Boolean.TRUE.equals(invoke(task, "isComplete", UUID.class, user))) continue;
+                Class.forName(CHECKBOX_ACTION).getMethod("requestClick", UUID.class, int.class).invoke(null, id, taskId);
+                clicked.add(taskId);
+            }
+        } catch (ReflectiveOperationException ex) { throw unavailable(ex); }
+        Map<String, Object> receipt = action(player, questId, taskIds, List.of(), "requestDetect");
+        receipt.put("checkboxesClicked", clicked);
+        return receipt;
     }
 
     /** Parses explicit native reward choices written as {@code rewardId:choiceIndex}. */

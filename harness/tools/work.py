@@ -291,6 +291,13 @@ def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, q
     block with collection. A returned jobId is durable; inspect with mb_work_status
     and use mb_work_resume after correcting a blocked job. Protection override and
     terrain permissions apply only to this attempt.
+    timeout_ticks is a budget, not a verdict: mining runs at a few blocks a minute
+    (walking, digging down, tool swaps), and the receipt's blocksPerMinute is your
+    measure of it. A job that runs out of budget with something gained stops as
+    paused (reason timeout_with_progress), which is not a failure: mb_work_resume
+    continues it. Forty seconds standing in one spot with nothing gained ends it
+    as stalled_no_progress_near_x,y,z: that target is not reachable the way it is
+    being tried.
     vein=[x,y,z], one ore block you have seen, mines the vein it belongs to: bounds become
     the ore chunk that block's vein is centred on plus the chunks around it, 8 blocks up
     and down; blocks defaults to that block's id and items to GregTech raw ore. Ask for the

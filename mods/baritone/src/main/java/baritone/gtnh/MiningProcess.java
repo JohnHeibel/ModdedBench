@@ -58,6 +58,7 @@ final class MiningProcess extends BulkJob {
         engine.getInputOverrideHandler().attach(lease);
     }
     int gained(){return Math.max(0,WorkAccess.count(items)-baseline);}
+    @Override int progress(){return mc.thePlayer==player?gained():progressSeen;}
     @Override String phase(){return "reference_mine";}
     @Override void step(){
         if(gained()>=quantity){finish("succeeded","requested_inventory_gain_observed");return;}

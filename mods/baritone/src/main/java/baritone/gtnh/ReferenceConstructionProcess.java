@@ -336,6 +336,8 @@ final class ReferenceConstructionProcess extends BulkJob {
         engine.getBuilderProcess().build(String.valueOf(params.getOrDefault("name","ModdedBench schematic")),schematic,new baritone.compat.Vec3i(minX,minY,minZ));
         engine.getBuilderProcess().restoreProgress(layer,0);started=true;
     }
+    @Override int progress(){return placedObserved.size()+removedObserved.size();}
+    @Override boolean stalled(){return false;} // the builder has its own stall rule above, and waits on the model when it pauses
     @Override String phase(){return "reference_build";}
     @Override void step(){
         if(!started)return;

@@ -12,6 +12,8 @@ from __future__ import annotations
 import json, re, time
 from pathlib import Path
 
+BLOB = re.compile(r"[A-Za-z0-9+/=]{4000,}")  # base64 image data inside a logged tool result
+
 
 def _name(x):
     """An item selector or stack as a viewer would say it: its display name, else its id without the mod."""
@@ -108,7 +110,8 @@ class Feed:
             # Codex reports usage only when a turn ends, and a turn can last hours. Every call is billed for the whole context
             # again (mostly cached), so the bill grows with context x calls: this estimate is that sum, with the context
             # held at the size Codex compacts it to. Roughly right for gpt-6 (~4 characters a token); the turn's end corrects it.
-            self.context = min(self.context + len(json.dumps(item, default=str)) // 4, 120000)
+            # An image is billed by its size in tiles, about a thousand tokens for a screenshot, not by its base64 text.
+            self.context = min(self.context + len(BLOB.sub("x" * 4000, json.dumps(item, default=str))) // 4, 120000)
             stats["tokens"]["estimated"] += self.context
         if kind == "item.started" and what == "mcp_tool_call":
             self.status("waiting" if item.get("tool") == "mb_wait" else "acting", line(item.get("tool", ""), item.get("arguments"), None))
