@@ -57,12 +57,7 @@ public final class BaritoneNavigation implements Navigation {
     }
     @Override public Map<String,Object> inspectTools(int x,int y,int z) {
         if(mc.theWorld==null||mc.thePlayer==null) throw new IllegalArgumentException("player required");
-        var result=MiningTools.inspect(mc.theWorld,new BlockPos(x,y,z));
-        var state=reference.getPlayerContext().world().getBlockState(new baritone.compat.BlockPos(x,y,z));
-        var tools=new baritone.utils.ToolSet(mc.thePlayer);
-        double strength=tools.getStrVsBlock(state);
-        result.put("sourceEngine",Map.of("bestHotbarSlot",tools.getBestSlot(state,false),"canHarvest",tools.canHarvest(state),"estimatedStrength",Double.isFinite(strength)?strength:0));
-        return result;
+        return MiningTools.inspect(mc.theWorld,new BlockPos(x,y,z));
     }
     @Override public Job goTo(int x,int y,int z,int timeoutTicks) {
         return goTo(x,y,z,timeoutTicks,false,false);

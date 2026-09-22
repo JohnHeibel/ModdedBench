@@ -55,12 +55,22 @@ public class ReferencePathingTest {
         public boolean extendedLevelsInChunkCache(){return false;}
         public boolean isSideSolid(int x,int y,int z,ForgeDirection side,boolean fallback){return getBlock(x,y,z).isNormalCube();}
     }
+    /** Stands in for the game's tool answer: vanilla dig speed and harvest callbacks, no Forge events. */
+    static final ToolSet.Answers VANILLA=(stacks,state)->{
+        var out=new baritone.gtnh.ReferenceToolPolicy.Answer[stacks.length];
+        float hardness=state.getBlock().getBlockHardness(null,state.x,state.y,state.z);
+        for(int i=0;i<stacks.length;i++){ItemStack s=stacks[i];
+            boolean harvest=state.getMaterial().isToolNotRequired()||s!=null&&s.getItem().canHarvestBlock(state.getBlock(),s);
+            float speed=s==null?1:s.getItem().getDigSpeed(s,state.getBlock(),state.meta);
+            out[i]=new baritone.gtnh.ReferenceToolPolicy.Answer(hardness<0?-1:speed/hardness/(harvest?30:100),harvest);}
+        return out;
+    };
     private CalculationContext context(Terrain terrain,boolean sprint){
         return context(terrain,sprint,new WorldMemory.Snapshot(0,Map.of(),Map.of(),Map.of()));
     }
     private CalculationContext context(Terrain terrain,boolean sprint,WorldMemory.Snapshot protection){
         ItemStack[] hotbar=new ItemStack[9];hotbar[0]=new ItemStack(net.minecraft.init.Items.iron_pickaxe);
-        return new CalculationContext(PLANNING_ONLY,true,new CalculationInputs(null,new BlockStateInterface(terrain,(x,z)->Math.abs(x)<64&&Math.abs(z)<64),new ToolSet(hotbar,0,1),false,false,sprint,0,0,protection,false,p->true));
+        return new CalculationContext(PLANNING_ONLY,true,new CalculationInputs(null,new BlockStateInterface(terrain,(x,z)->Math.abs(x)<64&&Math.abs(z)<64),new ToolSet(hotbar,0,1,VANILLA),false,false,sprint,0,0,protection,false,p->true));
     }
     private IPath path(CalculationContext context,BetterBlockPos start,Goal goal){
         var result=new AStarPathFinder(start.x,start.y,start.z,goal,new Favoring(null,context),context).calculate(2000,4000);
@@ -171,15 +181,11 @@ public class ReferencePathingTest {
         t.set(0,64,0,one,0);t.set(1,64,0,two,0);var c=context(t,false);
         assertFalse(MovementHelper.canWalkThrough(c,0,64,0));assertTrue(MovementHelper.canWalkThrough(c,1,64,0));
     }
-    @Test public void nativeStackHarvestFallbackWorksWithoutNumericHarvestLevel(){
-        net.minecraft.item.Item generated=new net.minecraft.item.Item(){
-            @Override public boolean canHarvestBlock(Block block,ItemStack stack){return block==Blocks.STONE;}
-            @Override public float getDigSpeed(ItemStack stack,Block block,int meta){return 12;}
-        };
-        ItemStack[] slots=new ItemStack[9];slots[0]=new ItemStack(generated);
-        var set=new ToolSet(slots,0,1);var terrain=new Terrain();var state=new IBlockState(Blocks.STONE,0,terrain,0,63,0);
-        assertTrue(set.canHarvest(state));assertEquals(0,set.getBestSlot(state,false));
-        assertEquals(12.0/1.5/30,ToolSet.calculateSpeedVsBlock(slots[0],state),.00001);
+    @Test public void toolSetSwingsTheStackTheAnswerPicksAnywhereInTheInventory(){
+        ItemStack[] slots=new ItemStack[36];slots[20]=new ItemStack(net.minecraft.init.Items.iron_pickaxe);
+        var set=new ToolSet(slots,0,1,VANILLA);var state=new IBlockState(Blocks.STONE,0,new Terrain(),0,63,0);
+        assertTrue(set.canHarvest(state));assertEquals(20,set.getBestSlot(state));
+        assertEquals(6.0/1.5/30,set.getStrVsBlock(state),.00001);
     }
     @Test public void nonOpaqueFullCubesSupportTheActualMovementGraph(){
         Terrain t=new Terrain();t.floor=false;
@@ -191,7 +197,7 @@ public class ReferencePathingTest {
         Terrain t=new Terrain();t.set(1,64,0,Blocks.STONE,1);t.set(2,64,0,Blocks.STONE,0);
         ItemStack[] slots=new ItemStack[9];slots[0]=new ItemStack(net.minecraft.init.Items.iron_pickaxe);
         Baritone.settings().allowBreak.value=false;
-        var c=new CalculationContext(PLANNING_ONLY,true,new CalculationInputs(null,new BlockStateInterface(t,(x,z)->Math.abs(x)<64&&Math.abs(z)<64),new ToolSet(slots,0,1),false,false,false,0,0,capturedProtection(new WorldMemory.Region("remote",new WorldMemory.Pos(20,60,20),new WorldMemory.Pos(21,70,21))),false,p->true,s->s.x==1&&s.y==64&&s.z==0&&s.getBlock()==Blocks.STONE&&s.meta==1));
+        var c=new CalculationContext(PLANNING_ONLY,true,new CalculationInputs(null,new BlockStateInterface(t,(x,z)->Math.abs(x)<64&&Math.abs(z)<64),new ToolSet(slots,0,1,VANILLA),false,false,false,0,0,capturedProtection(new WorldMemory.Region("remote",new WorldMemory.Pos(20,60,20),new WorldMemory.Pos(21,70,21))),false,p->true,s->s.x==1&&s.y==64&&s.z==0&&s.getBlock()==Blocks.STONE&&s.meta==1));
         assertTrue(MovementTraverse.cost(c,0,64,0,1,0)<ActionCosts.COST_INF);
         assertTrue(MovementTraverse.cost(c,1,64,0,2,0)>=ActionCosts.COST_INF);
         var p=path(c,new BetterBlockPos(0,64,0),new GoalBlock(1,64,0));assertEquals(2,p.length());

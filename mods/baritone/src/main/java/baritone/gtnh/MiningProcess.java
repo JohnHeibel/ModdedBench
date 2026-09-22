@@ -27,6 +27,7 @@ final class MiningProcess extends BulkJob {
     private List<List<Integer>> lastKnown=List.of(),lastRejected=List.of();
     private List<Map<String,Object>> refused=List.of();
     private final boolean besideFluid;
+    private final String toolSlotTool;
     private BlockPos breaking;
     private final Set<BlockPos> plugged=new HashSet<>();
     private int unplugged;
@@ -46,6 +47,10 @@ final class MiningProcess extends BulkJob {
         var blocks=WorkAccess.selectors(params.get("blocks"));items=WorkAccess.itemSelectors(params.get("items"));
         quantity=integer(params,"quantity",1,1,1000000);
         besideFluid=bool(params,"besideFluid",false);
+        // toolSlot forces the tool in that slot now, wherever a swap later moves it; what it breaks is still measured.
+        if(params.containsKey("toolSlot")){var stack=mc.thePlayer.inventory.getStackInSlot(integer(params,"toolSlot",0,0,35));
+            if(stack==null)throw new IllegalArgumentException("toolSlot is empty");toolSlotTool=MiningTools.toolKind(stack);}
+        else toolSlotTool=null;
         if(besideFluid&&!allowPlace)throw new IllegalArgumentException("besideFluid plugs the holes it opens: it needs allowPlace and a throwaway block (cobblestone, dirt) in the hotbar");
         BlockPos origin=WorkAccess.feet();int radius=integer(params,"radius",24,1,64);
         Map<String,Object> scan=params.containsKey("bounds")?child(params,"bounds"):Map.of("min",List.of(origin.getX()-radius,Math.max(1,origin.getY()-16),origin.getZ()-radius),"max",List.of(origin.getX()+radius,Math.min(254,origin.getY()+16),origin.getZ()+radius));
@@ -61,7 +66,7 @@ final class MiningProcess extends BulkJob {
         super.begin();engine.getPathingBehavior().forceCancel();
         for(var setting:List.of(Baritone.settings().allowBreak,Baritone.settings().allowPlace,Baritone.settings().exploreForBlocks,Baritone.settings().legitMine,Baritone.settings().allowInventory))scopedSettings.put(setting,setting.value);
         Baritone.settings().allowInventory.value=true; // the best tool anywhere in the inventory, not only the hotbar
-        MiningTools.ineffective.clear();
+        MiningTools.ineffective.clear();ReferenceToolPolicy.forcedTool=toolSlotTool;
         Baritone.settings().allowBreak.value=allowBreak;Baritone.settings().allowPlace.value=allowPlace;
         // This action has explicit observation bounds. Exploration is a separate
         // process, not permission to start a branch mine when its bounds empty.
@@ -92,7 +97,7 @@ final class MiningProcess extends BulkJob {
             var costs=new baritone.pathing.movement.CalculationContext(engine);
             diagnostics=observation.observedLocations().stream().limit(16).map(p->{
                 var s=costs.get(p);double duration=baritone.pathing.movement.MovementHelper.getMiningDurationTicks(costs,p.getX(),p.getY(),p.getZ(),true);
-                return Map.<String,Object>of("pos",point(p),"matches",observation.has(s),"canHarvest",costs.toolSet.canHarvest(s),"bestHotbarSlot",costs.toolSet.getBestSlot(s,false),"miningCost",duration,
+                return Map.<String,Object>of("pos",point(p),"matches",observation.has(s),"canHarvest",costs.toolSet.canHarvest(s),"bestSlot",costs.toolSet.getBestSlot(s),"miningCost",duration,
                     "breakSafetyBlocked",baritone.pathing.movement.MovementHelper.avoidBreaking(costs.bsi,p.getX(),p.getY(),p.getZ(),s),
                     "above",costs.get(p.getX(),p.getY()+1,p.getZ()).toString());
             }).toList();
@@ -150,7 +155,7 @@ final class MiningProcess extends BulkJob {
             dropsLeft=left;}
         finalGoal=String.valueOf(engine.getPathingBehavior().getGoal());
         engine.getPathingBehavior().forceCancel();engine.getInputOverrideHandler().release();
-        engine.explicitMiningTargets=()->s->false;Baritone.besideFluid=false;MiningTools.ineffective.clear();
+        engine.explicitMiningTargets=()->s->false;Baritone.besideFluid=false;MiningTools.ineffective.clear();ReferenceToolPolicy.forcedTool=null;
         refused=refused();
         scopedSettings.forEach(ReferenceSettings::copy);
     }
@@ -166,7 +171,7 @@ final class MiningProcess extends BulkJob {
         // Targets it will not break, and the fluid beside each: plug or drain that, or for water pass besideWater.
         out.put("refused",done()?refused:List.of());
         out.put("plugged",plugged.stream().map(MiningProcess::point).toList());out.put("plugFailures",unplugged);
-        out.put("blocksBroken",broken);out.put("extraBroken",extraBroken);out.put("extraBrokenAt",extraAt);out.put("dropsLeftInBounds",dropsLeft);out.put("ineffectiveTools",ineffective);
+        out.put("blocksBroken",broken);out.put("extraBroken",extraBroken);out.put("extraBrokenAt",extraAt);out.put("dropsLeftInBounds",dropsLeft);out.put("ineffectiveTools",ineffective);out.put("forcedTool",toolSlotTool);
         if(engine!=null){
             var current=engine.getPathingBehavior().getCurrent();
             out.put("goal",done()?finalGoal:String.valueOf(engine.getPathingBehavior().getGoal()));

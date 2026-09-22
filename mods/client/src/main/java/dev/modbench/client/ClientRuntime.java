@@ -157,7 +157,7 @@ public final class ClientRuntime extends BridgeRuntime {
             if(provider==null) throw new IllegalArgumentException("Baritone mod is not installed");
             return provider.inspectFluid(Json.integer(r.params,"x",0,-30000000,30000000),Json.integer(r.params,"y",0,0,255),Json.integer(r.params,"z",0,-30000000,30000000));
         });
-        register("obs.tools", "Inspect inventory harvest eligibility, tool NBT and estimated break ticks for {x,y,z}; does not select or mine", "read", r -> {
+        register("obs.tools", "Every inventory slot against the block at {x,y,z}: the game's strength and harvest answer, eligibility and reason, toolsToAvoid and measured-ineffective flags, estimated ticks, and the one tool choice (bestSlot) every job uses; does not select or mine", "read", r -> {
             requirePlayer();Navigation provider=NavigationRegistry.get();
             if(provider==null) throw new IllegalArgumentException("Baritone mod is not installed");
             if(!r.params.has("x")||!r.params.has("y")||!r.params.has("z")) throw new IllegalArgumentException("x,y,z required");
@@ -212,7 +212,7 @@ public final class ClientRuntime extends BridgeRuntime {
             if(clock.isPaused()) throw new IllegalArgumentException("time_paused: resume before executing native GUI actions");
             controlsChanged("superseded");return ui.start(r);
         });
-        for(String method:List.of("mine","build","resume")) register("nav."+method,"Owned, checkpointed "+method+" process; timeoutTicks<=72000. Mine: blocks/items selectors, quantity, bounds/radius. Build: cells, selection or planId; mode blueprint/builder, origin, size, settings, replaceExisting, allowBreak/allowPlace. Resume: jobId. Explicit overrideProtection required each attempt.","interaction",r->{
+        for(String method:List.of("mine","build","resume")) register("nav."+method,"Owned, checkpointed "+method+" process; timeoutTicks<=72000. Mine: blocks/items selectors, quantity, bounds/radius, toolSlot (forces the tool in that slot). Build: cells, selection or planId; mode blueprint/builder, origin, size, settings, replaceExisting, allowBreak/allowPlace. Resume: jobId. Explicit overrideProtection required each attempt.","interaction",r->{
             requirePlayer();Navigation provider=navigation();Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");controlsChanged("superseded");ControlRegistry.controls().focusForInput();
             navigationJob=method.equals("mine")?provider.mine(params):method.equals("build")?provider.build(params):provider.resume(Json.string(r.params,"jobId",""),params);navigationRequest=r;return null;
         });

@@ -589,25 +589,16 @@ public interface MovementHelper extends ActionCosts, Helper {
     }
 
     /**
-     * AutoTool for a specific block
+     * AutoTool for a specific block. ModdedBench: the one tool choice (or a mining job's forced slot) over every stack ToolSet
+     * may swing; a slot off the hotbar is swapped onto it first.
      *
      * @param ctx The player context
      * @param b   the blockstate to mine
      */
     static void switchToBestToolFor(IPlayerContext ctx, IBlockState b) {
-        switchToBestToolFor(ctx, b, new ToolSet(ctx.player()), BaritoneAPI.getSettings().preferSilkTouch.value);
-    }
-
-    /**
-     * AutoTool for a specific block with precomputed ToolSet data
-     *
-     * @param ctx The player context
-     * @param b   the blockstate to mine
-     * @param ts  previously calculated ToolSet
-     */
-    static void switchToBestToolFor(IPlayerContext ctx, IBlockState b, ToolSet ts, boolean preferSilkTouch) {
-        if (Baritone.settings().autoTool.value && !Baritone.settings().assumeExternalAutoTool.value) {
-            ctx.player().inventory.currentItem = ts.getBestSlot(b, preferSilkTouch);
+        if ((Baritone.settings().autoTool.value || baritone.gtnh.ReferenceToolPolicy.forcedTool != null) && !Baritone.settings().assumeExternalAutoTool.value) {
+            Baritone engine = BaritoneAPI.getProvider().getBaritoneForPlayer(ctx.player());
+            if (engine != null) engine.getInventoryBehavior().select(new ToolSet(ctx.player()).getBestSlot(b));
         }
     }
 
