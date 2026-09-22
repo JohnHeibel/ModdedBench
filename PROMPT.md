@@ -222,6 +222,18 @@ Key facts about the runtime:
 
 ## 3. The tools are imperfect. Improving them is part of the job.
 
+**Climb.** Everything here gets abstracted as you go: first you do a thing by
+hand, then by a script, then the base does it without you. That holds for the
+game (hand crafting, then batches, then a line that runs by itself) and for the
+harness (raw calls, then a tool, then a script, then nothing, because a machine
+took it over). The harness you were given covers the start of the game and
+nothing past it; its gaps are yours to find and close as your needs change.
+Aim, at every stage, to stop spending attention on what you have already
+solved, so it goes to what you have not. Two limits: what you build must work
+for anything the game might hand you, not only for the case in front of you
+(ask the game, measure, write down what you learn), and a tool earns its place
+by being used, not by existing.
+
 The harness was built and tested against a handful of situations: early
 hand-tool survival, a few steam and LV machines, some construction, one
 electric blast furnace line with supplied materials. GT New Horizons runs from
@@ -316,7 +328,8 @@ repository copy stays true. Constraints that keep the harness healthy:
   the game and what the change fixes. Write a world note when the fix is about
   a place or a machine. Add a line to `docs/HISTORY.md` for anything a future
   session should know exists.
-- Rebuild and restart procedure: `python harness/launcher/runtime.py build`,
+- Rebuild and restart procedure (host runs; contained runs are below):
+  `python harness/launcher/runtime.py build`,
   `stop-client`, then `install-client` / `install-baritone` as needed,
   `launch-client`; if the server jar or `mods/core` changed, also
   `stop-server`, `install-server` / `install-core` (core goes to both
@@ -374,7 +387,11 @@ the sub-goal; if it is empty, find the first incomplete required quest in book
 order and set it with `mb_goal`. Read your notes for the current chapter. Check the time
 guard configuration and set one if none is active (health drop, health below 8,
 air below 60, food below 6, burning, threat within 12, pause on disconnect). Arm a survival watch
-with a prompt so that danger wakes you with context.
+with a prompt so that danger wakes you with context. The guards are yours: the
+harness only supplies the pause. Which conditions, at what thresholds, and any
+new ones (`mb_interrupt` watches are Python you write) are for you to design,
+and to change as the dangers change: a guard that fires on nothing real, or
+misses what nearly killed you, is a tool to fix.
 
 **Per chapter.** Read the whole chapter once (`mb_quest_lines`, then observe
 each quest). Write a short plan as a note attached to your base location: the
@@ -476,14 +493,22 @@ your items.
 **Ore.** This is not vanilla, and cave-hunting for exposed ore is the slowest
 and most dangerous way to get metal. Ore here comes in large veins, hundreds of
 blocks each, laid out on a regular grid and layered, with different ores at
-different heights of the same vein: the wiki page "Ore Generation" says where
-veins are, how to reach one, and what each contains. Read it before your first
-mining trip. Finding a few blocks of the wrong ore usually means you are in the
+different heights of the same vein, and different dimensions hold different
+veins: the wiki page "Ore Generation" says where veins are, how to reach one,
+and what each contains. Read it before your first mining trip: knowing where a
+vein must be, and at what height, turns days of tunnelling into one shaft.
+Prospect, let the map record what you find, and explore outward early so you
+know what your region has. Finding a few blocks of the wrong ore usually means you are in the
 wrong layer of the right vein, so look the vein up before you walk away from it.
 A vein you have found is an asset for the rest of the run: note its position,
 extent and contents, give it a safe lit entrance, and take from it what the next
 chapter needs, not only what this quest counts: `mb_mine(vein=[x,y,z])` takes one
-ore block you have seen and works the whole vein around it. With `allow_place`
+ore block you have seen and works the whole vein around it; by default it
+counts any GregTech raw ore, so name the `items` you want when the vein is
+mixed. It mines with whatever in your inventory the game says harvests each
+block fastest, and reports what really broke: `extraBroken` when your tool
+takes more than its target, `dropsLeftInBounds` for drops it left lying.
+With `allow_place`
 and cobblestone in the hotbar it mines beside water and oil and plugs each hole
 behind it. When a job ends with targets left, read `refused` in its receipt
 before concluding the ore ran out. Mining is slow, a few blocks a minute
@@ -620,15 +645,6 @@ run it again, and go back to thinking at the level of the quest. Scripts are
 disposable: most are obsolete within the hour because the base has changed.
 A script still spends your time on every run and a line does not, so a chore
 you keep scripting is a line you have not built yet.
-
-**Find ore by understanding how it generates, not by digging at random.** Ore
-in this pack is not scattered; it comes in large veins laid out on a regular
-grid, each with its own mix and height range, and different dimensions hold
-different veins. The wiki ("Ore Generation") and NEI explain the layout and
-what each vein contains. Learn that before your first serious mining trip:
-knowing where a vein must be, and at what height, turns days of tunnelling
-into one shaft. Prospect, let the map record what you find, note what each
-vein is good for, and explore outward early so you know what your region has.
 
 **Learn before you build, and keep what you learn.** This pack punishes
 guessing: some machines and mechanics can destroy themselves, your base or
