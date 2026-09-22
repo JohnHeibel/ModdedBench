@@ -48,4 +48,4 @@ FROM alpine:3.20 AS gateway
 RUN apk add --no-cache squid socat
 COPY docker/squid.conf /etc/squid/squid.conf
 # squid drops privileges and then cannot open /dev/stdout, so it logs to a file that is tailed into the container log.
-CMD ["sh", "-c", "socat TCP-LISTEN:47223,fork,reuseaddr TCP:host.docker.internal:47223 & touch /var/log/squid/access.log && chown squid /var/log/squid/access.log && tail -F /var/log/squid/access.log & exec squid -N"]
+CMD ["sh", "-c", "socat TCP-LISTEN:47223,fork,reuseaddr TCP4:host.docker.internal:47223 & touch /var/log/squid/access.log && chown squid /var/log/squid/access.log && tail -F /var/log/squid/access.log & exec squid -N"]
