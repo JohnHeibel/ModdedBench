@@ -160,19 +160,31 @@ class ContainerSession:
 
 
 def _matches(stack, want):
-    return bool(stack) and stack["id"] == want["id"] and want.get("meta") in (None, stack.get("meta"))
+    """Every field the selector gives must hold: id, meta, nbt_hash or nbt exactly, name as a case-insensitive part of the display name."""
+    return (bool(stack) and all(want.get(k) in (None, stack.get(k)) for k in ("id", "meta", "nbt_hash", "nbt"))
+            and str(want.get("name", "")).lower() in str(stack.get("name", "")).lower())
+
+
+def _precious(stack):
+    """Why a stack is not junk by default: it carries NBT (a Tinkers or GT tool, a named or enchanted item) or is worn. None if neither."""
+    return "carries NBT" if stack.get("nbt") or stack.get("nbt_hash") else "damaged" if (stack.get("dmg") or [0])[0] else None
+
+
+def _names(want):
+    """A selector names NBT-carrying/damaged stacks explicitly when it picks them by NBT or name, or says withNbt."""
+    return any(want.get(k) for k in ("nbt_hash", "nbt", "name", "withNbt"))
 
 
 def _player(view):
     return [s for s in view["slots"] if s["kind"] not in ("container", "armor")]
 
 
-def _station(k, at):
+def _station(k, at, despite_threat=False):
     """The GUI one mb_craft call works in: the one already open, else the block at `at`, else your inventory. True if this call opened it."""
     seen = k.call("obs.container")
     if seen["open"]:
         if at is None or not seen["class"].endswith("ContainerPlayer"): return False
-    no_threat("open a GUI", k)
+    no_threat("open a GUI", k, despite_threat)
     if seen["open"]:
         k.call("gui.close")  # your own inventory left open (an interrupted craft does that) is not the station you named
     if at is None: k.call("gui.open_inventory")
@@ -185,24 +197,38 @@ def _station(k, at):
     return True
 
 
-def _grid(session, pattern, times):
+def _grid_slots(view, grid, result_slot):
+    """The crafting grid as rows of slots, its result slot, and where they came from: the game's own crafting inventory
+    (the result slot reports craftResultOf) unless grid/result_slot name the slot indices."""
+    slots = {s["i"]: s for s in view["slots"]}
+    if any(i not in slots for i in [*(i for row in grid or [] for i in row), *([result_slot] if result_slot is not None else [])]):
+        raise ValueError("grid and result_slot must be slot indices of this GUI (mb_inventory(container=True) lists them)")
+    out = slots[result_slot] if result_slot is not None else next((s for s in view["slots"] if s.get("craftResultOf")), None)
+    if grid is not None:
+        if out is None: raise ValueError("this GUI shows no crafting result slot: pass result_slot with grid")
+        return [[slots[i] for i in row] for row in grid], out, "grid param"
+    m = (out or {}).get("craftResultOf")
+    if not m:
+        raise ValueError("this GUI has no crafting grid the game reports: give pattern for your inventory (2x2) or a crafting table at `at`, "
+                         "inputs for a machine, or grid=[[slot, ...], ...] and result_slot if you can see one")
+    cells = sorted((s for s in view["slots"] if s["inventory"] == m["inventory"] and s["i"] != out["i"]), key=lambda s: s.get("idx", s["i"]))
+    if not m.get("width"): raise ValueError(f"the game did not say how wide this {len(cells)}-slot grid is: pass grid=[[slot, ...], ...] rows")
+    return [cells[r:r + m["width"]] for r in range(0, len(cells), m["width"])], out, "game"
+
+
+def _grid(session, pattern, times, grid=None, result_slot=None):
     view = session.observe()
-    out = next((s for s in view["slots"] if s["slotClass"].endswith("SlotCrafting")), None)
-    groups: dict = {}
-    for s in view["slots"]:
-        if out and s["kind"] == "container" and s["inventory"] != out["inventory"]: groups.setdefault(s["inventory"], []).append(s)
-    grid = next((g for g in groups.values() if len(g) in (4, 9)), None)  # a table variant's own storage is another inventory
-    if grid is None:
-        raise ValueError("this GUI has no crafting grid: give pattern for your inventory (2x2) or a crafting table at `at` (3x3), inputs for a machine")
-    width = {4: 2, 9: 3}[len(grid)]
-    if len(pattern) > width or max(map(len, pattern)) > width:
-        raise ValueError(f"pattern does not fit this {width}x{width} grid" + ("; pass at=[x,y,z] of a crafting table for 3x3 recipes" if width == 2 else ""))
-    if any(s.get("stack") for s in grid):
+    rows, out, origin = _grid_slots(view, grid, result_slot)
+    cells = [s for row in rows for s in row]
+    if len(pattern) > len(rows) or any(len(row) > len(rows[r]) for r, row in enumerate(pattern)):
+        raise ValueError(f"pattern does not fit this grid of {[len(r) for r in rows]} slots per row" + ("; pass at=[x,y,z] of a crafting table for 3x3 recipes" if len(rows) == 2 else ""))
+    if any(s.get("stack") for s in cells):
         raise ValueError("the crafting grid must be empty before mb_craft")
-    for row in pattern:
-        for want in row:
-            if want and (type(want.get("count", times)) is not int or not 1 <= want.get("count", times) <= 64):
-                raise ValueError("pattern cell count must be an integer in 1..64")
+    for r, row in enumerate(pattern):
+        for c, want in enumerate(row):
+            limit = rows[r][c].get("limit")  # the slot's own stack limit, as the game reports it
+            if want and (type(want.get("count", times)) is not int or want.get("count", times) < 1 or limit and want.get("count", times) > limit):
+                raise ValueError(f"pattern cell count must be an integer from 1 to this slot's limit ({limit})")
     stacks = {s["i"]: s["stack"] for s in _player(view) if s.get("stack")}
     have = {i: st["count"] for i, st in stacks.items()}
     try:
@@ -212,9 +238,9 @@ def _grid(session, pattern, times):
                 while need:
                     source = next((i for i, st in stacks.items() if have[i] and _matches(st, want)), None)
                     if source is None:
-                        raise ProcedureStopped(f"not enough {want['id']} in your inventory for {times} craft(s)", session.receipts)
-                    moved = min(need, have[source])
-                    session.transfer(source, [grid[r * width + c]["i"]], moved)
+                        raise ProcedureStopped(f"not enough {want.get('id') or want.get('name')} in your inventory for {times} craft(s)", session.receipts)
+                    moved = min(need, have[source], 64)  # one transfer moves at most 64; a larger cell takes several
+                    session.transfer(source, [rows[r][c]["i"]], moved)
                     have[source] -= moved; need -= moved
         result = next(s for s in session.observe()["slots"] if s["i"] == out["i"]).get("stack")
         if not result:
@@ -222,15 +248,17 @@ def _grid(session, pattern, times):
         session.click(out["i"], "quick_move")
     except ProcedureStopped:
         for s in session.observe()["slots"]:  # put the ingredients back so the next attempt starts clean and closing drops nothing
-            if s["i"] in {g["i"] for g in grid} and s.get("stack"): session.click(s["i"], "quick_move")
+            if s["i"] in {g["i"] for g in cells} and s.get("stack"): session.click(s["i"], "quick_move")
         raise
     for s in session.observe()["slots"]:
-        if s["i"] in {g["i"] for g in grid} and s.get("stack"):
+        if s["i"] in {g["i"] for g in cells} and s.get("stack"):
             session.click(s["i"], "quick_move")
-    if any(s.get("stack") for s in session.observe()["slots"] if s["i"] in {g["i"] for g in grid}):
+    if any(s.get("stack") for s in session.observe()["slots"] if s["i"] in {g["i"] for g in cells}):
         raise ProcedureStopped("craft finished but ingredients remain in the grid; make inventory space", session.receipts)
-    gained = sum(s["stack"]["count"] for s in _player(session.observe()) if _matches(s.get("stack"), result))
-    return {"crafted": result, "gained": gained - sum(st["count"] for st in stacks.values() if _matches(st, result))}
+    kind = {"id": result["id"], "meta": result.get("meta")}
+    gained = sum(s["stack"]["count"] for s in _player(session.observe()) if _matches(s.get("stack"), kind))
+    return {"crafted": result, "gained": gained - sum(st["count"] for st in stacks.values() if _matches(st, kind)),
+            "grid": {"slots": [[s["i"] for s in row] for row in rows], "result": out["i"], "from": origin}}
 
 
 def _machine(session, inputs, wait_s):
@@ -281,31 +309,37 @@ def _shift(session, slot):
 
 @tool(coverage=["inventory"])
 def mb_move_items(at: list[int] | None = None, put: list[dict] | str | None = None, keep: list[dict] | None = None,
-                  take: list[dict] | None = None, drop: list[dict] | None = None) -> Any:
+                  take: list[dict] | None = None, drop: list[dict] | None = None, despite_threat: bool = False) -> Any:
     """Store, fetch and discard in ONE call, at anything with a GUI: it opens the block, shift-clicks whole stacks, and closes.
 
     It knows no container by name. A shift-click hands the stack to the GUI, and the GUI decides where it goes and
     whether it fits: chests of any mod, crates, backpacks, a machine's input, a storage terminal taking items in.
     at=[x,y,z] is the block to open (stand within reach); omit it to work in the GUI that is already open, or,
     for drop alone, in your own inventory.
-    put: [{id, meta?}] stacks to move in, or "all" for everything outside your hotbar; keep: [{id, meta?}] never moved
-    by put. take: [{id, meta?, count?}] whole stacks to bring out until at least count (all of it without count).
-    drop: [{id, meta?}] stacks to throw on the ground in front of you: for junk, which you may discard freely
-    (walk away from it, or it comes back). Order: put, take, drop.
-    Returns {put, took, dropped, unmoved, free: {you, there}}: unmoved is what found no room, free counts empty
-    slots on each side afterwards. Blocks that store without a GUI (barrels, drawers: right-click with the stack
+    A selector is {id?, meta?, nbt_hash?, nbt?, name?}: every field given must match (name: part of the display
+    name, any case); give id or name. put: selectors of stacks to move in, or "all" for everything outside your
+    hotbar; keep: selectors never moved by put. take: selectors with count? for whole stacks to bring out until at
+    least count (all of it without count). drop: selectors of stacks to throw on the ground in front of you: for
+    junk, which you may discard freely (walk away from it, or it comes back). A stack that carries NBT or is
+    damaged (a Tinkers or GT tool, anything named or enchanted) is not dropped unless its selector picks it by
+    nbt_hash, nbt or name, or says withNbt:true; it is listed in skipped with why. Order: put, take, drop.
+    Returns {put, took, dropped, unmoved, skipped, free: {you, there}}: unmoved is what found no room, free counts
+    empty slots on each side afterwards. Opening a block is refused while the clock lists a threat (the error's
+    procedureReceipts name the mobs); despite_threat=True opens it anyway. Blocks that store without a GUI (barrels, drawers: right-click with the stack
     in hand, left-click to take) are driven with mb_act, not with this.
     """
     if not (put or take or drop): raise ValueError("give put, take or drop")
-    if put is not None and put != "all" and not isinstance(put, list): raise ValueError('put is a list of {id, meta?} or "all"')
-    k = kernel(); opened = _station(k, at)
+    if put is not None and put != "all" and not isinstance(put, list): raise ValueError('put is a list of selectors or "all"')
+    if not all(isinstance(w, dict) and (w.get("id") or w.get("name")) for w in [*(put if isinstance(put, list) else []), *(keep or []), *(take or []), *(drop or [])]):
+        raise ValueError("every selector is a {id?, meta?, nbt_hash?, nbt?, name?} with id or name")
+    k = kernel(); opened = _station(k, at, despite_threat)
     try:
         session = ContainerSession(k); view = session.observe()
         if view.get("cursor"): raise ValueError("the cursor must be empty before mb_move_items")
         if (put or take) and str(view.get("class", "")).endswith("ContainerPlayer"):
             raise ValueError("put and take need a container: pass at=[x,y,z] of one, or open it first")
         wanted = lambda stack, selectors: any(_matches(stack, w) for w in selectors or [])
-        moved = {"put": [], "took": [], "dropped": [], "unmoved": []}
+        moved = {"put": [], "took": [], "dropped": [], "unmoved": [], "skipped": []}
         def note(key, stack, count):
             if count: moved[key].append({"id": stack["id"], "meta": stack.get("meta"), "count": count})
         for s in _player(view) if put else []:
@@ -318,9 +352,13 @@ def mb_move_items(at: list[int] | None = None, put: list[dict] | str | None = No
                 if s["kind"] != "container" or not _matches(s.get("stack"), want) or need is not None and need <= 0: continue
                 count = _shift(session, s); note("took", s["stack"], count); note("unmoved", s["stack"], s["stack"]["count"] - count)
                 if need is not None: need -= count
-            if need is not None and need > 0: raise ProcedureStopped(f"{need} {want['id']} short: not there, or no room in your inventory", session.receipts)
+            if need is not None and need > 0: raise ProcedureStopped(f"{need} {want.get('id') or want['name']} short: not there, or no room in your inventory", session.receipts)
         for s in _player(session.observe()) if drop else []:
-            if wanted(s.get("stack"), drop): session.click(s["i"], "throw", button=1); note("dropped", s["stack"], s["stack"]["count"])
+            hit = next((w for w in drop if _matches(s.get("stack"), w)), None)
+            if hit is None: continue
+            why = _precious(s["stack"])  # discarding is the one move that cannot be undone: a worked tool is not junk unless you say so
+            if why and not _names(hit): moved["skipped"].append({"id": s["stack"]["id"], "meta": s["stack"].get("meta"), "name": s["stack"].get("name"), "count": s["stack"]["count"], "why": why}); continue
+            session.click(s["i"], "throw", button=1); note("dropped", s["stack"], s["stack"]["count"])
         after = session.observe()["slots"]
         free = lambda kinds: sum(1 for s in after if s["kind"] in kinds and not s.get("stack"))
         return dict(moved, free={"you": free(("main", "hotbar")), "there": free(("container",))}, clicks=len(session.receipts))
@@ -332,7 +370,8 @@ def mb_move_items(at: list[int] | None = None, put: list[dict] | str | None = No
 
 @tool(coverage=["inventory"])
 def mb_craft(pattern: list[list[dict | None]] | None = None, times: int = 1, at: list[int] | None = None,
-             inputs: list[dict] | None = None, wait_s: float = 0.0) -> Any:
+             inputs: list[dict] | None = None, wait_s: float = 0.0, grid: list[list[int]] | None = None,
+             result_slot: int | None = None, despite_threat: bool = False) -> Any:
     """Make something in ONE call, at any station with a GUI: it opens the station, moves the items, takes the result and closes.
 
     Look the recipe up first (mb_recipes), every time it is new to you: assume no recipe in this pack,
@@ -342,13 +381,15 @@ def mb_craft(pattern: list[list[dict | None]] | None = None, times: int = 1, at:
     used as it is and left open.
     Grid crafting: pattern is rows of cells, each {id, meta?} or null, laid out as mb_recipes
     shows the shaped recipe, e.g. sticks: [[{"id":"minecraft:planks"}],[{"id":"minecraft:planks"}]].
-    times (1..64) loads that many items per cell; a cell's count overrides its total load
-    (e.g. count:1 for a retained mortar). The native shift-click decides how many crafts
+    times loads that many items per cell, up to the grid slot's own limit; a cell's count overrides its
+    total load (e.g. count:1 for a retained mortar). The native shift-click decides how many crafts
     actually run; gained reports the observed result. Remaining tools/ingredients are returned.
     If the game shows no output the pattern is not a recipe in this
     pack (GTNH changes many vanilla recipes and often wants a tool in the grid): the ingredients
-    go back and the error says so. Returns {crafted, gained}: crafted is what ONE craft yields, gained
-    is how many you now have more than before.
+    go back and the error says so. Returns {crafted, gained, grid}: crafted is what ONE craft yields, gained
+    is how many you now have more than before, grid {slots, result, from} the slots used. The grid is the
+    one the game's result slot reads; for a GUI where it is not found, grid=[[slot, ...], ...] (rows of
+    container slot indices) and result_slot name them.
     Machines: inputs is [{id, meta?, count, slot?}] in the order to load. Each goes to the first
     slot the machine itself accepts it in (furnace: [ore, fuel]); slot forces one. Then every
     output slot is emptied into your inventory, again for up to wait_s seconds (0..300) while the
@@ -357,19 +398,20 @@ def mb_craft(pattern: list[list[dict | None]] | None = None, times: int = 1, at:
     work, and come back with mb_craft(at=...) alone, which only collects. Fluids, steam, power and
     circuits are yours to arrange; for recipes made in the world rather than in a GUI (dropping
     items, multiblocks fed by hatches) compose the primitives and save your own tool.
-    It never retries; on a stop, read the receipts and observe.
+    It never retries; on a stop, read the receipts and observe. Opening a station is refused while the
+    clock lists a threat (procedureReceipts name the mobs); despite_threat=True opens it anyway.
     """
     if pattern is not None and inputs is not None:
         raise ValueError("give pattern (a crafting grid) or inputs (a machine), not both")
-    if not 1 <= times <= 64 or not 0 <= wait_s <= 300 or pattern is not None and not (pattern and all(isinstance(row, list) and row for row in pattern)):
-        raise ValueError("pattern is a non-empty list of rows; times is 1..64; wait_s is 0..300")
+    if type(times) is not int or times < 1 or not 0 <= wait_s <= 300 or pattern is not None and not (pattern and all(isinstance(row, list) and row for row in pattern)):
+        raise ValueError("pattern is a non-empty list of rows; times is a whole number from 1; wait_s is 0..300")
     k = kernel()
-    opened = _station(k, at)
+    opened = _station(k, at, despite_threat)
     try:
         session = ContainerSession(k)
         if session.observe().get("cursor"):
             raise ValueError("the cursor must be empty before mb_craft")
-        result = _grid(session, pattern, times) if pattern else _machine(session, inputs or [], wait_s)
+        result = _grid(session, pattern, times, grid, result_slot) if pattern else _machine(session, inputs or [], wait_s)
         return notes.with_item_notes(dict(result, clicks=len(session.receipts)))
     finally:
         if opened:

@@ -11,8 +11,9 @@ from mbtools_gtnh.inventory import ContainerSession, _grid
 
 class CraftKernel:
     def __init__(self):
-        self.slots = [dict(i=0, kind='container', inventory=0, slotClass='SlotCrafting')]
-        self.slots += [dict(i=i, kind='container', inventory=1, slotClass='Slot') for i in range(1, 5)]
+        # The result slot names the crafting inventory it reads; its class name means nothing.
+        self.slots = [dict(i=0, kind='container', inventory=0, slotClass='mod.AnyResult', craftResultOf=dict(inventory=1, size=4, width=2))]
+        self.slots += [dict(i=i, idx=i - 1, kind='container', inventory=1, slotClass='Slot', limit=64) for i in range(1, 5)]
         self.slots += [dict(i=5, kind='main', inventory=2, stack=dict(id='tool', meta=24, count=1)),
                        dict(i=6, kind='main', inventory=2, stack=dict(id='clay', meta=0, count=4)),
                        dict(i=7, kind='main', inventory=2)]
@@ -58,6 +59,23 @@ class CraftGridTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 _grid(ContainerSession(k), [[dict(id='tool', count=count)]], 4)
             self.assertFalse(k.mutations)
+
+    def test_grid_is_read_from_the_game_and_reported(self):
+        result = _grid(ContainerSession(CraftKernel()), [[dict(id='tool', count=1), dict(id='clay')]], 4)
+        self.assertEqual(result['grid'], dict(slots=[[1, 2], [3, 4]], result=0, **{'from': 'game'}))
+
+    def test_a_grid_the_game_does_not_report_can_be_named(self):
+        k = CraftKernel(); del k.slots[0]['craftResultOf']
+        with self.assertRaisesRegex(ValueError, 'grid='): _grid(ContainerSession(k), [[dict(id='clay')]], 1)
+        result = _grid(ContainerSession(k), [[dict(id='tool', count=1), dict(id='clay')]], 4, grid=[[1, 2], [3, 4]], result_slot=0)
+        self.assertEqual((result['gained'], result['grid']['from']), (4, 'grid param'))
+
+    def test_cell_count_is_bounded_by_the_slot_limit_not_64(self):
+        k = CraftKernel()
+        for s in k.slots[1:5]: s['limit'] = 128
+        k.slots[6]['stack']['count'] = 100
+        _grid(ContainerSession(k), [[dict(id='tool', count=1), dict(id='clay')]], 100)
+        self.assertEqual([p['count'] for m, p in k.mutations if m == 'gui.transfer'], [1, 64, 36])  # one transfer moves at most 64
 
 
 if __name__ == '__main__':

@@ -4,6 +4,8 @@ package dev.modbench.client;
 
 import com.google.gson.*;
 import dev.modbench.bridge.Json;
+import cpw.mods.fml.common.ObfuscationReflectionHelper;
+import java.lang.reflect.*;
 import java.util.*;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.*;
@@ -45,6 +47,17 @@ final class InventoryView {
         String name=slot.getClass().getName().toLowerCase(Locale.ROOT);
         return slot.slotNumber==index&&slot.func_111238_b()&&!name.contains("phantom")&&!name.contains("ghost")&&!name.contains("fake")&&!name.contains("slotme");
     }
+    /** The crafting grid a result slot reads: recipes are matched against an InventoryCrafting, and the slot holding one that is not its own inventory is where that grid's result comes out. */
+    static InventoryCrafting matrix(Slot s) {
+        for(Class<?> t=s.getClass();t!=null&&t!=Object.class;t=t.getSuperclass()) for(Field f:t.getDeclaredFields()) {
+            if(Modifier.isStatic(f.getModifiers())||!IInventory.class.isAssignableFrom(f.getType())) continue;
+            try {f.setAccessible(true);if(f.get(s) instanceof InventoryCrafting m&&m!=s.inventory) return m;} catch(ReflectiveOperationException|RuntimeException unreadable) {}
+        }
+        return null;
+    }
+    static Integer width(InventoryCrafting m) {
+        try {return ObfuscationReflectionHelper.getPrivateValue(InventoryCrafting.class,m,"inventoryWidth","field_70464_b");} catch(RuntimeException unreadable) {return null;}
+    }
     JsonObject container(String detail) {return container(detail,-1);}
     JsonObject container(String detail,int probeSlot) {
         Container c=require(new JsonObject());GuiScreen gui=mc.currentScreen;
@@ -76,6 +89,8 @@ final class InventoryView {
                 entry.addProperty("acceptsProbe",accepts);
                 entry.addProperty("spaceForProbe",!accepts||old!=null&&!Stacks.same(old,probe)?0:Math.max(0,Math.min(probe.getMaxStackSize(),s.getSlotStackLimit())-(old==null?0:old.stackSize)));
             }
+            InventoryCrafting matrix=matrix(s);
+            if(matrix!=null) entry.add("craftResultOf",Json.object("inventory",inventories.computeIfAbsent(matrix,k->inventories.size()),"size",matrix.getSizeInventory(),"width",width(matrix)));
             ItemStack held=mc.thePlayer.inventory.getItemStack();
             if(held!=null) entry.addProperty("acceptsCursor",s.isItemValid(held));
             if(s.getClass().getName().startsWith("appeng.client.me.")) try {

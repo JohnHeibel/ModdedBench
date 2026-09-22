@@ -123,11 +123,11 @@ def mb_act(method: str, params: dict | None = None, timeout_s: float = 60.0) -> 
     in place; compose navigation separately. Native acceptance isn't proof that a
     machine changed; inspect before/after receipts and your own postconditions.
     eat is refused while the clock lists a threat (you cannot fight or run with food in
-    your hand); params {despiteThreat:true} eats anyway. use_block answers with `labels` when
+    your hand; the error's procedureReceipts list the threats); params {despiteThreat:true} eats anyway. use_block answers with `labels` when
     the spot lies in or beside a region note of yours.
     """
     params = dict(params or {})
-    if method_name("act", method) == "act.eat" and not params.pop("despiteThreat", False): no_threat("eat")
+    if method_name("act", method) == "act.eat": no_threat("eat", despite=params.pop("despiteThreat", False))
     result = kernel().call(method_name("act", method), timeout=timeout_s, **params)
     if method_name("act", method) == "act.use_block" and isinstance(result, dict) and all(isinstance(params.get(a), int) for a in "xyz"):
         from mbtools_gtnh import plan  # the block clicked and the cells around it, where a placed block lands
@@ -136,13 +136,21 @@ def mb_act(method: str, params: dict | None = None, timeout_s: float = 60.0) -> 
     return result
 
 
-def no_threat(what: str, k=None) -> None:
-    """Refuse something that ties the player's hands while the threat guard lists a mob that is after them."""
+class Refused(ValueError):
+    """A harness default said no. receipts carries the fact (what, why, the override), so the error is structured, not prose."""
+    def __init__(self, msg: str, **fact):
+        super().__init__(msg); self.receipts = [{"refused": fact}]
+
+
+def no_threat(what: str, k=None, despite: bool = False) -> None:
+    """Refuse something that ties the player's hands while the threat guard lists a mob that is after them; despite skips it."""
+    if despite: return
     try: threats = (k or kernel()).call("time.status", timeout=5).get("state", {}).get("threats") or []
     except Exception: return  # no clock, no opinion
     if threats:
         near = ", ".join(f"{t.get('type')} {t.get('distance')} blocks" for t in threats[:4])
-        raise ValueError(f"refusing to {what}: {len(threats)} mob(s) after you ({near}). Deal with them first (mb_fight, leave, or a block between you).")
+        raise Refused(f"refusing to {what}: {len(threats)} mob(s) after you ({near}). Deal with them first (mb_fight, leave, or a block between you), "
+                      "or pass despiteThreat/despite_threat to do it anyway.", action=what, reason="no_threat", threats=threats, override="despiteThreat")
 
 
 KEYS = {"list": "obs.keys", "press": "act.press_key"}
