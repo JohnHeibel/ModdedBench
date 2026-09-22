@@ -19,6 +19,7 @@ public final class BaritoneMod {
         if(!event.getSide().isClient()) return;
         navigation=new BaritoneNavigation();NavigationRegistry.register(navigation);
         events=new baritone.compat.NativeEvents(navigation.reference());GameEvents.register(events);
+        GameEvents.register(new GameEvents(){@Override public void hurt(String type,String by,float amount){Symptoms.hurt(type,by,amount);}});
         net.minecraftforge.client.ClientCommandHandler.instance.registerCommand(new BaritoneCommand(navigation));
         FMLCommonHandler.instance().bus().register(this);
         net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(this);
