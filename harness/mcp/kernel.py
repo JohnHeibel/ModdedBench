@@ -228,7 +228,10 @@ class Kernel:
             self._resume_for(wanted)  # the refused request never ran, so sending it again is its first run
             r = self.call_reply(method, timeout, **params)
         if not r.ok:
-            raise BridgeError((r.error or {}).get("code", "?"), (r.error or {}).get("msg", ""), method, r.raw)
+            msg = (r.error or {}).get("msg", "")
+            if wanted is None and msg.startswith("time_paused"):
+                msg += " (or call the tool again with resume=True: it resumes the world and acts in one step)"
+            raise BridgeError((r.error or {}).get("code", "?"), msg, method, r.raw)
         return r.data
 
     def _resume_for(self, record: dict) -> None:
