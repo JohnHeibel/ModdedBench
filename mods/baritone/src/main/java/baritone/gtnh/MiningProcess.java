@@ -93,9 +93,10 @@ final class MiningProcess extends BulkJob {
         if(start==null)return WorkAccess.count(items);
         int gain=0;for(var e:stacks().entrySet())gain+=Math.max(0,e.getValue()-start.getOrDefault(e.getKey(),0));return gain;
     }
-    /** An item's identity is its id, meta and NBT; a stack of one (a tool, whose wear some mods keep in NBT) is its id and meta. */
+    /** An item's identity is its id, meta and NBT; a stack of one (a tool, whose wear some mods keep in NBT) is its id and meta,
+     *  and a damageable item is its id alone: vanilla keeps wear in the meta, and a pickaxe worn by a swing is not a gain. */
     static String identity(net.minecraft.item.ItemStack s){
-        return baritone.compat.Registry.name(s.getItem())+":"+s.getItemDamage()+(s.getMaxStackSize()>1&&s.hasTagCompound()?s.getTagCompound().toString():"");
+        return baritone.compat.Registry.name(s.getItem())+(s.isItemStackDamageable()?"":":"+s.getItemDamage())+(s.getMaxStackSize()>1&&s.hasTagCompound()?s.getTagCompound().toString():"");
     }
     private static Map<String,Integer> stacks(){
         Map<String,Integer> out=new HashMap<>();
@@ -281,7 +282,10 @@ final class MiningProcess extends BulkJob {
         List<Map<String,Object>> out=new ArrayList<>();
         if(mc.thePlayer!=player)return out;
         Map<BlockPos,String> all=new LinkedHashMap<>(skippedNow);for(var p:unreachable)all.put(p,"unreachable");
+        var memory=dev.modbench.api.ControlRegistry.memory().memory().snapshot();
         all.forEach((p,why)->{
+            var named=!why.equals("will_not_break_here")?List.<String>of():memory.protectedAt(new dev.modbench.api.WorldMemory.Pos(p.getX(),p.getY(),p.getZ()));
+            if(!named.isEmpty())why="protected_region:"+String.join(",",named);
             Map<String,Object> row=new LinkedHashMap<>();row.put("pos",point(p));row.put("block",String.valueOf(net.minecraft.block.Block.blockRegistry.getNameForObject(world.getBlock(p.getX(),p.getY(),p.getZ()))));row.put("why",why);
             if(why.equals("will_not_break_here"))for(int[] d:new int[][]{{0,1,0},{1,0,0},{-1,0,0},{0,0,1},{0,0,-1}}){
                 var beside=world.getBlock(p.getX()+d[0],p.getY()+d[1],p.getZ()+d[2]);

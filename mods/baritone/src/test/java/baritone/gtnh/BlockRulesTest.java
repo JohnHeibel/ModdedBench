@@ -65,6 +65,7 @@ public class BlockRulesTest {
     @Test public void anyItemGainKeysAStackByIdMetaAndNbtButAToolByIdAndMeta(){
         var pick=new net.minecraft.item.ItemStack(net.minecraft.init.Items.iron_pickaxe);var worn=pick.copy();worn.setTagCompound(new net.minecraft.nbt.NBTTagCompound());worn.getTagCompound().setInteger("wear",3);
         assertEquals(MiningProcess.identity(pick),MiningProcess.identity(worn));
+        var swung=pick.copy();swung.setItemDamage(5);assertEquals(MiningProcess.identity(pick),MiningProcess.identity(swung));
         var stone=new net.minecraft.item.ItemStack(Blocks.stone);var tagged=stone.copy();tagged.setTagCompound(worn.getTagCompound());
         assertNotEquals(MiningProcess.identity(stone),MiningProcess.identity(tagged));
     }
