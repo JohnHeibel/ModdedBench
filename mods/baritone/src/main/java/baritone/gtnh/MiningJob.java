@@ -5,7 +5,6 @@ package baritone.gtnh;
 
 import dev.modbench.api.ControlRegistry;
 import baritone.compat.BlockPos;
-import baritone.gtnh.pathing.TerrainGrid;
 import dev.modbench.api.InputArbiter;
 import dev.modbench.api.Navigation;
 import java.util.LinkedHashMap;
@@ -15,7 +14,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.ArrayList;
 import net.minecraft.block.Block;
-import net.minecraft.block.BlockFalling;
 import net.minecraft.client.Minecraft;
 import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.util.Vec3;
@@ -29,8 +27,6 @@ final class MiningJob implements Navigation.Job {
     private Object player;
     private final Block original;
     private final int metadata;
-    private final float health;
-    private final double startX,startZ;
     private InputArbiter.Lease lease;
     private final boolean autoTool,overrideProtection;
     private InventorySelection selection;
@@ -47,8 +43,7 @@ final class MiningJob implements Navigation.Job {
         world=mc.theWorld;player=mc.thePlayer;remaining=timeoutTicks;
         if(target.getY()<1||target.getY()>254||!ForgeSnapshot.loaded(world,target.getX(),target.getY(),target.getZ())) throw new IllegalArgumentException("target not loaded");
         original=world.getBlock(target.getX(),target.getY(),target.getZ());metadata=world.getBlockMetadata(target.getX(),target.getY(),target.getZ());
-        health=mc.thePlayer.getHealth();startX=mc.thePlayer.posX;startZ=mc.thePlayer.posZ;
-        if(health<=0||original.isAir(world,target.getX(),target.getY(),target.getZ())||ForgeFluids.fluid(original)) throw new IllegalArgumentException("target must be a non-fluid block; use native held-item/block interaction for fluids");
+        if(mc.thePlayer.getHealth()<=0||original.isAir(world,target.getX(),target.getY(),target.getZ())||ForgeFluids.fluid(original)) throw new IllegalArgumentException("target must be a non-fluid block; use native held-item/block interaction for fluids");
         if(!autoTool && !original.canHarvestBlock(mc.thePlayer,metadata)) throw new IllegalArgumentException("selected tool cannot harvest target");
         if(!autoTool && original.getPlayerRelativeBlockHardness(mc.thePlayer,world,target.getX(),target.getY(),target.getZ())<=0) throw new IllegalArgumentException("target cannot be mined with selected tool");
         String unsafe=unsafe();
@@ -62,6 +57,7 @@ final class MiningJob implements Navigation.Job {
     void tick() {
         if(done()) return;
         ticks++;
+        if(WorkAccess.died(player)) {finish("failed","player_died");return;}
         if(mc.theWorld!=world||mc.thePlayer!=player||mc.currentScreen!=null&&!ControlRegistry.controls().ownsPlayerInventory(lease)) {cancel("world_or_gui_changed");return;}
         if(!lease.isActive()) {cancel("superseded");return;}
         if(--remaining<=0) {finish("failed","timeout");return;}
@@ -109,31 +105,9 @@ final class MiningJob implements Navigation.Job {
         lease.setKeys(keys);
     }
 
+    /** The model's own protected regions. Footing, fluids and damage are its to judge; the clock's guards pause on the damage. */
     private String unsafe() {
-        String protectedRegion=dev.modbench.api.ControlRegistry.memory().editProblem(target.getX(),target.getY(),target.getZ(),overrideProtection,false);
-        if(protectedRegion!=null) return protectedRegion;
-        if(mc.thePlayer.getHealth()<health||mc.thePlayer.isBurning()) return "damage_or_fire";
-        if(mc.thePlayer.getAir()<160) return "insufficient_air";
-        if(Math.hypot(mc.thePlayer.posX-startX,mc.thePlayer.posZ-startZ)>.35) return "footing_drifted";
-        int fx=(int)Math.floor(mc.thePlayer.posX),fy=(int)Math.floor(mc.thePlayer.boundingBox.minY+.001),fz=(int)Math.floor(mc.thePlayer.posZ);
-        if(!mc.thePlayer.onGround || ForgeSnapshot.classify(world,fx,fy-1,fz)!=TerrainGrid.SUPPORT) return "stable_footing_required";
-        // Reject any overlap with the supporting footprint, even at a block boundary.
-        if(target.getY()<mc.thePlayer.boundingBox.minY+.001 && target.getY()+1>=mc.thePlayer.boundingBox.minY-.001 && Math.abs(target.getX()+.5-mc.thePlayer.posX)<.81 && Math.abs(target.getZ()+.5-mc.thePlayer.posZ)<.81) return "would_remove_footing";
-        if(!ForgeSnapshot.safeBody(world,mc.thePlayer.posX,mc.thePlayer.boundingBox.minY,mc.thePlayer.posZ,true)) return "hazard_contact";
-        boolean exit=false;
-        for(int[] d:new int[][]{{1,0},{-1,0},{0,1},{0,-1}}) {
-            BlockPos p=new BlockPos(fx+d[0],fy,fz+d[1]);
-            if(ForgeSnapshot.liveStandable(world,p) && !(target.getX()==p.getX()&&target.getZ()==p.getZ()&&target.getY()==p.getY()-1)) exit=true;
-        }
-        if(!exit) return "dry_escape_step_required";
-        if(world.getBlock(target.getX(),target.getY()+1,target.getZ()) instanceof BlockFalling) return "falling_block_above_target";
-        for(int[] d:new int[][]{{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}}) {
-            int x=target.getX()+d[0],y=target.getY()+d[1],z=target.getZ()+d[2];
-            byte cell=ForgeSnapshot.classify(world,x,y,z);
-            if(cell==TerrainGrid.UNKNOWN) return "unknown_mining_neighbor";
-            if(cell==TerrainGrid.HAZARD && y>=fy-1) return "hazard_would_be_exposed_near_feet";
-        }
-        return null;
+        return dev.modbench.api.ControlRegistry.memory().editProblem(target.getX(),target.getY(),target.getZ(),overrideProtection,false);
     }
     private void selectTool() {
         var choice=MiningTools.choose(world,target,null);

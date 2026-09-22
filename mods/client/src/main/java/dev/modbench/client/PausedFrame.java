@@ -25,7 +25,8 @@ public final class PausedFrame {
     PausedFrame(ClientClock clock) {this.clock=clock;}
     void refresh() {refresh=true;}
     Object status() {return Json.object("visible",visible,"cached",valid,"width",width,"height",height,"captures",captures,"label",label(),"error",error);}
-    private String label() {return "Paused: "+clock.pauseReason().replace('_',' ');}
+    /** Drawn from the render hook, which runs while every tick is skipped: someone at the keyboard sees why clicks do nothing. */
+    private String label() {return "World paused by the harness: "+clock.pauseReason().replace('_',' ');}
 
     void rendered() {
         visible=false;

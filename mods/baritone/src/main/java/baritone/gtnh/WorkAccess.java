@@ -122,5 +122,9 @@ final class WorkAccess {
         Map<String,Object> out=new LinkedHashMap<>();out.put("pos",point(p));out.put("loaded",true);out.put("id",Registry.name(world.getBlock(p.getX(),p.getY(),p.getZ())));out.put("meta",world.getBlockMetadata(p.getX(),p.getY(),p.getZ()));
         var tile=world.getTileEntity(p.getX(),p.getY(),p.getZ());out.put("tileClass",tile==null?null:tile.getClass().getName());return out;
     }
+    /** The shared stall watchdog: the job's stallTicks param, else the stallTicks setting. */
+    static Stall stall(Map<String,Object> params){return new Stall(integer(params,"stallTicks",baritone.Baritone.settings().stallTicks.value,0,72000));}
+    /** A dead player, or the one that died and was replaced by a respawn. */
+    static boolean died(Object player){return player instanceof net.minecraft.entity.EntityLivingBase p&&(p.isDead||p.getHealth()<=0);}
     static String protection(BlockPos p,boolean override){return ControlRegistry.memory().editProblem(p.getX(),p.getY(),p.getZ(),override,true);}
 }

@@ -19,4 +19,8 @@ public interface MemoryAccess {
     void endTick();
     /** Called immediately before vanilla block editing; false vetoes the action. */
     boolean blockAction(int action,int x,int y,int z,int side);
+    /** Clicks vetoed so far: a mark for refusedSince. */
+    long refusals();
+    /** Clicks vetoed since mark, empty when none: {refusedCount, refused:[{what,pos,why,times}] (the last 16)}. */
+    Map<String,Object> refusedSince(long mark);
 }

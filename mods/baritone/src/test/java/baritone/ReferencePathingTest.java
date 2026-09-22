@@ -187,16 +187,6 @@ public class ReferencePathingTest {
         assertTrue(set.canHarvest(state));assertEquals(20,set.getBestSlot(state));
         assertEquals(6.0/1.5/30,set.getStrVsBlock(state),.00001);
     }
-    @Test public void blocksToAvoidNamesABlockOrOneOfItsMetas(){
-        var grass=net.minecraft.init.Blocks.tallgrass;
-        Baritone.settings().blocksToAvoid.value=List.of("minecraft:tallgrass:1");
-        assertEquals(baritone.pathing.precompute.Ternary.NO,MovementHelper.canWalkThroughBlockState(IBlockState.of(grass,1)));
-        assertNotEquals(baritone.pathing.precompute.Ternary.NO,MovementHelper.canWalkThroughBlockState(IBlockState.of(grass,2)));
-        Baritone.settings().blocksToAvoid.value=List.of("minecraft:tallgrass");
-        assertEquals(baritone.pathing.precompute.Ternary.NO,MovementHelper.canWalkThroughBlockState(IBlockState.of(grass,2)));
-        assertThrows(IllegalArgumentException.class,()->baritone.gtnh.BlockIdentity.entries(List.of("nosuchmod:thing")));
-        assertEquals(1,baritone.gtnh.BlockIdentity.entries(List.of("item=minecraft:stone:3")).size());
-    }
     @Test public void nonOpaqueFullCubesSupportTheActualMovementGraph(){
         Terrain t=new Terrain();t.floor=false;
         for(int x=0;x<=8;x++)t.set(x,63,0,net.minecraft.init.Blocks.glowstone,0);

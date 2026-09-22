@@ -68,6 +68,7 @@ function render(s){
   $("server").innerHTML=svc(s,"server")+(g.bridge&&w.inWorld&&!t.error?dot(t.paused?"warn":"ok",t.paused?`time paused (${t.held?"operator hold":t.reason||"requested"}), tick ${t.simulationTicks}`:`time running, tick ${t.simulationTicks}`):"");
   $("client").innerHTML=dot(g.bridge?"ok":"bad",g.bridge?"bridge up":"bridge down (client not running)")+(g.bridge?dot(w.inWorld?"ok":"warn",w.inWorld?"in the world":"not in a world"):"");
   $("sup").innerHTML=dot(s.supervisor?"ok":"warn",s.supervisor?"deploy supervisor running":"deploy supervisor stopped");
+  $("sup").innerHTML+=" "+dot(s.backups?"ok":"warn",s.backups?"snapshots every 30 min":"no snapshots");
   const a=s.agent;let thread="";try{thread=JSON.parse(a.thread||"{}").thread||""}catch(e){}
   $("agent").innerHTML=svc(s,"agent")+svc(s,"gateway")+(a.error?dot("bad",a.error):"running" in a?dot(a.loggedIn?"ok":"bad",a.loggedIn?"Codex logged in":"Codex not logged in: run codex login --device-auth in the container")+
     dot(a.running?"ok":"",a.running?(a.stopRequested?"loop running, stopping":"loop running"):"loop idle")+kv({conversation:thread||"none yet",prompt:a.prompt?"filled run prompt":"PROMPT.md as is","harness commits":a.commits||"0"}):"");

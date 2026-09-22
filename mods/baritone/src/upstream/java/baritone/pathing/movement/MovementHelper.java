@@ -62,10 +62,8 @@ public interface MovementHelper extends ActionCosts, Helper {
         if (!bsi.worldBorder.canPlaceAt(x, z)) {
             return true;
         }
-        Block b = state.getBlock();
-        return Baritone.settings().blocksToDisallowBreaking.value.contains(b)
-                || b == Blocks.ICE // ice becomes water, and water can mess up the path
-                || b instanceof BlockSilverfish // obvious reasons
+        // ModdedBench: ice (becomes water) and silverfish stone are defaults of blocksToDisallowBreaking, not fixed rules
+        return baritone.gtnh.BlockRules.neverBreak(state)
                 // call context.get directly with x,y,z. no need to make 5 new BlockPos for no reason
                 || avoidAdjacentBreaking(bsi, x, y + 1, z, true)
                 || avoidAdjacentBreaking(bsi, x + 1, y, z, false)
@@ -123,7 +121,7 @@ public interface MovementHelper extends ActionCosts, Helper {
     static boolean canWalkThrough(BlockStateInterface bsi, int x, int y, int z, IBlockState state) {
         Ternary canWalkThrough = canWalkThroughBlockState(state);
         if (canWalkThrough == YES) {
-            return !baritone.gtnh.BlockIdentity.avoidedAt(state);
+            return !baritone.gtnh.BlockRules.hazardAt(state);
         }
         if (canWalkThrough == NO) {
             return false;
@@ -137,10 +135,8 @@ public interface MovementHelper extends ActionCosts, Helper {
         if (block == Blocks.AIR) {
             return YES;
         }
-        if (block == Blocks.FIRE || block == Blocks.TRIPWIRE || block == Blocks.WEB || block == Blocks.END_PORTAL || block == Blocks.COCOA || block instanceof BlockSkull || block instanceof BlockTrapDoor || block == Blocks.END_ROD) {
-            return NO;
-        }
-        if (baritone.gtnh.BlockIdentity.avoidedState(state)) {
+        // ModdedBench: the model's hazards list (seeded with fire, web, tripwire, cactus, end portal) replaces the fixed list and blocksToAvoid
+        if (baritone.gtnh.BlockRules.hazard(state)) {
             return NO;
         }
         if (block instanceof BlockDoor || block instanceof BlockFenceGate) {
@@ -165,10 +161,15 @@ public interface MovementHelper extends ActionCosts, Helper {
                 return MAYBE;
             }
         }
-        if (block instanceof BlockCauldron) {
-            return NO;
+        // ModdedBench: the game's collision boxes decide (cocoa, skulls, trapdoors, cauldrons included); a block with a tile entity per position
+        if (block.hasTileEntity(state.meta)) {
+            return MAYBE;
         }
-        try { // A dodgy catch-all at the end, for most blocks with default behaviour this will work, however where blocks are special this will error out, and we can handle it when we have this information
+        baritone.gtnh.BlockShapes.Shape shape = baritone.gtnh.BlockShapes.of(state);
+        if (shape != null) {
+            return shape.empty() ? YES : NO;
+        }
+        try { // not answered by the game thread yet: the material's own flag, as upstream
             if (block.getBlocksMovement(null, 0, 0, 0)) {
                 return YES;
             } else {
@@ -218,7 +219,8 @@ public interface MovementHelper extends ActionCosts, Helper {
             return block == Blocks.WATER || block == Blocks.FLOWING_WATER;
         }
 
-        return state.isPassable(bsi.access);
+        baritone.gtnh.BlockShapes.Shape shape = baritone.gtnh.BlockShapes.of(state);
+        return shape != null ? shape.empty() : state.isPassable(bsi.access);
     }
 
     static Ternary fullyPassableBlockState(IBlockState state) {
@@ -228,20 +230,22 @@ public interface MovementHelper extends ActionCosts, Helper {
             return YES;
         }
         // exceptions - blocks that are isPassable true, but we can't actually jump through
-        if (block == Blocks.FIRE
-                || block == Blocks.TRIPWIRE
-                || block == Blocks.WEB
+        if (baritone.gtnh.BlockRules.hazard(state)
                 || block == Blocks.VINE
                 || block == Blocks.LADDER
-                || block == Blocks.COCOA
                 || block instanceof BlockDoor
                 || block instanceof BlockFenceGate
                 || block instanceof BlockSnow
                 || block instanceof BlockLiquid
-                || block instanceof BlockTrapDoor
-                || block instanceof BlockEndPortal
-                || block instanceof BlockSkull) {
+                || block instanceof BlockTrapDoor) {
             return NO;
+        }
+        if (block.hasTileEntity(state.meta)) {
+            return MAYBE;
+        }
+        baritone.gtnh.BlockShapes.Shape shape = baritone.gtnh.BlockShapes.of(state);
+        if (shape != null) {
+            return shape.empty() ? YES : NO;
         }
         // door, fence gate, liquid, trapdoor have been accounted for, nothing else uses the world or pos parameters
         // at least in 1.12.2 vanilla, that is.....
@@ -283,7 +287,8 @@ public interface MovementHelper extends ActionCosts, Helper {
     }
 
     static boolean fullyPassablePosition(BlockStateInterface bsi, int x, int y, int z, IBlockState state) {
-        return state.isPassable(bsi.access);
+        baritone.gtnh.BlockShapes.Shape shape = baritone.gtnh.BlockShapes.of(state);
+        return shape != null ? shape.empty() : state.isPassable(bsi.access);
     }
 
     static boolean isReplaceable(int x, int y, int z, IBlockState state, BlockStateInterface bsi) {
@@ -367,13 +372,9 @@ public interface MovementHelper extends ActionCosts, Helper {
         return (facing == playerFacing) == open;
     }
 
-    static boolean avoidWalkingInto(Block block) {
-        return baritone.compat.LegacyFluids.isFluid(block)
-                || block == Blocks.MAGMA
-                || block == Blocks.CACTUS
-                || block == Blocks.FIRE
-                || block == Blocks.END_PORTAL
-                || block == Blocks.WEB;
+    static boolean avoidWalkingInto(IBlockState state) {
+        // ModdedBench: fluids are asked of Forge; every other hazard is the model's hazards list
+        return baritone.compat.LegacyFluids.isFluid(state.getBlock()) || baritone.gtnh.BlockRules.hazard(state);
     }
 
     /**
@@ -404,22 +405,12 @@ public interface MovementHelper extends ActionCosts, Helper {
     static Ternary canWalkOnBlockState(IBlockState state) {
         Block block = state.getBlock();
         if (baritone.compat.LegacyFluids.unsupportedForSwimming(block)) return NO;
-        if (state.isBlockNormalCube() && block != Blocks.MAGMA) {
-            return YES;
+        // ModdedBench: the model's neverStandOn/standOn/hazards win; otherwise the game's collision boxes decide
+        Boolean rule = baritone.gtnh.BlockRules.standOn(state);
+        if (rule != null) {
+            return rule ? YES : NO;
         }
         if (block == Blocks.LADDER || (block == Blocks.VINE && Baritone.settings().allowVines.value)) { // TODO reconsider this
-            return YES;
-        }
-        if (block == Blocks.FARMLAND || block == Blocks.GRASS_PATH) {
-            return YES;
-        }
-        if (block == Blocks.ENDER_CHEST || block == Blocks.CHEST || block == Blocks.TRAPPED_CHEST) {
-            return YES;
-        }
-        if (block == Blocks.GLASS || block == Blocks.STAINED_GLASS) {
-            return YES;
-        }
-        if (block instanceof BlockStairs) {
             return YES;
         }
         if (isWater(block)) {
@@ -440,7 +431,16 @@ public interface MovementHelper extends ActionCosts, Helper {
             }
             return YES;
         }
-        return NO;
+        if (block.hasTileEntity(state.meta)) {
+            return MAYBE;
+        }
+        return standable(state) ? YES : NO;
+    }
+
+    /** ModdedBench: the game's collision boxes, or, until the game thread has answered, its own normal-cube flag. */
+    static boolean standable(IBlockState state) {
+        baritone.gtnh.BlockShapes.Shape shape = baritone.gtnh.BlockShapes.of(state);
+        return shape != null ? shape.standable() : state.isBlockNormalCube();
     }
 
     static boolean canWalkOnPosition(BlockStateInterface bsi, int x, int y, int z, IBlockState state) {
@@ -465,7 +465,7 @@ public interface MovementHelper extends ActionCosts, Helper {
             return true;
         }
 
-        return false; // If we don't recognise it then we want to just return false to be safe.
+        return !isWater(block) && !MovementHelper.isLava(block) && standable(state); // ModdedBench: a tile-entity block, by its shape here
     }
 
     static boolean canWalkOn(CalculationContext context, int x, int y, int z, IBlockState state) {

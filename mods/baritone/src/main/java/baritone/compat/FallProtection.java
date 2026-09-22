@@ -16,6 +16,7 @@ public final class FallProtection {
     private static Provider provider;
     private FallProtection(){}
     public static void register(Provider value){provider=java.util.Objects.requireNonNull(value);}
+    public static boolean registered(){return provider!=null;}
     public static boolean available(){return provider!=null&&provider.available();}
     public static boolean selectForPlacement(){return available()&&provider.selectForPlacement();}
     public static boolean selectForRecovery(){return provider!=null&&provider.selectForRecovery();}

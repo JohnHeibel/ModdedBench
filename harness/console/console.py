@@ -85,7 +85,7 @@ def sh(cmd, stdin=None, timeout=30):
 
 class Console:
     def __init__(self):
-        self.lock = threading.Lock(); self.kernel = None; self.supervisor = None
+        self.lock = threading.Lock(); self.kernel = None; self.supervisor = None; self.backups = None
         self.job = {"name": "", "running": False, "ok": True, "log": ""}; self.login = (0.0, None); self.book = (0.0, []); self.shorten = Shortener(runtime.RUNTIME / "overlay-short.json")
 
     # The bridge, read only: one long-lived session for the state panel.
@@ -124,7 +124,8 @@ class Console:
             req, res = runtime.load_json(folder / "request.json"), runtime.load_json(folder / "result.json")
             deploys.append({"time": folder.name, "components": req.get("components"), "reason": req.get("reason"), "ok": res.get("ok"), "error": res.get("error")})
         return {"docker": ps.returncode == 0, "dockerError": ps.stderr[-300:], "services": services, "agent": agent, "game": self.game(), "deploys": deploys,
-                "supervisor": self.supervisor is not None and self.supervisor.poll() is None, "job": self.job}
+                "supervisor": self.supervisor is not None and self.supervisor.poll() is None,
+                "backups": self.backups is not None and self.backups.poll() is None, "job": self.job}
 
     def overlay(self):
         """Everything the OBS pages show, read only: the loop's feed and totals, plus the clock and the quest book from the bridge."""
@@ -192,6 +193,9 @@ class Console:
             if self.supervisor: self.supervisor.terminate()
         elif name == "agent.start":
             self.act("supervisor.start", {})  # the brief promises the agent a deploy supervisor; a request nobody answers looks like a hang
+            if self.backups is None or self.backups.poll() is not None:  # operator snapshots every 30 minutes while the console runs; the agent never sees them
+                log = runtime.RUNTIME / "logs" / "backups.log"; log.parent.mkdir(parents=True, exist_ok=True)
+                self.backups = subprocess.Popen([*PY, str(REPO / "harness" / "launcher" / "backup.py"), "loop"], cwd=REPO, stdout=log.open("ab"), stderr=subprocess.STDOUT, creationflags=NO_WINDOW)
             extra = ["--", "-m", a["model"]] if re.fullmatch(r"[\w.\-]{1,64}", a.get("model") or "") else []
             if a.get("effort") in ("minimal", "low", "medium", "high", "xhigh"): extra = [*(extra or ["--"]), "-c", f'model_reasoning_effort="{a["effort"]}"']
             # Turns are recovery, not a unit of the run: the run is sized in minutes and tokens, and a turn is cut where it stands.
@@ -200,7 +204,9 @@ class Console:
             self.run_job(name, [[*COMPOSE, "up", "-d", "gateway", "agent"], [*COMPOSE, "exec", "-d", "agent", "sh", "-c", loop, "sh", *budget, *extra]])
         elif name == "agent.stop": self.run_job(name, [[*agent, "sh", "-c", "mkdir -p .state && touch .state/STOP"]])
         elif name == "agent.kill": self.run_job(name, [[*agent, "sh", "-c", "pkill -f '[c]odex_loop.py'; pkill -x codex; pkill -f '[h]arness/mcp/server.py'; true"]])
-        elif name == "agent.down": self.run_job(name, [[*COMPOSE, "stop", "agent", "gateway"]])
+        elif name == "agent.down":
+            if self.backups: self.backups.terminate()
+            self.run_job(name, [[*COMPOSE, "stop", "agent", "gateway"]])
         elif name == "run.init":
             prompt = fill_prompt((REPO / "PROMPT.md").read_text(encoding="utf-8"), str(a.get("targetQuest", "")).strip(), str(a.get("targetChapter", "")).strip())
             up = "agent" in sh([*COMPOSE, "ps", "--services", "--status", "running"]).stdout.split()

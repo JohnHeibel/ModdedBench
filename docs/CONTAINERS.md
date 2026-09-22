@@ -176,11 +176,15 @@ disk is the last autosave, at most 45 seconds of game time old. It keeps the
 newest 48 snapshots and the first of each day.
 
 No container mounts `.runtime/snapshots`, and the agent's brief does not mention
-backups: from inside the run every mistake is permanent. Restoring is a manual
-operator decision for a corrupted world or a lost disk. To restore: stop the
-stack, `docker run --rm -v moddedbench_server-data:/data -v <snapshot folder>:/b alpine sh -c "cd /data && tar -xzf /b/world.tar.gz"`,
-unpack `notes.tar.gz` over `.state/notes` in the agent's checkout the same
-way, start the stack, and record the restore in the run's log.
+backups: from inside the run every mistake is permanent. The console starts the
+30-minute loop with a run (`.runtime/logs/backups.log`) and stops it with
+**agent down**. Restoring is an operator decision for infrastructure faults
+only (a corrupted world, a lost disk, a harness bug that damaged state), never
+to undo the agent's own mistakes:
+`python harness/launcher/backup.py restore <snapshot> --reason "..."` stops the
+server and agent, replaces the world and the notes, and appends the restore to
+`.runtime/snapshots/restores.jsonl` (host only). Start the stack when ready.
+Set `MB_COMPOSE_PROJECT=mbtest` to act on a test stack.
 
 Recording: OBS window capture matched on the window title picks the client up
 again after a deploy restarts it; record to `.mkv` and split by time. With

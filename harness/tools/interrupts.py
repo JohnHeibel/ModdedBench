@@ -391,38 +391,6 @@ def close_supervisor():
 
 mbtool.on_shutdown["interrupts"] = close_supervisor
 
-async def race_interrupt(supervisor, model_awaitable, cursor=0, cancel=None, poll_s=.05):
-    """Return model result or an interruption; provider cancellation is caller supplied."""
-    task=asyncio.ensure_future(model_awaitable)
-    async def stop():
-        if not task.done(): task.cancel()
-        if cancel: cancel()
-        # A provider wrapper may suppress cancellation. Its obsolete result must not prevent the runner from receiving the interrupt.
-        def consume(completed):
-            try: completed.result()
-            except (asyncio.CancelledError, Exception): pass
-        task.add_done_callback(consume)
-        await asyncio.wait({task},timeout=.25)
-    try:
-        while True:
-            e=supervisor.events(cursor,wait_s=0)
-            if e["events"] or e.get("gap"):
-                cursor=e["cursor"]
-                if e.get("gap") or any(_wakes_runner(x) for x in e["events"]):
-                    await stop()
-                    return {"interrupted":True,"gap":e.get("gap",False),"cursor":cursor,"events":e["events"]}
-            if task.done():
-                # An event arriving in the same scheduling slice wins over a model result.
-                e=supervisor.events(cursor,wait_s=0); cursor=e["cursor"]
-                if e.get("gap") or any(_wakes_runner(x) for x in e["events"]):
-                    await stop(); return {"interrupted":True,"gap":e.get("gap",False),"cursor":cursor,"events":e["events"]}
-                return {"interrupted":False,"cursor":cursor,"result":await task}
-            await asyncio.sleep(poll_s)
-    except asyncio.CancelledError:
-        await stop()
-        raise
-
-
 @tool(lane="control", coverage=["meta"])
 def mb_interrupt(operation: str, name: str = "", spec: dict | None = None, replace: bool = False, event_id: str = "") -> Any:
     """Manage autonomous interrupts: add, remove, reload, status, ack. Add spec:
@@ -454,7 +422,6 @@ def mb_interrupt(operation: str, name: str = "", spec: dict | None = None, repla
 def mb_interrupt_events(after: int = 0, limit: int = 100, wait_s: float = 0) -> Any:
     """Replay durable interrupt events after a cursor; non-consuming, gap reported.
     Optional bounded long-poll (0..30 seconds) waits without advancing world time.
-    The runner can use mbtools_gtnh.interrupts.race_interrupt to cancel an inference awaitable.
     """
     if after < 0 or not 1 <= limit <= 1000 or not 0 <= wait_s <= 30:
         raise ValueError("after>=0, limit 1..1000, wait_s 0..30 required")

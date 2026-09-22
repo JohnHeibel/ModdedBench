@@ -188,8 +188,8 @@ public class MovementDiagonal extends Movement {
             boolean BMid = MovementHelper.canWalkThrough(context, destX, y + 1, z);
             boolean BLow = MovementHelper.canWalkThrough(context, destX, y, z, pb2);
             if ((!(ATop && AMid && ALow) && !(BTop && BMid && BLow)) // no option
-                    || MovementHelper.avoidWalkingInto(pb0.getBlock()) // bad
-                    || MovementHelper.avoidWalkingInto(pb2.getBlock()) // bad
+                    || MovementHelper.avoidWalkingInto(pb0) // bad
+                    || MovementHelper.avoidWalkingInto(pb2) // bad
                     || (ATop && AMid && MovementHelper.canWalkOn(context, x, y, destZ, pb0)) // we could just ascend
                     || (BTop && BMid && MovementHelper.canWalkOn(context, destX, y, z, pb2)) // we could just ascend
                     || (!ATop && AMid && ALow) // head bonk A
@@ -216,7 +216,7 @@ public class MovementDiagonal extends Movement {
             return;
         }
         IBlockState pb3 = context.get(destX, y + 1, z);
-        if (optionA == 0 && ((MovementHelper.avoidWalkingInto(pb2.getBlock()) && pb2.getBlock() != Blocks.WATER) || MovementHelper.avoidWalkingInto(pb3.getBlock()))) {
+        if (optionA == 0 && ((MovementHelper.avoidWalkingInto(pb2) && pb2.getBlock() != Blocks.WATER) || MovementHelper.avoidWalkingInto(pb3))) {
             // at this point we're done calculating optionA, so we can check if it's actually possible to edge around in that direction
             return;
         }
@@ -225,7 +225,7 @@ public class MovementDiagonal extends Movement {
             // and finally, if the cost is nonzero for both ways to approach this diagonal, it's not possible
             return;
         }
-        if (optionB == 0 && ((MovementHelper.avoidWalkingInto(pb0.getBlock()) && pb0.getBlock() != Blocks.WATER) || MovementHelper.avoidWalkingInto(pb1.getBlock()))) {
+        if (optionB == 0 && ((MovementHelper.avoidWalkingInto(pb0) && pb0.getBlock() != Blocks.WATER) || MovementHelper.avoidWalkingInto(pb1))) {
             // and now that option B is fully calculated, see if we can edge around that way
             return;
         }

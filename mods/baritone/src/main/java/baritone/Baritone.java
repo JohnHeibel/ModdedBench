@@ -69,7 +69,6 @@ public final class Baritone implements IBaritone {
         // Keep visible aiming as the GTNH default; packet/movement hooks also support freeLook.
         SETTINGS.freeLook.value=false;
         baritone.api.utils.SettingsUtil.readAndApply(SETTINGS,baritone.api.utils.SettingsUtil.SETTINGS_DEFAULT_NAME);
-        SETTINGS.allowWaterBucketFall.value=false;
         // Native items have a pickup delay; allow the final drop/packet handoff
         // without adding any wait between blocks while targets remain.
         SETTINGS.mineDropLoiterDurationMSThanksLouca.value=1000L;

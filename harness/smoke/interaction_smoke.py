@@ -9,7 +9,7 @@ ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'harness' / 'mcp'))
 from kernel import Kernel, BridgeError, bridge_url
 import mbtool  # noqa: F401  (installs the mbtools_gtnh package)
-from mbtools_gtnh.interrupts import InterruptSupervisor, race_interrupt
+from mbtools_gtnh.interrupts import InterruptSupervisor
 USER = os.environ.get("MB_USERNAME", "ModbenchDev")
 
 def main():
@@ -118,9 +118,7 @@ def main():
             cursor=sup.events()['cursor'];custom=Path(tmp)/'custom.py'
             custom.write_text("def evaluate(context):\n    p=context.read('obs.player')\n    return {'match': p['health'] > 0 and context.values['player']['food'] > 0, 'payload': {'selected': p['selectedSlot']}}\n")
             sup.add('custom',{'file':str(custom),'queries':queries,'effects':['notify']})
-            async def model():await asyncio.sleep(10);return 'obsolete'
-            raced=asyncio.run(race_interrupt(sup,model(),cursor=cursor))
-            check('custom primitive composition interrupts inference awaitable',raced['interrupted'],raced)
+            e=fired('custom');check('custom primitive composition fires',e['data'].get('payload') is not None,e)
             check('journal replay is non-consuming',sup.events()==sup.events())
             evidence['ok']=True
         finally:
