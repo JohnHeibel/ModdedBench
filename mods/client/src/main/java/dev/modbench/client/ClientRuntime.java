@@ -118,7 +118,7 @@ public final class ClientRuntime extends BridgeRuntime {
         });
         register("obs.world", "Client world and connection state", "read", r -> world());
         register("obs.inventory", "Player slots 0..35, armor, cursor and exact identities {detail:full|compact|counts}; totals keep NBT variants separate", "read", r -> ui.view.inventory(Json.string(r.params,"detail","full")));
-        register("obs.block", "One loaded block {x,y,z}: id, meta, hardness, harvest tool/level, tile, and picked (the pick-block item: its identity as the game names it)", "read", r -> block(r));
+        register("obs.block", "One loaded block {x,y,z | pos:[x,y,z]}: id, meta, hardness, harvest tool/level, tile, and picked (the pick-block item: its identity as the game names it)", "read", r -> block(r));
         register("obs.container", "Screen/container epoch, slots, geometry and widgets {detail:summary|full|compact,probeSlot?:observed source index}; probe reports native slot acceptance/capacity without picking up items", "read", r -> {ui.view.require(r.params);return ui.view.container(Json.string(r.params,"detail","summary"),r.params.has("probeSlot")?Json.integer(r.params,"probeSlot",0,0,4095):-1);});
         register("obs.gui", "Current screen class and dimensions", "read", r -> gui());
         register("obs.keys", "Registered key bindings", "read", r -> bindings());
@@ -358,9 +358,16 @@ public final class ClientRuntime extends BridgeRuntime {
 
     private JsonObject block(Request r) {
         requirePlayer();
-        int x = Json.integer(r.params, "x", 0, -30000000, 30000000);
-        int y = Json.integer(r.params, "y", 0, 0, 255);
-        int z = Json.integer(r.params, "z", 0, -30000000, 30000000);
+        JsonObject p = r.params;
+        if (p.has("pos")) {  // the same {pos:[x,y,z]} the tile and waila reads take
+            JsonArray a = p.getAsJsonArray("pos");
+            if (a.size() != 3) throw new IllegalArgumentException("pos must be [x,y,z]");
+            p = Json.object("x", a.get(0), "y", a.get(1), "z", a.get(2));
+        }
+        if (!p.has("x") || !p.has("y") || !p.has("z")) throw new IllegalArgumentException("give x,y,z or pos:[x,y,z]");
+        int x = Json.integer(p, "x", 0, -30000000, 30000000);
+        int y = Json.integer(p, "y", 0, 0, 255);
+        int z = Json.integer(p, "z", 0, -30000000, 30000000);
         // Client chunkExists is unconditional in 1.7.10; reject its missing-chunk placeholder.
         if (!mc.theWorld.blockExists(x, y, z) || mc.theWorld.getChunkFromChunkCoords(x>>4,z>>4).isEmpty()) throw new IllegalArgumentException("block is not loaded");
         Block b = mc.theWorld.getBlock(x, y, z);
