@@ -282,7 +282,7 @@ public class MovementDescend extends Movement {
             return true;
         }
         for (int y = 0; y <= 2; y++) { // we could hit any of the three blocks
-            if (MovementHelper.avoidWalkingInto(BlockStateInterface.getBlock(ctx, into.up(y)))) {
+            if (MovementHelper.avoidWalkingInto(BlockStateInterface.get(ctx, into.up(y)))) {
                 return true;
             }
         }

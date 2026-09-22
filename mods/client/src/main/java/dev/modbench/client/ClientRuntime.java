@@ -52,6 +52,7 @@ public final class ClientRuntime extends BridgeRuntime {
     private Request navigationRequest;
     private Navigation.Job navigationJob;
     private int remaining;
+    private long refusalMark; // clicks the harness had refused when the current job or hold began
     private Object lastWorld, lastPlayer, identity;
 
     public Object identity() {
@@ -171,7 +172,7 @@ public final class ClientRuntime extends BridgeRuntime {
             navigationJob=provider.placeBlock(Json.integer(r.params,"x",0,-30000000,30000000),Json.integer(r.params,"y",0,1,254),Json.integer(r.params,"z",0,-30000000,30000000),Json.integer(r.params,"timeoutTicks",1200,1,6000),Json.bool(r.params,"overrideProtection",false));
             navigationRequest=r;return null;
         });
-        register("nav.mine_block", "Mine one reachable block {x,y,z,autoTool:true,timeoutTicks:1..6000}; requires stable footing and dry escape step; overrideProtection:false by default", "interaction", r -> {
+        register("nav.mine_block", "Mine one reachable block {x,y,z,autoTool:true,timeoutTicks:1..6000}; protected regions refuse unless overrideProtection:true", "interaction", r -> {
             requirePlayer();
             Navigation provider=NavigationRegistry.get();
             if(provider==null) throw new IllegalArgumentException("Baritone mod is not installed");
@@ -312,6 +313,7 @@ public final class ClientRuntime extends BridgeRuntime {
     private JsonObject player() {
         requirePlayer();
         var p = mc.thePlayer;
+        int x = (int) Math.floor(p.posX), z = (int) Math.floor(p.posZ);
         return Json.object("name", p.getCommandSenderName(), "uuid", p.getUniqueID().toString(),
             "uuidScope", "client_profile", "entityId", p.getEntityId(),
             // In 1.7.10 the local player's posY includes the stance/eye offset.
@@ -323,7 +325,24 @@ public final class ClientRuntime extends BridgeRuntime {
             "selectedSlot", p.inventory.currentItem, "held", stack(p.getHeldItem()),
             "gui", mc.currentScreen == null ? null : mc.currentScreen.getClass().getName(),
             "sneaking", p.isSneaking(), "controlActive", ControlRegistry.controls().arbiter().current().active(),
-            "controlOwner", ControlRegistry.controls().arbiter().current().label());
+            "controlOwner", ControlRegistry.controls().arbiter().current().label(),
+            "effects", effects(p), "blocks", Json.object("feet", cell(x, (int) Math.floor(p.boundingBox.minY + .001), z),
+                "head", cell(x, (int) Math.floor(p.posY), z), "under", cell(x, (int) Math.floor(p.boundingBox.minY - .01), z)));
+    }
+
+    /** The potion effects on the player, as its inventory screen shows them. */
+    private static com.google.gson.JsonArray effects(net.minecraft.entity.player.EntityPlayer p) {
+        var out = new com.google.gson.JsonArray();
+        for (Object o : p.getActivePotionEffects()) if (o instanceof net.minecraft.potion.PotionEffect e) {
+            var potion = e.getPotionID() < net.minecraft.potion.Potion.potionTypes.length ? net.minecraft.potion.Potion.potionTypes[e.getPotionID()] : null;
+            out.add(Json.object("id", e.getPotionID(), "name", potion == null ? null : potion.getName(), "amplifier", e.getAmplifier(), "durationTicks", e.getDuration()));
+        }
+        return out;
+    }
+
+    private JsonObject cell(int x, int y, int z) {
+        if (y < 0 || y > 255 || !mc.theWorld.blockExists(x, y, z) || mc.theWorld.getChunkFromChunkCoords(x >> 4, z >> 4).isEmpty()) return null;
+        return Json.object("id", Block.blockRegistry.getNameForObject(mc.theWorld.getBlock(x, y, z)), "meta", mc.theWorld.getBlockMetadata(x, y, z));
     }
 
     private JsonObject world() {
@@ -437,7 +456,7 @@ public final class ClientRuntime extends BridgeRuntime {
         }
         if (navigationRequest != null && clock.guardPause()) { // no tick will end this job: hand back what it did, now, with why
             navigationJob.cancel("world_paused: "+clock.pauseReason());
-            navigationRequest.fail("cancelled","world paused by a guard ("+clock.pauseReason()+"): read mb_time status, decide, resume",navigationJob.status());
+            navigationRequest.fail("cancelled","world paused by a guard ("+clock.pauseReason()+"): read mb_time status, decide, resume",refused(navigationJob.status()));
             navigationRequest=null; navigationJob=null;
         }
         if (control == null) return;
@@ -451,10 +470,11 @@ public final class ClientRuntime extends BridgeRuntime {
         if (navigationRequest != null && navigationJob.done()) {
             Request r=navigationRequest; Navigation.Job job=navigationJob;
             navigationRequest=null; navigationJob=null;
-            if (job.succeeded() || "paused".equals(job.status().get("state"))) r.reply(job.status());
+            Map<String,Object> receipt=refused(job.status());
+            if (job.succeeded() || "paused".equals(receipt.get("state"))) r.reply(receipt);
             else {
-                boolean cancelled=job.status().get("state").equals("cancelled");
-                r.fail(cancelled ? "cancelled" : "path_failed", String.valueOf(job.status().get("reason")),job.status());
+                boolean cancelled=receipt.get("state").equals("cancelled");
+                r.fail(cancelled ? "cancelled" : "path_failed", String.valueOf(receipt.get("reason")),receipt);
                 if(!cancelled) clock.actionFailed();
             }
         }
@@ -467,7 +487,9 @@ public final class ClientRuntime extends BridgeRuntime {
         if (--remaining <= 0 || targetChanged) {
             Request finished = control;
             release();
-            finished.reply(Json.object("completed", true, "outcome",targetChanged?"attack_target_changed":"duration_elapsed", "player", player(), "serverAcknowledged", false));
+            JsonObject receipt=Json.object("completed", true, "outcome",targetChanged?"attack_target_changed":"duration_elapsed", "player", player(), "serverAcknowledged", false);
+            ControlRegistry.memory().refusedSince(refusalMark).forEach((k,v)->receipt.add(k,Json.GSON.toJsonTree(v)));
+            finished.reply(receipt);
         }
     }
 
@@ -487,6 +509,12 @@ public final class ClientRuntime extends BridgeRuntime {
         if (navigationRequest != null) navigationRequest.fail(reason, "navigation released: " + reason);
         navigationRequest=null; navigationJob=null;
         ControlRegistry.controls().arbiter().revoke(reason);
+        refusalMark=ControlRegistry.memory().refusals();
+    }
+    /** A job's receipt with the clicks the harness refused it (protected regions, a held attack locked to its block). */
+    private Map<String,Object> refused(Map<String,Object> status) {
+        var refusals=ControlRegistry.memory().refusedSince(refusalMark);if(refusals.isEmpty()) return status;
+        Map<String,Object> out=new LinkedHashMap<>(status);out.putAll(refusals);return out;
     }
 
     private void cancelNavigation(String reason){var navigation=NavigationRegistry.get();if(navigation!=null)navigation.cancel(reason);}

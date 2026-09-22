@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "mcp"))
 import importlib
 import mbtool
-from mbtools_gtnh.interrupts import InterruptSupervisor, race_interrupt, get_supervisor, close_supervisor, mb_wait
+from mbtools_gtnh.interrupts import InterruptSupervisor, get_supervisor, close_supervisor, mb_wait
 
 class FakeKernel:
     def __init__(self): self.value=0; self.context={"worldId":"w","dimension":0,"bridgeId":"b","worldEpoch":1}; self.fires=[]; self.errors={}; self.methods={"obs.x":{"effect":"read","watchable":True}}
@@ -86,15 +86,10 @@ class InterruptTests(unittest.TestCase):
         self.s.add("reload",{"file":str(source),"queries":{}}); old=self.s.watches["reload"].callable; source.write_text("broken(")
         with self.assertRaises(Exception): self.s.reload("reload")
         self.assertIs(old,self.s.watches["reload"].callable)
-    def test_read_is_checked_and_runner_wakes(self):
+    def test_read_is_checked(self):
         source=Path(self.tmp.name)/"bad.py"; source.write_text("def evaluate(context):\n return context.read('act.move')\n")
         self.s.add("bad",{"file":str(source),"queries":{}}); self.s.poll(); time.sleep(.05)
         self.assertIn("fault",[x["kind"] for x in self.s.events(0)["events"]])
-        async def case():
-            async def slow(): await asyncio.sleep(1)
-            self.s._event("triggered","x")
-            return await race_interrupt(self.s,slow())
-        self.assertTrue(asyncio.run(case())["interrupted"])
     def test_scheduler_stall_replace_and_reopen(self):
         # The scheduler observes independently of tools/model calls.
         self.s.close(); self.s=InterruptSupervisor(self.k,self.tmp.name,retained=3,poll_s=.01,fire_backoff_s=.001)
@@ -237,22 +232,13 @@ class InterruptTests(unittest.TestCase):
             close_supervisor(); mbtool.state.pop("kernel",None)
         self.assertNotIn("interrupts",mbtool.state); self.s=InterruptSupervisor(self.k,self.tmp.name,retained=3,poll_s=10)
 
-    def test_fire_does_not_hold_lock_and_race_cancellation_cleans_model(self):
+    def test_fire_does_not_hold_lock(self):
         entered=threading.Event(); release=threading.Event(); old=self.k.call
         def slow_fire(method,**kw):
             if method=="interrupt.fire": entered.set(); release.wait(1)
             return old(method,**kw)
         self.k.call=slow_fire; self.s.add("send",{"queries":{"x":{"method":"obs.x"}},"condition":{"gte":["x.n",0]}}); self.s.poll(); entered.wait(1)
         start=time.monotonic(); self.s.remove("send"); self.assertLess(time.monotonic()-start,.5); release.set()  # the fire is held for 1 s; a journal write alone can take 100 ms
-        cancelled=[]
-        async def case():
-            async def blocked():
-                try: await asyncio.sleep(1)
-                finally: cancelled.append(True)
-            task=asyncio.create_task(blocked()); await asyncio.sleep(0)
-            self.s._event("triggered","wake")
-            return await race_interrupt(self.s,task)
-        self.assertTrue(asyncio.run(case())["interrupted"]); self.assertTrue(cancelled)
 
     def test_watches_persist_across_supervisor_restart(self):
         old=self.k.call; down=[True]

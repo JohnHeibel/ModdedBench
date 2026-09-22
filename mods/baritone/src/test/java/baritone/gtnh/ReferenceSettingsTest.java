@@ -61,6 +61,17 @@ public class ReferenceSettingsTest {
         assertFalse(Files.exists(settingsDirectory.resolve("settings.txt")));
     }
 
+    @Test public void blockListsAreCheckedAndAnUnsupportedWaterFallIsRefusedOutLoud(){
+        var settings=Baritone.settings();
+        assertThrows(IllegalArgumentException.class,()->ReferenceSettings.call(engine,Map.of("operation","set","values",Map.of("hazards",List.of("nomod:quicksand")))));
+        assertTrue(settings.hazards.value.contains("minecraft:web"));
+        ReferenceSettings.call(engine,Map.of("operation","set","values",Map.of("hazards",List.of("minecraft:fire","minecraft:wool:14"))));
+        assertEquals(List.of("minecraft:fire","minecraft:wool:14"),settings.hazards.value);
+        var refused=assertThrows(IllegalArgumentException.class,()->ReferenceSettings.call(engine,Map.of("operation","set","values",Map.of("allowWaterBucketFall",true))));
+        assertTrue(refused.getMessage().contains("provider"));
+        assertFalse(settings.allowWaterBucketFall.value);
+    }
+
     private static void installMinecraftDataDirectory(Path directory) throws Exception {
         Class<?> unsafeClass=Class.forName("sun.misc.Unsafe",true,ClassLoader.getSystemClassLoader());
         Field unsafeField=unsafeClass.getDeclaredField("theUnsafe");unsafeField.setAccessible(true);Object unsafe=unsafeField.get(null);

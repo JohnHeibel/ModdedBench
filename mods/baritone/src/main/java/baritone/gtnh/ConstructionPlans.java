@@ -50,7 +50,7 @@ final class ConstructionPlans {
     }
     static Map<String,Object> resolve(Map<String,Object> params) {
         if(!params.containsKey("planId"))return params;
-        if(!Set.of("planId","timeoutTicks","overrideProtection","allowBreak","allowPlace","_timeout_ms").containsAll(params.keySet()))throw new IllegalArgumentException("finished plan accepts only timeout and edit permission overrides");
+        if(!Set.of("planId","timeoutTicks","overrideProtection","allowBreak","allowPlace","stallTicks","_timeout_ms").containsAll(params.keySet()))throw new IllegalArgumentException("finished plan accepts only timeout, stallTicks and edit permission overrides");
         try {var manifest=read(path(string(params,"planId",""),".plan.json"));checkScope(manifest);var spec=assemble(manifest);for(var e:params.entrySet())if(!e.getKey().equals("planId"))spec.put(e.getKey(),e.getValue());return spec;}
         catch(java.io.IOException error){throw new IllegalArgumentException("plan unavailable",error);}
     }

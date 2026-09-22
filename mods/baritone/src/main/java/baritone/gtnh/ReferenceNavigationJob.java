@@ -34,13 +34,14 @@ final class ReferenceNavigationJob implements Navigation.Job {
     private final LinkedHashSet<String> movements=new LinkedHashSet<>();
     private final List<Map<String,Object>> segmentHistory=new ArrayList<>();
     private final boolean previousAllowBreak,previousAllowPlace;
+    private final baritone.gtnh.pathing.Stall stall=WorkAccess.stall(Map.of());
     ReferenceNavigationJob(Baritone engine,List<baritone.compat.BlockPos> goals,int timeout,boolean allowBreak,boolean allowPlace,boolean override,InputArbiter.Lease parent,baritone.compat.BlockPos corridorStart,double radius){
         this.engine=engine;this.timeout=timeout;this.allowBreak=allowBreak;this.allowPlace=allowPlace;this.override=override;
         physicalGoals=List.copyOf(goals);normalizedGoals=physicalGoals;
         refreshGoal();
         ownsLease=parent==null;
         previousAllowBreak=Baritone.settings().allowBreak.value;previousAllowPlace=Baritone.settings().allowPlace.value;
-        engine.getPathingBehavior().forceCancel();
+        engine.getPathingBehavior().forceCancel();BlockRules.reset();
         initialCalculations=engine.getPathingBehavior().calculationsStarted();initialSegments=engine.getPathingBehavior().segmentsCompleted();
         lease=ownsLease?ControlRegistry.controls().arbiter().acquire("baritone-reference",this::cancel,override,true):parent;
         if(!lease.isActive())throw new IllegalArgumentException("navigation lease is inactive");
@@ -64,11 +65,14 @@ final class ReferenceNavigationJob implements Navigation.Job {
     }
     void tick(){
         if(done())return;
+        if(WorkAccess.died(player)){finish("failed","player_died");return;}
         if(mc.theWorld!=world||mc.thePlayer!=player||!scope.equals(ControlRegistry.memory().memory().scope())){cancel("world_changed");return;}
         if(!lease.isActive()){cancel("control_lost");return;}
         if(mc.currentScreen!=null&&!dev.modbench.api.ControlRegistry.controls().ownsPlayerInventory(lease)){cancel("gui_open");return;}
-        if(mc.thePlayer.isDead||mc.thePlayer.getHealth()<=0){cancel("player_unavailable");return;}
         if(++ticks>timeout){finish("failed","timeout");return;}
+        // Travel has no measure but new ground: a planner pacing or re-planning on the same few blocks is stuck.
+        var feet=engine.getPlayerContext().playerFeet();
+        if(stall.tick(0,feet.x,feet.y,feet.z)){finish("failed",stall.reason());return;}
         // A destination can first become observable hundreds of blocks after
         // this job starts. Let the source process revalidate the corrected goal.
         if(refreshGoal())engine.getCustomGoalProcess().setGoalAndPath(goal);
@@ -102,7 +106,7 @@ final class ReferenceNavigationJob implements Navigation.Job {
         result.put("goal",goal.toString());result.put("controlOwned",!done()&&lease!=null&&lease.isActive());
         result.put("allowBreak",allowBreak);result.put("allowPlace",allowPlace);result.put("overrideProtection",override);
         result.put("calculations",calculations);result.put("segmentsCompleted",segmentsCompleted);result.put("segmentHistory",List.copyOf(segmentHistory));
-        result.put("pathRevisions",pathRevisions);
+        result.put("pathRevisions",pathRevisions);result.put("stall",stall.status());result.put("pathRules",BlockRules.applied());
         result.put("goalRenormalizations",goalRenormalizations);
         result.put("movementTypes",List.copyOf(movements));result.put("nextSegmentReady",p.getNext()!=null);result.put("planning",p.getInProgress().isPresent());
         result.put("safeToCancel",p.isSafeToCancel());result.put("pathIndex",current==null?null:current.getPosition());

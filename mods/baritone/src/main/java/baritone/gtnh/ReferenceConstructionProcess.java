@@ -25,8 +25,7 @@ final class ReferenceConstructionProcess extends BulkJob {
     private final Set<BlockPos> pending=new HashSet<>();
     private final Set<BlockPos> placedObserved=new HashSet<>(),removedObserved=new HashSet<>();
     private final Map<BlockPos,IBlockState.StateKey> previousObserved=new HashMap<>();
-    private int repeat,layer,passStarts,stallTicks;
-    private Object stallMark;
+    private int repeat,layer,passStarts;
     private boolean started;
     private List<List<Integer>> incorrect=List.of();
     private final Set<String> movements=new LinkedHashSet<>();
@@ -337,7 +336,9 @@ final class ReferenceConstructionProcess extends BulkJob {
         engine.getBuilderProcess().restoreProgress(layer,0);started=true;
     }
     @Override int progress(){return placedObserved.size()+removedObserved.size();}
-    @Override boolean stalled(){return false;} // the builder has its own stall rule above, and waits on the model when it pauses
+    // A cell nothing can be placed against, or one the player cannot leave, keeps the source builder at its goal or
+    // replanning for ever; the shared watchdog ends that. A pending placement or a block cleared is work too.
+    @Override long activity(){return java.util.Objects.hash(placedObserved.size(),removedObserved.size(),pending.size());}
     @Override String phase(){return "reference_build";}
     @Override void step(){
         if(!started)return;
@@ -401,11 +402,6 @@ final class ReferenceConstructionProcess extends BulkJob {
         if(mouse!=null)interaction.put("nativeHit",Map.of("type",mouse.typeOfHit.name(),"pos",List.of(mouse.blockX,mouse.blockY,mouse.blockZ),"side",mouse.sideHit));
         inspection=Map.of("interaction",interaction);
         var path=engine.getPathingBehavior().getCurrent();if(path!=null)path.getPath().movements().forEach(m->movements.add(m.getClass().getSimpleName()));
-        // A cell nothing can be placed against (no solid neighbour), or one the player cannot leave, keeps the source builder
-        // standing at its goal or replanning for ever. Fifteen seconds with no block changed and no step taken is that case.
-        Object mark=List.of(placedObserved.size(),removedObserved.size(),pending.size(),feet.x,feet.y,feet.z);
-        if(!mark.equals(stallMark)||engine.getInputOverrideHandler().isInputForcedDown(baritone.api.utils.input.Input.CLICK_LEFT)){stallMark=mark;stallTicks=0;}
-        else if(++stallTicks>=300){finish("paused","stalled_no_placement_possible_check_support_and_standing_cell");return;}
         state="building";
         if(ticks%20==0)journal.save(status());
     }
