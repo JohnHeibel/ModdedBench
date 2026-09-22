@@ -130,7 +130,7 @@ public final class ChunkPacker {
             return PathingBlockType.WATER;
         }
 
-        if (MovementHelper.avoidWalkingInto(block) || MovementHelper.isBottomSlab(state)) {
+        if (MovementHelper.avoidWalkingInto(state) || MovementHelper.isBottomSlab(state)) {
             return PathingBlockType.AVOID;
         }
         // We used to do an AABB check here
