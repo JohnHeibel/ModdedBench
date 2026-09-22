@@ -26,11 +26,14 @@ final class MiningTools {
     /** Why a stack must not be swung at all: it is empty, one use from breaking, or an uncharged tool. Nothing here guesses
      *  what a tool does by its class. Whether it can harvest a block and how fast is the game's own answer (best, below), and
      *  what one swing actually broke is measured by the job that swings it (a 3x3 hammer, a vein miner). */
-    /** Tools the running mining job measured breaking nothing the game said they break. The job fills and clears it. */
-    static final Set<net.minecraft.item.Item> ineffective=new HashSet<>();
+    /** Tools the running mining job measured breaking nothing the game said they break. The job fills and clears it.
+     *  A tool is its item and, when the item has subtypes (one GregTech item is every GregTech tool), its meta: durability
+     *  changes with every swing and must not make the same tool look new. */
+    static final Set<String> ineffective=new HashSet<>();
+    static String toolKind(ItemStack stack){return stack==null?"hand":net.minecraft.item.Item.itemRegistry.getNameForObject(stack.getItem())+(stack.getHasSubtypes()?":"+stack.getItemDamage():"");}
     static String rejected(ItemStack stack) {
         if(stack==null) return null;
-        if(ineffective.contains(stack.getItem())) return "measured_breaking_nothing";
+        if(ineffective.contains(toolKind(stack))) return "measured_breaking_nothing";
         if(stack.stackSize<=0) return "empty_stack";
         if(stack.hasTagCompound() && stack.getTagCompound().hasKey("InfiTool")) {
             var nbt=stack.getTagCompound().getCompoundTag("InfiTool");
