@@ -24,7 +24,7 @@ public final class BaritoneMod {
         net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(this);
     }
     @SubscribeEvent public void tick(TickEvent.ClientTickEvent event) {
-        if(event.phase==TickEvent.Phase.START){events.finishWorldTransition();navigation.tick();}
+        if(event.phase==TickEvent.Phase.START){events.finishWorldTransition();BlockShapes.answer();navigation.tick();}
         else navigation.afterTick();
     }
     @SubscribeEvent public void renderTick(TickEvent.RenderTickEvent event){

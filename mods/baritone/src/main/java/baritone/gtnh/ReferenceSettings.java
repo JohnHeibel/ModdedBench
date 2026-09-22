@@ -29,6 +29,8 @@ final class ReferenceSettings {
                 }
                 Object value=setting.value;
                 if(value instanceof Number n&&!Double.isFinite(n.doubleValue()))throw new IllegalArgumentException("finite setting required: "+key);
+                BlockRules.validate(key,value);
+                if(key.equals("allowwaterbucketfall")&&Boolean.TRUE.equals(value)&&!baritone.compat.FallProtection.registered())throw new IllegalArgumentException("allowWaterBucketFall needs a native water-placement provider, and this build has none");
                 if(key.startsWith("elytra")&&!Objects.equals(value,actual.byLowerName.get(key).value))throw new IllegalArgumentException("native runtime support is not implemented for "+key);
             }
             if(Boolean.TRUE.equals(params.get("save")))SettingsUtil.save(candidate);
