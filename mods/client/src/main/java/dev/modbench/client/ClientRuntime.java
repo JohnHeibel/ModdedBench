@@ -156,6 +156,7 @@ public final class ClientRuntime extends BridgeRuntime {
             requirePlayer();
             Navigation provider=NavigationRegistry.get();
             if(provider==null) throw new IllegalArgumentException("Baritone mod is not installed");
+            if(!r.params.has("x")||!r.params.has("y")||!r.params.has("z")) throw new IllegalArgumentException("x,y,z required");
             return provider.inspectFluid(Json.integer(r.params,"x",0,-30000000,30000000),Json.integer(r.params,"y",0,0,255),Json.integer(r.params,"z",0,-30000000,30000000));
         });
         register("obs.tools", "Every inventory slot against the block at {x,y,z}: the game's strength and harvest answer, eligibility and reason, toolsToAvoid and measured-ineffective flags, estimated ticks, and the one tool choice (bestSlot) every job uses; does not select or mine", "read", r -> {

@@ -57,6 +57,7 @@ public final class ServerRuntime extends BridgeRuntime {
         int dimension = Json.integer(r.params, "dimension", 0, -100000, 100000);
         WorldServer world = net.minecraftforge.common.DimensionManager.getWorld(dimension);
         if (world == null) throw new IllegalArgumentException("dimension not loaded");
+        if (!r.params.has("x") || !r.params.has("y") || !r.params.has("z")) throw new IllegalArgumentException("x,y,z required");
         int x = Json.integer(r.params, "x", 0, -30000000, 30000000), y = Json.integer(r.params, "y", 0, 0, 255);
         int z = Json.integer(r.params, "z", 0, -30000000, 30000000);
         if (!world.blockExists(x, y, z)) throw new IllegalArgumentException("chunk not loaded");
