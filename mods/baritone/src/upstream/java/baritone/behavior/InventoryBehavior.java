@@ -62,6 +62,7 @@ public final class InventoryBehavior extends Behavior implements Helper {
 
     @Override
     public void onTick(TickEvent event) {
+        ReferenceToolPolicy.answer();
         if(swap!=null){
             if(swap.tick()!=LegacyInventorySwap.Outcome.WAITING){swap=null;lastTickRequestedMove=null;requestedStack=null;selectionPending=false;}
             else {baritone.getInventoryPauserProcess().stationaryForInventoryMove();return;}

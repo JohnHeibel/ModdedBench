@@ -7,4 +7,8 @@ package baritone.gtnh;
 public final class ReferenceToolPolicy {
     private ReferenceToolPolicy() {}
     public static boolean eligible(net.minecraft.item.ItemStack stack){return MiningTools.rejected(stack)==null;}
+    /** The game's break strength for a stack against a block, or null when the game has not answered yet. */
+    public static Double strength(net.minecraft.item.ItemStack stack,baritone.compat.IBlockState state,boolean placed){return MiningTools.strength(stack,state.getBlock(),state.meta,state.x,state.y,state.z,placed);}
+    /** Called once per game tick, on the game thread. */
+    public static void answer(){MiningTools.answer();}
 }

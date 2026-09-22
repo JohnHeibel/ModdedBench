@@ -31,8 +31,10 @@ final class MiningProcess extends BulkJob {
     private final Set<BlockPos> plugged=new HashSet<>();
     private int unplugged;
     // What each swing broke besides the block it was aimed at. The job knows no tool by name, so a 3x3 hammer or a vein
-    // miner shows up here as a measurement, and a swing that took a protected block ends the job.
-    private record Swing(BlockPos target,net.minecraft.block.Block block,Map<BlockPos,net.minecraft.block.Block> around,int due){}
+    // miner shows up here as a measurement, and a swing that took a protected block ends the job. A swing is one unbroken
+    // hold of the attack on one block with one tool; start and limit time it against the game's own break estimate.
+    private record Swing(BlockPos target,net.minecraft.block.Block block,Map<BlockPos,net.minecraft.block.Block> around,int due,int start,net.minecraft.item.Item tool,int limit){}
+    private final List<Map<String,Object>> ineffective=new ArrayList<>();
     private Swing swing;
     private final List<Swing> settling=new ArrayList<>();
     private final Set<BlockPos> aimed=new HashSet<>();
@@ -59,6 +61,7 @@ final class MiningProcess extends BulkJob {
         super.begin();engine.getPathingBehavior().forceCancel();
         for(var setting:List.of(Baritone.settings().allowBreak,Baritone.settings().allowPlace,Baritone.settings().exploreForBlocks,Baritone.settings().legitMine,Baritone.settings().allowInventory))scopedSettings.put(setting,setting.value);
         Baritone.settings().allowInventory.value=true; // the best tool anywhere in the inventory, not only the hotbar
+        MiningTools.ineffective.clear();
         Baritone.settings().allowBreak.value=allowBreak;Baritone.settings().allowPlace.value=allowPlace;
         // This action has explicit observation bounds. Exploration is a separate
         // process, not permission to start a branch mine when its bounds empty.
@@ -147,7 +150,7 @@ final class MiningProcess extends BulkJob {
             dropsLeft=left;}
         finalGoal=String.valueOf(engine.getPathingBehavior().getGoal());
         engine.getPathingBehavior().forceCancel();engine.getInputOverrideHandler().release();
-        engine.explicitMiningTargets=()->s->false;Baritone.besideFluid=false;
+        engine.explicitMiningTargets=()->s->false;Baritone.besideFluid=false;MiningTools.ineffective.clear();
         refused=refused();
         scopedSettings.forEach(ReferenceSettings::copy);
     }
@@ -163,7 +166,7 @@ final class MiningProcess extends BulkJob {
         // Targets it will not break, and the fluid beside each: plug or drain that, or for water pass besideWater.
         out.put("refused",done()?refused:List.of());
         out.put("plugged",plugged.stream().map(MiningProcess::point).toList());out.put("plugFailures",unplugged);
-        out.put("blocksBroken",broken);out.put("extraBroken",extraBroken);out.put("extraBrokenAt",extraAt);out.put("dropsLeftInBounds",dropsLeft);
+        out.put("blocksBroken",broken);out.put("extraBroken",extraBroken);out.put("extraBrokenAt",extraAt);out.put("dropsLeftInBounds",dropsLeft);out.put("ineffectiveTools",ineffective);
         if(engine!=null){
             var current=engine.getPathingBehavior().getCurrent();
             out.put("goal",done()?finalGoal:String.valueOf(engine.getPathingBehavior().getGoal()));
@@ -173,27 +176,45 @@ final class MiningProcess extends BulkJob {
         out.put("completionMeaning","matching inventory gain, summed over this job's sessions (each measured from its own start)");return out;
     }
     /** Watch the block under the pick; a few ticks after it goes (the server's word on what else broke arrives late),
-     *  count every neighbour that went with it. True when the job has ended here. */
+     *  count every solid neighbour that went with it. A tool the game says breaks the block, held on it three times as long
+     *  as the game's own estimate with nothing broken, is measured useless for the rest of the job: every tool choice skips
+     *  it and the receipt names it. True when the job has ended here. */
     private boolean measure(){
-        if(swing!=null&&world.getBlock(swing.target().getX(),swing.target().getY(),swing.target().getZ())!=swing.block()){
-            broken++;settling.add(new Swing(swing.target(),swing.block(),swing.around(),ticks+5));swing=null;}
+        var over=mc.objectMouseOver;var held=mc.thePlayer.getHeldItem();var tool=held==null?null:held.getItem();
+        BlockPos aim=engine.getInputOverrideHandler().isInputForcedDown(baritone.api.utils.input.Input.CLICK_LEFT)&&over!=null
+            &&over.typeOfHit==net.minecraft.util.MovingObjectPosition.MovingObjectType.BLOCK?new BlockPos(over.blockX,over.blockY,over.blockZ):null;
+        if(swing!=null){
+            var t=swing.target();
+            if(world.getBlock(t.getX(),t.getY(),t.getZ())!=swing.block()){broken++;settling.add(new Swing(t,swing.block(),swing.around(),ticks+5,swing.start(),swing.tool(),0));swing=null;}
+            else if(aim==null||!aim.equals(t)||tool!=swing.tool())swing=null; // let go, looked away or changed tool: that swing ended short
+            else if(ticks-swing.start()>swing.limit()){
+                if(tool!=null&&MiningTools.ineffective.add(tool)&&ineffective.size()<8)ineffective.add(Map.of("tool",String.valueOf(net.minecraft.item.Item.itemRegistry.getNameForObject(tool)),
+                    "block",String.valueOf(net.minecraft.block.Block.blockRegistry.getNameForObject(swing.block())),"at",point(t),"heldTicks",ticks-swing.start()));
+                swing=null;return false;
+            }
+        }
         for(var it=settling.iterator();it.hasNext();){
             var s=it.next();if(s.due()>ticks)continue;it.remove();
             for(var e:s.around().entrySet()){
-                var q=e.getKey();var now=world.getBlock(q.getX(),q.getY(),q.getZ());
-                if(now==e.getValue()||now.getMaterial()!=net.minecraft.block.material.Material.air||aimed.contains(q)||e.getValue() instanceof net.minecraft.block.BlockFalling)continue;
+                var q=e.getKey();var now=world.getBlock(q.getX(),q.getY(),q.getZ());var was=e.getValue();
+                // A torch or snow layer that dropped when its support went, or gravel that fell, was not broken by the tool.
+                if(now==was||now.getMaterial()!=net.minecraft.block.material.Material.air||aimed.contains(q)||was instanceof net.minecraft.block.BlockFalling||!was.getMaterial().blocksMovement())continue;
                 extraBroken++;if(extraAt.size()<16)extraAt.add(point(q));
                 if(WorkAccess.protection(q,override)!=null){finish("failed","tool_broke_protected_block_at_"+q.getX()+","+q.getY()+","+q.getZ());return true;}
             }
         }
-        var over=mc.objectMouseOver;
-        if(swing!=null||!engine.getInputOverrideHandler().isInputForcedDown(baritone.api.utils.input.Input.CLICK_LEFT)||over==null||over.typeOfHit!=net.minecraft.util.MovingObjectPosition.MovingObjectType.BLOCK)return false;
-        var p=new BlockPos(over.blockX,over.blockY,over.blockZ);Map<BlockPos,net.minecraft.block.Block> around=new HashMap<>();
+        if(swing!=null||aim==null)return false;
+        Map<BlockPos,net.minecraft.block.Block> around=new HashMap<>();
         for(int dx=-1;dx<=1;dx++)for(int dy=-1;dy<=1;dy++)for(int dz=-1;dz<=1;dz++){
-            var b=world.getBlock(p.getX()+dx,p.getY()+dy,p.getZ()+dz);
-            if((dx|dy|dz)!=0&&b.getMaterial()!=net.minecraft.block.material.Material.air)around.put(new BlockPos(p.getX()+dx,p.getY()+dy,p.getZ()+dz),b);}
-        if(aimed.size()>4096)aimed.clear();aimed.add(p);
-        swing=new Swing(p,world.getBlock(p.getX(),p.getY(),p.getZ()),around,0);return false;
+            var b=world.getBlock(aim.getX()+dx,aim.getY()+dy,aim.getZ()+dz);
+            if((dx|dy|dz)!=0&&b.getMaterial()!=net.minecraft.block.material.Material.air)around.put(new BlockPos(aim.getX()+dx,aim.getY()+dy,aim.getZ()+dz),b);}
+        if(aimed.size()>4096)aimed.clear();aimed.add(aim);
+        var block=world.getBlock(aim.getX(),aim.getY(),aim.getZ());
+        double expected=MiningTools.breakTicks(block.getPlayerRelativeBlockHardness(mc.thePlayer,world,aim.getX(),aim.getY(),aim.getZ()));
+        // Only a break the game promised can fail: an unbreakable block, or one in a region the harness refuses to edit,
+        // stays for reasons that say nothing about the tool.
+        int limit=Double.isInfinite(expected)||WorkAccess.protection(aim,override)!=null?Integer.MAX_VALUE:(int)Math.min(72000,Math.max(60,3*expected+20));
+        swing=new Swing(aim,block,around,0,ticks,tool,limit);return false;
     }
     private boolean wet(BlockPos p){
         for(int[] d:new int[][]{{0,1,0},{1,0,0},{-1,0,0},{0,0,1},{0,0,-1}})if(world.getBlock(p.getX()+d[0],p.getY()+d[1],p.getZ()+d[2]).getMaterial().isLiquid())return true;

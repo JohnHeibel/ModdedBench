@@ -680,6 +680,13 @@ can defend yourself, keep food varied and stocked, keep the guards armed.
   and look up its ingredients the same way until you reach things you hold.
   Once a recipe has worked, write an item note so you never look it up twice.
   A failed craft from an unchecked recipe is wasted time you chose to waste.
+- Assume nothing from vanilla, anywhere. Not only recipes: which tools mine
+  what (a vanilla pickaxe may mine nothing here), how hard blocks are, what
+  drops, what mobs do, how machines, fluids and farming behave. When something
+  does not behave as you expected, suspect the pack before the tool, look it
+  up, and write down what the game actually did. The same holds for harness
+  code you write: nothing in it may take vanilla behaviour for granted. Ask
+  the game, measure what happened, and record it.
 - The fairness line in section 3 is a rule: no primitive may reveal what the
   game has not shown this player.
 - Do not spend real hours producing nothing. Progress is measured by outcomes,

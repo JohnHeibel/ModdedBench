@@ -19,6 +19,8 @@ public final class IBlockState {
     private boolean approximateMaterial;
     public IBlockState(Block block,int meta,IBlockAccess access,int x,int y,int z){this.block=java.util.Objects.requireNonNull(block);this.meta=meta;this.access=access;this.x=x;this.y=y;this.z=z;}
     public Block getBlock(){return block;}
+    /** True when this state was read at a real position, so position-dependent answers apply. */
+    public boolean hasAccess(){return access!=null;}
     public Material getMaterial(){return block.getMaterial();}
     public static IBlockState of(Block block,int meta){return new IBlockState(block,meta,null,0,0,0);}
     public IBlockState withPlacementItem(net.minecraft.item.ItemStack item){IBlockState state=new IBlockState(block,meta,access,x,y,z);state.placementItem=item==null?null:item.copy();state.placementIdentity=StackIdentity.capture(item);return state;}

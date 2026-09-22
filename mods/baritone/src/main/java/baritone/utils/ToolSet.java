@@ -75,6 +75,9 @@ public final class ToolSet {
         return level<0?stack.func_150998_b(state.getBlock()):level>=state.getBlock().getHarvestLevel(state.meta);
     }
     public static double calculateSpeedVsBlock(ItemStack stack,IBlockState state){
+        // The game's own answer when it has given one: a pack rewrites break speed in events this formula cannot see.
+        Double game=baritone.gtnh.ReferenceToolPolicy.strength(stack,state,state.hasAccess());
+        if(game!=null) return game;
         float hardness;
         try{hardness=state.getBlock().getBlockHardness(null,state.x,state.y,state.z);}
         catch(RuntimeException unsupported){return 0;} // Position-dependent hardness needs a captured native cost; never invent one.
