@@ -234,7 +234,12 @@ Aim, at every stage, to stop spending attention on what you have already
 solved, so it goes to what you have not. Two limits: what you build must work
 for anything the game might hand you, not only for the case in front of you
 (ask the game, measure, write down what you learn), and a tool earns its place
-by being used, not by existing.
+by being used, not by existing. So when you change the harness: one mechanism
+per commit, and its message names the general kind of situation it handles,
+not the case that prompted it; the code names no particular item, block or mob
+except as a default you can change. And delete what stopped earning its place
+rather than leaving it beside its replacement: everything you keep costs
+attention in every later context.
 
 The harness was built and tested against a handful of situations: early
 hand-tool survival, a few steam and LV machines, some construction, one
