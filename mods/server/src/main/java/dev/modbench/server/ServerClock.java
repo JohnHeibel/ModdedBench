@@ -31,7 +31,14 @@ public final class ServerClock implements ClockHooks.Driver, PauseCoordinator.Ho
     private NetHandlerPlayServer client;
     private long lastHeartbeat;
 
-    public ServerClock(MinecraftServer server, ServerRuntime runtime) { this.server=server;this.runtime=runtime; }
+    public ServerClock(MinecraftServer server, ServerRuntime runtime) { this.server=server;this.runtime=runtime;net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(this); }
+    /** The damage type of the agent's own hurt exists on the server only; a player learns it from what hit them and the death message. */
+    @cpw.mods.fml.common.eventhandler.SubscribeEvent public void hurt(net.minecraftforge.event.entity.living.LivingHurtEvent event) {
+        if(client==null||event.entityLiving!=client.playerEntity) return;
+        var by=event.source.getEntity();
+        send(Json.object("type","hurt","damageType",event.source.getDamageType(),"amount",event.ammount,
+            "by",by==null?"":by instanceof net.minecraft.entity.player.EntityPlayer?"player":String.valueOf(net.minecraft.entity.EntityList.getEntityString(by))));
+    }
     private boolean connected() { return client!=null && client.netManager.isChannelOpen(); }
     @Override public boolean clientConnected() { return connected(); }
     @Override public void decorate(JsonObject status) { status.addProperty("worldId",WorldIdentity.get(server.worldServers[0])); }
