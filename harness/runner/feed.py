@@ -92,7 +92,7 @@ class Feed:
         with open(self.folder / "feed.jsonl", "a", encoding="utf-8") as f: f.write(json.dumps({"ts": time.time(), "kind": kind, "text": text, **more}) + "\n")
 
     def billed(self):
-        """Input tokens so far: exact for finished turns, estimated for the one running."""
+        """Input tokens so far, cached ones included: exact for finished turns, estimated for the one running."""
         t = self.live["stats"]["tokens"]; return t["input"] + t.get("uncounted", 0) + t.get("estimated", 0)
     def status(self, state, text=""):
         """thinking | acting | waiting | between_turns | game_down | backing_off | ended"""

@@ -4,7 +4,7 @@
 
 MCP cannot push, so inside a turn the agent blocks in ``mb_wait``; this loop only restarts a turn that
 ended. A turn is not a unit of the run: Codex is told not to stop, one turn can last hours, and a new turn is
-recovery after it did. The run's size is ``--max-minutes`` and ``--max-tokens`` (billed input tokens, estimated
+recovery after it did. The run's size is ``--max-minutes`` and ``--max-tokens`` (input tokens including cached ones, about 100k a call once the context is full; estimated
 while a turn runs from what has streamed, exact at its end), enforced mid-turn by ending the Codex process; the
 thread stays resumable. It also stops on a ``MISSION COMPLETE`` line in a turn's last message, on
 ``<repo>/.state/STOP``, after ``--max-turns``, or after 12 failed turns in a row: the wait after a failure grows from 30 s to an hour, so a
@@ -150,7 +150,7 @@ def main(argv=None):
     ap.add_argument("--repo", default=str(REPO)); ap.add_argument("--prompt"); ap.add_argument("--state")
     ap.add_argument("--max-turns", type=int, default=50)
     ap.add_argument("--max-minutes", type=float, help="wall-clock budget for this start; the turn is ended where it stands")
-    ap.add_argument("--max-tokens", type=int, help="billed input tokens for this start, estimated mid-turn")
+    ap.add_argument("--max-tokens", type=int, help="input tokens for this start, cached ones included (~100k a call at full context), estimated mid-turn")
     a = ap.parse_args(argv[:argv.index("--")] if "--" in argv else argv)
     reason = run(a.repo, a.prompt, a.max_turns, a.state, extra=extra, max_minutes=a.max_minutes, max_tokens=a.max_tokens)
     print("codex_loop: " + reason); return 0 if reason in ("complete", "stop_file") else 1
