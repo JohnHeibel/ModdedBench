@@ -51,6 +51,9 @@ public final class Settings {
     /** ModdedBench extension: additional modded blocks retained in the terrain index. */
     public final Setting<java.util.List<net.minecraft.block.Block>> blocksToTrackInCache = new Setting<>(new java.util.ArrayList<>());
 
+    /** ModdedBench extension: ticks a work job may go with no progress and no new ground before it stops as stalled; 0 is off. A job's stallTicks param overrides it. */
+    public final Setting<Integer> stallTicks = new Setting<>(800);
+
     /**
      * Allow Baritone to break blocks
      */
