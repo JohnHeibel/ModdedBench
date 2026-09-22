@@ -13,7 +13,6 @@ import java.util.Map;
 import java.util.HashMap;
 import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
-import net.minecraft.init.Blocks;
 import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.world.World;
 import net.minecraft.util.Vec3;
@@ -71,8 +70,8 @@ final class ForgeSnapshot {
         if (!loaded(world,x,y,z)) return simple(TerrainGrid.UNKNOWN);
         Block b=world.getBlock(x,y,z);
         if (ForgeFluids.water(b)) return simple(TerrainGrid.WATER);
-        if (ForgeFluids.fluid(b) || b==Blocks.fire || b==Blocks.cactus
-                || b==Blocks.web || b==Blocks.soul_sand) return simple(TerrainGrid.HAZARD);
+        // Fluids are asked of Forge; every other hazard is the model's hazards setting.
+        if (ForgeFluids.fluid(b) || BlockRules.hazard(baritone.compat.IBlockState.of(b,world.getBlockMetadata(x,y,z)))) return simple(TerrainGrid.HAZARD);
         List<AxisAlignedBB> boxes=new ArrayList<>();
         b.addCollisionBoxesToList(world,x,y,z,AxisAlignedBB.getBoundingBox(x-1,y-1,z-1,x+2,y+3,z+2),boxes,Minecraft.getMinecraft().thePlayer);
         List<CollisionBox> copied=boxes.stream().map(box->new CollisionBox(box.minX,box.minY,box.minZ,box.maxX,box.maxY,box.maxZ)).toList();
