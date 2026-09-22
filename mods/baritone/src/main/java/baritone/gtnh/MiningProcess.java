@@ -33,7 +33,7 @@ final class MiningProcess extends BulkJob {
     // What each swing broke besides the block it was aimed at. The job knows no tool by name, so a 3x3 hammer or a vein
     // miner shows up here as a measurement, and a swing that took a protected block ends the job. A swing is one unbroken
     // hold of the attack on one block with one tool; start and limit time it against the game's own break estimate.
-    private record Swing(BlockPos target,net.minecraft.block.Block block,Map<BlockPos,net.minecraft.block.Block> around,int due,int start,net.minecraft.item.Item tool,int limit){}
+    private record Swing(BlockPos target,net.minecraft.block.Block block,Map<BlockPos,net.minecraft.block.Block> around,int due,int start,String tool,int limit){}
     private final List<Map<String,Object>> ineffective=new ArrayList<>();
     private Swing swing;
     private final List<Swing> settling=new ArrayList<>();
@@ -180,15 +180,15 @@ final class MiningProcess extends BulkJob {
      *  as the game's own estimate with nothing broken, is measured useless for the rest of the job: every tool choice skips
      *  it and the receipt names it. True when the job has ended here. */
     private boolean measure(){
-        var over=mc.objectMouseOver;var held=mc.thePlayer.getHeldItem();var tool=held==null?null:held.getItem();
+        var over=mc.objectMouseOver;var held=mc.thePlayer.getHeldItem();var tool=held==null?null:MiningTools.toolKind(held);
         BlockPos aim=engine.getInputOverrideHandler().isInputForcedDown(baritone.api.utils.input.Input.CLICK_LEFT)&&over!=null
             &&over.typeOfHit==net.minecraft.util.MovingObjectPosition.MovingObjectType.BLOCK?new BlockPos(over.blockX,over.blockY,over.blockZ):null;
         if(swing!=null){
             var t=swing.target();
             if(world.getBlock(t.getX(),t.getY(),t.getZ())!=swing.block()){broken++;settling.add(new Swing(t,swing.block(),swing.around(),ticks+5,swing.start(),swing.tool(),0));swing=null;}
-            else if(aim==null||!aim.equals(t)||tool!=swing.tool())swing=null; // let go, looked away or changed tool: that swing ended short
+            else if(aim==null||!aim.equals(t)||!Objects.equals(tool,swing.tool()))swing=null; // let go, looked away or changed tool: that swing ended short
             else if(ticks-swing.start()>swing.limit()){
-                if(tool!=null&&MiningTools.ineffective.add(tool)&&ineffective.size()<8)ineffective.add(Map.of("tool",String.valueOf(net.minecraft.item.Item.itemRegistry.getNameForObject(tool)),
+                if(tool!=null&&MiningTools.ineffective.add(tool)&&ineffective.size()<8)ineffective.add(Map.of("tool",tool,
                     "block",String.valueOf(net.minecraft.block.Block.blockRegistry.getNameForObject(swing.block())),"at",point(t),"heldTicks",ticks-swing.start()));
                 swing=null;return false;
             }
