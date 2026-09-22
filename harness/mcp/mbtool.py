@@ -175,32 +175,6 @@ def compact(obj: Any, max_len: int = 4000) -> Any:
     return obj
 
 
-def digest() -> str | None:
-    """You, after an action, in one batched read: what the HUD and F3 show, on one line. None when there is no world to read.
-
-    Every action's receipt carries it as ``you`` so the model learns outcome and state together
-    instead of polling obs.player and obs.inventory after each call.
-    """
-    k = state.get("kernel")
-    if k is None or not getattr(k, "connected", False): return None
-    try:
-        got = k.call("obs.batch", timeout=5, queries={"p": {"method": "obs.player"}, "w": {"method": "obs.world"},
-                                                  "i": {"method": "obs.inventory", "params": {"detail": "counts"}}})
-        v = got.get("values") or {}; p, w, i = v.get("p") or {}, v.get("w") or {}, v.get("i") or {}
-    except Exception:
-        return None
-    if not p or not isinstance(p.get("pos"), list): return None
-    held = p.get("held") or {}
-    parts = ["at " + ",".join(str(round(c, 1)) for c in p["pos"]) + (f" dim {p['dimension']}" if p.get("dimension") else ""),
-             f"hp {p.get('health')} food {p.get('food')}" + (f" air {p['air']}" if p.get("air", 300) < 300 else ""),
-             f"holding {held.get('name')} x{held.get('count')}" if held else "empty hand",
-             f"{i.get('emptySlots')} slots free" if i.get("emptySlots") is not None else ""]
-    if isinstance(w.get("time"), (int, float)):
-        t = int(w["time"]); parts.append(f"day {t // 24000} {((t % 24000) // 1000 + 6) % 24:02d}:{(t % 1000) * 60 // 1000:02d}")
-    parts += [f for f in ("burning", "inWater", "sneaking") if p.get(f)] + (["gui open"] if p.get("gui") else [])
-    return " | ".join(x for x in parts if x)
-
-
 def cached(fn):
     """Per-process memo for expensive registry reads (cleared on module reload)."""
     return functools.lru_cache(maxsize=32)(fn)
