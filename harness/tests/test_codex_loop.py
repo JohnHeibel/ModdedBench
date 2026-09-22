@@ -15,7 +15,9 @@ seen = json.loads(calls.read_text()) if calls.exists() else []
 plan = json.loads((here / "plan.json").read_text()); step = plan[min(len(seen), len(plan) - 1)]
 seen.append({"argv": sys.argv[1:], "stdin": sys.stdin.read()}); calls.write_text(json.dumps(seen))
 print("not json")
-for event in step.get("events", []): print(json.dumps(event))
+for event in step.get("events", []):
+    print(json.dumps(event), flush=True)
+    if event.get("sleep"): import time; time.sleep(event["sleep"])
 if step.get("stop"): (here / ".state" / "STOP").write_text("")
 sys.exit(step.get("exit", 0))
 """
@@ -36,6 +38,15 @@ class CodexLoopTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             reason = codex_loop.run(self.repo, codex=[sys.executable, str(self.repo / "fake.py")], backoff_s=0, **{"ready": lambda: True, **kw})
         return reason, json.loads((self.repo / "calls.json").read_text())
+
+    def test_token_budget_ends_the_turn_where_it_stands_and_the_thread_resumes(self):
+        call = {"type": "item.completed", "item": {"id": "c", "type": "mcp_tool_call", "tool": "mb_obs", "arguments": {}, "result": {"content": [{"type": "text", "text": "x" * 4000}]}}}
+        reason, calls = self.loop([{"events": [{"type": "thread.started", "thread_id": "T-1"}, *[dict(call) for _ in range(4)], {"sleep": 30}, message("never")]}], max_tokens=3000)
+        self.assertEqual("token_budget", reason); self.assertEqual(1, len(calls))
+        self.assertEqual({"thread": "T-1"}, json.loads((self.repo / ".state" / "codex-loop.json").read_text()))
+        self.assertTrue((self.repo / ".state" / "codex-loop.log").read_text().splitlines()[-1].endswith("budget: token_budget"))
+        reason, calls = self.loop([{"events": [{"type": "thread.started", "thread_id": "T-1"}, {"type": "turn.completed", "usage": {"input_tokens": 5}}, message("MISSION COMPLETE")]}], max_minutes=0.0001)
+        self.assertEqual("time_budget", reason)  # a spent clock is checked before a turn starts as well
 
     def test_captures_thread_id_resumes_and_stops_on_mission_complete_line(self):
         reason, calls = self.loop([

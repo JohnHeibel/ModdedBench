@@ -73,7 +73,8 @@ class Feed:
     def __init__(self, folder):
         self.folder = Path(folder); self.folder.mkdir(parents=True, exist_ok=True)
         self.live = {"goal": {}, "status": {}, "stats": {"startedAt": time.time(), "turns": 0, "calls": 0, "failed": 0, "scripts": 0, "claims": 0,
-                                                       "tokens": {"input": 0, "cached": 0, "output": 0}}}
+                                                       "tokens": {"input": 0, "cached": 0, "output": 0, "estimated": 0}}}
+        self.context = 0  # characters Codex has been shown this turn, for the estimate below
         try: self.live.update(json.loads((self.folder / "live.json").read_text(encoding="utf-8")))  # a restarted loop keeps the run's totals
         except (OSError, ValueError): pass
 
@@ -87,6 +88,9 @@ class Feed:
         if not text: return
         with open(self.folder / "feed.jsonl", "a", encoding="utf-8") as f: f.write(json.dumps({"ts": time.time(), "kind": kind, "text": text, **more}) + "\n")
 
+    def billed(self):
+        """Input tokens so far: exact for finished turns, estimated for the one running."""
+        t = self.live["stats"]["tokens"]; return t["input"] + t.get("estimated", 0)
     def status(self, state, text=""):
         """thinking | acting | waiting | between_turns | game_down | backing_off | ended"""
         self.live["status"] = {"state": state, "text": text, "since": time.time()}; self._save()
@@ -94,12 +98,19 @@ class Feed:
     def event(self, e):
         kind, item = e.get("type"), e.get("item") if isinstance(e.get("item"), dict) else {}
         stats, what = self.live["stats"], item.get("type")
-        if kind == "turn.started": stats["turns"] += 1; self.status("thinking")
+        if kind == "turn.started": stats["turns"] += 1; self.context = 0; self.status("thinking")
         elif kind == "turn.completed":
             u = e.get("usage") or {}
             for key, field in (("input", "input_tokens"), ("cached", "cached_input_tokens"), ("output", "output_tokens")): stats["tokens"][key] += int(u.get(field) or 0)
+            stats["tokens"]["estimated"] = 0  # the exact count has replaced it
             self.status("between_turns")
-        elif kind == "item.started" and what == "mcp_tool_call":
+        if kind == "item.completed" and what in ("mcp_tool_call", "agent_message", "reasoning", "command_execution"):
+            # Codex reports usage only when a turn ends, and a turn can last hours. Every call is billed for the whole context
+            # again (mostly cached), so the bill grows with context x calls: this estimate is that sum, with the context
+            # held at the size Codex compacts it to. Roughly right for gpt-6 (~4 characters a token); the turn's end corrects it.
+            self.context = min(self.context + len(json.dumps(item, default=str)) // 4, 120000)
+            stats["tokens"]["estimated"] += self.context
+        if kind == "item.started" and what == "mcp_tool_call":
             self.status("waiting" if item.get("tool") == "mb_wait" else "acting", line(item.get("tool", ""), item.get("arguments"), None))
         elif kind == "item.started" and what == "command_execution": self.status("acting", "shell")
         elif kind == "item.completed" and what == "agent_message": self.add("say", str(item.get("text", "")).strip()[:600])
