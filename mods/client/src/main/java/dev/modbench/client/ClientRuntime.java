@@ -117,7 +117,7 @@ public final class ClientRuntime extends BridgeRuntime {
         });
         register("obs.world", "Client world and connection state", "read", r -> world());
         register("obs.inventory", "Player slots 0..35, armor, cursor and exact identities {detail:full|compact|counts}; totals keep NBT variants separate", "read", r -> ui.view.inventory(Json.string(r.params,"detail","full")));
-        register("obs.block", "One loaded block {x,y,z}", "read", r -> block(r));
+        register("obs.block", "One loaded block {x,y,z}: id, meta, hardness, harvest tool/level, tile, and picked (the pick-block item: its identity as the game names it)", "read", r -> block(r));
         register("obs.container", "Screen/container epoch, slots, geometry and widgets {detail:summary|full|compact,probeSlot?:observed source index}; probe reports native slot acceptance/capacity without picking up items", "read", r -> {ui.view.require(r.params);return ui.view.container(Json.string(r.params,"detail","summary"),r.params.has("probeSlot")?Json.integer(r.params,"probeSlot",0,0,4095):-1);});
         register("obs.gui", "Current screen class and dimensions", "read", r -> gui());
         register("obs.keys", "Registered key bindings", "read", r -> bindings());
@@ -349,7 +349,14 @@ public final class ClientRuntime extends BridgeRuntime {
         return Json.object("pos", Json.array(x, y, z), "id", Block.blockRegistry.getNameForObject(b),
             "meta", meta, "hardness", b.getBlockHardness(mc.theWorld, x, y, z),
             "harvestTool", b.getHarvestTool(meta), "harvestLevel", b.getHarvestLevel(meta),
-            "hasTile", mc.theWorld.getTileEntity(x, y, z) != null);
+            "hasTile", mc.theWorld.getTileEntity(x, y, z) != null, "picked", picked(b, x, y, z));
+    }
+    /** What pick-block (middle click) gives here: a block's identity as the game names it, which for GregTech ores and
+     *  machines lives in the tile entity rather than the meta. Null when the block picks nothing. */
+    private JsonObject picked(Block b, int x, int y, int z) {
+        try {
+            return stack(b.getPickBlock(new net.minecraft.util.MovingObjectPosition(x, y, z, 1, net.minecraft.util.Vec3.createVectorHelper(x + .5, y + .5, z + .5)), mc.theWorld, x, y, z, mc.thePlayer));
+        } catch (RuntimeException | LinkageError failed) {return null;}
     }
 
     private JsonObject gui() {

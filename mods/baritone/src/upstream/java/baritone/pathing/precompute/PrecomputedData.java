@@ -97,9 +97,10 @@ public class PrecomputedData {
         }
 
         if ((blockData & CAN_WALK_THROUGH_SPECIAL_MASK) != 0) {
-            return MovementHelper.canWalkThroughPosition(bsi, x, y, z, state);
+            return MovementHelper.canWalkThroughPosition(bsi, x, y, z, state) && !baritone.gtnh.BlockIdentity.avoidedAt(state);
         } else {
-            return (blockData & CAN_WALK_THROUGH_MASK) != 0;
+            // ModdedBench: a blocksToAvoid entry by picked identity is per position, never in this per-state cache.
+            return (blockData & CAN_WALK_THROUGH_MASK) != 0 && !baritone.gtnh.BlockIdentity.avoidedAt(state);
         }
     }
 

@@ -123,7 +123,7 @@ public interface MovementHelper extends ActionCosts, Helper {
     static boolean canWalkThrough(BlockStateInterface bsi, int x, int y, int z, IBlockState state) {
         Ternary canWalkThrough = canWalkThroughBlockState(state);
         if (canWalkThrough == YES) {
-            return true;
+            return !baritone.gtnh.BlockIdentity.avoidedAt(state);
         }
         if (canWalkThrough == NO) {
             return false;
@@ -140,7 +140,7 @@ public interface MovementHelper extends ActionCosts, Helper {
         if (block == Blocks.FIRE || block == Blocks.TRIPWIRE || block == Blocks.WEB || block == Blocks.END_PORTAL || block == Blocks.COCOA || block instanceof BlockSkull || block instanceof BlockTrapDoor || block == Blocks.END_ROD) {
             return NO;
         }
-        if (Baritone.settings().blocksToAvoid.value.contains(block)) {
+        if (baritone.gtnh.BlockIdentity.avoidedState(state)) {
             return NO;
         }
         if (block instanceof BlockDoor || block instanceof BlockFenceGate) {

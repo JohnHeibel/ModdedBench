@@ -218,9 +218,10 @@ public final class Settings {
     )));
 
     /**
-     * Blocks that Baritone will attempt to avoid (Used in avoidance)
+     * Blocks that Baritone will attempt to avoid (Used in avoidance). ModdedBench: each entry is modid:block, modid:block:meta,
+     * or item=modid:item[:damage] for what pick-block returns there (GregTech ores and machines keep identity in the tile entity).
      */
-    public final Setting<List<Block>> blocksToAvoid = new Setting<>(new ArrayList<>(
+    public final Setting<List<String>> blocksToAvoid = new Setting<>(new ArrayList<>(
             // Leave Empty by Default
     ));
 

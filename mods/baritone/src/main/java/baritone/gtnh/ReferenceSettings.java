@@ -29,6 +29,7 @@ final class ReferenceSettings {
                 }
                 Object value=setting.value;
                 if(value instanceof Number n&&!Double.isFinite(n.doubleValue()))throw new IllegalArgumentException("finite setting required: "+key);
+                if(key.equals("blockstoavoid"))BlockIdentity.entries(castStrings(value)); // unknown ids fail here, not silently in a path search
                 if(key.startsWith("elytra")&&!Objects.equals(value,actual.byLowerName.get(key).value))throw new IllegalArgumentException("native runtime support is not implemented for "+key);
             }
             if(Boolean.TRUE.equals(params.get("save")))SettingsUtil.save(candidate);
@@ -42,6 +43,7 @@ final class ReferenceSettings {
         }
         return Map.of("settings",result,"engine","baritone-1.2.19-source-port","scope","client runtime; declarations alone do not imply that every optional process or renderer is implemented");
     }
+    @SuppressWarnings("unchecked") private static List<String> castStrings(Object value){return (List<String>)value;}
     @SuppressWarnings({"rawtypes","unchecked"}) static void copy(Settings.Setting setting,Object value){setting.value=value;}
     static String text(Object value){
         if(value instanceof Map<?,?> map)return map.entrySet().stream().map(e->text(e.getKey())+"->"+text(e.getValue())).collect(java.util.stream.Collectors.joining(","));
