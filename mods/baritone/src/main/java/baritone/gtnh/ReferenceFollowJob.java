@@ -23,14 +23,16 @@ final class ReferenceFollowJob implements Navigation.Job {
     private final int duration;
     private final InputArbiter.Lease lease;
     private String state="following",reason="";
-    private int ticks;
+    private int ticks,near;
+    private final int radius;
+    private final baritone.gtnh.pathing.Stall stall;
     private List<Integer> targets=List.of();
     private final Set<String> movements=new LinkedHashSet<>();
     ReferenceFollowJob(Baritone engine,Map<String,Object> params){
         this.engine=engine;
         duration=integer(params,"durationTicks",1200,1,72000);
         Predicate<Entity> filter=selector(child(params,"target"));
-        int radius=integer(params,"radius",Baritone.settings().followRadius.value,0,64);
+        radius=integer(params,"radius",Baritone.settings().followRadius.value,0,64);stall=WorkAccess.stall(params);
         double offset=number(params,"offsetDistance",Baritone.settings().followOffsetDistance.value,0,64);
         float direction=(float)number(params,"offsetDirection",Baritone.settings().followOffsetDirection.value,-360000,360000);
         boolean override=bool(params,"overrideProtection",false);
@@ -54,13 +56,16 @@ final class ReferenceFollowJob implements Navigation.Job {
     }
     void tick(){
         if(done())return;
+        if(WorkAccess.died(player)){finish("failed","player_died");return;}
         if(mc.theWorld!=world||mc.thePlayer!=player||!scope.equals(ControlRegistry.memory().memory().scope())){cancel("world_changed");return;}
         if(!lease.isActive()){cancel("control_lost");return;}
         if(mc.currentScreen!=null&&!ControlRegistry.controls().ownsPlayerInventory(lease)){cancel("gui_open");return;}
-        if(mc.thePlayer.isDead||mc.thePlayer.getHealth()<=0){cancel("player_unavailable");return;}
         if(!engine.getFollowProcess().isActive()){finish("failed","no_loaded_matching_entity");return;}
         targets=engine.getFollowProcess().following().stream().map(Entity::getEntityId).toList();
         if(ticks++>=duration){finish("succeeded","follow_duration_complete");return;}
+        // Standing beside a target that stands still is following it: each tick within reach of one counts as work.
+        if(engine.getFollowProcess().following().stream().anyMatch(e->e.getDistanceToEntity(mc.thePlayer)<=radius+2))near++;
+        if(stall.tick(near,(int)Math.floor(mc.thePlayer.posX),(int)Math.floor(mc.thePlayer.boundingBox.minY+.001),(int)Math.floor(mc.thePlayer.posZ))){finish(stall.advanced()?"paused":"failed",stall.reason());return;}
         engine.tickStart();
         var path=engine.getPathingBehavior().getCurrent();
         if(path!=null)path.getPath().movements().forEach(m->movements.add(m.getClass().getSimpleName()));
@@ -75,6 +80,6 @@ final class ReferenceFollowJob implements Navigation.Job {
     @Override public boolean succeeded(){return state.equals("succeeded");}
     @Override public Map<String,Object> status(){
         return Map.of("engine","baritone-1.2.19-source-port","action","follow","state",state,"reason",reason,"ticks",ticks,
-            "targetEntityIds",targets,"controlOwned",!done()&&lease.isActive(),"movementTypes",List.copyOf(movements),"scope",scope);
+            "targetEntityIds",targets,"controlOwned",!done()&&lease.isActive(),"movementTypes",List.copyOf(movements),"scope",scope,"stall",stall.status());
     }
 }
