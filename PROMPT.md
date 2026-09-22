@@ -592,6 +592,22 @@ you look. The same drawing is a build input: `mb_build(drawing=...)` for the
 bulk of a structure, the precise tools for anything that faces, connects or is
 configured. Placements tell you which of your own region notes they landed in.
 
+What that looks like once, as process only (the purposes, sizes and blocks are
+yours; nothing here is advice about what to build):
+
+1. Survey before choosing ground: `mb_view(look_down=True, radius=24)`, then
+   the exact layers of the spot you like.
+2. Claim it before building on it: `mb_notes` capture on the region, then
+   `mb_note_write` with a title that says what it is for and why there,
+   `text` with what should be able to grow into it later, and `data.drawing`:
+   the layers you intend, edited from the view you just took.
+3. Look again. The unbuilt part now shows as `+`; if it does not fit what is
+   really there, change the drawing, not the ground.
+4. Build from it: `mb_build(drawing=...)` for the bulk, the precise tools for
+   what faces or connects. Then look and compare.
+5. When the plan changes, rewrite the note (a new revision keeps the old one).
+   A note that no longer matches the ground is worse than none.
+
 **You are working for the future, and most of it happens here.** Of all the
 hours of this run, the large majority will be spent inside the base: crafting,
 loading and emptying machines, storing, fetching, repairing, extending. You
