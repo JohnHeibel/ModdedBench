@@ -86,6 +86,7 @@ final class InteractionOperations {
         boolean blockTarget,fluidTarget,delivered,accepted,ownUse,delivering,finished,consumptionAcknowledged;
         int elapsed,deliveredAt,attacks,deaths,lastAttack=-1000,nativeUseTicks;
         String revokedDuringDelivery;
+        final long refusalMark=ControlRegistry.memory().refusals();
         String outcome="completed";
         Job(Request r) {
             this.r=r;p=r.params;kind=r.method.substring(4);combat=kind.equals("combat");
@@ -287,8 +288,10 @@ final class InteractionOperations {
                 if(!Objects.equals(before.get(field),after.get(field)))changes.add(new JsonPrimitive(field));
             // sendUseItem's boolean only tracks stack reference/count changes;
             // in-place NBT changes may return false despite a successful use.
-            return Json.object("state",state,"action",kind,"outcome",outcome,"error",error,"elapsedTicks",elapsed,
+            JsonObject out=Json.object("state",state,"action",kind,"outcome",outcome,"error",error,"elapsedTicks",elapsed,
                 "nativeReturn",accepted,"serverAcknowledged",consumptionAcknowledged,"nativeUseTicks",nativeUseTicks,"tickBudget",duration,"before",before,"after",after,"observedChanges",changes,"attackAttempts",attacks,"observedDeaths",deaths);
+            ControlRegistry.memory().refusedSince(refusalMark).forEach((k,v)->out.add(k,Json.GSON.toJsonTree(v)));
+            return out;
         }
         void stopUse() {
             if(ownUse) {ownUse=false;if(mc.thePlayer==player&&player.isUsingItem())mc.playerController.onStoppedUsingItem(player);}
