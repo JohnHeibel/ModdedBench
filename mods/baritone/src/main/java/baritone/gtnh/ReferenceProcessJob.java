@@ -26,10 +26,11 @@ final class ReferenceProcessJob implements Navigation.Job {
     private InputArbiter.Lease lease;
     private String state="running",reason="";
     private int ticks;
+    private final baritone.gtnh.pathing.Stall stall;
     private final Set<String> movements=new LinkedHashSet<>();
     ReferenceProcessJob(Baritone engine,Map<String,Object> params){
         this.engine=engine;kind=String.valueOf(params.get("process"));
-        duration=integer(params,"durationTicks",1200,1,72000);
+        duration=integer(params,"durationTicks",1200,1,72000);stall=WorkAccess.stall(params);
         goal=kind.equals("goal")?ReferenceGoals.parse(child(params,"goal")):null;
         var feet=engine.getPlayerContext().playerFeet();
         var center=params.containsKey("center")?pos(params.get("center")):new baritone.compat.BlockPos(feet.x,feet.y,feet.z);
@@ -58,11 +59,15 @@ final class ReferenceProcessJob implements Navigation.Job {
     }
     void tick(){
         if(done())return;
+        if(WorkAccess.died(player)){finish("failed","player_died");return;}
         if(mc.theWorld!=world||mc.thePlayer!=player||!scope.equals(ControlRegistry.memory().memory().scope())){cancel("world_changed");return;}
         if(!lease.isActive()){cancel("control_lost");return;}
         if(mc.currentScreen!=null&&!ControlRegistry.controls().ownsPlayerInventory(lease)){cancel("gui_open");return;}
-        if(mc.thePlayer.isDead||mc.thePlayer.getHealth()<=0){cancel("player_unavailable");return;}
-        if(ticks++>=duration){finish(kind.equals("farm")||kind.equals("explore")?"succeeded":"failed","duration_complete");return;}
+        // Explore and farm have no end of their own: their duration running out is a pause, not a success; the others failed to arrive.
+        if(ticks++>=duration){finish(kind.equals("farm")||kind.equals("explore")?"paused":"failed","timeout");return;}
+        // A farm's work shows in the inventory (harvest in, seeds out); everything else only in new ground.
+        var feet=engine.getPlayerContext().playerFeet();
+        if(stall.tick(kind.equals("farm")?inventory():0,feet.x,feet.y,feet.z)){finish(stall.advanced()?"paused":"failed",stall.reason());return;}
         engine.tickStart();var current=engine.getPathingBehavior().getCurrent();
         if(current!=null)current.getPath().movements().forEach(m->movements.add(m.getClass().getSimpleName()));
         if(!process.isActive()){
@@ -70,6 +75,7 @@ final class ReferenceProcessJob implements Navigation.Job {
             finish(success?"succeeded":"failed",success?"source_process_complete":"source_process_stopped");
         }
     }
+    private long inventory(){long sum=0;for(var s:mc.thePlayer.inventory.mainInventory)if(s!=null)sum=sum*31+s.stackSize*7919L+net.minecraft.item.Item.getIdFromItem(s.getItem());return sum;}
     private void finish(String state,String reason){
         if(done())return;this.state=state;this.reason=reason;
         engine.getPathingBehavior().forceCancel();engine.getInputOverrideHandler().release();saved.forEach(ReferenceSettings::copy);
@@ -80,7 +86,7 @@ final class ReferenceProcessJob implements Navigation.Job {
     @Override public boolean succeeded(){return state.equals("succeeded");}
     @Override public Map<String,Object> status(){
         var out=new LinkedHashMap<String,Object>();out.put("engine","baritone-1.2.19-source-port");out.put("action",kind);out.put("state",state);out.put("reason",reason);
-        out.put("ticks",ticks);out.put("controlOwned",!done()&&lease!=null&&lease.isActive());out.put("scope",scope);out.put("movementTypes",List.copyOf(movements));
+        out.put("ticks",ticks);out.put("controlOwned",!done()&&lease!=null&&lease.isActive());out.put("scope",scope);out.put("movementTypes",List.copyOf(movements));out.put("stall",stall.status());
         out.put("goal",String.valueOf(engine.getPathingBehavior().getGoal()));return out;
     }
 }

@@ -22,7 +22,6 @@ final class PlacingJob implements Navigation.Job {
     private final BlockPos target,footing;
     private final boolean overrideProtection;
     private final Block expected;
-    private final float health;
     private final int initialCount;
     private World world=mc.theWorld;
     private Object player=mc.thePlayer;
@@ -38,7 +37,7 @@ final class PlacingJob implements Navigation.Job {
         if(world==null || mc.thePlayer==null || mc.currentScreen!=null) throw new IllegalArgumentException("placement requires player with GUI closed");
         if(timeoutTicks<1 || timeoutTicks>6000) throw new IllegalArgumentException("timeoutTicks must be 1..6000");
         int x=(int)Math.floor(mc.thePlayer.posX),y=(int)Math.floor(mc.thePlayer.boundingBox.minY+.001),z=(int)Math.floor(mc.thePlayer.posZ);
-        footing=new BlockPos(x,y-1,z);health=mc.thePlayer.getHealth();
+        footing=new BlockPos(x,y-1,z);
         if(!mc.thePlayer.onGround || ForgeSnapshot.classify(world,x,y-1,z)!=TerrainGrid.SUPPORT) throw new IllegalArgumentException("stable_full_block_footing_required");
         if(!ForgeSnapshot.loaded(world,target.getX(),target.getY(),target.getZ()) || !world.isAirBlock(target.getX(),target.getY(),target.getZ())) throw new IllegalArgumentException("placement_target_must_be_loaded_air");
         if(Math.abs(target.getX()-x)+Math.abs(target.getZ()-z)>4 || Math.abs(target.getY()-y)>3) throw new IllegalArgumentException("placement_target_out_of_reach");
@@ -50,6 +49,7 @@ final class PlacingJob implements Navigation.Job {
     }
     void tick() {
         if(done()) return;ticks++;
+        if(WorkAccess.died(player)) {finish("failed","player_died");return;}
         if(mc.theWorld!=world || mc.thePlayer!=player || mc.currentScreen!=null&&!ControlRegistry.controls().ownsPlayerInventory(lease)) {cancel("world_or_gui_changed");return;}
         if(!lease.isActive()) {cancel("superseded");return;}
         if(--remaining<=0) {finish("failed","timeout");return;}
@@ -90,7 +90,6 @@ final class PlacingJob implements Navigation.Job {
     private String unsafe() {
         String protectedRegion=dev.modbench.api.ControlRegistry.memory().editProblem(target.getX(),target.getY(),target.getZ(),overrideProtection,false);
         if(protectedRegion!=null) return protectedRegion;
-        if(mc.thePlayer.getHealth()<health || mc.thePlayer.isBurning()) return "damage_or_fire";
         if(!mc.thePlayer.onGround || Math.abs(mc.thePlayer.boundingBox.minY-(footing.getY()+1))>.01) return "footing_changed";
         if(ForgeSnapshot.classify(world,footing.getX(),footing.getY(),footing.getZ())!=TerrainGrid.SUPPORT
             || Math.abs(mc.thePlayer.posX-(footing.getX()+.5))>.76 || Math.abs(mc.thePlayer.posZ-(footing.getZ()+.5))>.76) return "footing_drifted";

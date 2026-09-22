@@ -49,7 +49,7 @@ def _build_call(method: str, params: dict, timeout_s: float | None = None) -> An
     if not isinstance(plan_id, str) or not plan_id or finished.get("stageId") != stage_id or finished.get("count") != len(cells):
         raise ValueError("build_stage finish did not return the complete plan")
     forwarded = {"planId": plan_id}
-    for key in ("timeoutTicks", "allowBreak", "allowPlace", "overrideProtection"):
+    for key in ("timeoutTicks", "allowBreak", "allowPlace", "overrideProtection", "stallTicks"):
         if key in params:
             forwarded[key] = params[key]
     return notes.tracked(method, timeout_s, **forwarded)
@@ -93,7 +93,8 @@ def mb_route(name: str, reverse: bool = False, start_index: int = 0,
 def mb_follow(target: dict, duration_ticks: int = 1200, radius: int = 2,
               offset_distance: float = 0, offset_direction: float = 0,
               allow_break: bool = False, allow_place: bool = False,
-              override_protection: bool = False, timeout_s: float = 90.0) -> Any:
+              override_protection: bool = False, timeout_s: float = 90.0,
+              stall_ticks: int | None = None) -> Any:
     """Follow loaded native entities through source FollowProcess for a bounded duration.
 
     target requires one or more exact selectors from entityId, uuid, type and name;
@@ -103,12 +104,17 @@ def mb_follow(target: dict, duration_ticks: int = 1200, radius: int = 2,
     entity remains. Radius is 0..64; offset direction/distance define the source
     GoalXZ follow offset. Completion after duration means the bounded follow window
     elapsed, not that the entity was reached or remains present afterwards.
+    Ticks within radius+2 of a followed entity count as progress, so waiting beside one that stands
+    still is not a stall; stall_ticks (default the stallTicks setting, 800; 0 off) ticks away from
+    every target on ground already covered end it as stalled_no_progress_near_x,y,z (paused if it
+    had been beside one this job, else failed). A death ends any job as failed, player_died.
     """
     if not isinstance(target, dict) or not target or not set(target) <= {"entityId", "uuid", "type", "name"}:
         raise ValueError("target needs entityId, uuid, type or name selectors")
     return notes.tracked("nav.follow", timeout_s, target=target, durationTicks=duration_ticks,
                          radius=radius, offsetDistance=offset_distance, offsetDirection=offset_direction,
-                         allowBreak=allow_break, allowPlace=allow_place, overrideProtection=override_protection)
+                         allowBreak=allow_break, allowPlace=allow_place, overrideProtection=override_protection,
+                         **({} if stall_ticks is None else {"stallTicks": stall_ticks}))
 
 
 @tool(rung=1, coverage=["combat"])
@@ -193,7 +199,7 @@ def mb_process(process: str, duration_ticks: int = 1200, goal: dict | None = Non
                allow_break: bool = False, allow_place: bool = False,
                explore_for_blocks: bool = True, open_on_arrival: bool = False,
                enter_portal: bool = False, override_protection: bool = False,
-               timeout_s: float = 90.0) -> Any:
+               timeout_s: float = 90.0, stall_ticks: int | None = None) -> Any:
     """Run one bounded source process: goal, explore, get_to_block, or farm.
 
     goal needs a structured source goal for process='goal': block, near, adjacent,
@@ -204,8 +210,11 @@ def mb_process(process: str, duration_ticks: int = 1200, goal: dict | None = Non
     block {id,meta?}; explore uses center (defaults to player feet) with no
     radius bound. Farm uses center and radius 1..64. duration_ticks is simulation time, whereas timeout_s is the real RPC
     wait. Goal/get_to_block report success only when source completion reaches their
-    native condition. Explore and farm report success when their bounded duration
-    ends; this does not claim all terrain was explored or all mod crops handled.
+    native condition, and fail with timeout when duration runs out first. Explore and
+    farm have no end of their own: their duration running out is state paused, reason
+    timeout, not a success. stall_ticks (default the stallTicks setting, 800; 0 off) ticks
+    on ground already covered with no progress (for farm: no inventory change) end it as
+    stalled_no_progress_near_x,y,z.
     """
     if process not in {"goal", "explore", "get_to_block", "farm"}:
         raise ValueError("process must be goal, explore, get_to_block or farm")
@@ -221,6 +230,7 @@ def mb_process(process: str, duration_ticks: int = 1200, goal: dict | None = Non
     if center is not None: params["center"] = center
     if block is not None: params["block"] = block
     if process == "farm": params["radius"] = radius
+    if stall_ticks is not None: params["stallTicks"] = stall_ticks
     return notes.tracked("nav.process", timeout_s, **params)
 
 
@@ -280,7 +290,7 @@ def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, q
             allow_break: bool = False, allow_place: bool = False,
             override_protection: bool = False, timeout_ticks: int = 12000,
             timeout_s: float = 600.0, beside_fluid: bool | None = None,
-            vein: list[int] | None = None) -> Any:
+            vein: list[int] | None = None, stall_ticks: int | None = None) -> Any:
     """Run bounded native quantity mining and return its terminal receipt.
 
     blocks and items are explicit block/item selectors; quantity means matching
@@ -303,9 +313,16 @@ def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, q
     measure of it. A job that runs out of budget with something gained stops as
     paused (reason timeout_with_progress), which is not a failure: mb_work_resume
     continues it. Paused or failed is judged on this session's gain alone, and so is
-    blocksPerMinute. Forty seconds standing in one spot with nothing gained ends it
-    as stalled_no_progress_near_x,y,z: that target is not reachable the way it is
-    being tried.
+    blocksPerMinute. The receipt's bounds is the box it scanned (radius covers y-16..y+16 within 1..254).
+    stall_ticks (default: the stallTicks setting, 800; 0 is off) is the shared watchdog: that many
+    ticks with nothing gained or broken and no block stood in that it had not stood in since, and the
+    job ends with reason stalled_no_progress_near_x,y,z, as paused if this session gained something,
+    else failed. Pacing or circling on the same ground counts as standing still.
+    Every target it leaves is in skipped [{pos, block, why}] (the first 16; skippedCount
+    counts them): unreachable (no path found), will_not_break_here (with the fluid beside it,
+    or a protected region), no_tool_in_inventory_harvests_it, not_exposed, between_bedrock,
+    below/above_min/maxYLevelWhileMining. Unreachable targets are journaled: a resume does not
+    retry them unless its options pass retry: true.
     vein=[x,y,z], one ore block you have seen, mines the vein it belongs to: bounds become
     the ore chunk that block's vein is centred on plus the chunks around it, 8 blocks up
     and down; blocks defaults to that block's id and items to GregTech raw ore. Ask for the
@@ -313,8 +330,8 @@ def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, q
     beside_fluid (default: on whenever allow_place is) breaks blocks that have water or oil
     beside or above them and, on the next tick, before the fluid moves, puts a throwaway
     block (cobblestone, dirt: keep a stack in the hotbar) where the broken one was; plugged
-    lists them. Lava is never mined beside. Without it such targets just look unreachable:
-    the receipt's refused lists each with the fluid cell beside it.
+    lists them. Lava is never mined beside. Without it such targets are skipped as
+    will_not_break_here, with the fluid beside each.
     """
     params = dict(blocks=blocks, items=items, quantity=quantity, radius=radius,
                   allowBreak=allow_break, allowPlace=allow_place,
@@ -328,6 +345,7 @@ def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, q
     elif not blocks or not items: raise ValueError("blocks and items are required unless vein is given")
     if allow_place if beside_fluid is None else beside_fluid: params["besideFluid"] = True
     if bounds is not None: params["bounds"] = bounds
+    if stall_ticks is not None: params["stallTicks"] = stall_ticks
     return notes.tracked("nav.mine", timeout_s, **params)
 
 
@@ -372,7 +390,7 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
              timeout_s: float = 600.0, allow_break: bool = False,
              allow_place: bool = False, mode: str = "blueprint",
              settings: dict | None = None, size: list[int] | None = None,
-             drawing: dict | None = None) -> Any:
+             drawing: dict | None = None, stall_ticks: int | None = None) -> Any:
     """Execute a bounded, explicit-cell or selection build and return its receipt.
 
     Preview first. Native preflight checks loaded cells, conflicts, protection,
@@ -383,6 +401,10 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
     normal-interaction adapters. Retain jobId for status or resume. A finished or
     failed build is journaled as an auto world note at its location. drawing: see mb_build_preview.
     The receipt's `labels` names the region notes of yours that the build touches.
+    stall_ticks (default the stallTicks setting, 800; 0 off): that many ticks with no cell placed,
+    cleared or pending and no new ground stood on end it as stalled_no_progress_near_x,y,z, paused
+    if this session placed something, else failed (a cell nothing can be placed against, a standing
+    cell it cannot leave). Holding a break on one block that long counts as stalled too.
     """
     if drawing is not None:
         if cells is not None or selection is not None: raise ValueError("provide exactly one of cells, selection or drawing")
@@ -394,6 +416,7 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
     if origin is not None: params["origin"] = origin
     if settings is not None: params["settings"] = settings
     if size is not None: params["size"] = size
+    if stall_ticks is not None: params["stallTicks"] = stall_ticks
     return _labelled(_build_call("nav.build", _any_facing(params), timeout_s), params)
 
 
@@ -549,7 +572,9 @@ def mb_work_resume(job_id: str, options: dict | None = None,
     """Resume a durable blocked/interrupted mining or build job after correction.
 
     Options may supply a fresh timeoutTicks and explicit per-attempt permissions,
-    including overrideProtection. Native recovery re-observes world and inventory;
-    already delivered placement/mining input is not blindly replayed.
+    including overrideProtection, a stallTicks for this session, and retry: true to try
+    again the mining targets earlier sessions found unreachable (skipped otherwise).
+    Native recovery re-observes world and inventory; already delivered placement/mining
+    input is not blindly replayed.
     """
     return notes.tracked("nav.resume", timeout_s, jobId=job_id, **(options or {}))
