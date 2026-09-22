@@ -164,12 +164,12 @@ public final class ClientRuntime extends BridgeRuntime {
             if(!r.params.has("x")||!r.params.has("y")||!r.params.has("z")) throw new IllegalArgumentException("x,y,z required");
             return provider.inspectTools(Json.integer(r.params,"x",0,-30000000,30000000),Json.integer(r.params,"y",0,1,254),Json.integer(r.params,"z",0,-30000000,30000000));
         });
-        register("nav.place_block", "Place one common support cube at loaded air {x,y,z,timeoutTicks:1..6000}, using inventory and normal input; overrideProtection:false by default", "interaction", r -> {
+        register("nav.place_block", "Place one block at loaded air {x,y,z,timeoutTicks:1..6000,items:[{id,meta,nbt,ore}]} with normal right-click input; items names what may be spent (any item: the game decides whether it places), default the acceptableThrowawayItems setting. Succeeds when the target is no longer air; the receipt's placed is {id,meta} of what is there and materialRule the rule used. overrideProtection:false by default", "interaction", r -> {
             requirePlayer();Navigation provider=NavigationRegistry.get();
             if(provider==null) throw new IllegalArgumentException("Baritone mod is not installed");
             if(!r.params.has("x")||!r.params.has("y")||!r.params.has("z")) throw new IllegalArgumentException("x,y,z required");
             controlsChanged("superseded");
-            navigationJob=provider.placeBlock(Json.integer(r.params,"x",0,-30000000,30000000),Json.integer(r.params,"y",0,1,254),Json.integer(r.params,"z",0,-30000000,30000000),Json.integer(r.params,"timeoutTicks",1200,1,6000),Json.bool(r.params,"overrideProtection",false));
+            navigationJob=provider.placeBlock(Json.integer(r.params,"x",0,-30000000,30000000),Json.integer(r.params,"y",0,1,254),Json.integer(r.params,"z",0,-30000000,30000000),Json.integer(r.params,"timeoutTicks",1200,1,6000),Json.bool(r.params,"overrideProtection",false),r.params.has("items")?Json.GSON.fromJson(r.params.get("items"),List.class):null);
             navigationRequest=r;return null;
         });
         register("nav.mine_block", "Mine one reachable block {x,y,z,autoTool:true,timeoutTicks:1..6000}; protected regions refuse unless overrideProtection:true", "interaction", r -> {

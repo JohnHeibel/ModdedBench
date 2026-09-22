@@ -52,8 +52,12 @@ public final class BaritoneNavigation implements Navigation {
         return placeBlock(x,y,z,timeoutTicks,false);
     }
     @Override public Job placeBlock(int x,int y,int z,int timeoutTicks,boolean overrideProtection) {
+        return placeBlock(x,y,z,timeoutTicks,overrideProtection,null);
+    }
+    @Override public Job placeBlock(int x,int y,int z,int timeoutTicks,boolean overrideProtection,List<Map<String,Object>> items) {
+        var selectors=items==null?null:WorkAccess.itemSelectors(items);
         if(active!=null && !active.done()) active.cancel("superseded");
-        active=new PlacingJob(new BlockPos(x,y,z),timeoutTicks,overrideProtection);return active;
+        active=new PlacingJob(new BlockPos(x,y,z),timeoutTicks,overrideProtection,selectors);return active;
     }
     @Override public Map<String,Object> inspectTools(int x,int y,int z) {
         if(mc.theWorld==null||mc.thePlayer==null) throw new IllegalArgumentException("player required");
