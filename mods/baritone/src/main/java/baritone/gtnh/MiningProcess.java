@@ -25,7 +25,11 @@ final class MiningProcess extends BulkJob {
     private final Set<DropLocation> retriedDrops=new HashSet<>();
     private List<Map<String,Object>> diagnostics=List.of();
     private List<List<Integer>> lastKnown=List.of(),lastRejected=List.of();
-    private List<Map<String,Object>> refused=List.of();
+    // Targets the engine dropped, and why. Unreachable ones are journaled: a resume does not walk back to them unless it
+    // passes retry:true; every other reason is the world's and the inventory's, and is judged again as they change.
+    private final Set<BlockPos> unreachable=new LinkedHashSet<>();
+    private Map<BlockPos,String> skippedNow=Map.of();
+    private List<Map<String,Object>> skipped=List.of();
     private final boolean besideFluid;
     private BlockPos breaking;
     private final Set<BlockPos> plugged=new HashSet<>();
@@ -56,6 +60,8 @@ final class MiningProcess extends BulkJob {
         int now=WorkAccess.count(items),legacy=journal.progress.containsKey("initialCount")?Math.max(0,now-integer(journal.progress,"initialCount",now,0,1000000)):0;
         gainedBefore=integer(journal.progress,"gained",legacy,0,1000000);baseline=now-gainedBefore;
         observation=new MiningObservation(world,bounds,blocks,items);
+        if(!bool(options,"retry",false))for(Object p:list(journal.progress.getOrDefault("unreachable",List.of())))unreachable.add(pos(p));
+        rejectedSeen=unreachable.size();
     }
     @Override void begin(){
         super.begin();engine.getPathingBehavior().forceCancel();
@@ -75,6 +81,8 @@ final class MiningProcess extends BulkJob {
     }
     int gained(){return Math.max(0,WorkAccess.count(items)-baseline);}
     @Override int progress(){return mc.thePlayer==player?gained():progressSeen;}
+    // Digging toward a target is work before any ore arrives, and so is the first scan of the bounds, which stands still.
+    @Override long activity(){return progress()+(long)broken+(observation.passes==0?observation.cursor:0);}
     @Override String phase(){return "reference_mine";}
     @Override void step(){
         if(gained()>=quantity){finish("succeeded","requested_inventory_gain_observed");return;}
@@ -96,7 +104,7 @@ final class MiningProcess extends BulkJob {
                     "breakSafetyBlocked",baritone.pathing.movement.MovementHelper.avoidBreaking(costs.bsi,p.getX(),p.getY(),p.getZ(),s),
                     "above",costs.get(p.getX(),p.getY()+1,p.getZ()).toString());
             }).toList();
-            engine.getMineProcess().mine(0,observation);started=true;
+            engine.getMineProcess().mine(0,observation);engine.getMineProcess().avoid(unreachable);started=true;
             return;
         }
         var process=engine.getMineProcess();
@@ -110,7 +118,7 @@ final class MiningProcess extends BulkJob {
                     &&observation.has(drop.getEntityItem())
                     &&observation.acceptsDrop(new baritone.compat.BlockPos(drop.posX,drop.boundingBox.minY,drop.posZ))
                     &&retriedDrops.add(new DropLocation(drop.getEntityId(),new baritone.compat.BlockPos(drop.posX,drop.boundingBox.minY,drop.posZ))))newDrop=true;
-            if(newDrop){engine.bsi=new baritone.utils.BlockStateInterface(engine.getPlayerContext());process.mine(0,observation);}
+            if(newDrop){engine.bsi=new baritone.utils.BlockStateInterface(engine.getPlayerContext());process.mine(0,observation);process.avoid(unreachable);}
             if(!process.isActive()){
                 state="awaiting_inventory";
                 if(inactiveTicks>Math.max(20,(Baritone.settings().mineDropLoiterDurationMSThanksLouca.value+49)/50))finish("failed","no_remaining_reachable_targets_or_drops");
@@ -125,6 +133,7 @@ final class MiningProcess extends BulkJob {
         if(process.isActive()){
             lastKnown=process.knownLocations().stream().map(MiningProcess::point).toList();
             lastRejected=process.rejectedLocations().stream().map(MiningProcess::point).toList();
+            unreachable.addAll(process.rejectedLocations());skippedNow=process.skippedLocations();
         }
         // A failed search blacklists ONE target and plans again, seconds apiece. Four in a row with nothing gained between
         // them is a deposit this player cannot reach: end with the reason instead of working through every block of it.
@@ -151,7 +160,7 @@ final class MiningProcess extends BulkJob {
         finalGoal=String.valueOf(engine.getPathingBehavior().getGoal());
         engine.getPathingBehavior().forceCancel();engine.getInputOverrideHandler().release();
         engine.explicitMiningTargets=()->s->false;Baritone.besideFluid=false;MiningTools.ineffective.clear();
-        refused=refused();
+        skipped=skipped();journal.progress.put("unreachable",unreachable.stream().limit(256).map(MiningProcess::point).toList());
         scopedSettings.forEach(ReferenceSettings::copy);
     }
     @Override public Map<String,Object> status(){
@@ -161,10 +170,10 @@ final class MiningProcess extends BulkJob {
         Integer count=done()?finalCount:mc.thePlayer==player?WorkAccess.count(items):null;
         out.put("currentCount",count);out.put("gained",count==null?null:Math.max(0,count-baseline));
         out.put("scanPasses",observation==null?0:observation.passes);out.put("scanCursor",observation==null?0:observation.cursor);
-        out.put("scanVolume",bounds==null?0:bounds.volume());out.put("targets",lastKnown);out.put("rejected",lastRejected);
+        out.put("scanVolume",bounds==null?0:bounds.volume());out.put("targets",lastKnown);out.put("bounds",journal.spec.get("bounds"));
         out.put("initialTargetDiagnostics",diagnostics);
-        // Targets it will not break, and the fluid beside each: plug or drain that, or for water pass besideWater.
-        out.put("refused",done()?refused:List.of());
+        // Targets it left, and why: will_not_break_here names the fluid beside it (plug or drain that, or pass besideFluid).
+        var left=done()?skipped:skipped();out.put("skipped",left.stream().limit(16).toList());out.put("skippedCount",left.size());
         out.put("plugged",plugged.stream().map(MiningProcess::point).toList());out.put("plugFailures",unplugged);
         out.put("blocksBroken",broken);out.put("extraBroken",extraBroken);out.put("extraBrokenAt",extraAt);out.put("dropsLeftInBounds",dropsLeft);out.put("ineffectiveTools",ineffective);
         if(engine!=null){
@@ -245,17 +254,19 @@ final class MiningProcess extends BulkJob {
         }
         unplugged++;return false;
     }
-    /** Matching blocks the engine refuses to break because of what is beside them, with that neighbour named. */
-    private List<Map<String,Object>> refused(){
+    /** Every target the engine dropped with its reason, unreachable ones included, and the fluid beside those it will not break. */
+    private List<Map<String,Object>> skipped(){
         List<Map<String,Object>> out=new ArrayList<>();
-        if(mc.thePlayer!=player||observation==null)return out;
-        for(var p:observation.observedLocations()){
-            if(out.size()>=16)break;
-            for(int[] d:new int[][]{{0,1,0},{1,0,0},{-1,0,0},{0,0,1},{0,0,-1}}){
-                var beside=mc.theWorld.getBlock(p.getX()+d[0],p.getY()+d[1],p.getZ()+d[2]);
-                if(beside.getMaterial().isLiquid()){out.add(Map.of("pos",point(p),"beside",String.valueOf(net.minecraft.block.Block.blockRegistry.getNameForObject(beside)),"at",List.of(p.getX()+d[0],p.getY()+d[1],p.getZ()+d[2])));break;}
+        if(mc.thePlayer!=player)return out;
+        Map<BlockPos,String> all=new LinkedHashMap<>(skippedNow);for(var p:unreachable)all.put(p,"unreachable");
+        all.forEach((p,why)->{
+            Map<String,Object> row=new LinkedHashMap<>();row.put("pos",point(p));row.put("block",String.valueOf(net.minecraft.block.Block.blockRegistry.getNameForObject(world.getBlock(p.getX(),p.getY(),p.getZ()))));row.put("why",why);
+            if(why.equals("will_not_break_here"))for(int[] d:new int[][]{{0,1,0},{1,0,0},{-1,0,0},{0,0,1},{0,0,-1}}){
+                var beside=world.getBlock(p.getX()+d[0],p.getY()+d[1],p.getZ()+d[2]);
+                if(beside.getMaterial().isLiquid()){row.put("beside",String.valueOf(net.minecraft.block.Block.blockRegistry.getNameForObject(beside)));row.put("at",List.of(p.getX()+d[0],p.getY()+d[1],p.getZ()+d[2]));break;}
             }
-        }
+            out.add(row);
+        });
         return out;
     }
     private static List<Integer> point(baritone.compat.BlockPos p){return List.of(p.getX(),p.getY(),p.getZ());}

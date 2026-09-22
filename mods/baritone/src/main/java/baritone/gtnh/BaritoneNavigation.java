@@ -130,7 +130,7 @@ public final class BaritoneNavigation implements Navigation {
         return Map.of("approxPlaceable",stacks,"meaning","native ItemBlock mappings and initial metadata; final state depends on placement side, hit, pose and native callbacks");
     }
     @Override public Job resume(String jobId,Map<String,Object> options) {
-        if(!Set.of("jobId","timeoutTicks","overrideProtection","allowBreak","allowPlace").containsAll(options.keySet()))throw new IllegalArgumentException("resume accepts jobId, timeoutTicks, overrideProtection, allowBreak and allowPlace; create a new job to change its plan");
+        if(!Set.of("jobId","timeoutTicks","overrideProtection","allowBreak","allowPlace","stallTicks","retry").containsAll(options.keySet()))throw new IllegalArgumentException("resume accepts jobId, timeoutTicks, overrideProtection, allowBreak, allowPlace, stallTicks and retry; create a new job to change its plan");
         return process(new WorkJournal(jobId),options);
     }
     private Job process(WorkJournal journal,Map<String,Object> options) {

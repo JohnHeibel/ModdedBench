@@ -19,6 +19,8 @@ public final class ClientMemory implements MemoryAccess {
     private static final Minecraft MC=Minecraft.getMinecraft();
     private static String worldId,scope,lastAudit;
     private static boolean blockedThisTick;
+    private static long refusals;
+    private static final ArrayDeque<Map<String,Object>> refused=new ArrayDeque<>();
     private static WorldMemory memory;
     private static Path file;
     private static String recordingName,recordingScope,recordingError;
@@ -98,10 +100,26 @@ public final class ClientMemory implements MemoryAccess {
         } catch(RuntimeException error) {return "protection_unavailable:"+error.getMessage();}
     }
     public void endTick() {blockedThisTick=false;}
+    public long refusals() {return refusals;}
+    public Map<String,Object> refusedSince(long mark) {
+        if(refusals<=mark) return Map.of();
+        List<Map<String,Object>> out=new ArrayList<>();
+        for(var e:refused) if((Long)e.get("last")>mark) {var row=new LinkedHashMap<>(e);row.remove("last");out.add(row);}
+        return Map.of("refusedCount",refusals-mark,"refused",out);
+    }
+    /** A vetoed click is a fact for the receipt of whatever asked for it; a click held on one spot is one row with a count. */
+    private static boolean refuse(int action,int x,int y,int z,String why) {
+        refusals++;String what=action==0?"break":action==1?"use_block":"use_item";List<Integer> pos=action==2?null:List.of(x,y,z);
+        var last=refused.peekLast();
+        if(last!=null&&last.get("what").equals(what)&&Objects.equals(last.get("pos"),pos)&&last.get("why").equals(why)) {last.put("times",(Integer)last.get("times")+1);last.put("last",refusals);return false;}
+        if(refused.size()>=16) refused.removeFirst();
+        Map<String,Object> row=new LinkedHashMap<>();row.put("what",what);row.put("pos",pos);row.put("why",why);row.put("times",1);row.put("last",refusals);refused.addLast(row);
+        return false;
+    }
     /** Called immediately before vanilla block editing; includes raw synthetic attack/use input. */
     public boolean blockAction(int action,int x,int y,int z,int side) {
-        if(action==0&&!ClientControls.allowBlockAttack(x,y,z))return false;
-        if(blockedThisTick) return false; // Vanilla may fall back from right-click to sendUseItem in this same tick.
+        if(action==0&&!ClientControls.allowBlockAttack(x,y,z))return refuse(action,x,y,z,"attack_held_for_another_block"); // a held attack is locked to the block it started on
+        if(blockedThisTick) return refuse(action,x,y,z,"refused_earlier_this_tick"); // Vanilla may fall back from right-click to sendUseItem in this same tick.
         var owner=ClientControls.INSTANCE.arbiter().current();if(!owner.active()) return true;
         try {
             List<Pos> affected=new ArrayList<>();
@@ -116,7 +134,7 @@ public final class ClientMemory implements MemoryAccess {
             } else addAffected(affected,x,y,z,action==0?-1:side);
             TreeSet<String> regions=new TreeSet<>();for(Pos pos:affected) regions.addAll(memory().snapshot().protectedAt(pos,owner.automatedEdits()));
             if(regions.isEmpty()) return true;
-            if(!owner.overrideProtection()) {blockedThisTick=true;ClientControls.revoke("protected_region:"+String.join(",",regions));MC.playerController.resetBlockRemoving();return false;}
+            if(!owner.overrideProtection()) {blockedThisTick=true;refuse(action,x,y,z,"protected_region:"+String.join(",",regions));ClientControls.revoke("protected_region:"+String.join(",",regions));MC.playerController.resetBlockRemoving();return false;}
             String key=owner.operationId()+"|"+owner.label()+"|"+action+"|"+affected+"|"+regions;
             if(!key.equals(lastAudit)) {
                 Map<String,Object> receipt=Map.of("timeMs",System.currentTimeMillis(),"owner",owner.label(),"operationId",owner.operationId(),"action",action,"positions",affected,"regions",regions,"overrideProtection",true);
@@ -124,7 +142,7 @@ public final class ClientMemory implements MemoryAccess {
                 lastAudit=key;
             }
             return true;
-        } catch(Exception error) {blockedThisTick=true;ClientControls.revoke("protection_unavailable:"+error.getMessage());return false;}
+        } catch(Exception error) {blockedThisTick=true;refuse(action,x,y,z,"protection_unavailable:"+error.getMessage());ClientControls.revoke("protection_unavailable:"+error.getMessage());return false;}
     }
     private static void addRay(List<Pos> affected,MovingObjectPosition hit) {
         if(hit!=null&&hit.typeOfHit==MovingObjectPosition.MovingObjectType.BLOCK) addAffected(affected,hit.blockX,hit.blockY,hit.blockZ,hit.sideHit);
