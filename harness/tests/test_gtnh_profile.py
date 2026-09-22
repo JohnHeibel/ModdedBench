@@ -131,6 +131,21 @@ class GTNHProfileTests(unittest.TestCase):
             self.assertFalse(result.isError, (name, result.content))
         self.assertEqual(chosen, ["control", "read", "act", "read", "control", "read", "act", "control", "read", "act"])
 
+    def test_action_receipts_carry_you_and_reads_do_not(self):
+        srv = self.loaded()
+        def world(method, params):
+            if method == "obs.batch": return {"values": {"p": {"pos": [10.55, 64.0, 20.5], "health": 17.0, "food": 12, "air": 300, "held": {"name": "Stone Pickaxe", "count": 1}, "burning": True},
+                                                         "w": {"time": 24000 * 3 + 13000}, "i": {"emptySlots": 9}}}
+            return {"method": method, **params}
+        fake = self.use(FakeKernel(world))
+        acted = json.loads(asyncio.run(srv.call_tool("mb_stop", {})).content[0].text)
+        self.assertEqual(acted["you"], "at 10.6,64.0,20.5 | hp 17.0 food 12 | holding Stone Pickaxe x1 | 9 slots free | day 3 19:00 | burning")
+        self.assertEqual(fake.last("obs.batch")[1]["queries"]["i"], {"method": "obs.inventory", "params": {"detail": "counts"}})
+        read = json.loads(asyncio.run(srv.call_tool("mb_inventory", {})).content[0].text)
+        self.assertNotIn("you", read)
+        self.use(FakeKernel(lambda method, params: {"method": method}))  # no world behind the bridge: the receipt is untouched
+        self.assertNotIn("you", json.loads(asyncio.run(srv.call_tool("mb_stop", {})).content[0].text))
+
     def test_failed_reload_retains_last_good_tools(self):
         srv = self.srv
         with tempfile.TemporaryDirectory() as tmp:
