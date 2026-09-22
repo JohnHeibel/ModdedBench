@@ -206,6 +206,7 @@ def mb_process(process: str, duration_ticks: int = 1200, goal: dict | None = Non
     wait. Goal/get_to_block report success only when source completion reaches their
     native condition. Explore and farm report success when their bounded duration
     ends; this does not claim all terrain was explored or all mod crops handled.
+    pathRules: which of your block rules decided about which block, as in mb_mine.
     """
     if process not in {"goal", "explore", "get_to_block", "farm"}:
         raise ValueError("process must be goal, explore, get_to_block or farm")
@@ -235,6 +236,12 @@ def mb_settings(operation: str = "get", query: str = "", values: dict | None = N
     applying the candidate; a disk failure leaves runtime settings and the existing
     settings path unchanged. The response uses source-string value/default fields.
     A declared setting can still be rejected when its native runtime support is absent.
+    Block rules are yours, as lists of "modid:name" (every meta) or "modid:name:meta": hazards
+    (never walked into or stood on; defaults fire, cactus, web, tripwire, end portal, any of which
+    you may remove), standOn and neverStandOn (override what the block's collision box says;
+    neverStandOn wins), blocksToDisallowBreaking (defaults ice, silverfish stone). Otherwise the
+    path search stands on a block whose collision box tops out near its top and walks through one
+    with no collision box. A job's symptoms show what hurt or slowed you, and where.
     """
     if operation not in {"get", "set", "reset"}:
         raise ValueError("operation must be get, set or reset")
@@ -315,6 +322,10 @@ def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, q
     block (cobblestone, dirt: keep a stack in the hotbar) where the broken one was; plugged
     lists them. Lava is never mined beside. Without it such targets just look unreachable:
     the receipt's refused lists each with the fluid cell beside it.
+    symptoms: what happened to you during the job (damage and its type, effects gained or
+    lost, air lost, burning, webbed, slowed), each first seen with the feet/head/under blocks
+    there and a count. pathRules: which of your block rules (hazards, standOn, neverStandOn,
+    blocksToDisallowBreaking; see mb_settings) decided about which block, as search checks.
     """
     params = dict(blocks=blocks, items=items, quantity=quantity, radius=radius,
                   allowBreak=allow_break, allowPlace=allow_place,
@@ -383,6 +394,7 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
     normal-interaction adapters. Retain jobId for status or resume. A finished or
     failed build is journaled as an auto world note at its location. drawing: see mb_build_preview.
     The receipt's `labels` names the region notes of yours that the build touches.
+    symptoms: what happened to you during the job, as in mb_mine.
     """
     if drawing is not None:
         if cells is not None or selection is not None: raise ValueError("provide exactly one of cells, selection or drawing")

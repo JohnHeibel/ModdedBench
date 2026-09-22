@@ -43,6 +43,7 @@ public final class BaritoneMod {
             baritone.compat.NativeEvents.count("death");navigation.reference().getGameEventHandler().onPlayerDeath();
         }
     }
+    @SubscribeEvent public void hurt(net.minecraftforge.event.entity.living.LivingHurtEvent event){Symptoms.hurt(event);}
     @SubscribeEvent public void interact(net.minecraftforge.event.entity.player.PlayerInteractEvent event){
         if(event.entityPlayer!=net.minecraft.client.Minecraft.getMinecraft().thePlayer)return;
         if(event.action!=net.minecraftforge.event.entity.player.PlayerInteractEvent.Action.LEFT_CLICK_BLOCK
