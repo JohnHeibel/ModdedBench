@@ -42,7 +42,7 @@ from mcp.types import TextContent, CallToolResult, ToolAnnotations  # noqa: E402
 from mcp.server.fastmcp.tools import Tool  # noqa: E402
 
 import mbtool  # noqa: E402
-from kernel import BridgeError, Kernel, bridge_url, reply_trace, CancellationScope, cancel_scope  # noqa: E402
+from kernel import BridgeError, Kernel, bridge_url, reply_trace, CancellationScope, cancel_scope, resume_once  # noqa: E402
 
 
 def log(msg: str) -> None:
@@ -160,9 +160,26 @@ class Server(FastMCP):
         if inspect.iscoroutinefunction(fn):
             return fn
         lane = fn._mb_tool["lane"]  # noqa: SLF001
+        sig = inspect.signature(fn)
+        # Every tool that acts takes resume=True: decide while the world is paused, then resume and act in one call.
+        resumable = fn._mb_tool["effect"] != "read" and "resume" not in sig.parameters  # noqa: SLF001
+
+        def run(resume, kwargs):
+            if not resume:
+                return fn(**kwargs)
+            record = {}
+            resume_once.set(record)
+            try:
+                result = fn(**kwargs)
+            except Exception as e:
+                if record: e.resumed_world = record
+                raise
+            if record and isinstance(result, dict): result = {**result, "resumedWorld": record}
+            return result
 
         @functools.wraps(fn)
         async def call(**kwargs):
+            resume = bool(kwargs.pop("resume", False)) if resumable else False
             chosen = lane
             if callable(lane):
                 try:
@@ -171,12 +188,16 @@ class Server(FastMCP):
                     chosen = "act"
             pool = self._pools.get(chosen, self._pools["act"])
             context = contextvars.copy_context()
-            return await asyncio.get_running_loop().run_in_executor(pool, context.run, functools.partial(fn, **kwargs))
+            return await asyncio.get_running_loop().run_in_executor(pool, context.run, functools.partial(run, resume, kwargs))
         # Resolve string annotations in the original module, not this wrapper's globals.
         hints = typing.get_type_hints(fn)
-        sig = inspect.signature(fn)
-        call.__signature__ = sig.replace(parameters=[p.replace(annotation=hints.get(n, p.annotation))
-            for n, p in sig.parameters.items()], return_annotation=hints.get("return", sig.return_annotation))
+        params = [p.replace(annotation=hints.get(n, p.annotation)) for n, p in sig.parameters.items()]
+        if resumable:
+            extra = inspect.Parameter("resume", inspect.Parameter.KEYWORD_ONLY, default=False, annotation=bool)
+            at = next((i for i, p in enumerate(params) if p.kind is inspect.Parameter.VAR_KEYWORD), len(params))
+            params.insert(at, extra)
+            hints = {**hints, "resume": bool}
+        call.__signature__ = sig.replace(parameters=params, return_annotation=hints.get("return", sig.return_annotation))
         call.__annotations__ = hints
         return call
 
@@ -234,6 +255,8 @@ class Server(FastMCP):
                 error = {"code": "tool_exception", "msg": str(e)}
             if procedure_receipts is not None:
                 error["procedureReceipts"] = procedure_receipts
+            if getattr(outer, "resumed_world", None):
+                error["resumedWorld"] = outer.resumed_world  # the world runs now, although the call failed
             payload = {"ok": False, "error": error}
             return CallToolResult(isError=True, content=[TextContent(type="text", text=json.dumps(payload))],
                                   structuredContent=payload, _meta={"bridge": trace})
