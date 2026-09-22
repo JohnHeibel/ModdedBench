@@ -43,14 +43,22 @@ final class ReferenceFollowJob implements Navigation.Job {
         engine.overrideProtection=override;engine.positionAllowed=p->true;engine.explicitMiningTargets=()->s->false;
         engine.getInputOverrideHandler().attach(lease);engine.getFollowProcess().follow(filter);
     }
-    private static Predicate<Entity> selector(Map<String,Object> target){
-        if(target.isEmpty()||!Set.of("entityId","uuid","type","name").containsAll(target.keySet()))throw new IllegalArgumentException("follow target requires entityId, uuid, type or name; supplied fields all must match");
+    /** An entity selector: entityId, uuid, type (the EntityList name obs.entities shows), name, or class (a class or interface
+     *  the entity's class is or implements, such as net.minecraft.entity.monster.IMob); every field given must match. */
+    static Predicate<Entity> selector(Map<String,Object> target){
+        if(target.isEmpty()||!Set.of("entityId","uuid","type","name","class").containsAll(target.keySet()))throw new IllegalArgumentException("entity selector requires entityId, uuid, type, name or class; supplied fields all must match");
         Integer id=target.containsKey("entityId")?integer(target,"entityId",0,Integer.MIN_VALUE,Integer.MAX_VALUE):null;
         UUID uuid=target.containsKey("uuid")?UUID.fromString(target.get("uuid").toString()):null;
         String type=target.containsKey("type")?target.get("type").toString():null;
         String name=target.containsKey("name")?target.get("name").toString():null;
-        return e->(id==null||id==e.getEntityId())&&(uuid==null||uuid.equals(e.getUniqueID()))&&
+        String kind=target.containsKey("class")?target.get("class").toString():null;
+        return e->(id==null||id==e.getEntityId())&&(kind==null||is(e.getClass(),kind))&&(uuid==null||uuid.equals(e.getUniqueID()))&&
             (type==null||type.equals(net.minecraft.entity.EntityList.getEntityString(e)))&&(name==null||name.equals(e.getCommandSenderName()));
+    }
+    private static boolean is(Class<?> type,String name){
+        if(type==null)return false;if(type.getName().equals(name))return true;
+        for(Class<?> i:type.getInterfaces())if(is(i,name))return true;
+        return is(type.getSuperclass(),name);
     }
     void tick(){
         if(done())return;
