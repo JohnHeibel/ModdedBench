@@ -8,6 +8,9 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-09-22** Detecting an already completed Better Questing quest sent an
+  empty task request that the native adapter rejected. `mb_quest_detect` now
+  returns the observed completion without sending a detect packet.
 - **2026-09-21** Saving a survival camp waypoint exposed `mb_view` assuming array
   coordinates. It now accepts the native world-memory coordinate objects for
   waypoints and protected regions, retaining spatial filtering.
