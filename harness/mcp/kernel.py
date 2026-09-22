@@ -23,6 +23,9 @@ from websockets.sync.client import connect
 
 cancel_scope = contextvars.ContextVar("bridge_cancel_scope", default=None)
 reply_trace = contextvars.ContextVar("bridge_reply_trace", default=None)
+# Set by a tool call made with resume=True: the first action it sends that a paused world refuses resumes the world
+# and is sent again, once, and the dict records what pause was lifted. A pause after that is news and stays.
+resume_once = contextvars.ContextVar("bridge_resume_once", default=None)
 
 
 def bridge_url(side: str = "client") -> str:
@@ -220,9 +223,23 @@ class Kernel:
 
     def call(self, method: str, /, timeout: float | None = None, **params) -> Any:
         r = self.call_reply(method, timeout, **params)
+        wanted = resume_once.get()
+        if not r.ok and wanted is not None and not wanted and str((r.error or {}).get("msg", "")).startswith("time_paused"):
+            self._resume_for(wanted)  # the refused request never ran, so sending it again is its first run
+            r = self.call_reply(method, timeout, **params)
         if not r.ok:
             raise BridgeError((r.error or {}).get("code", "?"), (r.error or {}).get("msg", ""), method, r.raw)
         return r.data
+
+    def _resume_for(self, record: dict) -> None:
+        """Resume the world for a resume=True call and wait until the client runs ticks again."""
+        clock = self.call("time.status", timeout=5).get("state", {})
+        record.update(pausedBy=clock.get("reason"), threats=clock.get("threats") or [])
+        self.call("time.resume", timeout=10)  # an operator hold refuses this, and the call fails with that error
+        until = time.monotonic() + 5
+        while self.call("time.status", timeout=5).get("clientPaused") and time.monotonic() < until:
+            time.sleep(0.05)
+        record["resumed"] = True
 
     def poll_events(self, max_wait: float = 0.0) -> list[dict]:
         with self._events_ready:

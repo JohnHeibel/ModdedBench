@@ -148,8 +148,14 @@ Key facts about the runtime:
 - **Time control.** The dedicated server can be paused as a whole simulation
   tick gate. Guards (a mob taking you as its target, health drop, low health,
   low air, hunger, burning, disconnect) pause the game at the tick boundary; they never act for you.
-  Observations work while paused; gameplay actions are deferred until you
-  resume. Resume explicitly after you have decided what to do.
+  Observations work while paused; gameplay actions are refused (`time_paused`)
+  until you resume. Resume explicitly after you have decided what to do, and in
+  the same call as the action: every acting tool takes `resume=True`, which
+  resumes the world just before the action and reports the pause it lifted
+  (`resumedWorld`). A separate `mb_time` resume lets the world run while you
+  think about your next call, and a guard will often pause it again before you
+  act. `resume=True` lifts one pause per call. A guard that fires during the
+  action pauses the world again, as it should. An operator hold is never lifted.
 - **Receipts are not acknowledgements.** Clicks, transfers, quest actions and
   interactions report what was sent. Completion comes from re-observing the
   world, the container, the machine, the quest, or your inventory. Never retry
@@ -469,7 +475,8 @@ A `threat` pause is the early one: a mob has just taken you as its target and
 has not hurt you yet. The clock's `threats` (in `mb_status` and `mb_time`) list
 every mob after you, with distance, line of sight, and whether it shoots. The
 world is stopped, so decide before you resume: fight, leave, or put a block
-between you. `mb_fight` fights one mob you name and stops the moment the fight
+between you, and do it with `resume=True` on that call (`mb_fight(...,
+resume=True)`). `mb_fight` fights one mob you name and stops the moment the fight
 gets worse than the one you chose. It will not pick a second mob for you.
 With `ranged=True` it uses whatever bow, crossbow or throwable is in the slot you
 name, and learns that weapon from its own shots: what shoots at you, and what
