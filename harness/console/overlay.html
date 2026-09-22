@@ -56,7 +56,7 @@
   <div id="side">
     <i class="rivet" style="right:8px;top:8px"></i><i class="rivet" style="right:8px;bottom:8px"></i>
     <div id="title"><b>ModdedBench</b><span id="clock">07:42:15</span></div>
-    <div id="who"><span id="model">gpt-6-astra, low effort</span><span id="turn">turn 212</span></div>
+    <div id="who"><span id="model">gpt-6-astra, low effort</span><span id="turn">1h 48m left</span></div>
     <div id="log" class="screen">
       <div id="run" class="busy"><div class="state">Running</div><div class="what">mining 32 × Copper Ore</div>
         <div class="bar"><i></i><i style="animation-delay:.2s"></i><i style="animation-delay:.4s"></i><i style="animation-delay:.6s"></i><i style="animation-delay:.8s"></i><i style="animation-delay:1s"></i><i style="animation-delay:1.2s"></i><i style="animation-delay:1.4s"></i><em>1m 12s</em></div></div>
@@ -78,7 +78,7 @@
     <dl id="readout" class="screen">
       <dt>target</dt><dd class="key">Steam Macerator</dd>
       <dt>quests claimed</dt><dd>164</dd><dt>actions</dt><dd>3,912</dd><dt>failed</dt><dd class="bad">47</dd>
-      <dt>scripts</dt><dd>38</dd><dt>turns</dt><dd>212</dd><dt>tokens</dt><dd>1.84B</dd></dl>
+      <dt>scripts</dt><dd>38</dd><dt>tokens</dt><dd>~1.84B</dd></dl>
   </div>
 </div>
 <script>
@@ -94,7 +94,9 @@ function tierOf(chapters){const done=n=>(chapters||[]).some(c=>c.name.startsWith
 function draw(d){
   const g=d.goal||{},st=d.status||{},s=d.stats||{},t=s.tokens||{},run=d.run||{};
   canvas.dataset.tier=opts.get("tier")||tierOf(d.chapters);
-  $("clock").textContent=hms(s.startedAt?d.now-s.startedAt:0); $("turn").textContent="turn "+(s.turns||0);
+  $("clock").textContent=hms(s.startedAt?d.now-s.startedAt:0);
+  // A run is sized in minutes and tokens; turns are only how Codex recovers, so the header shows what is left of the budget.
+  const b=d.budget||{},left=b.minutes&&b.startedAt?b.minutes*60-(d.now-b.startedAt):null; $("turn").textContent=left==null?"":left>0?span(left)+" left":"budget spent";
   $("model").textContent=[run.model,run.effort&&run.effort+" effort"].filter(Boolean).join(", ");
   const [label,cls]=STATES[st.state]||[st.state||"Idle","idle"];
   $("run").className=cls+(st.text?"":" quiet"); $("run").querySelector(".state").textContent=label; $("run").querySelector(".what").textContent=st.text||""; $("run").querySelector("em").textContent=st.since?span(d.now-st.since):"";
@@ -109,8 +111,8 @@ function draw(d){
   const html=rows.slice(-40).map(e=>e.kind==="say"?`<p class="say"><b>&lt;${esc(name)}${e.short?", in short":""}&gt;</b> ${esc((e.short||e.text).replace(/[*#`|]/g,"").replace(/\s+/g," "))}</p>`:
     e.kind==="mark"?`<p class="mark">${esc(e.text)}</p>`:`<p class="${e.kind==="fail"?"fail":""}"><span>${esc(e.text)}</span>${e.n>1?`<em>x${e.n}</em>`:""}</p>`).join("");
   if($("feed").dataset.html!==html){$("feed").dataset.html=html;$("feed").innerHTML=html}
-  $("readout").innerHTML=`<dt>target</dt><dd class="key">${esc(d.target||"")}</dd><dt>quests claimed</dt><dd>${big(s.claims)}</dd><dt>actions</dt><dd>${big(s.calls)}</dd>`+
-    `<dt>failed</dt><dd class="bad">${big(s.failed)}</dd><dt>scripts</dt><dd>${big(s.scripts)}</dd><dt>turns</dt><dd>${big(s.turns)}</dd><dt>tokens</dt><dd>${big((t.input||0)+(t.output||0))}</dd>`;
+  $("readout").innerHTML=`<dt>target</dt><dd class="key">${esc(d.target||"")}</dd><dt>quests done</dt><dd>${big(d.chapters&&d.chapters.length?d.chapters.reduce((n,c)=>n+c.completed,0):s.claims)}</dd><dt>actions</dt><dd>${big(s.calls)}</dd>`+
+    `<dt>failed</dt><dd class="bad">${big(s.failed)}</dd><dt>scripts</dt><dd>${big(s.scripts)}</dd><dt>tokens</dt><dd>${(t.estimated||t.uncounted)?"~":""}${big((t.input||0)+(t.uncounted||0)+(t.estimated||0)+(t.output||0))}</dd>`;
 }
 async function tick(){try{draw(await (await fetch("/overlay/data",{cache:"no-store"})).json())}catch(e){}setTimeout(tick,1000)}
 if(!opts.has("sample"))tick();else if(opts.get("tier"))canvas.dataset.tier=opts.get("tier");

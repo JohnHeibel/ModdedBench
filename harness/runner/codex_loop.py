@@ -14,7 +14,7 @@ loop resumes the same conversation; delete that file to start a new one. Argumen
 ``codex exec`` (for example ``-- -m <model> -s workspace-write``).
 """
 from __future__ import annotations
-import argparse, json, os, shutil, subprocess, sys, time
+import argparse, hashlib, json, os, shutil, subprocess, sys, threading, time
 from pathlib import Path
 from feed import Feed
 
@@ -43,11 +43,29 @@ def _in_world():
         with Kernel(timeout=10) as k: return k.call("obs.world").get("inWorld") is True
     except Exception: return False
 
+def _quests():
+    """Quests completed in the book, from the server's own count; None when it cannot be read."""
+    sys.path.insert(0, str(REPO / "harness" / "mcp"))
+    try:
+        from kernel import Kernel
+        with Kernel(timeout=10) as k: return sum(l["completed"] for l in k.call("quest.lines", query="", offset=0, limit=100)["lines"])
+    except Exception: return None
+
+def _git(repo, *args):
+    try: return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, timeout=20).stdout.strip() or None
+    except Exception: return None
+
 def turn(cmd, prompt, cwd, log, feed=None, over=lambda: None):
     """One Codex turn, streamed to the log and stdout: (exit code, thread id or None, last agent message, budget reason or None)."""
-    thread, last, spent = None, "", None
+    thread, last, spent, cut = None, "", None, []
     with subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace") as p:
         p.stdin.write(prompt); p.stdin.close()
+        done = threading.Event()
+        def watch():  # Codex prints nothing while a tool runs (a 15-minute mb_wait, a script), and the budget still holds then
+            while not done.wait(5):
+                why = over()
+                if why: cut.append(why); log.write("# %s budget: %s\n" % (time.strftime("%Y-%m-%dT%H:%M:%S"), why)); p.terminate(); return
+        threading.Thread(target=watch, daemon=True).start()
         for line in p.stdout:
             log.write(line); log.flush(); sys.stdout.write(line); sys.stdout.flush()
             try: event = json.loads(line)
@@ -63,10 +81,11 @@ def turn(cmd, prompt, cwd, log, feed=None, over=lambda: None):
                 try: p.wait(15)
                 except subprocess.TimeoutExpired: p.kill()
                 break
-    return p.returncode, thread, last, spent
+        done.set()
+    return p.returncode, thread, last, spent or (cut[0] if cut else None)
 
 def run(repo=REPO, prompt=None, max_turns=50, state=None, codex=None, extra=(), backoff_s=30, ready=_in_world, max_failures=12,
-        max_minutes=None, max_tokens=None):
+        max_minutes=None, max_tokens=None, quests=_quests):
     """Returns why the loop ended: complete, stop_file, failed, max_turns, time_budget or token_budget."""
     repo = Path(repo); prompt = Path(prompt or repo / "PROMPT.md"); state = Path(state or repo / ".state" / "codex-loop.json")
     codex = list(codex or [shutil.which("codex") or "codex"])  # the npm shim is codex.cmd on Windows
@@ -75,10 +94,28 @@ def run(repo=REPO, prompt=None, max_turns=50, state=None, codex=None, extra=(), 
     failures = 0; feed = Feed(Path(os.environ.get("MODBENCH_OUTBOX", repo / ".state")) / "overlay")
     effort = [x.split("=", 1)[1].strip('"') for x in extra if x.startswith("model_reasoning_effort=")]  # what the viewer is watching, from the arguments for codex
     feed.live["run"] = {"model": extra[extra.index("-m") + 1] if "-m" in extra[:-1] else "", "effort": effort[-1] if effort else ""}
-    def end(reason): feed.status("ended", reason); return reason
     started, tokens0 = time.time(), feed.billed()  # budgets count from this start, not from the run's first
+    # One record per start, beside the overlay feed (outside the agent's reach in a contained run): what ran, on what, and what it did.
+    record_path = feed.folder.parent / "runs" / (time.strftime("%Y%m%dT%H%M%S", time.localtime(started)) + ".json")
+    record = {"model": feed.live["run"]["model"], "effort": feed.live["run"]["effort"], "codexArgs": list(extra), "thread": thread,
+              "promptSha256": hashlib.sha256(prompt.read_bytes()).hexdigest(), "harnessCommit": _git(repo, "rev-parse", "HEAD"),
+              "startedAt": started, "budget": {"minutes": max_minutes, "tokens": max_tokens}, "tokensBefore": tokens0, "questsBefore": quests()}
+    def save_record(**more):
+        record.update(more)
+        try: record_path.parent.mkdir(parents=True, exist_ok=True); record_path.write_text(json.dumps(record, indent=1), encoding="utf-8")
+        except OSError as e: print("codex_loop: run record: %r" % e, file=sys.stderr)
+    save_record()
+    def end(reason):
+        feed.status("ended", reason)
+        tokens = dict(feed.live.get("stats", {}).get("tokens") or {})
+        harness = [c for c in (_git(repo, "rev-list", record["harnessCommit"] + "..HEAD") or "").split() if c] if record["harnessCommit"] else []
+        save_record(endedAt=time.time(), minutes=round((time.time() - started) / 60, 1), endReason=reason, thread=thread,
+                    tokens=tokens, tokensSpent=feed.billed() - tokens0, questsAfter=quests(), harnessCommitsDuring=len(harness),
+                    harnessCommitAtEnd=_git(repo, "rev-parse", "HEAD"))
+        return reason
     feed.live["budget"] = {"minutes": max_minutes, "tokens": max_tokens, "startedAt": started, "tokensBefore": tokens0}
     def over():
+        if (repo / ".state" / "STOP").exists(): return "stop_file"  # a run is usually one long turn: stop means now, and the thread resumes
         if max_minutes and time.time() - started >= max_minutes * 60: return "time_budget"
         if max_tokens and feed.billed() - tokens0 >= max_tokens: return "token_budget"
         return None

@@ -36,18 +36,30 @@ class CodexLoopTests(unittest.TestCase):
     def loop(self, plan, **kw):
         (self.repo / "plan.json").write_text(json.dumps(plan))
         with contextlib.redirect_stdout(io.StringIO()):
-            reason = codex_loop.run(self.repo, codex=[sys.executable, str(self.repo / "fake.py")], backoff_s=0, **{"ready": lambda: True, **kw})
+            reason = codex_loop.run(self.repo, codex=[sys.executable, str(self.repo / "fake.py")], backoff_s=0, **{"ready": lambda: True, "quests": lambda: 7, **kw})
         return reason, json.loads((self.repo / "calls.json").read_text())
 
     def test_a_screenshot_is_estimated_by_its_tiles_not_its_base64(self):
-        from feed import Feed
+        from feed import Feed, BASE
         with tempfile.TemporaryDirectory() as d:
             f = Feed(Path(d))
             f.event({"type": "turn.started"})
             f.event({"type": "item.completed", "item": {"type": "mcp_tool_call", "tool": "mb_screenshot", "result": {"content": [{"type": "image", "data": "A" * 133000}]}}})
-            self.assertLess(f.billed(), 2000)
+            self.assertLess(f.billed() - BASE, 2000)
             f.event({"type": "item.completed", "item": {"type": "mcp_tool_call", "tool": "mb_recipes", "result": {"content": [{"type": "text", "text": "x y " * 4000}]}}})
-            self.assertGreater(f.billed(), 5000)
+            self.assertGreater(f.billed() - 2 * BASE, 5000)
+
+    def test_a_turn_that_never_reports_its_usage_keeps_its_estimate(self):
+        from feed import Feed
+        with tempfile.TemporaryDirectory() as d:
+            f = Feed(Path(d))
+            f.event({"type": "turn.started"})
+            f.event({"type": "item.completed", "item": {"type": "mcp_tool_call", "tool": "mb_obs", "result": {"content": [{"type": "text", "text": "x" * 4000}]}}})
+            cut = f.billed()
+            f.event({"type": "turn.started"})  # the first turn was killed: no turn.completed
+            self.assertEqual(cut, f.billed())
+            f.event({"type": "turn.completed", "usage": {"input_tokens": 100}})
+            self.assertEqual(cut + 100, f.billed())
 
     def test_token_budget_ends_the_turn_where_it_stands_and_the_thread_resumes(self):
         call = {"type": "item.completed", "item": {"id": "c", "type": "mcp_tool_call", "tool": "mb_obs", "arguments": {}, "result": {"content": [{"type": "text", "text": "x" * 4000}]}}}
@@ -76,6 +88,16 @@ class CodexLoopTests(unittest.TestCase):
         reason, calls = self.loop([{"events": [{"type": "thread.started", "thread_id": "T-1"}], "stop": True}])
         self.assertEqual(("stop_file", 1), (reason, len(calls)))
 
+    def test_the_stop_file_ends_a_turn_that_is_still_running_and_the_run_is_recorded(self):
+        import threading, time
+        threading.Timer(1.0, lambda: (self.repo / ".state" / "STOP").write_text("")).start()
+        began = time.monotonic()
+        reason, calls = self.loop([{"events": [{"type": "thread.started", "thread_id": "T-1"}, {"type": "turn.started", "sleep": 60}]}])
+        self.assertEqual("stop_file", reason); self.assertLess(time.monotonic() - began, 30)  # the watchdog, not Codex printing, ended it
+        [record] = [json.loads(p.read_text()) for p in (self.repo / ".state" / "runs").glob("*.json")]
+        self.assertEqual(("stop_file", 7, 7, "T-1"), (record["endReason"], record["questsBefore"], record["questsAfter"], record["thread"]))
+        self.assertEqual(64, len(record["promptSha256"]))
+
     def test_twelve_consecutive_failures_stop_and_a_success_resets_the_count(self):
         reason, calls = self.loop([{"exit": 1}, {"exit": 1}, {"exit": 0}, {"exit": 1}])
         self.assertEqual(("failed", 15), (reason, len(calls)))
@@ -87,7 +109,7 @@ class CodexLoopTests(unittest.TestCase):
         self.assertEqual(("max_turns", 1), (reason, len(calls)))
         self.assertEqual(1, (self.repo / ".state" / "codex-loop.log").read_text().count("waiting for the game"))
         (self.repo / ".state" / "STOP").write_text(""); (self.repo / "calls.json").unlink()
-        self.assertEqual("stop_file", codex_loop.run(self.repo, codex=["never-run"], backoff_s=0, ready=lambda: False))
+        self.assertEqual("stop_file", codex_loop.run(self.repo, codex=["never-run"], backoff_s=0, ready=lambda: False, quests=lambda: None))
 
     def test_the_loop_leaves_a_feed_and_totals_for_the_overlay(self):
         def call(tool, args, result, status="completed"):

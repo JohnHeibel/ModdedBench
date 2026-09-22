@@ -149,7 +149,7 @@ class Console:
         for entry in [e for e in feed if e.get("kind") == "say"][-12:]: entry["short"] = self.shorten.get("say", entry.get("text"))
         try: target = re.search(r'^TARGET_QUEST\s*=\s*"([^"<]+)"', (BRIEF / "PROMPT.md").read_text(encoding="utf-8"), re.M).group(1)
         except (OSError, AttributeError): target = ""
-        return {"now": time.time(), "goal": goal, "status": status, "stats": live.get("stats"), "run": live.get("run"), "target": target, "feed": feed, "chapters": self.book[1]}
+        return {"now": time.time(), "goal": goal, "status": status, "stats": live.get("stats"), "run": live.get("run"), "budget": live.get("budget"), "target": target, "feed": feed, "chapters": self.book[1]}
 
     # Actions. Anything slow runs as the single background job; its command lines and output are the job log.
     def run_job(self, name, steps):

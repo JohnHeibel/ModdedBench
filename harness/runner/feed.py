@@ -13,6 +13,7 @@ import json, re, time
 from pathlib import Path
 
 BLOB = re.compile(r"[A-Za-z0-9+/=]{4000,}")  # base64 image data inside a logged tool result
+BASE = 30000  # tokens every call carries before the conversation: system prompt, brief and the tool schemas (a guess, corrected at turn end)
 
 
 def _name(x):
@@ -75,7 +76,7 @@ class Feed:
     def __init__(self, folder):
         self.folder = Path(folder); self.folder.mkdir(parents=True, exist_ok=True)
         self.live = {"goal": {}, "status": {}, "stats": {"startedAt": time.time(), "turns": 0, "calls": 0, "failed": 0, "scripts": 0, "claims": 0,
-                                                       "tokens": {"input": 0, "cached": 0, "output": 0, "estimated": 0}}}
+                                                       "tokens": {"input": 0, "cached": 0, "output": 0, "estimated": 0, "uncounted": 0}}}
         self.context = 0  # characters Codex has been shown this turn, for the estimate below
         try: self.live.update(json.loads((self.folder / "live.json").read_text(encoding="utf-8")))  # a restarted loop keeps the run's totals
         except (OSError, ValueError): pass
@@ -92,7 +93,7 @@ class Feed:
 
     def billed(self):
         """Input tokens so far: exact for finished turns, estimated for the one running."""
-        t = self.live["stats"]["tokens"]; return t["input"] + t.get("estimated", 0)
+        t = self.live["stats"]["tokens"]; return t["input"] + t.get("uncounted", 0) + t.get("estimated", 0)
     def status(self, state, text=""):
         """thinking | acting | waiting | between_turns | game_down | backing_off | ended"""
         self.live["status"] = {"state": state, "text": text, "since": time.time()}; self._save()
@@ -100,7 +101,10 @@ class Feed:
     def event(self, e):
         kind, item = e.get("type"), e.get("item") if isinstance(e.get("item"), dict) else {}
         stats, what = self.live["stats"], item.get("type")
-        if kind == "turn.started": stats["turns"] += 1; self.context = 0; self.status("thinking")
+        if kind == "turn.started":
+            # A turn cut by the budget, a kill or a crash never reports its usage: keep its estimate instead of losing it.
+            t = stats["tokens"]; t["uncounted"] = t.get("uncounted", 0) + t.get("estimated", 0); t["estimated"] = 0
+            stats["turns"] += 1; self.context = BASE; self.status("thinking")
         elif kind == "turn.completed":
             u = e.get("usage") or {}
             for key, field in (("input", "input_tokens"), ("cached", "cached_input_tokens"), ("output", "output_tokens")): stats["tokens"][key] += int(u.get(field) or 0)
@@ -111,7 +115,7 @@ class Feed:
             # again (mostly cached), so the bill grows with context x calls: this estimate is that sum, with the context
             # held at the size Codex compacts it to. Roughly right for gpt-6 (~4 characters a token); the turn's end corrects it.
             # An image is billed by its size in tiles, about a thousand tokens for a screenshot, not by its base64 text.
-            self.context = min(self.context + len(BLOB.sub("x" * 4000, json.dumps(item, default=str))) // 4, 120000)
+            self.context = min((self.context or BASE) + len(BLOB.sub("x" * 4000, json.dumps(item, default=str))) // 4, 120000)
             stats["tokens"]["estimated"] += self.context
         if kind == "item.started" and what == "mcp_tool_call":
             self.status("waiting" if item.get("tool") == "mb_wait" else "acting", line(item.get("tool", ""), item.get("arguments"), None))
