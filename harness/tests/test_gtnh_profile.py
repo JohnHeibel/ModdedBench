@@ -312,10 +312,26 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual((claimed["claimed"], claimed["received"]), (True, {"Apple": 3, "Loot Chest": 1}))
         fake = self.use(FakeKernel(lambda method, params: {"method": method, **params}))
         quest = {"complete": True, "canClaim": True, "tasks": [{"id": 0, "name": "Tick", "type": "bq_standard:checkbox", "complete": True, "config": "{}"}]}
-        fake = self.use(FakeKernel(lambda method, params: quest if method == "quest.observe" else {"method": method, **params, "checkboxesClicked": [0]}))
+        detected = False
+        def detecting(method, params):
+            nonlocal detected
+            if method == "quest.detect":
+                detected = True
+                return {"method": method, **params, "checkboxesClicked": [0]}
+            if method == "quest.observe":
+                return quest if detected else {**quest, "complete": False}
+            raise RuntimeError(method)
+        fake = self.use(FakeKernel(detecting))
         settled = quests.mb_quest_detect("00000000-0000-0000-0000-000000000001")  # task_ids default to every task; the checkbox is clicked by Java
         self.assertEqual(fake.last("quest.detect")[1], {"questId": "00000000-0000-0000-0000-000000000001", "taskIds": []})
         self.assertEqual((settled["complete"], settled["canClaim"], settled["tasks"], settled["receipt"]["checkboxesClicked"]), (True, True, [{"id": 0, "name": "Tick", "complete": True}], [0]))
+        def already_complete(method, params):
+            if method == "quest.observe": return quest
+            raise RuntimeError(method)
+        fake = self.use(FakeKernel(already_complete))
+        settled = quests.mb_quest_detect("00000000-0000-0000-0000-000000000001")
+        self.assertEqual([call[0] for call in fake.calls], ["quest.observe"])
+        self.assertEqual((settled["complete"], settled["receipt"]["reason"]), (True, "already_complete"))
         with self.assertRaises(ValueError): work.mb_build_preview()
 
     def test_source_process_settings_follow_and_cache_wrappers_validate_and_forward(self):

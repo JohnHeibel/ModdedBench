@@ -64,12 +64,20 @@ def mb_quest_detect(quest_id: str, task_ids: list[int] | None = None, wait_s: fl
     where the task says so). Then watches the quest for up to wait_s seconds (0 disables, at most 60)
     and returns complete true/false with each task's state, so one call usually settles
     it; false is not a failure while time is paused, the server has not answered yet.
-    A quest that stays incomplete is missing something: read its tasks' config.
+    A quest that is already complete is returned without sending an empty detect
+    request. A quest that stays incomplete is missing something: read its tasks' config.
     """
-    receipt = kernel().call("quest.detect", questId=quest_id, taskIds=task_ids or [])
+    k = kernel()
+    state = k.call("quest.observe", questId=quest_id)
+    if state.get("complete"):
+        tasks = [{key: task.get(key) for key in ("id", "name", "complete")}
+                 for task in state.get("tasks") or []]
+        return {"receipt": {"accepted": False, "reason": "already_complete"},
+                "complete": True, "canClaim": state.get("canClaim"), "tasks": tasks}
+    receipt = k.call("quest.detect", questId=quest_id, taskIds=task_ids or [])
     deadline, state, clamped = time.monotonic() + max(0.0, min(wait_s, 60.0)), None, _clamped(wait_s)
     while wait_s > 0:
-        state = kernel().call("quest.observe", questId=quest_id)
+        state = k.call("quest.observe", questId=quest_id)
         if state.get("complete") or time.monotonic() >= deadline: break
         time.sleep(0.5)
     if state is None: return receipt
