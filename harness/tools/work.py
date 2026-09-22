@@ -16,17 +16,33 @@ from kernel import BridgeError
 from mbtool import kernel, tool
 from mbtools_gtnh import notes
 from mbtools_gtnh import plan
+from mbtools_gtnh.recipes_quests import _delta, _held
 
 STAGE = 4096
 REPORT_KEYS = ("size", "count", "skipped", "tileEntities")
+# mb_mine(vein=...) defaults: GregTech's ore-vein grid as this harness understands it, and what counts as its ore.
+# Veins centre on chunks whose |chunk coordinate| % period == offset and reach spanChunks chunks around that one,
+# `height` blocks up and down from the ore you saw. Yours to correct: edit these, or pass vein_grid / items / bounds.
+VEIN_GRID = {"period": 3, "offset": 1, "spanChunks": 1, "height": 8}
+VEIN_ITEMS = [{"id": "gregtech:gt.metaitem.03"}]
 
 
-def _any_facing(params: dict) -> dict:
+def _any_facing(params: dict) -> tuple[dict, dict | None]:
     """A hand-written cell without meta means "this block, any facing". Meta 0 is a facing no furnace, chest or machine can be
-    placed with, so taken literally the builder would stand beside the cell for ever, unable to make what was asked."""
+    placed with, so taken literally the builder would stand beside the cell for ever, unable to make what was asked.
+    That reading is a guess, so it comes back as a fact for the receipt (None when nothing was guessed)."""
     cells = [c for c in params.get("cells") or [] if isinstance(c, dict) and "id" in c]
-    masks = {**dict.fromkeys({c["id"] for c in cells} - {c["id"] for c in cells if "meta" in c}, 0), **(params.get("settings") or {}).get("metadataMasks", {})}
-    return {**params, "settings": {**(params.get("settings") or {}), "metadataMasks": masks}} if masks else params
+    own = (params.get("settings") or {}).get("metadataMasks", {})
+    guessed = sorted({c["id"] for c in cells} - {c["id"] for c in cells if "meta" in c} - set(own))
+    if not guessed: return params, None
+    fact = {"ids": guessed, "meaning": "cells without meta accept any meta of these ids (settings.metadataMasks 0)",
+            "override": "give the cells meta, or settings.metadataMasks yourself"}
+    return {**params, "settings": {**(params.get("settings") or {}), "metadataMasks": {**dict.fromkeys(guessed, 0), **own}}}, fact
+
+
+def _with(receipt: Any, key: str, fact: Any) -> Any:
+    """A harness decision said back in the receipt."""
+    return {**receipt, key: fact} if fact is not None and isinstance(receipt, dict) else receipt
 
 
 def _build_call(method: str, params: dict, timeout_s: float | None = None) -> Any:
@@ -178,7 +194,9 @@ def fit_ballistics(before: dict, receipt: dict) -> dict | None:
     out = {**before, **{k: v for k, v in receipt.get("ballistics", {}).items() if k in ("drawTicks", "reloadTicks", "clickAfterLoad")}}
     for shot in receipt.get("tracks", []):
         pairs = list(zip(shot, shot[1:]))
-        drag = min(1.0, max(.9, sum(b[0] / a[0] for a, b in pairs) / len(pairs)))
+        ratios = [b[0] / a[0] for a, b in pairs if a[0]]  # a shot straight up or down has no horizontal speed to measure drag by
+        if not pairs: continue  # one sample measures nothing
+        drag = min(1.0, max(.9, sum(ratios) / len(ratios))) if ratios else out.get("drag", 1.0)
         gravity = min(.3, max(0.0, sum(a[1] * drag - b[1] for a, b in pairs) / len(pairs)))
         new = {"speed": (shot[0][0] ** 2 + shot[0][1] ** 2) ** .5 / drag, "gravity": gravity, "drag": drag}
         n = out.get("shotsMeasured", 0)
@@ -274,19 +292,38 @@ def mb_cache(operation: str = "status", pos: list[int] | None = None, range: int
     return kernel().call("nav.cache", **params)
 
 
+def vein_bounds(pos: list[int], grid: dict = VEIN_GRID) -> dict:
+    """The box mb_mine(vein=pos) searches: the vein-centre chunk nearest pos on each axis, the chunks around it, grid height up and down."""
+    period, offset, span, height = grid["period"], grid["offset"], grid["spanChunks"], grid["height"]
+    chunk = lambda v: min((c for c in range((v >> 4) - period, (v >> 4) + period + 1) if abs(c) % period == offset), key=lambda c: abs(c * 16 + 8 - v))
+    cx, cz = chunk(pos[0]), chunk(pos[2])
+    return {"min": [(cx - span) * 16, max(1, pos[1] - height), (cz - span) * 16],
+            "max": [(cx + span + 1) * 16 - 1, min(254, pos[1] + height), (cz + span + 1) * 16 - 1]}
+
+
+def _drops(before: dict, after: dict) -> dict:
+    """What a job changed in your inventory, by name: dropsObserved is every item that went up, spent every one that went
+    down (plugs placed, tools worn out), each item netted on its own so a spent stack never hides a gained one."""
+    delta = _delta(before, after)
+    return {"dropsObserved": {n: v for n, v in delta.items() if v > 0}, "spent": {n: -v for n, v in delta.items() if v < 0}}
+
+
 @tool(rung=1, coverage=["move"])
 def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, quantity: int = 1,
             bounds: dict | None = None, radius: int = 24,
             allow_break: bool = False, allow_place: bool = False,
             override_protection: bool = False, timeout_ticks: int = 12000,
             timeout_s: float = 600.0, beside_fluid: bool | None = None,
-            vein: list[int] | None = None) -> Any:
+            vein: list[int] | None = None, vein_grid: dict | None = None) -> Any:
     """Run bounded native quantity mining and return its terminal receipt.
 
-    blocks and items are explicit block/item selectors; quantity means matching
-    inventory gain, summed over the job's sessions (each measured from its own start,
-    so smelting or storing ore between sessions costs nothing). Supply inclusive world
-    bounds, or radius 1..64 around the player. The job scans, approaches safe faces,
+    blocks are the block selectors to mine: {id, meta?}, or {id, item:{id, meta?}} to match by the block's
+    pick-block item. items is optional: without it, quantity counts any inventory gain (each item netted on
+    its own, so cobblestone spent on plugs does not cancel ore gained); with it, only items matching those
+    selectors count. Either way quantity is summed over the job's sessions (each measured from its own start,
+    so smelting or storing ore between sessions costs nothing). Whatever items says, the receipt's
+    dropsObserved {name: n} lists everything that arrived during this call and spent what went down.
+    Supply inclusive world bounds, or radius 1..64 around the player. The job scans, approaches safe faces,
     mines, loiters/paths for matching drops, counts actual inventory gain and records
     unreachable targets. The tool for each block is whichever stack anywhere in your
     inventory the game itself says harvests it fastest; nothing is judged by its kind,
@@ -306,29 +343,42 @@ def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, q
     blocksPerMinute. Forty seconds standing in one spot with nothing gained ends it
     as stalled_no_progress_near_x,y,z: that target is not reachable the way it is
     being tried.
-    vein=[x,y,z], one ore block you have seen, mines the vein it belongs to: bounds become
-    the ore chunk that block's vein is centred on plus the chunks around it, 8 blocks up
-    and down; blocks defaults to that block's id and items to GregTech raw ore. Ask for the
-    quantity the next chapter needs, with allow_break and allow_place.
+    vein=[x,y,z], one ore block you have seen, mines the vein it belongs to. Its defaults, each
+    in the receipt's veinDefaults with where it came from: bounds are the chunk that vein is
+    centred on plus the chunks around it, 8 blocks up and down (VEIN_GRID in this file; vein_grid
+    {period, offset, spanChunks, height} or your own bounds replace it); blocks is the id of the
+    block at vein, which for GregTech ore is every ore in the box (the kind lives in its tile
+    entity); items is VEIN_ITEMS (GregTech raw ore). Ask for the quantity the next chapter needs,
+    with allow_break and allow_place.
     beside_fluid (default: on whenever allow_place is) breaks blocks that have water or oil
     beside or above them and, on the next tick, before the fluid moves, puts a throwaway
     block (cobblestone, dirt: keep a stack in the hotbar) where the broken one was; plugged
     lists them. Lava is never mined beside. Without it such targets just look unreachable:
     the receipt's refused lists each with the fluid cell beside it.
     """
-    params = dict(blocks=blocks, items=items, quantity=quantity, radius=radius,
+    params = dict(blocks=blocks, quantity=quantity, radius=radius,
                   allowBreak=allow_break, allowPlace=allow_place,
                   overrideProtection=override_protection, timeoutTicks=timeout_ticks)
+    k, facts = kernel(), {}
     if vein is not None:
-        chunk = lambda v: min((c for c in range((v >> 4) - 2, (v >> 4) + 3) if abs(c) % 3 == 1), key=lambda c: abs(c * 16 + 8 - v))  # veins centre on chunks where |c| % 3 == 1
-        cx, cz = chunk(vein[0]), chunk(vein[2])
-        bounds = {"min": [(cx - 1) * 16, max(1, vein[1] - 8), (cz - 1) * 16], "max": [(cx + 2) * 16 - 1, min(254, vein[1] + 8), (cz + 2) * 16 - 1]}
-        params["blocks"] = blocks or [{"id": kernel().call("obs.block", x=vein[0], y=vein[1], z=vein[2])["id"]}]
-        params["items"] = items or [{"id": "gregtech:gt.metaitem.03"}]
-    elif not blocks or not items: raise ValueError("blocks and items are required unless vein is given")
+        grid = {**VEIN_GRID, **(vein_grid or {})}
+        if not blocks: params["blocks"] = [{"id": k.call("obs.block", x=vein[0], y=vein[1], z=vein[2])["id"]}]
+        facts["veinDefaults"] = {"bounds": "your bounds" if bounds is not None else {"from": "vein grid", "grid": grid},
+                                 "blocks": "your blocks" if blocks else {"from": "id of the block at vein", "used": params["blocks"]},
+                                 "items": "your items" if items else {"from": "VEIN_ITEMS", "used": VEIN_ITEMS}}
+        bounds = bounds if bounds is not None else vein_bounds(vein, grid)
+        items = items or VEIN_ITEMS
+    elif not blocks: raise ValueError("blocks are required unless vein is given")
+    if items is not None: params["items"] = items  # absent: the job counts any gain (the Java side decides what that means)
     if allow_place if beside_fluid is None else beside_fluid: params["besideFluid"] = True
     if bounds is not None: params["bounds"] = bounds
-    return notes.tracked("nav.mine", timeout_s, **params)
+    before = _held(k)
+    try: result = notes.tracked("nav.mine", timeout_s, **params)
+    except BridgeError as error:
+        receipt = ((error.reply or {}).get("error") or {}).get("receipt")
+        if isinstance(receipt, dict): receipt.update(_drops(before, _held(k)), **facts)
+        raise
+    return {**result, **_drops(before, _held(k)), **facts} if isinstance(result, dict) else result
 
 
 @tool(lane="read", coverage=["machine"])
@@ -345,6 +395,7 @@ def mb_build_preview(cells: list[dict] | None = None, selection: dict | None = N
     fill|replace|walls|shell|clear|sphere|hsphere|cylinder|hcylinder (with axis), block and optional
     replace selector. A cell without meta accepts any meta, which is what you want for blocks that face
     the way they are placed (furnace, chest, machines); give meta to demand a variant or a facing.
+    The result's anyMeta lists the ids read that way (mb_build too).
     Explicit registry IDs are required. Tile NBT is rejected rather than ignored.
     drawing={origin:[x,y,z], layers, legend} is the third way to say what to build, in the format
     mb_view returns: layers bottom first, rows north to south, one character per block west to
@@ -362,7 +413,8 @@ def mb_build_preview(cells: list[dict] | None = None, selection: dict | None = N
     if origin is not None: params["origin"] = origin
     if settings is not None: params["settings"] = settings
     if size is not None: params["size"] = size
-    return _build_call("nav.build_preview", _any_facing(params))
+    params, loose = _any_facing(params)
+    return _with(_build_call("nav.build_preview", params), "anyMeta", loose)
 
 
 @tool(rung=1, coverage=["machine"])
@@ -394,7 +446,8 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
     if origin is not None: params["origin"] = origin
     if settings is not None: params["settings"] = settings
     if size is not None: params["size"] = size
-    return _labelled(_build_call("nav.build", _any_facing(params), timeout_s), params)
+    params, loose = _any_facing(params)
+    return _with(_labelled(_build_call("nav.build", params, timeout_s), params), "anyMeta", loose)
 
 
 def _labelled(receipt: Any, params: dict) -> Any:
@@ -475,7 +528,8 @@ def mb_scan(blocks: list[dict] | None = None, bounds: dict | None = None, cursor
     """Scan loaded blocks in bounds {min:[x,y,z],max:[x,y,z]} for selectors {id, meta?} / {ore:"oreIron"} / {item:{...}}.
 
     One call covers the whole volume: it is split into layers and paged for you, and stops at
-    limit matches (1..256), at the end (done:true), or after max_s seconds. If done is false,
+    limit matches (1..256), at the end (done:true), or after max_s seconds (1..120); a value outside
+    those ranges is brought inside and the result's clamped says so. If done is false,
     call again with the returned cursor and the same bounds. The footprint may be at most
     512x512 blocks. Selectors are exact: {ore:...} takes a full ore-dictionary name, not a
     prefix. GregTech ore that is still buried reports meta 0 and a placeholder name: the
@@ -494,8 +548,11 @@ def mb_scan(blocks: list[dict] | None = None, bounds: dict | None = None, cursor
     height = max(1, 262144 // area)  # the bridge caps one scan at 262144 cells, so taller volumes go layer by layer
     layers = [(y, min(y + height - 1, hi[1])) for y in range(lo[1], hi[1] + 1, height)]
     layer, inner = cursor or [0, 0]
-    limit, deadline = max(1, min(limit, 256)), time.monotonic() + max(1.0, min(max_s, 120.0))
+    asked = {"limit": limit, "max_s": max_s}
+    limit, max_s = max(1, min(limit, 256)), max(1.0, min(max_s, 120.0)); deadline = time.monotonic() + max_s
     out = {"matches": [], "scanned": 0, "unloaded": 0, "volume": area * (hi[1] - lo[1] + 1), "done": False}
+    clamped = {k: {"asked": v, "used": {"limit": limit, "max_s": max_s}[k]} for k, v in asked.items() if v != {"limit": limit, "max_s": max_s}[k]}
+    if clamped: out["clamped"] = clamped
     while layer < len(layers) and len(out["matches"]) < limit and time.monotonic() < deadline:
         box = {"min": [lo[0], layers[layer][0], lo[2]], "max": [hi[0], layers[layer][1], hi[2]]}
         page = kernel().call("obs.scan", bounds=box, cursor=inner, limit=limit - len(out["matches"]), budget=4096,

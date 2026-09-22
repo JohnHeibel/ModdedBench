@@ -512,6 +512,50 @@ class GTNHProfileTests(unittest.TestCase):
         build.mb_build_preview(cells=[{"pos": [0, 0, 0], "id": "minecraft:furnace"}, {"pos": [1, 0, 0], "id": "minecraft:wool", "meta": 3}])
         self.assertEqual(fake.last("nav.build_preview")[1]["settings"], {"metadataMasks": {"minecraft:furnace": 0}})
 
+    def test_harness_defaults_are_said_back_and_overridable(self):
+        work = module_with(self.loaded(), "mb_mine")
+        stock = [[{"identity": {"id": "minecraft:cobblestone", "meta": 0, "name": "Cobblestone"}, "count": 10}]]
+        def reply(method, params):
+            if method == "obs.inventory": return {"totals": stock[-1]}
+            if method == "obs.block": return {"id": "gregtech:gt.blockores"}
+            if method == "nav.mine":
+                stock.append([{"identity": {"id": "minecraft:cobblestone", "meta": 0, "name": "Cobblestone"}, "count": 7},
+                              {"identity": {"id": "gregtech:gt.metaitem.03", "meta": 5, "name": "Crushed Tin"}, "count": 4}])
+                return {"state": "succeeded"}
+            if method == "obs.scan": return {"matches": [], "cursor": 0, "done": True, "scanned": 1, "unloaded": 0}
+            return {"method": method, **params}
+        fake = self.use(FakeKernel(reply))
+        mined = work.mb_mine([{"id": "minecraft:stone"}])  # no items: the job counts any gain; what arrived is measured
+        self.assertNotIn("items", fake.last("nav.mine")[1])
+        self.assertEqual((mined["dropsObserved"], mined["spent"]), ({"Crushed Tin": 4}, {"Cobblestone": 3}))
+        mined = work.mb_mine(vein=[33, 56, -70], bounds={"min": [0, 1, 0], "max": [3, 4, 3]})
+        self.assertEqual(fake.last("nav.mine")[1]["bounds"], {"min": [0, 1, 0], "max": [3, 4, 3]})  # given bounds are kept
+        self.assertEqual((mined["veinDefaults"]["bounds"], mined["veinDefaults"]["blocks"]["used"], mined["veinDefaults"]["items"]["used"]),
+                         ("your bounds", [{"id": "gregtech:gt.blockores"}], [{"id": "gregtech:gt.metaitem.03"}]))
+        work.mb_mine(vein=[33, 56, -70], vein_grid={"height": 2})
+        self.assertEqual(fake.last("nav.mine")[1]["bounds"], {"min": [0, 54, -80], "max": [47, 58, -33]})
+        self.assertEqual(work.vein_bounds([33, 56, -70]), {"min": [0, 48, -80], "max": [47, 64, -33]})
+        built = work.mb_build_preview(cells=[{"pos": [0, 0, 0], "id": "minecraft:furnace"}, {"pos": [1, 0, 0], "id": "minecraft:chest"}],
+                                      settings={"metadataMasks": {"minecraft:chest": 3}})
+        self.assertEqual(built["anyMeta"]["ids"], ["minecraft:furnace"])  # the chest's mask was the model's own, not a guess
+        self.assertNotIn("anyMeta", work.mb_build_preview(cells=[{"pos": [0, 0, 0], "id": "minecraft:stone", "meta": 0}]))
+        scanned = work.mb_scan(None, {"min": [0, 0, 0], "max": [1, 1, 1]}, limit=999, max_s=0.5, detail="full")
+        self.assertEqual(scanned["clamped"], {"limit": {"asked": 999, "used": 256}, "max_s": {"asked": 0.5, "used": 1.0}})
+        self.assertNotIn("clamped", work.mb_scan(None, {"min": [0, 0, 0], "max": [1, 1, 1]}, detail="full"))
+        up = [[0.0, 1.0], [0.0, .9], [0.0, .8]]  # straight up: no horizontal speed; one sample: nothing to fit
+        self.assertEqual(work.fit_ballistics({"drag": .98}, {"shots": 2, "tracks": [up, [[1.0, 0.0]]]})["drag"], .98)
+        import mbtools_gtnh.plan as plan
+        def room(method, params):
+            if method == "obs.player": return {"pos": [0.5, 64.0, 0.5]}
+            if method == "nav.copy": return {"plan": {"cells": [{"pos": [x, 0, 0], "id": "gregtech:gt.blockmachines"} for x in range(8)]}}
+            if method == "obs.block": return {"name": "Macerator"}
+            return {}
+        self.use(FakeKernel(room))
+        box = {"min": [0, 64, 0], "max": [7, 64, 0]}
+        self.assertFalse([t for t in plan.mb_view(bounds=box)["things"] if t["what"] == "block"])  # 8 of one id is over rare=6
+        seen = plan.mb_view(bounds=box, rare=8, lookups=3)["things"]
+        self.assertEqual(([t["what"] for t in seen].count("block"), next(t["count"] for t in seen if t["what"] == "unnamed")), (3, 5))
+
     def test_run_chains_tools_in_one_call_and_reports_where_a_script_stopped(self):
         tools = module_with(self.loaded(), "mb_run")
         with tempfile.TemporaryDirectory() as folder, patch.object(tools, "SCRIPTS", Path(folder) / "scripts"):

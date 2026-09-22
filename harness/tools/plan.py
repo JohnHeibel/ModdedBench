@@ -40,7 +40,8 @@ def labels_at(k, lo: list[int], hi: list[int]) -> list[dict]:
 
 
 @tool(lane="read", coverage=["building", "memory"])
-def mb_view(bounds: dict | None = None, radius: int = 10, below: int = 2, above: int = 2, look_down: bool = False) -> Any:
+def mb_view(bounds: dict | None = None, radius: int = 10, below: int = 2, above: int = 2, look_down: bool = False,
+            rare: int = RARE, lookups: int = LOOKUPS) -> Any:
     """Look at a place as a drawing, with everything you have recorded there on it.
 
     Default: radius blocks around you, from two layers under your feet (the floor and what
@@ -49,7 +50,9 @@ def mb_view(bounds: dict | None = None, radius: int = 10, below: int = 2, above:
     9000 cells a call). Rows run north to south, characters west to east; `columns` and `rows`
     give the world x and z of each edge. '.' is air, '@' you, '+' a planned block that is not
     built yet, and legend maps every other character to its block. things lists what stands
-    in the box that is more than a block: machines and other rare blocks by name, your notes
+    in the box that is more than a block: machines and other rare blocks by name (a kind of block
+    found at most `rare` times in the box, the first `lookups` of them; a thing "unnamed" counts
+    those left out. Every GregTech machine shares one id: in a room of many, raise rare), your notes
     on blocks, locations and regions (with note ids), waypoints, protected regions, containers
     you have notes on. Regions are given as world boxes, not drawn, so that they hide nothing.
     look_down=True draws one layer instead: the highest block of each column in the box, as on
@@ -82,8 +85,9 @@ def mb_view(bounds: dict | None = None, radius: int = 10, below: int = 2, above:
     layers = [[[char.get(grid.get((x, y, z)), AIR) for x in range(size[0])] for z in range(size[2])] for y in range(size[1])]
 
     things = []
-    rare = [(pos, b) for pos, b in grid.items() if count[b] <= RARE][:LOOKUPS]  # a machine's identity is in its tile, not its id
-    for pos, block in rare:
+    candidates = [(pos, b) for pos, b in grid.items() if count[b] <= rare]  # a machine's identity is in its tile, not its id
+    if len(candidates) > lookups: things.append({"what": "unnamed", "count": len(candidates) - lookups, "why": f"only the first lookups={lookups} rare blocks are looked up"})
+    for pos, block in candidates[:lookups]:
         world = [lo[0] + pos[0], heights[pos[0], pos[2]] if look_down else lo[1] + pos[1], lo[2] + pos[2]]
         try: seen = k.call("obs.block", x=world[0], y=world[1], z=world[2])
         except Exception: continue
