@@ -7,8 +7,6 @@ import baritone.compat.BlockPos;
 import java.util.*;
 import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
-import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.ItemSword;
 import net.minecraft.world.World;
@@ -19,14 +17,15 @@ final class MiningTools {
     static double breakTicks(double strength) {
         return Double.isNaN(strength)||strength<=0?Double.POSITIVE_INFINITY:Math.max(1,Math.ceil(1/strength));
     }
-    private static final Set<String> TINKER_SINGLE=Set.of("tconstruct.items.tools.Pickaxe","tconstruct.items.tools.Shovel","tconstruct.items.tools.Hatchet");
-    private static final Set<String> GT_SINGLE=Set.of("gregtech.common.tools.ToolDrillLV","gregtech.common.tools.ToolDrillMV","gregtech.common.tools.ToolDrillHV");
     private static Class<?> gregtechType;
     private static boolean gregtechResolved;
     private static Class<?> gregtechType() {
         if(!gregtechResolved){gregtechResolved=true;try{gregtechType=Class.forName("gregtech.api.items.MetaGeneratedTool");}catch(ClassNotFoundException|LinkageError ignored){}}
         return gregtechType;
     }
+    /** Why a stack must not be swung at all: it is empty, one use from breaking, or an uncharged tool. Nothing here guesses
+     *  what a tool does by its class. Whether it can harvest a block and how fast is the game's own answer (best, below), and
+     *  what one swing actually broke is measured by the job that swings it (a 3x3 hammer, a vein miner). */
     static String rejected(ItemStack stack) {
         if(stack==null) return null;
         if(stack.stackSize<=0) return "empty_stack";
@@ -37,34 +36,19 @@ final class MiningTools {
         }
         if(stack.isItemStackDamageable() && stack.getMaxDamage()-stack.getItemDamage()<=1) return "durability_reserve";
         if(stack.getItem() instanceof ItemSword) return "sword_reserved";
-        if(TINKER_SINGLE.contains(stack.getItem().getClass().getName())) return null;
         Class<?> gt=gregtechType();
-        if(gt!=null&&gt.isInstance(stack.getItem()))return gregtechRejected(stack,gt);
-        try {
-            if(stack.getItem().getClass().getMethod("onBlockStartBreak",ItemStack.class,int.class,int.class,int.class,EntityPlayer.class).getDeclaringClass()==Item.class)
-                return null;
-        } catch(ReflectiveOperationException ignored) { }
-        return "unverified_break_behavior";
+        return gt!=null&&gt.isInstance(stack.getItem())?gregtechRejected(stack,gt):null;
     }
+    /** GregTech keeps durability and charge in its own NBT, where isItemStackDamageable cannot see them. */
     private static String gregtechRejected(ItemStack stack,Class<?> gt) {
         try {
             Object tool=stack.getItem(),stats=gt.getMethod("getToolStats",ItemStack.class).invoke(tool,stack);
-            if(stats==null||!GT_SINGLE.contains(stats.getClass().getName()))return "unverified_gregtech_tool_behavior";
-            // GT's generated item dispatches through per-stack IToolStats. An
-            // item registry ID (or its broad wrench interface) cannot identify
-            // behavior. These three stat implementations retain the native
-            // single-block callback; area tools need their own bounded adapter.
-            if(tool.getClass().getMethod("onBlockStartBreak",ItemStack.class,int.class,int.class,int.class,EntityPlayer.class).getDeclaringClass()!=gt)return "overridden_gregtech_break_behavior";
-            if(!Boolean.TRUE.equals(stats.getClass().getMethod("isMiningTool").invoke(stats)))return "not_mining_tool";
-            for(String flag:List.of("isChainsaw","isWrench","isCrowbar","isGrafter","isWeapon"))if(Boolean.TRUE.equals(stats.getClass().getMethod(flag).invoke(stats)))return "gregtech_special_tool_behavior";
-            if(((Number)gt.getMethod("getToolMaxMode",ItemStack.class).invoke(tool,stack)).intValue()>1||((Number)gt.getMethod("getToolMode",ItemStack.class).invoke(null,stack)).intValue()!=0)return "unverified_gregtech_tool_mode";
             if(!Boolean.TRUE.equals(gt.getMethod("isItemStackUsable",ItemStack.class).invoke(tool,stack)))return "gregtech_tool_unusable_or_uncharged";
             long maximum=((Number)gt.getMethod("getToolMaxDamage",ItemStack.class).invoke(null,stack)).longValue();
             long damage=((Number)gt.getMethod("getToolDamage",ItemStack.class).invoke(null,stack)).longValue();
-            int cost=((Number)stats.getClass().getMethod("getToolDamagePerBlockBreak").invoke(stats)).intValue();
-            if(maximum-damage<=Math.max(1,cost))return "durability_reserve";
-            return null;
-        }catch(ReflectiveOperationException|LinkageError error){return "gregtech_tool_api_unavailable";}
+            int cost=stats==null?1:((Number)stats.getClass().getMethod("getToolDamagePerBlockBreak").invoke(stats)).intValue();
+            return maximum>0&&maximum-damage<=Math.max(1,cost)?"durability_reserve":null;
+        }catch(ReflectiveOperationException|LinkageError error){return null;} // not a GT API we know: let the game's harvest answer decide
     }
     static Choice best(World world,BlockPos p,List<Map<String,Object>> observations) {
         Minecraft mc=Minecraft.getMinecraft();Block block=world.getBlock(p.getX(),p.getY(),p.getZ());int meta=world.getBlockMetadata(p.getX(),p.getY(),p.getZ());

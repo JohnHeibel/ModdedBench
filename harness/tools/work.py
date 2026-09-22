@@ -283,11 +283,18 @@ def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, q
             vein: list[int] | None = None) -> Any:
     """Run bounded native quantity mining and return its terminal receipt.
 
-    blocks and items are explicit block/item selectors; quantity means net matching
-    inventory gain from the job baseline. Supply inclusive world bounds, or radius
-    1..64 around the player. The job scans, approaches safe faces, mines with native
-    tools, loiters/paths for matching drops, counts actual inventory gain and records
-    unreachable targets. It stops on full inventory and never equates a vanished
+    blocks and items are explicit block/item selectors; quantity means matching
+    inventory gain, summed over the job's sessions (each measured from its own start,
+    so smelting or storing ore between sessions costs nothing). Supply inclusive world
+    bounds, or radius 1..64 around the player. The job scans, approaches safe faces,
+    mines, loiters/paths for matching drops, counts actual inventory gain and records
+    unreachable targets. The tool for each block is whichever stack anywhere in your
+    inventory the game itself says harvests it fastest; nothing is judged by its kind,
+    and broken or near-empty tools are skipped. What a swing really did is measured:
+    blocksBroken, and extraBroken/extraBrokenAt for blocks around the target that went
+    too (a hammer, a vein miner, a laser); an extra break of a protected block stops
+    the job. dropsLeftInBounds counts matching items still lying in the bounds when it
+    ends: drops it never picked up. It stops on full inventory and never equates a vanished
     block with collection. A returned jobId is durable; inspect with mb_work_status
     and use mb_work_resume after correcting a blocked job. Protection override and
     terrain permissions apply only to this attempt.
@@ -295,7 +302,8 @@ def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, q
     (walking, digging down, tool swaps), and the receipt's blocksPerMinute is your
     measure of it. A job that runs out of budget with something gained stops as
     paused (reason timeout_with_progress), which is not a failure: mb_work_resume
-    continues it. Forty seconds standing in one spot with nothing gained ends it
+    continues it. Paused or failed is judged on this session's gain alone, and so is
+    blocksPerMinute. Forty seconds standing in one spot with nothing gained ends it
     as stalled_no_progress_near_x,y,z: that target is not reachable the way it is
     being tried.
     vein=[x,y,z], one ore block you have seen, mines the vein it belongs to: bounds become
