@@ -100,7 +100,9 @@ inventory is a working set for the job in hand, not a warehouse:
 - Junk is junk. Throw it away (`mb_move_items(drop=[...])`) without ceremony
   and without asking yourself whether it might matter in forty hours: if it
   was cheap to get, it will be cheap to get again. Keeping everything is how
-  storage becomes unusable.
+  storage becomes unusable. `drop` spares a stack that carries NBT or is
+  damaged (a worked tool) unless your selector names it (`name`, `nbt_hash`)
+  or says `withNbt:true`; `skipped` lists what it spared.
 - Storage is a system that grows by tier, like everything else here: a few
   chests sorted by kind and described in a note; then bulk storage for the
   handful of things you hold by the thousand (barrels and drawers take a
@@ -470,8 +472,9 @@ explodes, is better killed from a distance.
 Against several, do not chase: get to where only one can reach you (a doorway, a
 one-wide tunnel, two blocks up a pillar) and use `mb_fight(hold=True)`. Kill
 what shoots first or break its line of sight; a creeper is fought in the open,
-never in your base. Never eat, craft or open a GUI with a threat listed: the
-tools refuse. When you leave a fight, leave TO somewhere: keep a waypoint
+never in your base. Eating, crafting or opening a GUI with a threat listed is
+refused by default: the refusal names the threats and its override
+(`despiteThreat`), and passing it is your call. When you leave a fight, leave TO somewhere: keep a waypoint
 (`mb_memory`) at a lit, walled, roofed spot with a door, near every place you
 work, and retreat there, not toward your machines.
 
@@ -503,19 +506,44 @@ wrong layer of the right vein, so look the vein up before you walk away from it.
 A vein you have found is an asset for the rest of the run: note its position,
 extent and contents, give it a safe lit entrance, and take from it what the next
 chapter needs, not only what this quest counts: `mb_mine(vein=[x,y,z])` takes one
-ore block you have seen and works the whole vein around it; by default it
-counts any GregTech raw ore, so name the `items` you want when the vein is
+ore block you have seen and works the whole vein around it. The receipt's
+`veinDefaults` says which bounds, blocks and items it chose; your own `bounds`
+or `vein_grid` replace them, and `VEIN_GRID` in work.py is yours to correct.
+Without `items` any gain counts; `dropsObserved` shows what actually arrived,
+so read it rather than predicting drops, and name `items` when the vein is
 mixed. It mines with whatever in your inventory the game says harvests each
 block fastest, and reports what really broke: `extraBroken` when your tool
 takes more than its target, `dropsLeftInBounds` for drops it left lying.
 With `allow_place`
 and cobblestone in the hotbar it mines beside water and oil and plugs each hole
-behind it. When a job ends with targets left, read `refused` in its receipt
-before concluding the ore ran out. Mining is slow, a few blocks a minute
+behind it. When a job ends with targets left, read `skipped` in its receipt
+(each target with `why`: unreachable, will_not_break_here with the fluid
+beside it, no_tool_in_inventory_harvests_it, …) before concluding the ore ran
+out. Unreachable targets are remembered across `mb_work_resume`; pass
+`retry: true` in its options to try them again. Mining is slow, a few blocks a minute
 walking and digging included, and the receipt's `blocksPerMinute` tells you
 how slow: give a job the budget that rate implies. A job that runs out of
 budget with something gained is paused, not failed; `mb_work_resume` carries
 on where it stood.
+
+**Jobs and what they report.** Every work job has one stall watchdog:
+`stallTicks` ticks (default 800, 0 off, `stall_ticks` per job) with no
+progress and no new ground stood on end it as `stalled_no_progress_near_x,y,z`,
+paused if it had made progress, else failed; pacing or circling counts as
+standing still. A death ends any job as failed, `player_died`. Explore and
+farm end paused, reason `timeout`, when their duration runs out: that is not a
+success. Jobs do not stop themselves for damage, fire or low air; your guards
+pause the game. Receipts say what the harness decided so you can disagree:
+`refused` (a click refused, e.g. a protected region), `skipped`, `clamped` (a
+parameter it limited), `symptoms` (what hurt, slowed or affected you, with the
+block at your feet, head and underfoot), `pathRules` (which of your block rules
+decided a path). Block rules are yours, set with `mb_settings`: `hazards`
+(never walked into or stood on; defaults fire, cactus, web, tripwire, end
+portal, any of which you may remove), `standOn` / `neverStandOn` (override the
+game's collision box; neverStandOn wins), `blocksToDisallowBreaking` (defaults
+ice, silverfish stone). Entries are "modid:name" or "modid:name:meta". When a
+block keeps coinciding with damage or slowness in `symptoms`, add it to
+`hazards`.
 
 **Stuck.** If the same approach has failed twice, stop repeating it. Change
 one variable: the tool, the target, the route, the recipe, the time of day, or
@@ -764,7 +792,7 @@ shipped: once you start editing tools, `mb_tools_status` (what is loaded) and
 | Craft, smelt or process | `mb_recipes`, always, for the exact pattern or inputs | `mb_craft`: one call opens the station (your inventory, a crafting table, a furnace, a machine), loads it, takes the result and closes. `pattern` for grids, `inputs` for machines, `at` alone to collect later |
 | Make something you will need again | the item's notes (they come back with `mb_recipes` and `mb_inventory`): is a line already making it? | if not, build or extend the line, note it on the item, take your share from its output |
 | Do a known chore of many steps by hand | `mb_run` with a script that chains the tools | give it a `name` only if you will run it again soon; discard it when the base changes |
-| Store, fetch or throw away items | `mb_move_items`: one call opens the block, shift-clicks whole stacks in and out, closes | barrels and drawers have no GUI: `mb_act` use_block with the stack in hand |
+| Store, fetch or throw away items | `mb_move_items`: one call opens the block, shift-clicks whole stacks in and out, closes; selectors match id, meta, nbt_hash, nbt or name | barrels and drawers have no GUI: `mb_act` use_block with the stack in hand |
 | Use a GUI neither `mb_craft` nor `mb_move_items` can drive | `mb_act` (use_block) to open it, `mb_inventory(container=True)` | `mb_transfer`, `mb_click_slot`, `mb_gui`; if no tool can drive it, that is a missing primitive: write one |
 | Complete a quest | `mb_quest_detect` | `mb_quest_select_choice`, `mb_quest_claim`, then observe the quest and your inventory |
 | Wait for something | `mb_interrupt` (add a watch with a deadline) | `mb_wait`; `mb_interrupt_events` to replay what you missed |
