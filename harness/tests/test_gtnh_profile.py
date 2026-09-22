@@ -300,7 +300,17 @@ class GTNHProfileTests(unittest.TestCase):
         quests.mb_quest_observe("00000000-0000-0000-0000-000000000001")
         self.assertEqual(fake.calls[-1][0], "quest.observe")
         quests.mb_quest_claim("00000000-0000-0000-0000-000000000001", [2], {"2":1}, wait_s=0)
-        self.assertEqual(fake.calls[-1][1]["choices"], {"2":1})
+        self.assertEqual(fake.last("quest.claim")[1]["choices"], {"2":1})
+        stock = [[{"identity": {"id": "minecraft:apple", "meta": 0, "name": "Apple"}, "count": 2}]]
+        def claiming(method, params):
+            if method == "quest.claim": stock.append([{"identity": {"id": "minecraft:apple", "meta": 0, "name": "Apple"}, "count": 5}, {"identity": {"id": "bq:lootchest", "meta": 1, "name": "Loot Chest"}, "count": 1}])
+            if method == "obs.inventory": return {"totals": stock[-1]}
+            if method == "quest.observe": return {"claimed": True}
+            return {"method": method}
+        self.use(FakeKernel(claiming))
+        claimed = quests.mb_quest_claim("00000000-0000-0000-0000-000000000001", [0])
+        self.assertEqual((claimed["claimed"], claimed["received"]), (True, {"Apple": 3, "Loot Chest": 1}))
+        fake = self.use(FakeKernel(lambda method, params: {"method": method, **params}))
         quest = {"complete": True, "canClaim": True, "tasks": [{"id": 0, "name": "Tick", "type": "bq_standard:checkbox", "complete": True, "config": "{}"}]}
         fake = self.use(FakeKernel(lambda method, params: quest if method == "quest.observe" else {"method": method, **params, "checkboxesClicked": [0]}))
         settled = quests.mb_quest_detect("00000000-0000-0000-0000-000000000001")  # task_ids default to every task; the checkbox is clicked by Java

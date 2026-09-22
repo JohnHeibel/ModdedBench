@@ -273,6 +273,7 @@ class NotesSurfacingTests(unittest.TestCase):
         self.game.receipt = {"state": "succeeded", "goal": [40, 64, 40], "blocksMined": 5}
         result = notes.tracked("nav.mine", 30, blocks=[{"id": "a:b"}])
         self.assertEqual(result["blocksMined"], 5); self.assertEqual([n["id"] for n in result["notes"]], ["auto-mine-0-40-64-40"])
+        self.assertEqual(result["endedAt"], [round(v, 1) for v in self.game.pos])  # where the job left you rides on its receipt
         self.game.receipt = {"state": "running"}
         self.assertNotIn("notes", notes.tracked("nav.mine", 30, blocks=[]))
         class Failing(Game):

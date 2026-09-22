@@ -81,7 +81,7 @@ public final class QuestAccess {
             Map<String, Object> out = summary(id, quest, player);
             out.put("chapters", chaptersFor(id));
             out.put("requirements", requirements(quest, player));
-            out.put("tasks", taskStates(quest, user));
+            out.put("tasks", taskStates(quest, user, player));
             out.put("rewards", rewardStates(id, quest, player));
             out.put("completion", nbt(safeInvoke(quest, "getCompletionInfo", user)));
             return out;
@@ -241,14 +241,52 @@ public final class QuestAccess {
         return out;
     }
 
-    private List<Map<String, Object>> taskStates(Object quest, UUID user) throws ReflectiveOperationException {
+    private List<Map<String, Object>> taskStates(Object quest, UUID user, EntityPlayer player) throws ReflectiveOperationException {
         List<Map<String, Object>> out = new ArrayList<>();
         for (Object entry : entries(taskDatabase(quest))) {
             int id = (Integer) invoke(entry, "getID"); Object task = invoke(entry, "getValue");
-            out.add(map("id", id, "type", String.valueOf(invoke(task, "getFactoryID")), "name", translate(String.valueOf(invoke(task, "getUnlocalisedName"))),
-                    "complete", invoke(task, "isComplete", UUID.class, user), "config", writeNbt(task, "writeToNBT", null), "progress", writeNbt(task, "writeProgressToNBT", user)));
+            Map<String, Object> row = map("id", id, "type", String.valueOf(invoke(task, "getFactoryID")), "name", translate(String.valueOf(invoke(task, "getUnlocalisedName"))),
+                    "complete", invoke(task, "isComplete", UUID.class, user), "config", writeNbt(task, "writeToNBT", null), "progress", writeNbt(task, "writeProgressToNBT", user));
+            List<Map<String, Object>> items = haveVersusNeed(task, user, player);
+            if (items != null) row.put("items", items);
+            out.add(row);
         }
         return out;
+    }
+
+    /**
+     * For a retrieval task: each required item with need, what the task has already been given (submitted), and how
+     * many you carry that BQ's own matcher accepts (have). Null for any other task.
+     */
+    private List<Map<String, Object>> haveVersusNeed(Object task, UUID user, EntityPlayer player) {
+        try {
+            Class<?> type = task.getClass();
+            List<?> required = (List<?>) type.getField("requiredItems").get(task);
+            boolean nbt = !type.getField("ignoreNBT").getBoolean(task), partial = type.getField("partialMatch").getBoolean(task);
+            Object raw = type.getMethod("getUsersProgress", UUID.class).invoke(task, user);
+            int[] given = raw instanceof int[] ints ? ints : new int[0];
+            Class<?> compare = Class.forName("betterquesting.api.utils.ItemComparison"), ingredient = Class.forName("betterquesting.api2.utils.OreIngredient");
+            Class<?> tag = Class.forName("net.minecraft.nbt.NBTTagCompound");
+            Method stackMatch = compare.getMethod("StackMatch", ItemStack.class, ItemStack.class, boolean.class, boolean.class);
+            Method oreMatch = compare.getMethod("OreDictionaryMatch", ingredient, tag, ItemStack.class, boolean.class, boolean.class);
+            List<Map<String, Object>> out = new ArrayList<>();
+            for (int i = 0; i < required.size(); i++) {
+                Object big = required.get(i); ItemStack base = (ItemStack) invoke(big, "getBaseStack");
+                Object ore = invoke(big, "getOreIngredient"), bigTag = invoke(big, "GetTagCompound");
+                int have = 0;
+                for (ItemStack stack : player.inventory.mainInventory) {
+                    if (stack == null) continue;
+                    if (Boolean.TRUE.equals(stackMatch.invoke(null, base, stack, nbt, partial)) || Boolean.TRUE.equals(oreMatch.invoke(null, ore, bigTag, stack, nbt, partial))) have += stack.stackSize;
+                }
+                String name; try { name = base.getDisplayName(); } catch (RuntimeException ex) { name = String.valueOf(Item.itemRegistry.getNameForObject(base.getItem())); }
+                Object oreName = invoke(big, "getOreDict");
+                Map<String, Object> row = map("name", name, "need", big.getClass().getField("stackSize").getInt(big), "submitted", i < given.length ? given[i] : 0, "have", have);
+                if (oreName != null && !String.valueOf(oreName).isEmpty()) row.put("oreDict", String.valueOf(oreName));
+                out.add(row);
+            }
+            return out;
+        } catch (NoSuchFieldException ex) { return null; }
+        catch (ReflectiveOperationException | RuntimeException | LinkageError ex) { return List.of(map("unavailable", ex.getClass().getSimpleName() + ": " + ex.getMessage())); }
     }
 
     private List<Map<String, Object>> rewardStates(UUID questId, Object quest, EntityPlayer player) throws ReflectiveOperationException {

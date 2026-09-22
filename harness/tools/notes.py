@@ -559,10 +559,15 @@ def after(method, params, result):
             except Exception as e:
                 _log(f"journal({method}) skipped: {e}")
             found = surface(k, position=_work_pos(result) or context["pos"], reason="arrival", context=context)
+            if isinstance(result, dict): result = {**result, "endedAt": _ended(context)}
         return attach(result, found)
     except Exception as e:
         _log(f"after({method}) skipped: {e}")
         return result
+
+
+def _ended(context) -> list:
+    return [round(v, 1) for v in context["pos"]]
 
 
 def tracked(method, timeout=None, **params):
@@ -575,6 +580,11 @@ def tracked(method, timeout=None, **params):
                 journal(kernel(), method, None, error=error)
             except Exception as e:
                 _log(f"journal({method}) skipped: {e}")
+            try:  # where the job left you is part of what it did, most of all when it stopped short
+                receipt = ((error.reply or {}).get("error") or {}).get("receipt")
+                if isinstance(receipt, dict): receipt["endedAt"] = _ended(kernel().call("memory.context", timeout=5))
+            except Exception as e:
+                _log(f"endedAt({method}) skipped: {e}")
         raise
     return after(method, params, result)
 
