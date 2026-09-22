@@ -22,6 +22,7 @@ abstract class BulkJob implements Navigation.Job {
     final Map<String,Object> params;
     final boolean override,allowBreak,allowPlace;
     final float health=mc.thePlayer.getHealth();
+    final Symptoms symptoms=new Symptoms();
     int remaining,ticks,stillTicks,progressSeen,sessionStart;
     double stallX,stallY,stallZ;
     String state="preparing",reason="";
@@ -79,6 +80,6 @@ abstract class BulkJob implements Navigation.Job {
     @Override public Map<String,Object> status() {
         Map<String,Object> out=new LinkedHashMap<>();out.put("available",true);out.put("action",journal.kind);out.put("jobId",journal.id);out.put("state",state);out.put("reason",reason);out.put("ticks",ticks);out.put("remainingTicks",remaining);
         out.put("progress",session());out.put("blocksPerMinute",ticks<20?null:Math.round(session()*1200.0/ticks*10)/10.0);
-        out.put("overrideProtection",override);out.put("scope",journal.scope);out.put("controlOwned",lease!=null&&lease.isActive());out.put("serverAcknowledged",false);return out;
+        out.put("overrideProtection",override);out.put("scope",journal.scope);out.put("controlOwned",lease!=null&&lease.isActive());out.put("serverAcknowledged",false);out.put("symptoms",symptoms.summary());return out;
     }
 }

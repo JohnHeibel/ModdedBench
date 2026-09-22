@@ -312,6 +312,7 @@ public final class ClientRuntime extends BridgeRuntime {
     private JsonObject player() {
         requirePlayer();
         var p = mc.thePlayer;
+        int x = (int) Math.floor(p.posX), z = (int) Math.floor(p.posZ);
         return Json.object("name", p.getCommandSenderName(), "uuid", p.getUniqueID().toString(),
             "uuidScope", "client_profile", "entityId", p.getEntityId(),
             // In 1.7.10 the local player's posY includes the stance/eye offset.
@@ -323,7 +324,24 @@ public final class ClientRuntime extends BridgeRuntime {
             "selectedSlot", p.inventory.currentItem, "held", stack(p.getHeldItem()),
             "gui", mc.currentScreen == null ? null : mc.currentScreen.getClass().getName(),
             "sneaking", p.isSneaking(), "controlActive", ControlRegistry.controls().arbiter().current().active(),
-            "controlOwner", ControlRegistry.controls().arbiter().current().label());
+            "controlOwner", ControlRegistry.controls().arbiter().current().label(),
+            "effects", effects(p), "blocks", Json.object("feet", cell(x, (int) Math.floor(p.boundingBox.minY + .001), z),
+                "head", cell(x, (int) Math.floor(p.posY), z), "under", cell(x, (int) Math.floor(p.boundingBox.minY - .01), z)));
+    }
+
+    /** The potion effects on the player, as its inventory screen shows them. */
+    private static com.google.gson.JsonArray effects(net.minecraft.entity.player.EntityPlayer p) {
+        var out = new com.google.gson.JsonArray();
+        for (Object o : p.getActivePotionEffects()) if (o instanceof net.minecraft.potion.PotionEffect e) {
+            var potion = e.getPotionID() < net.minecraft.potion.Potion.potionTypes.length ? net.minecraft.potion.Potion.potionTypes[e.getPotionID()] : null;
+            out.add(Json.object("id", e.getPotionID(), "name", potion == null ? null : potion.getName(), "amplifier", e.getAmplifier(), "durationTicks", e.getDuration()));
+        }
+        return out;
+    }
+
+    private JsonObject cell(int x, int y, int z) {
+        if (y < 0 || y > 255 || !mc.theWorld.blockExists(x, y, z) || mc.theWorld.getChunkFromChunkCoords(x >> 4, z >> 4).isEmpty()) return null;
+        return Json.object("id", Block.blockRegistry.getNameForObject(mc.theWorld.getBlock(x, y, z)), "meta", mc.theWorld.getBlockMetadata(x, y, z));
     }
 
     private JsonObject world() {
