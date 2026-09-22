@@ -29,6 +29,8 @@ public interface GameEvents {
     default void tabCompleted() {}
     /** S32PacketConfirmTransaction arrived on the client NetHandler. */
     default void transactionConfirmed(Object packet) {}
+    /** The server reported the local player's hurt: its damage type, the entity type that caused it ("" for none). */
+    default void hurt(String damageType,String by,float amount) {}
     /** True suppresses the vanilla attack loop in Minecraft.sendClickBlockToController. */
     default boolean ownsNativeActions() {return false;}
 

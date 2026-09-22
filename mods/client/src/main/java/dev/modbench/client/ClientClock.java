@@ -113,6 +113,10 @@ public final class ClientClock implements ClockHooks.Driver {
                     paused=state.get("paused").getAsBoolean();
                     if(paused) send(Json.object("type","paused","generation",state.get("generation").getAsLong()));
                 }
+                case "hurt" -> {
+                    String type=Json.string(data,"damageType","unknown"),by=Json.string(data,"by","");float amount=data.get("amount").getAsFloat();
+                    for(var listener:dev.modbench.api.GameEvents.listeners()) listener.hurt(type,by,amount);
+                }
                 case "reply" -> {
                     Request r=pending.remove(data.get("id").getAsString());
                     if(r!=null) { JsonObject result=data.getAsJsonObject("result");

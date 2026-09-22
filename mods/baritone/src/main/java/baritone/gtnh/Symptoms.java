@@ -23,6 +23,8 @@ final class Symptoms {
     private Map<Integer,PotionEffect> effects=Map.of();
     private double lastX,lastZ;
 
+    /** The damage type a dedicated server reported for the player's own hurt (ServerClock sends it). */
+    static void hurt(String type,String by,float amount){if(hurts.size()<=64)hurts.add(new Object[]{type,by.isEmpty()?null:by,amount});}
     /** The damage type the integrated server gave the player's own hurt; the client alone only ever sees "generic". */
     static void hurt(net.minecraftforge.event.entity.living.LivingHurtEvent event){
         var me=Minecraft.getMinecraft().thePlayer;
