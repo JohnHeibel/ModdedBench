@@ -26,6 +26,10 @@ public interface Navigation {
     default Job placeBlock(int x,int y,int z,int ticks,boolean overrideProtection) {
         if(overrideProtection) throw new UnsupportedOperationException("protection override unavailable");return placeBlock(x,y,z,ticks);
     }
+    /** items: item selectors {id,meta,nbt,ore} naming what may be spent; null is the provider's default. */
+    default Job placeBlock(int x,int y,int z,int ticks,boolean overrideProtection,java.util.List<Map<String,Object>> items) {
+        if(items!=null) throw new UnsupportedOperationException("placement items unavailable");return placeBlock(x,y,z,ticks,overrideProtection);
+    }
     default Job route(String name,boolean reverse,int startIndex,int timeoutTicks,boolean allowBreak,boolean allowPlace,boolean overrideProtection) {throw new UnsupportedOperationException("saved routes unavailable");}
     default Job mine(Map<String,Object> params){throw new UnsupportedOperationException("quantity mining unavailable");}
     default Job follow(Map<String,Object> params){throw new UnsupportedOperationException("entity following unavailable");}
