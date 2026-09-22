@@ -12,7 +12,7 @@ import java.util.*;
 /** Journal, native selectors and action ownership around the actual upstream MineProcess. */
 final class MiningProcess extends BulkJob {
     private final List<Map<String,Object>> items;
-    private final int quantity,baseline;
+    private final int quantity,baseline,gainedBefore;
     private final Bounds bounds;
     private final Baritone engine;
     private final MiningObservation observation;
@@ -30,6 +30,15 @@ final class MiningProcess extends BulkJob {
     private BlockPos breaking;
     private final Set<BlockPos> plugged=new HashSet<>();
     private int unplugged;
+    // What each swing broke besides the block it was aimed at. The job knows no tool by name, so a 3x3 hammer or a vein
+    // miner shows up here as a measurement, and a swing that took a protected block ends the job.
+    private record Swing(BlockPos target,net.minecraft.block.Block block,Map<BlockPos,net.minecraft.block.Block> around,int due){}
+    private Swing swing;
+    private final List<Swing> settling=new ArrayList<>();
+    private final Set<BlockPos> aimed=new HashSet<>();
+    private int broken,extraBroken;
+    private final List<List<Integer>> extraAt=new ArrayList<>();
+    private Integer dropsLeft;
     MiningProcess(BaritoneNavigation nav,WorkJournal journal,Map<String,Object> options){
         super(nav,journal,options);engine=nav.reference();
         var blocks=WorkAccess.selectors(params.get("blocks"));items=WorkAccess.itemSelectors(params.get("items"));
@@ -40,12 +49,16 @@ final class MiningProcess extends BulkJob {
         Map<String,Object> scan=params.containsKey("bounds")?child(params,"bounds"):Map.of("min",List.of(origin.getX()-radius,Math.max(1,origin.getY()-16),origin.getZ()-radius),"max",List.of(origin.getX()+radius,Math.min(254,origin.getY()+16),origin.getZ()+radius));
         bounds=bounds(scan);if(bounds.volume()>262144)throw new IllegalArgumentException("mining scan exceeds 262144 cells");
         journal.spec.put("bounds",scan);
-        baseline=integer(journal.progress,"initialCount",WorkAccess.count(items),0,1000000);journal.progress.put("initialCount",baseline);
+        // Gain is summed over sessions, each measured from its own start, so ore smelted or stored between a pause and
+        // the resume still counts and ore fetched from a chest meanwhile does not.
+        int now=WorkAccess.count(items),legacy=journal.progress.containsKey("initialCount")?Math.max(0,now-integer(journal.progress,"initialCount",now,0,1000000)):0;
+        gainedBefore=integer(journal.progress,"gained",legacy,0,1000000);baseline=now-gainedBefore;
         observation=new MiningObservation(world,bounds,blocks,items);
     }
     @Override void begin(){
         super.begin();engine.getPathingBehavior().forceCancel();
-        for(var setting:List.of(Baritone.settings().allowBreak,Baritone.settings().allowPlace,Baritone.settings().exploreForBlocks,Baritone.settings().legitMine))scopedSettings.put(setting,setting.value);
+        for(var setting:List.of(Baritone.settings().allowBreak,Baritone.settings().allowPlace,Baritone.settings().exploreForBlocks,Baritone.settings().legitMine,Baritone.settings().allowInventory))scopedSettings.put(setting,setting.value);
+        Baritone.settings().allowInventory.value=true; // the best tool anywhere in the inventory, not only the hotbar
         Baritone.settings().allowBreak.value=allowBreak;Baritone.settings().allowPlace.value=allowPlace;
         // This action has explicit observation bounds. Exploration is a separate
         // process, not permission to start a branch mine when its bounds empty.
@@ -105,6 +118,7 @@ final class MiningProcess extends BulkJob {
         if(besideFluid&&plug())return; // this tick belongs to the plug
         engine.tickStart();
         if(besideFluid)watch();
+        if(measure())return;
         if(process.isActive()){
             lastKnown=process.knownLocations().stream().map(MiningProcess::point).toList();
             lastRejected=process.rejectedLocations().stream().map(MiningProcess::point).toList();
@@ -126,6 +140,11 @@ final class MiningProcess extends BulkJob {
     }
     @Override void releaseProcess(){
         finalCount=mc.thePlayer==player?WorkAccess.count(items):null;
+        if(finalCount!=null)journal.progress.put("gained",Math.max(0,finalCount-baseline));
+        if(mc.thePlayer==player&&observation!=null){int left=0;
+            for(Object entity:world.loadedEntityList)if(entity instanceof net.minecraft.entity.item.EntityItem drop&&!drop.isDead&&observation.has(drop.getEntityItem())
+                    &&bounds.contains(new BlockPos(drop.posX,drop.boundingBox.minY,drop.posZ)))left+=drop.getEntityItem().stackSize;
+            dropsLeft=left;}
         finalGoal=String.valueOf(engine.getPathingBehavior().getGoal());
         engine.getPathingBehavior().forceCancel();engine.getInputOverrideHandler().release();
         engine.explicitMiningTargets=()->s->false;Baritone.besideFluid=false;
@@ -135,7 +154,7 @@ final class MiningProcess extends BulkJob {
     @Override public Map<String,Object> status(){
         Map<String,Object> out=super.status();
         out.put("engine","baritone-1.2.19-source-port");out.put("process","MineProcess");
-        out.put("quantity",quantity);out.put("initialCount",baseline);
+        out.put("quantity",quantity);out.put("gainedBefore",gainedBefore);
         Integer count=done()?finalCount:mc.thePlayer==player?WorkAccess.count(items):null;
         out.put("currentCount",count);out.put("gained",count==null?null:Math.max(0,count-baseline));
         out.put("scanPasses",observation==null?0:observation.passes);out.put("scanCursor",observation==null?0:observation.cursor);
@@ -144,13 +163,37 @@ final class MiningProcess extends BulkJob {
         // Targets it will not break, and the fluid beside each: plug or drain that, or for water pass besideWater.
         out.put("refused",done()?refused:List.of());
         out.put("plugged",plugged.stream().map(MiningProcess::point).toList());out.put("plugFailures",unplugged);
+        out.put("blocksBroken",broken);out.put("extraBroken",extraBroken);out.put("extraBrokenAt",extraAt);out.put("dropsLeftInBounds",dropsLeft);
         if(engine!=null){
             var current=engine.getPathingBehavior().getCurrent();
             out.put("goal",done()?finalGoal:String.valueOf(engine.getPathingBehavior().getGoal()));
             out.put("path",current==null?List.of():current.getPath().positions().stream().map(MiningProcess::point).toList());
             out.put("planning",engine.getPathingBehavior().getInProgress().isPresent());
         }
-        out.put("completionMeaning","net matching inventory gain since this job began, including across explicit resume");return out;
+        out.put("completionMeaning","matching inventory gain, summed over this job's sessions (each measured from its own start)");return out;
+    }
+    /** Watch the block under the pick; a few ticks after it goes (the server's word on what else broke arrives late),
+     *  count every neighbour that went with it. True when the job has ended here. */
+    private boolean measure(){
+        if(swing!=null&&world.getBlock(swing.target().getX(),swing.target().getY(),swing.target().getZ())!=swing.block()){
+            broken++;settling.add(new Swing(swing.target(),swing.block(),swing.around(),ticks+5));swing=null;}
+        for(var it=settling.iterator();it.hasNext();){
+            var s=it.next();if(s.due()>ticks)continue;it.remove();
+            for(var e:s.around().entrySet()){
+                var q=e.getKey();var now=world.getBlock(q.getX(),q.getY(),q.getZ());
+                if(now==e.getValue()||now.getMaterial()!=net.minecraft.block.material.Material.air||aimed.contains(q)||e.getValue() instanceof net.minecraft.block.BlockFalling)continue;
+                extraBroken++;if(extraAt.size()<16)extraAt.add(point(q));
+                if(WorkAccess.protection(q,override)!=null){finish("failed","tool_broke_protected_block_at_"+q.getX()+","+q.getY()+","+q.getZ());return true;}
+            }
+        }
+        var over=mc.objectMouseOver;
+        if(swing!=null||!engine.getInputOverrideHandler().isInputForcedDown(baritone.api.utils.input.Input.CLICK_LEFT)||over==null||over.typeOfHit!=net.minecraft.util.MovingObjectPosition.MovingObjectType.BLOCK)return false;
+        var p=new BlockPos(over.blockX,over.blockY,over.blockZ);Map<BlockPos,net.minecraft.block.Block> around=new HashMap<>();
+        for(int dx=-1;dx<=1;dx++)for(int dy=-1;dy<=1;dy++)for(int dz=-1;dz<=1;dz++){
+            var b=world.getBlock(p.getX()+dx,p.getY()+dy,p.getZ()+dz);
+            if((dx|dy|dz)!=0&&b.getMaterial()!=net.minecraft.block.material.Material.air)around.put(new BlockPos(p.getX()+dx,p.getY()+dy,p.getZ()+dz),b);}
+        if(aimed.size()>4096)aimed.clear();aimed.add(p);
+        swing=new Swing(p,world.getBlock(p.getX(),p.getY(),p.getZ()),around,0);return false;
     }
     private boolean wet(BlockPos p){
         for(int[] d:new int[][]{{0,1,0},{1,0,0},{-1,0,0},{0,0,1},{0,0,-1}})if(world.getBlock(p.getX()+d[0],p.getY()+d[1],p.getZ()+d[2]).getMaterial().isLiquid())return true;
