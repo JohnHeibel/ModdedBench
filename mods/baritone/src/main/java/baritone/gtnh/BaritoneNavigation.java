@@ -169,7 +169,7 @@ public final class BaritoneNavigation implements Navigation {
     void tick() {
         reference.getWorldProvider().tick();
         if(active!=null && !active.done()) {
-            try { if(active instanceof BulkJob work)work.tick();else if(active instanceof RouteRun route) route.tick();else tickChild(active); }
+            try { if(active instanceof BulkJob work){work.symptoms.sample(mc.thePlayer);work.tick();}else if(active instanceof RouteRun route) route.tick();else tickChild(active); }
             catch(Exception e) {
                 String reason="game_error: "+e.getClass().getSimpleName()+": "+e.getMessage();
                 if(active instanceof RouteRun route) route.finish("failed",reason);else if(active instanceof ReferenceNavigationJob run)run.finish("failed",reason); else active.cancel(reason);

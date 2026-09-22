@@ -233,6 +233,7 @@ def mb_process(process: str, duration_ticks: int = 1200, goal: dict | None = Non
     timeout, not a success. stall_ticks (default the stallTicks setting, 800; 0 off) ticks
     on ground already covered with no progress (for farm: no inventory change) end it as
     stalled_no_progress_near_x,y,z.
+    pathRules: which of your block rules decided about which block, as in mb_mine.
     """
     if process not in {"goal", "explore", "get_to_block", "farm"}:
         raise ValueError("process must be goal, explore, get_to_block or farm")
@@ -263,6 +264,12 @@ def mb_settings(operation: str = "get", query: str = "", values: dict | None = N
     applying the candidate; a disk failure leaves runtime settings and the existing
     settings path unchanged. The response uses source-string value/default fields.
     A declared setting can still be rejected when its native runtime support is absent.
+    Block rules are yours, as lists of "modid:name" (every meta) or "modid:name:meta": hazards
+    (never walked into or stood on; defaults fire, cactus, web, tripwire, end portal, any of which
+    you may remove), standOn and neverStandOn (override what the block's collision box says;
+    neverStandOn wins), blocksToDisallowBreaking (defaults ice, silverfish stone). Otherwise the
+    path search stands on a block whose collision box tops out near its top and walks through one
+    with no collision box. A job's symptoms show what hurt or slowed you, and where.
     """
     if operation not in {"get", "set", "reset"}:
         raise ValueError("operation must be get, set or reset")
@@ -372,6 +379,10 @@ def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, q
     block (cobblestone, dirt: keep a stack in the hotbar) where the broken one was; plugged
     lists them. Lava is never mined beside. Without it such targets are skipped as
     will_not_break_here, with the fluid beside each.
+    symptoms: what happened to you during the job (damage and its type, effects gained or
+    lost, air lost, burning, webbed, slowed), each first seen with the feet/head/under blocks
+    there and a count. pathRules: which of your block rules (hazards, standOn, neverStandOn,
+    blocksToDisallowBreaking; see mb_settings) decided about which block, as search checks.
     """
     params = dict(blocks=blocks, quantity=quantity, radius=radius,
                   allowBreak=allow_break, allowPlace=allow_place,
@@ -457,6 +468,7 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
     cleared or pending and no new ground stood on end it as stalled_no_progress_near_x,y,z, paused
     if this session placed something, else failed (a cell nothing can be placed against, a standing
     cell it cannot leave). Holding a break on one block that long counts as stalled too.
+    symptoms: what happened to you during the job, as in mb_mine.
     """
     if drawing is not None:
         if cells is not None or selection is not None: raise ValueError("provide exactly one of cells, selection or drawing")

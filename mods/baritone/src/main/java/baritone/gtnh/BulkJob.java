@@ -23,6 +23,7 @@ abstract class BulkJob implements Navigation.Job {
     final boolean override,allowBreak,allowPlace;
     final Stall stall;
     int remaining,ticks,progressSeen,sessionStart;
+    final Symptoms symptoms=new Symptoms();
     String state="preparing",reason="";
     InputArbiter.Lease lease;
     BulkJob(BaritoneNavigation navigation,WorkJournal journal,Map<String,Object> options) {
@@ -78,6 +79,6 @@ abstract class BulkJob implements Navigation.Job {
     @Override public Map<String,Object> status() {
         Map<String,Object> out=new LinkedHashMap<>();out.put("available",true);out.put("action",journal.kind);out.put("jobId",journal.id);out.put("state",state);out.put("reason",reason);out.put("ticks",ticks);out.put("remainingTicks",remaining);out.put("stall",stall.status());
         out.put("progress",session());out.put("blocksPerMinute",ticks<20?null:Math.round(session()*1200.0/ticks*10)/10.0);
-        out.put("overrideProtection",override);out.put("scope",journal.scope);out.put("controlOwned",lease!=null&&lease.isActive());out.put("serverAcknowledged",false);return out;
+        out.put("overrideProtection",override);out.put("scope",journal.scope);out.put("controlOwned",lease!=null&&lease.isActive());out.put("serverAcknowledged",false);out.put("symptoms",symptoms.summary());return out;
     }
 }

@@ -181,10 +181,10 @@ public class MovementTraverse extends Movement {
                 return state;
             }
             // and if it's fine to walk into the blocks in front
-            if (MovementHelper.avoidWalkingInto(pb0.getBlock())) {
+            if (MovementHelper.avoidWalkingInto(pb0)) {
                 return state;
             }
-            if (MovementHelper.avoidWalkingInto(pb1.getBlock())) {
+            if (MovementHelper.avoidWalkingInto(pb1)) {
                 return state;
             }
             // and we aren't already pressed up against the block
@@ -265,9 +265,9 @@ public class MovementTraverse extends Movement {
                 return state;
             }
             BlockPos into = dest.subtract(src).add(dest);
-            Block intoBelow = BlockStateInterface.get(ctx, into).getBlock();
-            Block intoAbove = BlockStateInterface.get(ctx, into.up()).getBlock();
-            if (wasTheBridgeBlockAlwaysThere && (!MovementHelper.isLiquid(ctx, feet) || Baritone.settings().sprintInWater.value) && (!MovementHelper.avoidWalkingInto(intoBelow) || MovementHelper.isWater(intoBelow)) && !MovementHelper.avoidWalkingInto(intoAbove)) {
+            IBlockState intoBelow = BlockStateInterface.get(ctx, into);
+            IBlockState intoAbove = BlockStateInterface.get(ctx, into.up());
+            if (wasTheBridgeBlockAlwaysThere && (!MovementHelper.isLiquid(ctx, feet) || Baritone.settings().sprintInWater.value) && (!MovementHelper.avoidWalkingInto(intoBelow) || MovementHelper.isWater(intoBelow.getBlock())) && !MovementHelper.avoidWalkingInto(intoAbove)) {
                 state.setInput(Input.SPRINT, true);
             }
 

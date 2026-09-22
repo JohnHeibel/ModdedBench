@@ -137,8 +137,9 @@ public final class Settings {
     /**
      * Allow Baritone to fall arbitrary distances and place a water bucket beneath it.
      * Reliability: questionable.
+     * ModdedBench: off by default; it can only be turned on when a native water-placement provider is installed.
      */
-    public final Setting<Boolean> allowWaterBucketFall = new Setting<>(true);
+    public final Setting<Boolean> allowWaterBucketFall = new Setting<>(false);
 
     /**
      * Allow Baritone to assume it can walk on still water just like any other block.
@@ -215,18 +216,36 @@ public final class Settings {
     )));
 
     /**
-     * Blocks that Baritone will attempt to avoid (Used in avoidance)
+     * ModdedBench: blocks the path search never walks into or stands on, as "modid:name" (every meta) or "modid:name:meta".
+     * Replaces upstream's fixed lists and blocksToAvoid; these defaults are only defaults, and any may be removed.
+     * Fluids other than water are refused separately, by asking Forge whether a block is a fluid.
      */
-    public final Setting<List<Block>> blocksToAvoid = new Setting<>(new ArrayList<>(
-            // Leave Empty by Default
-    ));
+    public final Setting<List<String>> hazards = new Setting<>(new ArrayList<>(Arrays.asList(
+            "minecraft:fire",
+            "minecraft:cactus",
+            "minecraft:web",
+            "minecraft:tripwire",
+            "minecraft:end_portal"
+    )));
+
+    /**
+     * ModdedBench: blocks the path search stands on whatever their collision boxes say ("modid:name" or "modid:name:meta")
+     */
+    public final Setting<List<String>> standOn = new Setting<>(new ArrayList<>());
+
+    /**
+     * ModdedBench: blocks the path search never stands on; wins over standOn and over the game's collision boxes
+     */
+    public final Setting<List<String>> neverStandOn = new Setting<>(new ArrayList<>());
 
     /**
      * Blocks that Baritone is not allowed to break
+     * ModdedBench: upstream's fixed rules are its defaults here: ice (it becomes water) and silverfish stone.
      */
-    public final Setting<List<Block>> blocksToDisallowBreaking = new Setting<>(new ArrayList<>(
-            // Leave Empty by Default
-    ));
+    public final Setting<List<Block>> blocksToDisallowBreaking = new Setting<>(new ArrayList<>(Arrays.asList(
+            Blocks.ICE,
+            net.minecraft.init.Blocks.monster_egg
+    )));
 
     /**
      * blocks that baritone shouldn't break, but can if it needs to.
