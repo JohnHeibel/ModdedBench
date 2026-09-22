@@ -139,8 +139,7 @@ A watch is a declarative condition or a small Python file with
 optional prompt for the model, retries with the same event id if the fire is
 not confirmed, and re-arms the watch rather than dropping it. Watch specs
 survive reconnects and, persisted in the journal's SQLite file, an MCP server
-restart. `mb_interrupt_events` is how a host (or the autonomous runner,
-[RUNNER.md](RUNNER.md)) learns it should give the model a new turn. A plain
+restart. `mb_interrupt_events` is how a host learns it should give the model a new turn. A plain
 MCP connection cannot wake a model whose turn has ended, so a chat-style agent
 stays in its turn by blocking in `mb_wait`, which returns when an event needs
 it; an ended turn is restarted by an outer loop such as
