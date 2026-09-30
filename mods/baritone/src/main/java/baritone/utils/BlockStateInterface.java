@@ -34,13 +34,23 @@ public final class BlockStateInterface {
         if(!ctx.minecraft().func_152345_ab())throw new IllegalStateException("capture the loaded chunk index on the client thread");
         nativeWorld=ctx.world().nativeWorld;
         providedLoaded=null;
-        loadedChunks=LoadedChunkIndex.capture((ChunkProviderClient)nativeWorld.getChunkProvider());
+        // Only a search on another thread needs its own copy of the index. The executor, the movement checks and the path
+        // renderer build one of these many times a tick on the client thread, where copying ~300 chunks each time stalled
+        // the game; there the native store is read directly, as upstream does.
+        provider=(ChunkProviderClient)nativeWorld.getChunkProvider();
+        loadedChunks=copyLoadedChunks?LoadedChunkIndex.capture(provider):null;
         var data=ctx.worldData();cached=data==null?null:data.getCachedWorld();
         access=new Access();
     }
+    private ChunkProviderClient provider;
     private static long key(int x,int z){return (long)x&0xffffffffL|(long)z<<32;}
-    private Chunk chunk(int x,int z){if(prev!=null&&prev.xPosition==x>>4&&prev.zPosition==z>>4)return prev;return prev=loadedChunks.get(key(x>>4,z>>4));}
-    public boolean worldContainsLoadedChunk(int x,int z){return providedLoaded!=null?providedLoaded.test(x,z):loadedChunks.containsKey(key(x>>4,z>>4));}
+    private Chunk chunk(int x,int z){if(prev!=null&&prev.xPosition==x>>4&&prev.zPosition==z>>4)return prev;return prev=loaded(x>>4,z>>4);}
+    private Chunk loaded(int cx,int cz){
+        if(loadedChunks!=null)return loadedChunks.get(key(cx,cz));
+        Chunk c=provider.provideChunk(cx,cz);  // an empty chunk when absent: chunkExists() is always true on the 1.7.10 client
+        return c instanceof EmptyChunk||!c.isChunkLoaded?null:c;
+    }
+    public boolean worldContainsLoadedChunk(int x,int z){return providedLoaded!=null?providedLoaded.test(x,z):loaded(x>>4,z>>4)!=null;}
     public boolean isLoaded(int x,int z){return worldContainsLoadedChunk(x,z)||cached!=null&&cached.isCached(x,z);}
     public IBlockState get0(BlockPos p){return get0(p.getX(),p.getY(),p.getZ());}
     public IBlockState get0(int x,int y,int z){
