@@ -8,6 +8,9 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-09-29** Spectator mirror (`harness/mirror`, [MIRROR.md](MIRROR.md)): a host-side byte pipe between the
+  client and the server whose copy feeds a read-only, compacted world for stock GTNH clients on a separate port.
+  Offline tests only; not yet run against the live stack.
 - **2026-09-29** Builder block goals could stop at a boundary overlapping the
   next placement, oscillating between stances. Construction now centres on its
   verified footing when native prediction permits the centred pose only;
