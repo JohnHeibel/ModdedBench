@@ -235,4 +235,17 @@ public class ReferencePathingTest {
         assertEquals("exhausted",search.searchStats().get("why"));
         assertEquals(3,search.searchStats().get("nodes"));assertEquals(2.0,search.searchStats().get("bestDistance"));
     }
+    @Test public void aDiagonalEdgesRoundABlockedSideOnlyOverFloor(){
+        Terrain t=new Terrain();t.set(1,64,0,Blocks.STONE,0);t.set(1,65,0,Blocks.STONE,0);
+        var res=new baritone.utils.pathing.MutableMoveResult();MovementDiagonal.cost(context(t,false),0,64,0,1,1,res);
+        assertTrue(res.cost<ActionCosts.COST_INF);
+        // The open side's floor gone: the player would be pushed out over the hole.
+        t.set(0,63,1,Blocks.AIR,0);t.set(0,62,1,Blocks.AIR,0);
+        res=new baritone.utils.pathing.MutableMoveResult();MovementDiagonal.cost(context(t,false),0,64,0,1,1,res);
+        assertTrue(res.cost>=ActionCosts.COST_INF);
+        // With both sides open the player crosses the corner between two floors, as upstream allows.
+        t.set(1,64,0,Blocks.AIR,0);t.set(1,65,0,Blocks.AIR,0);
+        res=new baritone.utils.pathing.MutableMoveResult();MovementDiagonal.cost(context(t,false),0,64,0,1,1,res);
+        assertTrue(res.cost<ActionCosts.COST_INF);
+    }
 }

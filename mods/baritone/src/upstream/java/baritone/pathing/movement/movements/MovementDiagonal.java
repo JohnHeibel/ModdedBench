@@ -230,6 +230,11 @@ public class MovementDiagonal extends Movement {
             return;
         }
         if (optionA != 0 || optionB != 0) {
+            // ModdedBench: edging round the blocked side pushes the player's footprint over the open side's floor, so
+            // that floor must hold them; upstream refused only lava there, and a 1x1 shaft beside a hole jammed the player.
+            if (!water && (optionA == 0 ? !MovementHelper.canWalkOn(context, x, y - 1, destZ) : !MovementHelper.canWalkOn(context, destX, y - 1, z))) {
+                return;
+            }
             multiplier *= SQRT_2 - 0.001; // TODO tune
             if (startIn == Blocks.LADDER || startIn == Blocks.VINE) {
                 // edging around doesn't work if doing so would climb a ladder or vine instead of moving sideways
