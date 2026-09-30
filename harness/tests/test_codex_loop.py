@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 # Copyright (c) 2026 ModdedBench contributors
 """codex_loop against a fake Codex command; no model is ever called."""
-import contextlib, io, json, os, sys, tempfile, unittest
+import contextlib, io, json, os, sys, tempfile, unittest, unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runner"))
@@ -60,6 +60,17 @@ class CodexLoopTests(unittest.TestCase):
             self.assertEqual(cut, f.billed())
             f.event({"type": "turn.completed", "usage": {"input_tokens": 100}})
             self.assertEqual(cut + 100, f.billed())
+
+    def test_the_overlay_clock_runs_only_inside_turns(self):
+        from feed import Feed
+        with tempfile.TemporaryDirectory() as d, unittest.mock.patch("feed.time.time") as now:
+            now.return_value = 100.0; f = Feed(Path(d))
+            f.event({"type": "turn.started"}); now.return_value = 130.0
+            f.event({"type": "turn.completed", "usage": {}}); now.return_value = 1000.0
+            f.status("backing_off"); f.status("between_turns")
+            self.assertEqual((30.0, None), (f.live["stats"]["activeSeconds"], f.live["stats"]["activeSince"]))
+            f.event({"type": "turn.started"}); now.return_value = 1010.0; f.status("acting", "mining")  # then the loop is killed
+            now.return_value = 5000.0; self.assertEqual((40.0, None), (Feed(Path(d)).live["stats"]["activeSeconds"], None))
 
     def test_token_budget_ends_the_turn_where_it_stands_and_the_thread_resumes(self):
         call = {"type": "item.completed", "item": {"id": "c", "type": "mcp_tool_call", "tool": "mb_obs", "arguments": {}, "result": {"content": [{"type": "text", "text": "x" * 4000}]}}}

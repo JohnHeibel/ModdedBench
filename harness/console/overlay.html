@@ -94,7 +94,7 @@ function tierOf(chapters){const done=n=>(chapters||[]).some(c=>c.name.startsWith
 function draw(d){
   const g=d.goal||{},st=d.status||{},s=d.stats||{},t=s.tokens||{},run=d.run||{};
   canvas.dataset.tier=opts.get("tier")||tierOf(d.chapters);
-  $("clock").textContent=hms(s.startedAt?d.now-s.startedAt:0);
+  $("clock").textContent=hms((s.activeSeconds||0)+(s.activeSince?d.now-s.activeSince:0));  // agent time: only while a turn runs
   // A run is sized in minutes and tokens; turns are only how Codex recovers, so the header shows what is left of the budget.
   const b=d.budget||{},left=b.minutes&&b.startedAt?b.minutes*60-(d.now-b.startedAt):null; $("turn").textContent=left==null?"":left>0?span(left)+" left":"budget spent";
   $("model").textContent=[run.model,run.effort&&run.effort+" effort"].filter(Boolean).join(", ");
