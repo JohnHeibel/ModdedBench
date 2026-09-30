@@ -147,6 +147,15 @@ public final class BlockShapes {
             }
         return out;
     }
+    /** On the game thread: whether this cell's collision boxes, measured now, cross the 0.6-wide lane a player walking
+     *  through its centre along x (or z) sweeps. An open door lies along the lane's side; a shut one crosses it. */
+    public static boolean blocksLane(World world,int x,int y,int z,boolean alongX){
+        AxisAlignedBB lane=alongX?AxisAlignedBB.getBoundingBox(x,y,z+.2,x+1,y+1,z+.8):AxisAlignedBB.getBoundingBox(x+.2,y,z,x+.8,y+1,z+1);
+        List<AxisAlignedBB> boxes=new ArrayList<>();
+        try{world.getBlock(x,y,z).addCollisionBoxesToList(world,x,y,z,lane,boxes,Minecraft.getMinecraft().thePlayer);}
+        catch(RuntimeException|LinkageError failed){return true;}
+        return !boxes.isEmpty();
+    }
     private static double round(double v){return Math.round(v*1000)/1000.0;}
     private static void ask(Block block,int meta,int x,int y,int z){
         Minecraft mc=Minecraft.getMinecraft();World world=mc.theWorld;
