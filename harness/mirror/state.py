@@ -56,6 +56,7 @@ class Mirror:
     def reset(self, uuid: str = "", name: str = ""):
         self.uuid, self.name = uuid, name
         self.prelude, self.join, self.eid = [], None, 0
+        self.hs, self.gates = 0, []  # FML|HS messages the host had sent before each prelude frame
         self.seq = self.gen = 0
         self.dim = None; self.respawn = None  # (seq, frame) of the last dimension change, replayed in order
         self.time = self.spawnpos = None
@@ -153,7 +154,8 @@ class Mirror:
         x, y, z, yaw, pitch = self.hpos
         held = Reader(self._item(36 + self.held)).u("h")
         return frame(0x0C, varint(self.eid) + string(self.uuid) + string(self.name[:16]) + varint(0)
-                     + pack("iiiBBh", fixed(x), fixed(y), fixed(z), angle(yaw), angle(pitch), max(held, 0)) + b"\x7f")
+                     + pack("iiiBBh", fixed(x), fixed(y), fixed(z), angle(yaw), angle(pitch), max(held, 0))
+                     + b"\x00\x00\x7f")  # one flags entry: a 1.7.10 client reads an empty list as null and crashes
 
     def _avatar_move(self) -> list[bytes]:
         if self.hpos is None or self.join is None: return []
@@ -175,7 +177,9 @@ class Mirror:
 
     def client(self, pid: int, body: bytes) -> list[bytes]:
         """A host C->S play packet: moves the avatar; nothing the host sends is relayed."""
-        if self.join is None: return []
+        if self.join is None:
+            if pid == 0x17 and Reader(body).string() == "FML|HS": self.hs += 1
+            return []
         r = Reader(body)
         if pid in (0x04, 0x05, 0x06):
             pos = self.hpos or [0.0, 0.0, 0.0, 0.0, 0.0]
@@ -194,7 +198,7 @@ class Mirror:
         """A host S->C play frame; returns what viewers get live."""
         self.seq += 1
         if self.join is None:
-            self.prelude.append(f)
+            self.prelude.append(f); self.gates.append(self.hs)
             if pid == 0x01:
                 r = Reader(body)
                 self.eid, gm, self.dim = r.u("iBb")
@@ -308,6 +312,12 @@ class Mirror:
             self.dropped[0] += 1; self.dropped[1] += n
 
     # ---- late join
+    def gated(self) -> list[tuple[int, bytes]]:
+        """The snapshot, each frame with the FML|HS messages a viewer must have sent first. The server's side of the
+        Forge handshake waits for the client's replies, and a client handed JoinGame mid-handshake crashes."""
+        snap, last = self.snapshot(), max(self.gates, default=0)
+        return [(self.gates[i] if i < len(self.gates) else last, f) for i, f in enumerate(snap)]
+
     def snapshot(self) -> list[bytes]:
         """Frames that bring a freshly logged-in viewer to the host's present, after LoginSuccess."""
         out = [*self.prelude, abilities()]

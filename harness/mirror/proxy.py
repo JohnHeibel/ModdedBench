@@ -68,9 +68,26 @@ class Viewer:
     def __init__(self, writer: asyncio.StreamWriter, name: str, cap: int):
         self.w, self.name, self.cap = writer, name, cap
         self.q, self.size, self.closing, self.ev = [], 0, False, asyncio.Event()
+        self.held, self.hs = [], 0  # (gate, frame) waiting on this viewer's FML handshake replies
 
-    def send(self, frames):
+    def hold(self, gated):
+        self.held = list(gated); self.release()
+
+    def handshook(self):
+        self.hs += 1; self.release()
+
+    def release(self):
+        n = 0
+        while n < len(self.held) and self.held[n][0] <= self.hs: n += 1
+        out, self.held = [f for _, f in self.held[:n]], self.held[n:]
+        if out: self.send(out, now=True)
+
+    def send(self, frames, now=False):
         if self.closing: return
+        if self.held and not now:  # live frames queue behind a snapshot still waiting on the handshake
+            self.held += [(0, f) for f in frames]
+            if sum(len(f) for _, f in self.held) > self.cap: self.q, self.held, self.closing = [], [], True; self.ev.set()
+            return
         for f in frames: self.q.append(f); self.size += len(f)
         if self.size > self.cap: self.q, self.closing = [], True  # too slow to keep up: drop without a goodbye
         self.ev.set()
@@ -234,15 +251,20 @@ class Hub:
             w.write(disconnect(why, login=True)); await w.drain()
             return
         v = Viewer(w, name, self.viewer_queue)
-        v.send([frame(0x02, string(offline_uuid(name)) + string(name)), *self.mirror.snapshot()])
+        v.send([frame(0x02, string(offline_uuid(name)) + string(name))])
+        v.hold(self.mirror.gated())
         self.viewers.add(v)
         print(f"mirror: viewer {name} joined ({len(self.viewers)} watching)", flush=True)
         return v
 
     async def _drain(self, r, v):
-        try:  # everything a viewer sends is ignored, keepalive replies included
-            while await r.read(65536) and not v.closing: pass
-        except (ConnectionError, OSError):
+        s = Splitter()
+        try:  # a viewer's Forge handshake replies release the snapshot; everything else it sends is ignored
+            while (data := await r.read(65536)) and not v.closing:
+                for f in s.feed(data):
+                    pid, body = split(f)
+                    if pid == 0x17 and Reader(body).string() == "FML|HS": v.handshook()
+        except (ConnectionError, OSError, ValueError):
             pass
         v.close(); self.viewers.discard(v)
 
