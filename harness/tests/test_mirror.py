@@ -15,8 +15,8 @@ from harness.mirror import proxy, state, wire  # noqa: E402
 from harness.mirror.wire import Reader, frame, pack, split, string, varint  # noqa: E402
 
 HOST, UUID = "Agent", wire.offline_uuid("Agent")
-HELD = pack("hbhh", 267, 1, 0, -1)    # iron sword, no NBT
-HELMET = pack("hbhh", 306, 1, 0, 3) + b"abc"
+HELD = pack("hbhh", 267, 1, 0, -1) + b"\x01"    # iron sword, no NBT, then GTNH's varint stack size
+HELMET = pack("hbhh", 306, 1, 0, 3) + b"abc\x01"
 
 
 def handshake(nxt=2): return frame(0, varint(5) + string("127.0.0.1") + pack("H", 25575) + varint(nxt))
@@ -183,6 +183,26 @@ class Snapshot(unittest.TestCase):
         chans = [wire.payload(split(f)[1])[0] for f in m.snapshot() if split(f)[0] == 0x3F]
         self.assertIn("gtnh-config", chans)
         self.assertEqual(m.stats()["payloads"]["dropped"]["entries"], 4)
+
+
+class Handshake(unittest.TestCase):
+    def test_snapshot_waits_for_the_viewers_forge_replies(self):
+        m = state.Mirror(); m.login(UUID, HOST)
+        hs = lambda: split(s3f("FML|HS", b"x"))
+        c17 = split(frame(0x17, string("FML|HS") + pack("h", 1) + b"y"))
+        m.server(s3f("FML|HS", b"hello"), *hs())      # ServerHello: sent at once
+        m.client(*c17); m.client(*c17)                # ClientHello, ModList
+        m.server(s3f("FML|HS", b"mods"), *hs())       # the server's ModList answers them
+        m.client(*c17)
+        join = frame(0x01, pack("iBb", 7, 0, 0) + b"rest")
+        m.server(join, *split(join))
+        self.assertEqual([g for g, _ in m.gated()][:3], [0, 2, 3])
+        v = proxy.Viewer(None, "Watcher", 1 << 20)
+        v.hold(m.gated()); v.send([frame(0x03, b"live")])
+        self.assertEqual(len(v.q), 1)                 # only ServerHello, and the live frame waits behind the snapshot
+        v.handshook(); v.handshook(); self.assertEqual(len(v.q), 2)
+        v.handshook(); self.assertFalse(v.held)
+        self.assertEqual(split(v.q[-1]), (0x03, b"live"))
 
 
 class Pipe(unittest.IsolatedAsyncioTestCase):

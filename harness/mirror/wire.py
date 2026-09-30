@@ -67,12 +67,14 @@ class Reader:
         return self.take(self.varint()).decode()
 
     def item(self) -> bytes:
-        """One wire item slot, raw: short id (<0 empty), byte count, short damage, short nbt length + gzip bytes."""
+        """One wire item slot, raw: short id (<0 empty), byte count, short damage, short nbt length + gzip bytes,
+        then GTNH's varint of the full stack size (the byte count cannot hold a drawer's or AE's stack)."""
         start = self.pos
         if self.u("h") >= 0:
             self.take(3)
             n = self.u("h")
             if n > 0: self.take(n)
+            self.varint()
         return self.b[start:self.pos]
 
     def metadata(self) -> dict[int, bytes]:
