@@ -64,6 +64,9 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
 
     private volatile String failure = "";
     public String failureDescription() { return failure; }
+    // ModdedBench: how the search ended (why, nodes, movements, bestDistance), so a failed job can say why it had no path
+    protected volatile java.util.Map<String, Object> searchStats = java.util.Map.of();
+    public java.util.Map<String, Object> searchStats() { return searchStats; }
 
     /**
      * This is really complicated and hard to explain. I wrote a comment in the old version of MineBot but it was so

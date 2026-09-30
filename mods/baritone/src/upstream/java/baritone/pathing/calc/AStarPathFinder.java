@@ -174,6 +174,15 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         if (cancelRequested) {
             return Optional.empty();
         }
+        // ModdedBench: record why the loop ended; one node means not one movement left the start
+        double best = 0;
+        for (PathNode node : bestSoFar) {
+            if (node != null) {
+                best = Math.max(best, Math.sqrt(getDistFromStartSq(node)));
+            }
+        }
+        searchStats = java.util.Map.of("why", openSet.isEmpty() ? "exhausted" : numEmptyChunk >= pathingMaxChunkBorderFetch ? "unloaded_chunks" : "timeout",
+                "nodes", numNodes, "movements", numMovementsConsidered, "bestDistance", Math.round(best * 10) / 10.0);
         Optional<IPath> result = bestSoFar(true, numNodes);
         if (result.isPresent()) {
             logDebug("Took " + (System.currentTimeMillis() - startTime) + "ms, " + numMovementsConsidered + " movements considered");

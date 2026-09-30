@@ -218,4 +218,21 @@ public class ReferencePathingTest {
         var corner=PathingBehavior.footprint(64,9.8,4.8,10.4,5.4);
         assertEquals(4,corner.size());assertEquals(new BetterBlockPos(10,64,5),corner.get(0));assertEquals(new BetterBlockPos(9,64,4),corner.get(3));
     }
+    @Test public void aFailedSearchSaysWhyAndHowFarItGot(){
+        // Floating over nothing: not one movement leaves the start.
+        Terrain t=new Terrain();t.floor=false;
+        var c=context(t,false);Baritone.settings().allowBreak.value=false;c=context(t,false);
+        var search=new AStarPathFinder(0,64,0,new GoalBlock(10,64,0),new Favoring(null,c),c);
+        assertEquals(PathCalculationResult.Type.FAILURE,search.calculate(2000,4000).getType());
+        assertEquals("exhausted",search.searchStats().get("why"));assertEquals(1,search.searchStats().get("nodes"));
+        // Walled into a three-block corridor: the search runs out after the corridor.
+        Terrain w=new Terrain();
+        for(int x=-1;x<=3;x++)for(int y=64;y<=66;y++){w.set(x,y,-1,Blocks.STONE,0);w.set(x,y,1,Blocks.STONE,0);}
+        for(int y=64;y<=66;y++){w.set(-1,y,0,Blocks.STONE,0);w.set(3,y,0,Blocks.STONE,0);}
+        c=context(w,false);
+        search=new AStarPathFinder(0,64,0,new GoalBlock(10,64,0),new Favoring(null,c),c);
+        assertEquals(PathCalculationResult.Type.FAILURE,search.calculate(2000,4000).getType());
+        assertEquals("exhausted",search.searchStats().get("why"));
+        assertEquals(3,search.searchStats().get("nodes"));assertEquals(2.0,search.searchStats().get("bestDistance"));
+    }
 }

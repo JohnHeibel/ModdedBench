@@ -27,6 +27,8 @@ final class ReferenceProcessJob implements Navigation.Job {
     private String state="running",reason="";
     private int ticks;
     private boolean started;
+    private final long initialCalculations;
+    private final Map<String,Object> failure=new LinkedHashMap<>();
     private final baritone.gtnh.pathing.Stall stall;
     private final Set<String> movements=new LinkedHashSet<>();
     // A get_to_block target named by picked identity (item or ore) is found by this scan on the game thread, as mining's are.
@@ -50,7 +52,7 @@ final class ReferenceProcessJob implements Navigation.Job {
         if(kind.equals("explore")&&engine.getWorldProvider().getCurrentWorld()==null)throw new IllegalArgumentException("exploration requires the server world identity and cache");
         var settings=Baritone.settings();
         for(var s:List.of(settings.allowBreak,settings.allowPlace,settings.exploreForBlocks,settings.rightClickContainerOnArrival,settings.enterPortal))saved.put(s,s.value);
-        engine.getPathingBehavior().forceCancel();BlockRules.reset();engine.snags.reset();
+        engine.getPathingBehavior().forceCancel();BlockRules.reset();engine.snags.reset();initialCalculations=engine.getPathingBehavior().calculationsStarted();
         try{
             lease=ControlRegistry.controls().arbiter().acquire("baritone-"+kind,this::cancel,bool(params,"overrideProtection",false),true);
             settings.allowBreak.value=bool(params,"allowBreak",false);settings.allowPlace.value=bool(params,"allowPlace",false);
@@ -87,7 +89,9 @@ final class ReferenceProcessJob implements Navigation.Job {
         if(current!=null)current.getPath().movements().forEach(m->movements.add(m.getClass().getSimpleName()));
         if(!process.isActive()){
             boolean success=switch(kind){case "goal"->goal.isInGoal(engine.getPlayerContext().playerFeet());case "get_to_block"->engine.getGetToBlockProcess().arrived;case "explore"->engine.getExploreProcess().completed;default->false;};
-            finish(success?"succeeded":"failed",success?"source_process_complete":"source_process_stopped");
+            // Not arriving has a measured cause: the process's own give-up, a snag, or how the last search ended.
+            String stopped=kind.equals("get_to_block")?engine.getGetToBlockProcess().stopReason:null;
+            finish(success?"succeeded":"failed",success?"source_process_complete":stopped!=null?stopped:PathFailure.cause(engine,initialCalculations,failure));
         }
     }
     private long inventory(){long sum=0;for(var s:mc.thePlayer.inventory.mainInventory)if(s!=null)sum=sum*31+s.stackSize*7919L+net.minecraft.item.Item.getIdFromItem(s.getItem());return sum;}
@@ -101,7 +105,7 @@ final class ReferenceProcessJob implements Navigation.Job {
     @Override public boolean succeeded(){return state.equals("succeeded");}
     @Override public Map<String,Object> status(){
         var out=new LinkedHashMap<String,Object>();out.put("engine","baritone-1.2.19-source-port");out.put("action",kind);out.put("state",state);out.put("reason",reason);
-        out.put("ticks",ticks);out.put("controlOwned",!done()&&lease!=null&&lease.isActive());out.put("scope",scope);out.put("movementTypes",List.copyOf(movements));out.put("stall",stall.status());out.put("snags",engine.snags.status());out.put("pathRules",BlockRules.applied());
+        out.put("ticks",ticks);out.put("controlOwned",!done()&&lease!=null&&lease.isActive());out.put("scope",scope);out.put("movementTypes",List.copyOf(movements));out.put("stall",stall.status());out.put("snags",engine.snags.status());if(!failure.isEmpty())out.put("failure",failure);out.put("pathRules",BlockRules.applied());
         out.put("goal",String.valueOf(engine.getPathingBehavior().getGoal()));
         if(farm!=null){out.put("farmRules",farm.rules());out.put("farmSeen",farm.seen);}
         if(scan!=null){out.put("scanPasses",scan.passes);out.put("scanMatches",scan.observedLocations().size());}

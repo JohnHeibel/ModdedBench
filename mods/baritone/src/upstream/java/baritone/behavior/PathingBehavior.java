@@ -530,7 +530,8 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
                 lastCalculation = java.util.Map.of("type",calcResult.getType().name(),
                     "elapsedMs",(System.nanoTime()-started)/1000000,
                     "failure",pathfinder.failureDescription(),
-                    "pathLength",calcResult.getPath().map(IPath::length).orElse(0));
+                    "pathLength",calcResult.getPath().map(IPath::length).orElse(0),
+                    "start",java.util.List.of(start.getX(),start.getY(),start.getZ()),"search",pathfinder.searchStats());
                 Optional<PathExecutor> executor = calcResult.getPath().map(p -> new PathExecutor(PathingBehavior.this, p));
                 if (current == null) {
                     if (executor.isPresent()) {
