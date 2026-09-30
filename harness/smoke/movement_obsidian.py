@@ -176,7 +176,7 @@ def frame(course, name: str, info: dict, index: int, yaw: float, body) -> dict:
         "trial": index, "yaw": yaw, "startActual": info.get("startActual"), "wallS": round(wall, 2),
         "state": out.get("state", "succeeded"), "reason": out.get("reason"), "ticks": samples[-1]["tick"] if samples else None,
         "healthBefore": before["health"], "healthAfter": after.get("health"), "healthMin": health_min,
-        "burned": any(x["burning"] for x in samples), "inLava": any(x["inLava"] for x in samples), "dead": after.get("dead"),
+        "burned": any(x["burning"] for x in samples), "inLava": any(x["inLava"] for x in samples), "dead": bool(after.get("dead") or after.get("fatal")), "fatalCause": after.get("fatalCause") or None,
         "inWaterSamples": sum(bool(x["inWater"]) for x in samples), "onPoolSamples": len(on_crust), "samples": len(samples),
         "offEdgeSamples": sum(1 for x in on_crust if x["pos"][1] < B + 2.5) if fixture.startswith("obsidian_natural") else 0,
         "minY": round(min([x["pos"][1] for x in samples] + [after["pos"][1]]), 3) if after else None,
