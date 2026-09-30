@@ -53,7 +53,7 @@ final class ReferenceConstructionProcess extends BulkJob {
             inspection=ConstructionPlan.inspect(plan.cells,plan.replace(),override,plan::correct);
             for(String key:List.of("unloaded","conflicts","protected","unsupported","missingItems"))if(((Number)inspection.get(key)).intValue()>0){finish("failed","preflight_"+key);return;}
         }
-        engine.getPathingBehavior().forceCancel();
+        engine.getPathingBehavior().forceCancel();engine.snags.reset();
         for(var setting:Baritone.settings().allSettings)savedSettings.put(setting,setting.value);
         initializeClearance();configure();engine.overrideProtection=override;engine.positionAllowed=p->true;
         engine.getInputOverrideHandler().attach(lease);

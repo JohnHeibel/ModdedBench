@@ -138,6 +138,10 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
                 if (!calcContext.positionAllowed.test(new baritone.compat.BlockPos(res.x,res.y,res.z))) {
                     continue;
                 }
+                // ModdedBench: an edge that snagged this job is not planned again, or the re-plan hands back the same path
+                if (!calcContext.snags.allows(currentNode.x, currentNode.y, currentNode.z, res.x, res.y, res.z)) {
+                    continue;
+                }
                 long hashCode = BetterBlockPos.longHash(res.x, res.y, res.z);
                 if (isFavoring) {
                     // see issue #18

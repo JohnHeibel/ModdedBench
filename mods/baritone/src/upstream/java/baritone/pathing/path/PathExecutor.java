@@ -35,6 +35,7 @@ import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.movement.movements.*;
 import baritone.utils.BlockStateInterface;
+import baritone.gtnh.pathing.Snags;
 import net.minecraft.block.BlockLiquid;
 import baritone.compat.Tuple;
 import baritone.compat.BlockPos;
@@ -80,6 +81,13 @@ public class PathExecutor implements IPathExecutor, Helper {
     private final IPlayerContext ctx;
 
     private boolean sprintNextTick;
+
+    // ModdedBench: snag recovery. Backing up to the snagged movement's source, ticks spent (-1: not), then retry or re-plan.
+    private static final int BACKUP_TICKS = 30;
+    private int backup = -1;
+    private boolean replanAfterBackup;
+    private BlockPos backupTo;
+    private double lastX = Double.NaN, lastY, lastZ;
 
     public PathExecutor(PathingBehavior behavior, IPath path) {
         this.behavior = behavior;
@@ -226,9 +234,18 @@ public class PathExecutor implements IPathExecutor, Helper {
             clearKeys();
             return true;
         }
+        double moved = Double.isNaN(lastX) ? 1 : Math.max(Math.hypot(ctx.player().posX - lastX, ctx.player().posZ - lastZ), Math.abs(ctx.player().posY - lastY));
+        lastX = ctx.player().posX;
+        lastY = ctx.player().posY;
+        lastZ = ctx.player().posZ;
+        if (backup >= 0) {
+            return backUp(movement, moved);
+        }
         MovementStatus movementStatus = movement.update();
         if (movementStatus == UNREACHABLE || movementStatus == FAILED) {
             logDebug("Movement returns status " + movementStatus);
+            // ModdedBench: the second failure of one edge bans it, so the re-plan cannot hand back the same path
+            edgeFailed(movement, "unreachable_movement", 1, Map.of("status", movementStatus.name()));
             cancel();
             return true;
         }
@@ -244,17 +261,83 @@ public class PathExecutor implements IPathExecutor, Helper {
                 ctx.player().setSprinting(false); // letting go of control doesn't make you stop sprinting actually
             }
             ticksOnCurrent++;
+            // ModdedBench: pressed against something and not moving. Measure what, back up to the source, then retry or re-plan.
+            if (snags().tick(behavior.baritone.getInputOverrideHandler().isInputForcedDown(Input.MOVE_FORWARD), ctx.player().isCollidedHorizontally, moved)) {
+                logDebug("Snagged on " + movement.getClass().getSimpleName() + " at " + ctx.playerFeet());
+                replanAfterBackup = edgeFailed(movement, "snagged", Snags.RETRIES, Map.of()) == Snags.Verdict.BAN;
+                backupTo = movement.getSrc();
+                backup = 0;
+                clearKeys();
+                return false;
+            }
             if (ticksOnCurrent > currentMovementOriginalCostEstimate + Baritone.settings().movementTimeoutTicks.value) {
                 // only cancel if the total time has exceeded the initial estimate
                 // as you break the blocks required, the remaining cost goes down, to the point where
                 // ticksOnCurrent is greater than recalculateCost + 100
                 // this is why we cache cost at the beginning, and don't recalculate for this comparison every tick
                 logDebug("This movement has taken too long (" + ticksOnCurrent + " ticks, expected " + currentMovementOriginalCostEstimate + "). Cancelling.");
+                edgeFailed(movement, "movement_timeout", 1, Map.of("ticks", ticksOnCurrent));
                 cancel();
                 return true;
             }
         }
         return canCancel; // movement is in progress, but if it reports cancellable, PathingBehavior is good to cut onto the next path
+    }
+
+    private void carryBackup(PathExecutor from) { // ModdedBench: a splice keeps a back-up in progress
+        backup = from.backup;
+        replanAfterBackup = from.replanAfterBackup;
+        backupTo = from.backupTo;
+    }
+
+    private Snags snags() {
+        return behavior.baritone.snags;
+    }
+
+    /** ModdedBench: one more failure of this movement's edge, with where the player stands and what it touches. */
+    private Snags.Verdict edgeFailed(Movement movement, String kind, int retries, Map<String, Object> extra) {
+        Map<String, Object> detail = new LinkedHashMap<>();
+        BetterBlockPos feet = ctx.playerFeet();
+        detail.put("kind", kind);
+        detail.put("movement", movement.getClass().getSimpleName());
+        detail.put("at", List.of(feet.x, feet.y, feet.z));
+        detail.put("position", List.of(Math.round(ctx.player().posX * 1000) / 1000.0, Math.round(ctx.player().boundingBox.minY * 1000) / 1000.0, Math.round(ctx.player().posZ * 1000) / 1000.0));
+        detail.put("touching", baritone.gtnh.BlockShapes.touching(ctx.player()));
+        detail.putAll(extra);
+        BetterBlockPos src = movement.getSrc(), dest = movement.getDest();
+        return snags().failed(new Snags.Edge(src.x, src.y, src.z, dest.x, dest.y, dest.z), retries, detail);
+    }
+
+    /**
+     * ModdedBench: walk back to the snagged movement's source centre, then retry the movement or, once its edge is
+     * banned, cancel so the search plans round it. A back-up that does not arrive, or snags too, ends the job: the
+     * player is wedged and only the model can judge what to do.
+     */
+    private boolean backUp(Movement movement, double moved) {
+        clearKeys();
+        double dx = backupTo.getX() + 0.5 - ctx.player().posX, dz = backupTo.getZ() + 0.5 - ctx.player().posZ;
+        // A source on another level (a snag after a descend) is not walked back to: retry or re-plan from here.
+        if (dx * dx + dz * dz < 0.15 * 0.15 && ctx.player().onGround || ctx.playerFeet().y != backupTo.getY()) {
+            backup = -1;
+            lastX = Double.NaN;
+            if (replanAfterBackup) {
+                cancel();
+                return true;
+            }
+            movement.reset();
+            ticksOnCurrent = 0;
+            return true;
+        }
+        boolean snaggedAgain = snags().tick(true, ctx.player().isCollidedHorizontally, moved);
+        if (++backup > BACKUP_TICKS || snaggedAgain) {
+            logDebug("Could not back out of the snag");
+            snags().fail(snags().cause());
+            cancel();
+            return true;
+        }
+        behavior.baritone.getLookBehavior().updateTarget(RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.getBlockPosCenter(backupTo), ctx.playerRotations()).withPitch(ctx.playerRotations().getPitch()), false);
+        behavior.baritone.getInputOverrideHandler().setInputForceState(Input.MOVE_FORWARD, true);
+        return false;
     }
 
     private Tuple<Double, BlockPos> closestPathPos(IPath path) {
@@ -615,6 +698,7 @@ public class PathExecutor implements IPathExecutor, Helper {
             ret.currentMovementOriginalCostEstimate = currentMovementOriginalCostEstimate;
             ret.costEstimateIndex = costEstimateIndex;
             ret.ticksOnCurrent = ticksOnCurrent;
+            ret.carryBackup(this);
             return ret;
         }).orElseGet(this::cutIfTooLong); // dont actually call cutIfTooLong every tick if we won't actually use it, use a method reference
     }
@@ -634,6 +718,7 @@ public class PathExecutor implements IPathExecutor, Helper {
                 ret.costEstimateIndex = costEstimateIndex - cutoffAmt;
             }
             ret.ticksOnCurrent = ticksOnCurrent;
+            ret.carryBackup(this);
             return ret;
         }
         return this;

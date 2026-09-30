@@ -86,6 +86,7 @@ public class CalculationContext {
     private final dev.modbench.api.WorldMemory.Snapshot protectedRegions;
     private final boolean overrideProtection;
     public final java.util.function.Predicate<BlockPos> positionAllowed;
+    public final baritone.gtnh.pathing.Snags snags; // ModdedBench: movement edges this job banned after they snagged
     private final java.util.function.Predicate<IBlockState> explicitMiningTargets;
 
     public CalculationContext(IBaritone baritone) {
@@ -103,6 +104,7 @@ public class CalculationContext {
         this.protectedRegions = captured.protection();
         this.overrideProtection = captured.overrideProtection();
         this.positionAllowed = captured.positionAllowed();
+        this.snags = captured.snags();
         this.explicitMiningTargets = captured.explicitMiningTargets();
         this.world = captured.world();
         this.bsi = captured.blocks();
