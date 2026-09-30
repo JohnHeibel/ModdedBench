@@ -601,9 +601,9 @@ def mb_scan(blocks: list[dict] | None = None, bounds: dict | None = None, cursor
     those ranges is brought inside and the result's clamped says so. If done is false,
     call again with the returned cursor and the same bounds. The footprint may be at most
     512x512 blocks. Selectors are exact: {ore:...} takes a full ore-dictionary name, not a
-    prefix. GregTech ore that is still buried reports meta 0 and a placeholder name: the
-    pack does not tell the client what an ore is until it is exposed, so scan for the block
-    id "gregtech:gt.blockores" to learn THAT ore is there and prospect to learn WHAT it is.
+    prefix. GregTech ore that is still buried has no name (null, counted in notRevealed): the
+    pack does not tell the client what an ore is until a face is exposed, so the scan shows
+    THAT ore is there, and the vein's exposed ores or prospecting say WHAT it is.
     Unloaded cells are counted, never loaded or generated. Matches are observations, not
     proof that mining will succeed (you may lack the tool to harvest them).
     detail="summary" (default) answers per kind of block: count, bounding box and the 8
@@ -632,7 +632,11 @@ def mb_scan(blocks: list[dict] | None = None, bounds: dict | None = None, cursor
     if not out["done"]: out["cursor"] = [layer, inner]
     if detail == "full": return out
     rows = [{"pos": m.get("pos"), "id": m.get("id"), "meta": m.get("meta"), "name": (m.get("pickedItem") or {}).get("name")} for m in out["matches"]]
+    hidden = [r for r in rows if _untranslated(r["name"])]
+    for r in hidden: r["name"] = None
     out["found"] = len(rows)
+    if hidden: out["notRevealed"] = {"count": len(hidden), "meaning": "name is null: the game has not told the client which variant these are "
+                                     "(buried ore stays unnamed until a face is exposed). Their neighbours or the vein's exposed ores say what they likely are."}
     if detail == "rows": out["matches"] = rows; return out
     me = kernel().call("obs.player").get("pos") or [0, 0, 0]; kinds = {}
     for row in rows: kinds.setdefault((row["id"], row["meta"], row["name"]), []).append(row["pos"])
@@ -642,6 +646,11 @@ def mb_scan(blocks: list[dict] | None = None, bounds: dict | None = None, cursor
                      "nearest": sorted(at, key=lambda p: sum((p[i] - me[i]) ** 2 for i in range(3)))[:8]}
                     for k, at in sorted(kinds.items(), key=lambda kv: -len(kv[1]))]
     return out
+
+
+def _untranslated(name: str | None) -> bool:
+    """A display name that is still a lang key ("tile.foo.0.name"): the client lacks what it needs to name the block."""
+    return bool(name) and name.endswith(".name") and " " not in name
 
 
 @tool(rung=1, lane="control", coverage=["machine"])
