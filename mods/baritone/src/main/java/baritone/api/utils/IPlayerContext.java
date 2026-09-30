@@ -16,8 +16,12 @@ public interface IPlayerContext {
     baritone.api.cache.IWorldData worldData();
     RayTraceResult objectMouseOver();
     default BetterBlockPos playerFeet(){
-        return NavigationCoordinates.feet(player().posX,player().boundingBox.minY,player().posZ,
-            p->world().getBlockState(p).getBlock() instanceof net.minecraft.block.BlockSlab);
+        double minY=player().boundingBox.minY;
+        // ModdedBench: the feet leave a cell whose measured top the player stands on; upstream's slab class until measured
+        return NavigationCoordinates.feet(player().posX,minY,player().posZ,p->{
+            IBlockState s=world().getBlockState(p);Boolean raised=NavigationCoordinates.raisedFloor(s,minY-p.getY());
+            return raised!=null?raised:s.getBlock() instanceof net.minecraft.block.BlockSlab;
+        });
     }
     default Vec3d playerFeetAsVec(){return new Vec3d(player().posX,player().boundingBox.minY,player().posZ);}
     default Vec3d playerHead(){return LegacyPlayer.eyes(player());}

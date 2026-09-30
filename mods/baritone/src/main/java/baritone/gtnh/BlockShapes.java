@@ -22,6 +22,9 @@ public final class BlockShapes {
     public record Shape(boolean empty,boolean standable,double top,double[][] surface) {
         /** One box covers the whole top: a player anywhere over the cell stands on it. */
         public boolean full(){for(double[] r:surface)if(r[0]<=1e-5&&r[1]<=1e-5&&r[2]>=1-1e-5&&r[3]>=1-1e-5)return true;return false;}
+        /** The top lies inside the cell, above 0.1251 and under 0.875, at most `feetAbove` over its bottom: a player on it
+         *  (not beside it) stands within this cell, and the engine's feet cell is the one above, as upstream's for a slab. */
+        public boolean floorInside(double feetAbove){return !empty&&top>.1251&&top<.875&&top<=feetAbove+1e-3;}
         /** A 0.6 footprint centred at (x,z), relative to the cell's corner and possibly beyond it, overlaps the top. */
         public boolean supports(double x,double z){for(double[] r:surface)if(r[0]<x+.3&&r[2]>x-.3&&r[1]<z+.3&&r[3]>z-.3)return true;return false;}
     }

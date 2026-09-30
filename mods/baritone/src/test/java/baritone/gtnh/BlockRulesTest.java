@@ -64,6 +64,14 @@ public class BlockRulesTest {
         // A top under 0.875 puts the player's feet cell, floor(minY+0.1251), inside the block: not a floor to plan on.
         assertFalse(shape(new double[]{0,0,0,1,.8125,1}).standable());
     }
+    @Test public void aTopInsideTheCellMovesTheFeetUpLikeASlab(){
+        var slab=shape(new double[]{0,0,0,1,.5,1});
+        assertTrue(slab.floorInside(.5));assertFalse(slab.floorInside(0));   // on it, or beside it under its top
+        assertTrue(shape(new double[]{0,0,0,1,.75,1}).floorInside(.75));      // an enchanting table, by its shape
+        assertFalse(shape(new double[]{0,0,0,1,.875,1}).floorInside(.875));   // soul sand: the feet are already above
+        assertFalse(shape(new double[]{0,0,0,1,.0625,1}).floorInside(.0625)); // a carpet is walked through
+        assertFalse(shape().floorInside(1));
+    }
     @Test public void aStandableTopKeepsItsSurfaceForFootprintChecks(){
         var cube=shape(new double[]{0,0,0,1,1,1});
         assertTrue(cube.full());assertTrue(cube.supports(1.25,-.25));assertFalse(cube.supports(1.31,.5));

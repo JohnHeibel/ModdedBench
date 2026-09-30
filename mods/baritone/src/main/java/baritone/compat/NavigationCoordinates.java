@@ -20,6 +20,12 @@ public final class NavigationCoordinates {
     /** Unknown terrain retains the last observed destination instead of oscillating on chunk unload. */
     public static BlockPos goal(BlockPos physical,BlockPos lastKnown,IBlockState loaded){
         if(loaded==null)return lastKnown;
-        return baritone.pathing.movement.MovementHelper.isBottomSlab(loaded)?physical.up():physical;
+        Boolean raised=raisedFloor(loaded,1);
+        return (raised!=null?raised:baritone.pathing.movement.MovementHelper.isBottomSlab(loaded))?physical.up():physical;
+    }
+    /** Upstream moves the feet up out of a slab by its class; measured instead (Shape.floorInside). Null until measured. */
+    public static Boolean raisedFloor(IBlockState s,double feetAbove){
+        var shape=baritone.gtnh.BlockShapes.of(s);
+        return shape==null?null:shape.floorInside(feetAbove);
     }
 }
