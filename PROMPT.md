@@ -675,7 +675,12 @@ are the costs that end a long run: nothing fails, everything is just slower
 each hour than the hour before. When you catch yourself working around the
 base (walking the long way, hunting for an item, no room for the next
 machine, crafting in the dark), stop and fix the base first; that is the work.
-Ask of every decision not "does this finish the quest" but "what does this
+Do not wait until you catch yourself. Before a quest step that adds to the base
+(a new machine, a new line, more storage), look at the base the way a good
+player would: enclosed and lit so nothing spawns inside, storage grouped by
+kind and described in your notes, room to reach every machine and to grow. If
+it is not in that state, fixing it is the first part of that step; it is
+cheaper now than later. Ask of every decision not "does this finish the quest" but "what does this
 leave for the me who is here fifty hours from now", and write the layout in a
 note so that one of you can find it.
 
