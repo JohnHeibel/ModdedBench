@@ -495,6 +495,7 @@ public final class ClientRuntime extends BridgeRuntime {
         if (clock.endsWork()) { // the same for a click in progress and a held input: no tick will finish them either
             String why=clock.endedWhy();
             interactions.cancel(why);
+            if (ui.running()) ui.cancel(why+"; a click already sent but not acknowledged may still apply when the world resumes: observe before retrying");
             if (control != null) {
                 Request held=control; release();
                 JsonObject receipt=Json.object("completed",false,"outcome","world_paused","player",player(),"serverAcknowledged",false);

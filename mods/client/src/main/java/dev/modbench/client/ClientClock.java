@@ -54,8 +54,14 @@ public final class ClientClock implements ClockHooks.Driver {
     }
     public void actionFailed() { if(supported) send(Json.object("type","action_failed")); }
     public void expectThreat(int entityId) { if(supported) send(Json.object("type","expect_threat","entityId",entityId)); }
-    /** Paused by a guard, which wants the model's attention, rather than by a request or a lost connection, which a job waits out. */
-    boolean guardPause() { return paused && java.util.Set.of("threat","health_dropped","health_threshold","air_threshold","food_threshold","burning").contains(pauseReason()); }
+    /** Pauses a running job waits out: a request, the operator, a lost connection or a clock fault. */
+    private static final java.util.Set<String> WAITED_OUT=java.util.Set.of("requested_pause","operator_hold","client_disconnected",
+        "client_unresponsive","agent_disconnected","paused_packet_overflow","clock_protocol_error","step");
+    /**
+     * Paused by anything that wants the model's attention: a guard, a failed action, or one of its own interrupt watches
+     * (interrupt:NAME). Any reason not listed as waited out counts, so a new guard ends work without being added here.
+     */
+    boolean guardPause() { return paused && !WAITED_OUT.contains(pauseReason()); }
     /** Paused where no tick will finish running work: by a guard, or at the end of a step. */
     boolean endsWork() { return !resuming && (guardPause() || paused && "step".equals(pauseReason())); }
     /** Paused for the purpose of refusing actions: false once an action has asked to resume. */

@@ -5,3 +5,7 @@
 #   docker compose -p mbtest -f docker/compose.yaml -f docker/compose.test.yaml --env-file docker/.env up -d
 volumes:
   agent-home: {external: true, name: moddedbench_agent-home}
+services:
+  server:  # dev.* course fixtures; smoke scripts reach its bridge from inside its network (docker run --network container:...)
+    build: {args: {GRADLE_EXTRA: "-PdevFixtures"}}
+    environment: {DEV_FIXTURES: "true"}
