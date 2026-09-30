@@ -166,7 +166,7 @@ def _matches(stack, want):
 
 
 def _precious(stack):
-    """Why a stack is not junk by default: it carries NBT (a Tinkers or GT tool, a named or enchanted item) or is worn. None if neither."""
+    """Why a stack is not junk by default: it carries NBT (a tool that keeps its state there, a named or enchanted item) or is worn. None if neither."""
     return "carries NBT" if stack.get("nbt") or stack.get("nbt_hash") else "damaged" if (stack.get("dmg") or [0])[0] else None
 
 
@@ -321,7 +321,7 @@ def mb_move_items(at: list[int] | None = None, put: list[dict] | str | None = No
     hotbar; keep: selectors never moved by put. take: selectors with count? for whole stacks to bring out until at
     least count (all of it without count). drop: selectors of stacks to throw on the ground in front of you: for
     junk, which you may discard freely (walk away from it, or it comes back). A stack that carries NBT or is
-    damaged (a Tinkers or GT tool, anything named or enchanted) is not dropped unless its selector picks it by
+    damaged (a tool that keeps its state in NBT, anything named or enchanted) is not dropped unless its selector picks it by
     nbt_hash, nbt or name, or says withNbt:true; it is listed in skipped with why. Order: put, take, drop.
     Returns {put, took, dropped, unmoved, skipped, free: {you, there}}: unmoved is what found no room, free counts
     empty slots on each side afterwards. Opening a block is refused while the clock lists a threat (the error's

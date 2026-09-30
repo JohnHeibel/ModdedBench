@@ -17,12 +17,6 @@ final class MiningTools {
     static double breakTicks(double strength) {
         return Double.isNaN(strength)||strength<=0?Double.POSITIVE_INFINITY:Math.max(1,Math.ceil(1/strength));
     }
-    private static Class<?> gregtechType;
-    private static boolean gregtechResolved;
-    private static Class<?> gregtechType() {
-        if(!gregtechResolved){gregtechResolved=true;try{gregtechType=Class.forName("gregtech.api.items.MetaGeneratedTool");}catch(ClassNotFoundException|LinkageError ignored){}}
-        return gregtechType;
-    }
     /** Tools the running mining job measured breaking nothing the game said they break. The job fills and clears it.
      *  A tool is its item and, when the item has subtypes (one GregTech item is every GregTech tool), its meta: durability
      *  changes with every swing and must not make the same tool look new. */
@@ -33,8 +27,8 @@ final class MiningTools {
         var avoid=Baritone.settings().toolsToAvoid.value;
         return stack!=null&&!avoid.isEmpty()&&(avoid.contains(toolKind(stack))||avoid.contains(net.minecraft.item.Item.itemRegistry.getNameForObject(stack.getItem())));
     }
-    /** Why a stack must not be swung at all: the model avoids it, it measured breaking nothing, it is one use from breaking,
-     *  or an uncharged tool; swords and itemSaver follow their settings. Nothing here guesses what a tool does by its class.
+    /** Why a stack must not be swung at all: the model avoids it, it measured breaking nothing, or it is one use from breaking
+     *  as the game reports damage; swords and itemSaver follow their settings. Nothing here guesses what a tool does by its class.
      *  Whether it can harvest a block and how fast is the game's own answer (below), and what one swing actually broke is
      *  measured by the job that swings it (a 3x3 hammer, a vein miner). */
     static String rejected(ItemStack stack) {
@@ -42,28 +36,11 @@ final class MiningTools {
         if(avoided(stack)) return "avoided_by_toolsToAvoid";
         if(ineffective.contains(toolKind(stack))) return "measured_breaking_nothing";
         if(stack.stackSize<=0) return "empty_stack";
-        if(stack.hasTagCompound() && stack.getTagCompound().hasKey("InfiTool")) {
-            var nbt=stack.getTagCompound().getCompoundTag("InfiTool");
-            if(nbt.getBoolean("Broken")) return "broken_tool";
-            if(nbt.hasKey("TotalDurability") && nbt.getInteger("TotalDurability")-nbt.getInteger("Damage")<=1) return "durability_reserve";
-        }
         if(stack.isItemStackDamageable() && stack.getMaxDamage()-stack.getItemDamage()<=1) return "durability_reserve";
         var settings=Baritone.settings();
         if(settings.itemSaver.value && stack.isItemStackDamageable() && stack.getItemDamage()+settings.itemSaverThreshold.value>=stack.getMaxDamage()) return "itemSaver_threshold";
         if(!settings.useSwordToMine.value && stack.getItem() instanceof ItemSword) return "sword_kept_by_useSwordToMine";
-        Class<?> gt=gregtechType();
-        return gt!=null&&gt.isInstance(stack.getItem())?gregtechRejected(stack,gt):null;
-    }
-    /** GregTech keeps durability and charge in its own NBT, where isItemStackDamageable cannot see them. */
-    private static String gregtechRejected(ItemStack stack,Class<?> gt) {
-        try {
-            Object tool=stack.getItem(),stats=gt.getMethod("getToolStats",ItemStack.class).invoke(tool,stack);
-            if(!Boolean.TRUE.equals(gt.getMethod("isItemStackUsable",ItemStack.class).invoke(tool,stack)))return "gregtech_tool_unusable_or_uncharged";
-            long maximum=((Number)gt.getMethod("getToolMaxDamage",ItemStack.class).invoke(null,stack)).longValue();
-            long damage=((Number)gt.getMethod("getToolDamage",ItemStack.class).invoke(null,stack)).longValue();
-            int cost=stats==null?1:((Number)stats.getClass().getMethod("getToolDamagePerBlockBreak").invoke(stats)).intValue();
-            return maximum>0&&maximum-damage<=Math.max(1,cost)?"durability_reserve":null;
-        }catch(ReflectiveOperationException|LinkageError error){return null;} // not a GT API we know: let the game's harvest answer decide
+        return null;
     }
     // The game's own answer to "how much of this block does one tick with this stack in hand break, and does it drop", as
     // vanilla computes it: the stack's dig speed and efficiency, then Forge's BreakSpeed event and harvest check, where a pack
