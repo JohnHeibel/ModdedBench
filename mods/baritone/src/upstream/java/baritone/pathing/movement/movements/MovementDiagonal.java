@@ -205,6 +205,13 @@ public class MovementDiagonal extends Movement {
         }
         double optionA = MovementHelper.getMiningDurationTicks(context, x, y, destZ, pb0, false);
         double optionB = MovementHelper.getMiningDurationTicks(context, destX, y, z, pb2, false);
+        // ModdedBench: a box rising out of a side's floor cell (a fence, a wall) blocks that side as one in it would
+        if (MovementHelper.risesIntoCellAbove(cuttingOver1)) {
+            optionA += 1;
+        }
+        if (MovementHelper.risesIntoCellAbove(cuttingOver2)) {
+            optionB += 1;
+        }
         if (optionA != 0 && optionB != 0) {
             // check these one at a time -- if pb0 and pb2 were nonzero, we already know that (optionA != 0 && optionB != 0)
             // so no need to check pb1 as well, might as well return early here
