@@ -82,9 +82,10 @@ public class PrecomputedData {
         }
 
         if ((blockData & CAN_WALK_ON_SPECIAL_MASK) != 0) {
-            return MovementHelper.canWalkOnPosition(bsi, x, y, z, state);
+            return MovementHelper.canWalkOnPosition(bsi, x, y, z, state) && !baritone.gtnh.BlockRules.hazardAt(state);
         } else {
-            return (blockData & CAN_WALK_ON_MASK) != 0;
+            // ModdedBench: as canWalkThrough, a hazard by picked identity is checked per position
+            return (blockData & CAN_WALK_ON_MASK) != 0 && !baritone.gtnh.BlockRules.hazardAt(state);
         }
     }
 

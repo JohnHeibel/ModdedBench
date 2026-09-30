@@ -248,6 +248,14 @@ public class ReferencePathingTest {
         res=new baritone.utils.pathing.MutableMoveResult();MovementDiagonal.cost(context(t,false),0,64,0,1,1,res);
         assertTrue(res.cost<ActionCosts.COST_INF);
     }
+    @Test public void aDiagonalNeverCutsOverAHazardFloor(){
+        Terrain t=new Terrain();t.set(0,63,1,net.minecraft.init.Blocks.wool,14);
+        var res=new baritone.utils.pathing.MutableMoveResult();MovementDiagonal.cost(context(t,false),0,64,0,1,1,res);
+        assertTrue(res.cost<ActionCosts.COST_INF);
+        Baritone.settings().hazards.value=new java.util.ArrayList<>(java.util.List.of("minecraft:wool:14"));
+        res=new baritone.utils.pathing.MutableMoveResult();MovementDiagonal.cost(context(t,false),0,64,0,1,1,res);
+        assertTrue(res.cost>=ActionCosts.COST_INF);
+    }
     @Test public void aBlockOverSuspendedGravelIsNotBroken(){
         Terrain t=new Terrain();t.set(1,64,0,Blocks.STONE,0);t.set(1,63,0,net.minecraft.init.Blocks.gravel,0);
         var c=context(t,false);

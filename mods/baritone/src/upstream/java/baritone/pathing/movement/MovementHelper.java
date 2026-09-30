@@ -129,7 +129,7 @@ public interface MovementHelper extends ActionCosts, Helper {
         if (canWalkThrough == NO) {
             return false;
         }
-        return canWalkThroughPosition(bsi, x, y, z, state);
+        return canWalkThroughPosition(bsi, x, y, z, state) && !baritone.gtnh.BlockRules.hazardAt(state);
     }
 
     static Ternary canWalkThroughBlockState(IBlockState state) {
@@ -356,9 +356,14 @@ public interface MovementHelper extends ActionCosts, Helper {
         return (facing == playerFacing) == open;
     }
 
+    /** ModdedBench: on the model's hazards list, by state or by what pick-block says is at its position. */
+    static boolean hazard(IBlockState state) {
+        return baritone.gtnh.BlockRules.hazard(state) || baritone.gtnh.BlockRules.hazardAt(state);
+    }
+
     static boolean avoidWalkingInto(IBlockState state) {
         // ModdedBench: fluids are asked of Forge; every other hazard is the model's hazards list
-        return baritone.compat.LegacyFluids.isFluid(state.getBlock()) || baritone.gtnh.BlockRules.hazard(state);
+        return baritone.compat.LegacyFluids.isFluid(state.getBlock()) || hazard(state);
     }
 
     /**
@@ -377,13 +382,11 @@ public interface MovementHelper extends ActionCosts, Helper {
      */
     static boolean canWalkOn(BlockStateInterface bsi, int x, int y, int z, IBlockState state) {
         Ternary canWalkOn = canWalkOnBlockState(state);
-        if (canWalkOn == YES) {
-            return true;
-        }
         if (canWalkOn == NO) {
             return false;
         }
-        return canWalkOnPosition(bsi, x, y, z, state);
+        // ModdedBench: a hazard by picked identity is per position, as in canWalkThrough
+        return (canWalkOn == YES || canWalkOnPosition(bsi, x, y, z, state)) && !baritone.gtnh.BlockRules.hazardAt(state);
     }
 
     static Ternary canWalkOnBlockState(IBlockState state) {

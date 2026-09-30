@@ -158,12 +158,13 @@ public class MovementDiagonal extends Movement {
         if (fromDownBlock == Blocks.SOUL_SAND) {
             multiplier += (WALK_ONE_OVER_SOUL_SAND_COST - WALK_ONE_BLOCK_COST) / 2;
         }
-        Block cuttingOver1 = context.get(x, y - 1, destZ).getBlock();
-        if (cuttingOver1 == Blocks.MAGMA || MovementHelper.isLava(cuttingOver1)) {
+        // ModdedBench: the model's hazards, by state and by picked identity, count here like magma
+        IBlockState cuttingOver1 = context.get(x, y - 1, destZ);
+        if (cuttingOver1.getBlock() == Blocks.MAGMA || MovementHelper.isLava(cuttingOver1.getBlock()) || MovementHelper.hazard(cuttingOver1)) {
             return;
         }
-        Block cuttingOver2 = context.get(destX, y - 1, z).getBlock();
-        if (cuttingOver2 == Blocks.MAGMA || MovementHelper.isLava(cuttingOver2)) {
+        IBlockState cuttingOver2 = context.get(destX, y - 1, z);
+        if (cuttingOver2.getBlock() == Blocks.MAGMA || MovementHelper.isLava(cuttingOver2.getBlock()) || MovementHelper.hazard(cuttingOver2)) {
             return;
         }
         Block startIn = context.getBlock(x, y, z);
