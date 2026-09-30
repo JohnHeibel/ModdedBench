@@ -26,9 +26,10 @@ COPY --chown=agent:agent mods/core/build.gradle mods/core/
 RUN mkdir -p mods/baritone mods/client mods/server && ./gradlew build --console=plain -q && ./gradlew --stop
 COPY --chown=agent:agent . .
 # The throwaway test stack passes -PdevFixtures to ship the dev.* course fixtures; real images never do.
+# A git worktree has a .git file pointing outside the context: it builds, untagged.
 ARG GRADLE_EXTRA=""
 RUN ./gradlew build $GRADLE_EXTRA --console=plain -q && ./gradlew --stop \
- && git config user.name agent && git config user.email agent@modbench.invalid && git tag -f modbench-base
+ && if [ -d .git ]; then git config user.name agent && git config user.email agent@modbench.invalid && git tag -f modbench-base; fi
 ENV MODBENCH_OUTBOX=/outbox MB_BRIDGE_URL=ws://gateway:47223/ws MB_BRIDGE_TOKEN_FILE=/run/bridge/bridge-47223.token \
     MB_WIKI_DB=/wiki/gtnh-wiki.sqlite MB_BRIEF=/brief/PROMPT.md \
     HTTPS_PROXY=http://gateway:3128 HTTP_PROXY=http://gateway:3128 NO_PROXY=gateway PYTHONUNBUFFERED=1
