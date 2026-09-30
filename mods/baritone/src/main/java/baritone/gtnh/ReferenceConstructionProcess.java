@@ -318,6 +318,32 @@ final class ReferenceConstructionProcess extends BulkJob {
         // leaves unsupported vertical construction to MovementPillar.
         return PlacementGoalSupport.actionableHeight(cell.pos().getY(),sourceFeet.getY(),world.getBlock(cell.pos().getX(),cell.pos().getY()+1,cell.pos().getZ())!=net.minecraft.init.Blocks.air);
     }
+    private boolean centerForPlacement(){
+        if(!mc.thePlayer.onGround||!pending.isEmpty())return false;
+        var feet=engine.getPlayerContext().playerFeet();
+        double y=mc.thePlayer.boundingBox.minY,x=feet.getX()+.5,z=feet.getZ()+.5;
+        if(!ForgeSnapshot.liveStandable(world,feet)||!ForgeSnapshot.liveClear(world,x,y,z,y+1.8))return false;
+        for(Cell cell:desired.values()){
+            if(cell.clear()||correct.getOrDefault(cell.pos(),false)||!sourcePlacementHeight(cell,feet))continue;
+            var p=cell.pos();
+            if(!mc.thePlayer.boundingBox.intersectsWith(net.minecraft.util.AxisAlignedBB.getBoundingBox(p.getX(),p.getY(),p.getZ(),p.getX()+1,p.getY()+1,p.getZ()+1)))continue;
+            int slot=plan.slot(cell);if(slot<0)continue;
+            var wanted=schematicStates.get(p);
+            // Block goals can finish at a boundary, where the player's body
+            // still intersects a neighbouring placement. Ask the native click
+            // predictor about both poses before adjusting within this footing.
+            if(engine.getBuilderProcess().canPlaceFrom(wanted,mc.thePlayer.posX,y,mc.thePlayer.posZ,slot)
+                ||!engine.getBuilderProcess().canPlaceFrom(wanted,x,y,z,slot))continue;
+            engine.getPathingBehavior().forceCancel();
+            engine.getInputOverrideHandler().clearAllKeys();engine.getInputOverrideHandler().flush();
+            double dx=x-mc.thePlayer.posX,dz=z-mc.thePlayer.posZ;
+            lease.look((float)Math.toDegrees(Math.atan2(-dx,dz)),mc.thePlayer.rotationPitch);
+            lease.setKeys(Set.of(mc.gameSettings.keyBindSneak.getKeyCode(),mc.gameSettings.keyBindForward.getKeyCode()));
+            placementGoals.clear();inspection=Map.of("centeringForPlacement",List.of(p.getX(),p.getY(),p.getZ()),"footing",List.of(feet.x,feet.y,feet.z));
+            state="positioning";return true;
+        }
+        return false;
+    }
     private void startPass(){
         passStarts++;
         if(plan.cells.isEmpty()){finish("succeeded","empty_selected_schematic");return;}
@@ -378,6 +404,7 @@ final class ReferenceConstructionProcess extends BulkJob {
             boolean unavailable=missing.stream().filter(c->!c.clear()&&!plan.occupied(c.pos())).allMatch(c->plan.slot(c)<0);
             finish("paused",!pending.isEmpty()?"placement_not_verified_inspect_before_retry":unavailable?"missing_materials":"source_builder_requires_materials_or_access");return;
         }
+        if(centerForPlacement())return;
         engine.tickStart();incorrect=builder.incorrectPositions().stream().limit(128).map(p->List.of(p.x,p.y,p.z)).toList();
         var interaction=new LinkedHashMap<String,Object>(builder.placementDiagnostic);
         interaction.put("requestedInputs",java.util.Arrays.stream(baritone.api.utils.input.Input.values()).filter(engine.getInputOverrideHandler()::isInputForcedDown).map(Enum::name).toList());
