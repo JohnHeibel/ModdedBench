@@ -72,6 +72,14 @@ public class BlockRulesTest {
         assertFalse(shape(new double[]{0,0,0,1,.0625,1}).floorInside(.0625)); // a carpet is walked through
         assertFalse(shape().floorInside(1));
     }
+    @Test public void theWarmUpRingsCoverTheSquareOnceNearestFirst(){
+        Set<List<Integer>> seen=new HashSet<>();
+        for(int r=0;r<=16;r++)for(int k=0;k<(r==0?1:8*r);k++){
+            int x=BlockShapes.ringX(r,k),z=BlockShapes.ringZ(r,k);
+            assertEquals(r,Math.max(Math.abs(x),Math.abs(z)));assertTrue(seen.add(List.of(x,z)));
+        }
+        assertEquals(33*33,seen.size());
+    }
     @Test public void aStandableTopKeepsItsSurfaceForFootprintChecks(){
         var cube=shape(new double[]{0,0,0,1,1,1});
         assertTrue(cube.full());assertTrue(cube.supports(1.25,-.25));assertFalse(cube.supports(1.31,.5));

@@ -431,10 +431,11 @@ public interface MovementHelper extends ActionCosts, Helper {
      * ModdedBench: whether the floors at level y hold the player's 0.6 footprint all along a walk between the centres
      * of (sx,sz) and (dx,dz). A floor standable at its centre can still drop the player off its edge: a floor of thin
      * GT pipe posts holds a centred player but not one crossing between two posts, or a diagonal's shared corner.
-     * Whole tops and blocks not yet measured are left to canWalkOn, as upstream.
+     * Whole tops and blocks not yet measured are left to canWalkOn, as upstream. srcFloor and destFloor are the floors
+     * the caller already read, so a walk between whole tops costs two cache reads and no allocation.
      */
-    static boolean footingAlong(CalculationContext context, int y, int sx, int sz, int dx, int dz) {
-        if (partialFloor(context, sx, y, sz) == null && partialFloor(context, dx, y, dz) == null) {
+    static boolean footingAlong(CalculationContext context, int y, int sx, int sz, IBlockState srcFloor, int dx, int dz, IBlockState destFloor) {
+        if (partialFloor(srcFloor) == null && partialFloor(destFloor) == null) {
             return true;
         }
         for (int i = 1; i < 10; i++) {
@@ -443,7 +444,7 @@ public interface MovementHelper extends ActionCosts, Helper {
             for (int cx = (int) Math.floor(px - 0.3); cx <= Math.floor(px + 0.3) && !held; cx++) {
                 for (int cz = (int) Math.floor(pz - 0.3); cz <= Math.floor(pz + 0.3) && !held; cz++) {
                     if (canWalkOn(context, cx, y, cz)) {
-                        baritone.gtnh.BlockShapes.Shape shape = partialFloor(context, cx, y, cz);
+                        baritone.gtnh.BlockShapes.Shape shape = partialFloor(context.get(cx, y, cz));
                         held = shape == null || shape.supports(px - cx, pz - cz);
                     }
                 }
@@ -456,8 +457,8 @@ public interface MovementHelper extends ActionCosts, Helper {
     }
 
     /** ModdedBench: a measured standable floor whose top does not cover the whole cell, or null. */
-    private static baritone.gtnh.BlockShapes.Shape partialFloor(CalculationContext context, int x, int y, int z) {
-        baritone.gtnh.BlockShapes.Shape shape = baritone.gtnh.BlockShapes.of(context.get(x, y, z));
+    private static baritone.gtnh.BlockShapes.Shape partialFloor(IBlockState floor) {
+        baritone.gtnh.BlockShapes.Shape shape = baritone.gtnh.BlockShapes.of(floor);
         return shape != null && shape.standable() && !shape.full() ? shape : null;
     }
 
