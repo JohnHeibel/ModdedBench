@@ -222,9 +222,16 @@ class Kernel:
         return r
 
     def call(self, method: str, /, timeout: float | None = None, **params) -> Any:
-        r = self.call_reply(method, timeout, **params)
         wanted = resume_once.get()
-        if not r.ok and wanted is not None and not wanted and str((r.error or {}).get("msg", "")).startswith("time_paused"):
+        if wanted is not None and not wanted.get("resumed") and not method.startswith("time."):
+            # The client resumes a paused world for the first action that needs it and runs that action on the first
+            # resumed tick; reads ignore the directive. ticks N steps N ticks instead of resuming.
+            params["_resume"] = wanted.get("ticks") or True
+        r = self.call_reply(method, timeout, **params)
+        if wanted is not None and isinstance(r.raw.get("resumedWorld"), dict):
+            wanted.update(r.raw["resumedWorld"], resumed=True)
+        if not r.ok and wanted is not None and not wanted.get("resumed") and str((r.error or {}).get("msg", "")).startswith("time_paused"):
+            params.pop("_resume", None)  # a client without resume-and-act: resume first, then send it again
             self._resume_for(wanted)  # the refused request never ran, so sending it again is its first run
             r = self.call_reply(method, timeout, **params)
         if not r.ok:
@@ -238,7 +245,7 @@ class Kernel:
         """Resume the world for a resume=True call and wait until the client runs ticks again."""
         clock = self.call("time.status", timeout=5).get("state", {})
         record.update(pausedBy=clock.get("reason"), threats=clock.get("threats") or [])
-        self.call("time.resume", timeout=10)  # an operator hold refuses this, and the call fails with that error
+        self.call("time.resume", timeout=10, ticks=int(record.get("ticks") or 0))  # an operator hold refuses this, and the call fails with that error
         until = time.monotonic() + 5
         while self.call("time.status", timeout=5).get("clientPaused") and time.monotonic() < until:
             time.sleep(0.05)

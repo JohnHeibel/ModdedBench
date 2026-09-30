@@ -84,7 +84,8 @@ public final class ServerClock implements ClockHooks.Driver, PauseCoordinator.Ho
                     } else if(next.handler==client) {
                         switch(type) {
                             case "heartbeat" -> lastHeartbeat=System.nanoTime();
-                            case "paused" -> coordinator.clientPaused(data.get("generation").getAsLong());
+                            case "paused" -> coordinator.clientPaused(data.get("generation").getAsLong(),
+                                data.has("step")?data.get("step").getAsLong():-1,data.has("stepTicks")?data.get("stepTicks").getAsInt():-1);
                             case "agent_lost" -> { if(clock.pauseOnDisconnect()) clock.pause("agent_disconnected"); }
                             case "action_failed" -> { if(clock.actionFailed()) clock.pause("action_failed"); }
                             case "expect_threat" -> clock.expectThreat(data.get("entityId").getAsInt());

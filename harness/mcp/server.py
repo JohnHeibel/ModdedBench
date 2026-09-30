@@ -45,6 +45,16 @@ import mbtool  # noqa: E402
 from kernel import BridgeError, Kernel, bridge_url, reply_trace, CancellationScope, cancel_scope, resume_once  # noqa: E402
 
 
+def _resume_arg(value: Any) -> bool | int:
+    """resume=True resumes a paused world for the call's first action; resume=N steps it N ticks instead."""
+    if isinstance(value, bool) or value is None:
+        return bool(value)
+    ticks = int(value)
+    if not 0 <= ticks <= 72000:
+        raise ValueError("resume takes true or a tick count 1..72000")
+    return ticks or False
+
+
 def log(msg: str) -> None:
     print(f"[moddedbench-mcp] {msg}", file=sys.stderr, flush=True)
 
@@ -161,25 +171,26 @@ class Server(FastMCP):
             return fn
         lane = fn._mb_tool["lane"]  # noqa: SLF001
         sig = inspect.signature(fn)
-        # Every tool that acts takes resume=True: decide while the world is paused, then resume and act in one call.
+        # Every tool that acts takes resume=True: decide while the world is paused, then resume and act in one call,
+        # the action starting on the first resumed tick. resume=N steps N ticks instead, then the world pauses again.
         resumable = fn._mb_tool["effect"] != "read" and "resume" not in sig.parameters  # noqa: SLF001
 
         def run(resume, kwargs):
             if not resume:
                 return fn(**kwargs)
-            record = {}
+            record = {} if resume is True else {"ticks": resume}
             resume_once.set(record)
             try:
                 result = fn(**kwargs)
             except Exception as e:
-                if record: e.resumed_world = record
+                if record.get("resumed"): e.resumed_world = record
                 raise
-            if record and isinstance(result, dict): result = {**result, "resumedWorld": record}
+            if record.get("resumed") and isinstance(result, dict): result = {**result, "resumedWorld": record}
             return result
 
         @functools.wraps(fn)
         async def call(**kwargs):
-            resume = bool(kwargs.pop("resume", False)) if resumable else False
+            resume = _resume_arg(kwargs.pop("resume", False)) if resumable else False
             chosen = lane
             if callable(lane):
                 try:
@@ -193,10 +204,10 @@ class Server(FastMCP):
         hints = typing.get_type_hints(fn)
         params = [p.replace(annotation=hints.get(n, p.annotation)) for n, p in sig.parameters.items()]
         if resumable:
-            extra = inspect.Parameter("resume", inspect.Parameter.KEYWORD_ONLY, default=False, annotation=bool)
+            extra = inspect.Parameter("resume", inspect.Parameter.KEYWORD_ONLY, default=False, annotation=bool | int)
             at = next((i for i, p in enumerate(params) if p.kind is inspect.Parameter.VAR_KEYWORD), len(params))
             params.insert(at, extra)
-            hints = {**hints, "resume": bool}
+            hints = {**hints, "resume": bool | int}
         call.__signature__ = sig.replace(parameters=params, return_annotation=hints.get("return", sig.return_annotation))
         call.__annotations__ = hints
         return call

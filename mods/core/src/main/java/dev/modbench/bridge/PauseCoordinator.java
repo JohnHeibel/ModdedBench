@@ -48,7 +48,11 @@ public final class PauseCoordinator {
     private String lastMode="";
     private Consumer<JsonObject> completion;
     private Request owner;
-    private int fixtureTicks;
+    /** A step runs a counted number of ticks, then pauses with stepReason; the client gets the same allowance. */
+    private int stepTicks, stepTotal;
+    private long stepId;
+    private String stepReason="step";
+    private JsonObject lastStep;
     private boolean held;
 
     public PauseCoordinator(SimulationClock clock, Barrier background, Barrier computers, Host host) {
@@ -67,7 +71,10 @@ public final class PauseCoordinator {
         out.addProperty("generation",generation);
         out.add("computers",Json.GSON.toJsonTree(computers.status()));
         out.add("gregtechUpdates",Json.GSON.toJsonTree(background.status()));
-        out.addProperty("stepping",false);
+        boolean stepping=stepTotal>0 && !clock.paused();
+        out.addProperty("stepping",stepping);
+        if(stepping) out.add("step",Json.object("id",stepId,"ticks",stepTotal,"remaining",stepTicks));
+        if(lastStep!=null) out.add("lastStep",lastStep);
         out.addProperty("held",held);
         out.addProperty("clientConnected",host.clientConnected());
         out.addProperty("clientPaused",clientPaused);
@@ -90,19 +97,27 @@ public final class PauseCoordinator {
                 case "time.pause" -> {
                     String reason=Json.string(params,"reason","requested_pause");
                     if(reason.isBlank()||reason.length()>256) throw new IllegalArgumentException("pause reason must contain 1..256 characters");
-                    interrupt("superseded");clock.pause(reason);syncBoundary();
+                    interrupt("superseded");clock.pause(reason);endStep(reason);syncBoundary();
                     completion=reply;
                     operationDeadline=host.nanos()+Json.integer(params,"_timeout_ms",30000,1,3600000)*1_000_000L;
                     broadcast(true);return;
                 }
-                case "time.resume" -> {
+                case "time.resume", "time.step" -> {
+                    int ticks=Json.integer(params,"ticks",0,0,72000);
+                    if(method.equals("time.step") && ticks<1) throw new IllegalArgumentException("time.step needs ticks 1..72000");
                     if(held) throw new IllegalArgumentException("the operator is holding the world paused; wait for the release");
                     if(clock.paused()) {
                         syncBoundary();
                         if(!settled()) throw new IllegalArgumentException("pause has not settled; inspect time.status before resuming");
                         computers.resume();background.resume();
                     }
-                    interrupt("superseded");clock.resume();boundaryPaused=false;clientPaused=false;fixtureTicks=0;
+                    interrupt("superseded");endStep("superseded");clock.resume();boundaryPaused=false;clientPaused=false;
+                    if(ticks>0) { stepId++;stepTicks=stepTotal=ticks;stepReason="step"; }
+                    if(method.equals("time.step")) { // replies once the step's own pause has settled
+                        completion=reply;
+                        operationDeadline=host.nanos()+Json.integer(params,"_timeout_ms",30000,1,3600000)*1_000_000L;
+                        broadcast(true);return;
+                    }
                 }
                 default -> throw new IllegalArgumentException("unknown time method");
             }
@@ -126,13 +141,19 @@ public final class PauseCoordinator {
             boundaryPaused=true;clientPaused=false;generation++;background.begin();computers.begin();
         }
     }
-    /** Development-only workload windows; no client lockstep or public stepping contract. */
+    /** Development workload windows: a step that pauses with reason fixture_checkpoint. */
     public void runForFixture(int ticks) {
         if(ticks<1 || ticks>2000 || !settled()) throw new IllegalArgumentException("fixture window requires settled pause and 1..2000 ticks");
-        command("time.resume",new JsonObject(),result->{
+        command("time.resume",Json.object("ticks",ticks),result->{
             if(result.has("error")) throw new IllegalArgumentException(result.get("error").getAsString());
         });
-        fixtureTicks=ticks;
+        stepReason="fixture_checkpoint";
+    }
+    /** Closes the current step's record: how many ticks it ran and what ended it. */
+    private void endStep(String why) {
+        if(stepTotal==0) return;
+        lastStep=Json.object("id",stepId,"ticks",stepTotal,"ran",stepTotal-stepTicks,"endedBy",why);
+        stepTicks=stepTotal=0;
     }
     public void broadcast(boolean force) {
         syncBoundary();
@@ -146,7 +167,12 @@ public final class PauseCoordinator {
     /** A (re)connecting client starts unpaused and receives the current state. */
     public void clientHello() { clientPaused=false;broadcast(true); }
     /** Generation-tagged ack: a stale ack cannot settle a newer pause. */
-    public void clientPaused(long ackGeneration) { if(clock.paused() && ackGeneration==generation) clientPaused=true; }
+    public void clientPaused(long ackGeneration) { clientPaused(ackGeneration,-1,-1); }
+    /** The client reports how many of its own ticks it ran in the step it last saw. */
+    public void clientPaused(long ackGeneration, long step, int clientTicks) {
+        if(clock.paused() && ackGeneration==generation) clientPaused=true;
+        if(lastStep!=null && step==lastStep.get("id").getAsLong() && !lastStep.has("clientTicks")) lastStep.addProperty("clientTicks",clientTicks);
+    }
     /** False when the paused queue is full: the clock pauses on overflow and the caller drops the connection. */
     public boolean defer(Deferred packet) {
         if(deferred.size()>=4096) { clock.pause("paused_packet_overflow");return false; }
@@ -164,6 +190,7 @@ public final class PauseCoordinator {
     /** Tick gate: true admits one simulation tick. Call after game-side maintenance and message receipt. */
     public boolean before() {
         simulating=false;
+        if(clock.paused()) endStep(clock.reason()); // a guard paused inside the step
         deferred.removeIf(packet->!packet.open());
         syncBoundary();
         if(!clock.paused() && background.requested()) {
@@ -173,7 +200,7 @@ public final class PauseCoordinator {
         if(owner!=null && (owner.isDone() || !owner.session.connected || owner.expired())) interrupt("pause_owner_lost");
         if(completion!=null) {
             if(computers.failure()!=null) interrupt("computer_pause_failed: "+computers.failure());
-            else if(host.nanos()>operationDeadline) interrupt("pause_timeout; simulation remains gated");
+            else if(host.nanos()>operationDeadline) interrupt(stepTotal>0?"step_timeout; the world is still stepping":"pause_timeout; simulation remains gated");
             else if(settled()) {
                 Consumer<JsonObject> done=completion;completion=null;owner=null;done.accept(status());
             }
@@ -184,6 +211,6 @@ public final class PauseCoordinator {
     }
     public void after() {
         simulating=false;clock.tickFinished();
-        if(fixtureTicks>0 && --fixtureTicks==0) clock.pause("fixture_checkpoint");
+        if(stepTicks>0 && --stepTicks==0) { clock.pause(stepReason);endStep(stepReason); }
     }
 }

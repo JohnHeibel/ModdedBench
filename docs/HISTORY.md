@@ -8,6 +8,11 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-09-29** Stepping: `mb_time` `step {ticks:N}` runs exactly N server
+  ticks and pauses again, and acting tools take `resume=N`. `resume=True` now
+  starts the action on the first resumed tick: the client runs that tick before
+  asking the server to resume, and the server replays its packets first. Live in
+  a test world: the server position matched the client's after one-tick steps.
 - **2026-09-29** Builder block goals could stop at a boundary overlapping the
   next placement, oscillating between stances. Construction now centres on its
   verified footing when native prediction permits the centred pose only;

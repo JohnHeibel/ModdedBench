@@ -92,8 +92,8 @@ public final class ClientRuntime extends BridgeRuntime {
                 if(method.equals("protect") || method.equals("remove") && Json.string(r.params,"kind","").equals("region")) controlsChanged("protection_changed");
                 return MemoryMethods.call(method,r.params);
             });
-        for(String method:new String[]{"time.status","time.pause","time.resume","time.configure","time.report_failure"})
-            register(method,"Server time control; configure {healthDrop,healthBelow,airBelow,foodBelow,burning,threatWithin,actionFailed,pauseOnDisconnect}; threatWithin N (-1 off, at most 32) pauses with reason threat when a mob takes you as its target within N blocks (2N in line of sight) or a creeper starts to swell, and status.threats lists them",
+        for(String method:new String[]{"time.status","time.pause","time.resume","time.step","time.configure","time.report_failure"})
+            register(method,"Server time control; step {ticks} runs N ticks then pauses, resume {ticks} likewise without waiting; configure {healthDrop,healthBelow,airBelow,foodBelow,burning,threatWithin,actionFailed,pauseOnDisconnect}; threatWithin N (-1 off, at most 32) pauses with reason threat when a mob takes you as its target within N blocks (2N in line of sight) or a creeper starts to swell, and status.threats lists them",
                 method.equals("time.status")?"read":"interaction",r->clock.command(r));
         register("nei.status","NEI catalogue readiness and available search/recipe operations","read",r->nei.status());
         register("nei.handlers","List all registered NEI categories and machine catalysts {query,offset,limit}","read",r->nei.handlers(r.params));
@@ -211,7 +211,7 @@ public final class ClientRuntime extends BridgeRuntime {
             requirePlayer(); if(mc.thePlayer.inventory.getItemStack()!=null&&!Json.bool(r.params,"allowCursorDrop",false)) throw new IllegalArgumentException("cursor_occupied: return cursor before closing"); controlsChanged("gui_changed"); mc.thePlayer.closeScreen(); return gui();
         });
         for(String method:GuiOperations.METHODS) register("gui."+method,GuiOperations.description(method),"interaction",r->{
-            if(clock.isPaused()) throw new IllegalArgumentException("time_paused: resume before executing native GUI actions");
+            if(clock.refusesActions()) throw new IllegalArgumentException("time_paused: resume before executing native GUI actions");
             controlsChanged("superseded");return ui.start(r);
         });
         for(String method:List.of("mine","build","resume")) register("nav."+method,"Owned, checkpointed "+method+" process; timeoutTicks<=72000. Mine: blocks/items selectors, quantity, bounds/radius, toolSlot (forces the tool in that slot). Build: cells, selection or planId; mode blueprint/builder, origin, size, settings, replaceExisting, allowBreak/allowPlace. Resume: jobId. Explicit overrideProtection required each attempt.","interaction",r->{
@@ -487,13 +487,13 @@ public final class ClientRuntime extends BridgeRuntime {
             navigationRequest.fail("cancelled", "navigation owner disconnected or cancelled");
             navigationRequest=null; navigationJob=null;
         }
-        if (navigationRequest != null && clock.guardPause()) { // no tick will end this job: hand back what it did, now, with why
+        if (navigationRequest != null && clock.endsWork()) { // no tick will end this job: hand back what it did, now, with why
             navigationJob.cancel("world_paused: "+clock.pauseReason());
-            navigationRequest.fail("cancelled","world paused by a guard ("+clock.pauseReason()+"): read mb_time status, decide, resume",refused(navigationJob.status()));
+            navigationRequest.fail("cancelled",clock.endedWhy(),refused(navigationJob.status()));
             navigationRequest=null; navigationJob=null;
         }
-        if (clock.guardPause()) { // the same for a click in progress and a held input: no tick will finish them either
-            String why="world paused by a guard ("+clock.pauseReason()+"): read mb_time status, decide, resume";
+        if (clock.endsWork()) { // the same for a click in progress and a held input: no tick will finish them either
+            String why=clock.endedWhy();
             interactions.cancel(why);
             if (control != null) {
                 Request held=control; release();
@@ -562,11 +562,20 @@ public final class ClientRuntime extends BridgeRuntime {
 
     private void cancelNavigation(String reason){var navigation=NavigationRegistry.get();if(navigation!=null)navigation.cancel(reason);}
     void interruptControls() {cancelQueuedInteractions();controlsChanged("interrupted");cancelNavigation("interrupted");}
+    /** The server refused the resume an action asked for: the world stays paused and that action ends here. */
+    void resumeRefused(String why) {
+        if (control != null) control.fail("resume_refused", why);
+        if (navigationRequest != null) navigationRequest.fail("resume_refused", why);
+        controlsChanged("resume_refused");
+    }
     @Override protected void admit(Request r) {
         interrupts.admit(r);
+        var resume=r.params.remove("_resume"); // true resumes, N steps N ticks; the first tick is this action's
         if(readOnly(r.method))return;
         String m=r.method;
-        if(clock.isPaused()&&(m.startsWith("act.")&&!Set.of("act.stop","act.look").contains(m)
+        if(resume!=null&&!resume.isJsonNull()&&!(resume.getAsJsonPrimitive().isBoolean()&&!resume.getAsBoolean()))
+            clock.resumeFor(r,resume.getAsJsonPrimitive().isBoolean()?0:Json.integer(Json.object("t",resume),"t",0,0,72000));
+        if(clock.refusesActions()&&(m.startsWith("act.")&&!Set.of("act.stop","act.look").contains(m)
             ||m.startsWith("nav.")&&!Set.of("nav.settings","nav.cache").contains(m)||m.startsWith("quest.")))
             throw new IllegalArgumentException("time_paused: resume before starting simulation actions");
     }
