@@ -27,12 +27,21 @@ import it.unimi.dsi.fastutil.longs.Long2DoubleOpenHashMap;
 public final class Favoring {
 
     private final Long2DoubleOpenHashMap favorings;
+    // ModdedBench: the mobs are read on the client thread (the world is not thread safe), but their spheres, hundreds of
+    // thousands of blocks with a large avoidance radius, are filled in on the search thread the first time the search asks.
+    private java.util.List<Avoidance> pending = java.util.List.of();
 
     public Favoring(IPlayerContext ctx, IPath previous, CalculationContext context) {
         this(previous, context);
-        for (Avoidance avoid : Avoidance.create(ctx)) {
+        pending = Avoidance.create(ctx);
+    }
+
+    private void applyPending() {
+        if (pending.isEmpty()) return;
+        for (Avoidance avoid : pending) {
             avoid.applySpherical(favorings);
         }
+        pending = java.util.List.of();
         Helper.HELPER.logDebug("Favoring size: " + favorings.size());
     }
 
@@ -46,10 +55,11 @@ public final class Favoring {
     }
 
     public boolean isEmpty() {
-        return favorings.isEmpty();
+        return favorings.isEmpty() && pending.isEmpty();
     }
 
     public double calculate(long hash) {
+        applyPending();
         return favorings.get(hash);
     }
 }
