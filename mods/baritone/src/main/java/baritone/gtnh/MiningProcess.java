@@ -260,6 +260,11 @@ final class MiningProcess extends BulkJob {
         for(int[] d:new int[][]{{0,1,0},{1,0,0},{-1,0,0},{0,0,1},{0,0,-1}})if(world.getBlock(p.getX()+d[0],p.getY()+d[1],p.getZ()+d[2]).getMaterial().isLiquid())return true;
         return false;
     }
+    /** A fluid beside p that is not water (lava, or a mod's hot or harmful fluid): the one a failed plug must end the job for. */
+    private boolean harmful(BlockPos p){
+        for(int[] d:new int[][]{{0,1,0},{1,0,0},{-1,0,0},{0,0,1},{0,0,-1},{0,-1,0}}){var m=world.getBlock(p.getX()+d[0],p.getY()+d[1],p.getZ()+d[2]).getMaterial();if(m.isLiquid()&&m!=net.minecraft.block.material.Material.water)return true;}
+        return false;
+    }
     /** Remember the block under the pick while it has fluid beside it; once it is gone it stays remembered until plugged. */
     private void watch(){
         if(breaking!=null&&!world.getBlock(breaking.getX(),breaking.getY(),breaking.getZ()).getMaterial().blocksMovement())return;
@@ -272,7 +277,7 @@ final class MiningProcess extends BulkJob {
         if(breaking==null||world.getBlock(breaking.getX(),breaking.getY(),breaking.getZ()).getMaterial().blocksMovement())return false;
         BlockPos p=breaking;breaking=null;
         if(!wet(p))return false;
-        if(!engine.getInventoryBehavior().selectThrowawayForLocation(true,p.getX(),p.getY(),p.getZ())){unplugged++;finish("failed","no_throwaway_block_to_plug_fluid");return true;}
+        if(!engine.getInventoryBehavior().selectThrowawayForLocation(true,p.getX(),p.getY(),p.getZ())){unplugged++;if(!harmful(p))return false;finish("failed","no_throwaway_block_to_plug_fluid");return true;}
         // {neighbour offset, the face of that neighbour which looks at the hole}: floor first, as a player would click
         for(int[] n:new int[][]{{0,-1,0,1},{-1,0,0,5},{1,0,0,4},{0,0,-1,3},{0,0,1,2},{0,1,0,0}}){
             int x=p.getX()+n[0],y=p.getY()+n[1],z=p.getZ()+n[2];var material=world.getBlock(x,y,z).getMaterial();
@@ -283,14 +288,18 @@ final class MiningProcess extends BulkJob {
             engine.getInputOverrideHandler().clearAllKeys();engine.getInputOverrideHandler().getBlockBreakHelper().stopBreakingBlock();
             if(mc.playerController.onPlayerRightClick(me,world,me.getHeldItem(),x,y,z,n[3],hit)){me.swingItem();plugged.add(p);confirming.put(p,ticks+5);return true;}
         }
-        // Nothing to place against: the fluid is coming in, and mining on beside it is how the player died in lava.
-        unplugged++;finish("failed","unplugged_fluid_at_"+p.getX()+","+p.getY()+","+p.getZ());return true;
+        // Nothing to place against: the fluid is coming in, and mining on beside lava is how the player died. Water only wets.
+        unplugged++;if(!harmful(p))return false;finish("failed","unplugged_fluid_at_"+p.getX()+","+p.getY()+","+p.getZ());return true;
     }
     /** From the tick after it was placed, each plug must measure solid for five ticks; true when one failed and the job ended. */
     private boolean unconfirmedPlug(){
         for(var it=confirming.entrySet().iterator();it.hasNext();){
             var e=it.next();var p=e.getKey();
-            if(!world.getBlock(p.getX(),p.getY(),p.getZ()).getMaterial().blocksMovement()){unplugged++;finish("failed","unplugged_fluid_at_"+p.getX()+","+p.getY()+","+p.getZ());return true;}
+            if(!world.getBlock(p.getX(),p.getY(),p.getZ()).getMaterial().blocksMovement()){
+                unplugged++;
+                if(harmful(p)){finish("failed","unplugged_fluid_at_"+p.getX()+","+p.getY()+","+p.getZ());return true;}
+                it.remove();continue;  // water washed the plug out, or it never held: a wet hole, not a danger
+            }
             if(ticks>=e.getValue())it.remove();
         }
         return false;
