@@ -44,6 +44,7 @@ import baritone.compat.Vec3d;
 
 import java.util.Optional;
 import java.util.Set;
+import baritone.gtnh.BlockShapes; // ModdedBench
 
 public class MovementTraverse extends Movement {
 
@@ -51,15 +52,30 @@ public class MovementTraverse extends Movement {
      * Did we have to place a bridge block or was it always there
      */
     private boolean wasTheBridgeBlockAlwaysThere = true;
+    private int doorClicks, doorWait; // ModdedBench: see shutInLane
 
     public MovementTraverse(IBaritone baritone, BetterBlockPos from, BetterBlockPos to) {
         super(baritone, from, to, new BetterBlockPos[]{to.up(), to}, to.down());
+    }
+
+    /** ModdedBench: the first door or gate in this traverse's cells whose measured boxes cross the player's lane. */
+    private BlockPos shutInLane() {
+        boolean alongX = dest.x != src.x;
+        for (BlockPos p : new BlockPos[]{src, src.up(), dest, dest.up()}) {
+            Block b = BlockStateInterface.get(ctx, p).getBlock();
+            if ((b instanceof BlockDoor || b instanceof BlockFenceGate) && BlockShapes.blocksLane(ctx.world().nativeWorld, p.getX(), p.getY(), p.getZ(), alongX)) {
+                return p;
+            }
+        }
+        return null;
     }
 
     @Override
     public void reset() {
         super.reset();
         wasTheBridgeBlockAlwaysThere = true;
+        doorClicks = 0;
+        doorWait = 0;
     }
 
     @Override
@@ -220,27 +236,22 @@ public class MovementTraverse extends Movement {
         Block fd = BlockStateInterface.get(ctx, src.down()).getBlock();
         boolean ladder = fd == Blocks.LADDER || fd == Blocks.VINE;
 
-        if (pb0.getBlock() instanceof BlockDoor || pb1.getBlock() instanceof BlockDoor) {
-
-            boolean notPassable = pb0.getBlock() instanceof BlockDoor && !MovementHelper.isDoorPassable(ctx, src, dest) || pb1.getBlock() instanceof BlockDoor && !MovementHelper.isDoorPassable(ctx, dest, src);
-            boolean canOpen = !(Blocks.IRON_DOOR.equals(pb0.getBlock()) || Blocks.IRON_DOOR.equals(pb1.getBlock()));
-
-            if (notPassable && canOpen) {
-                return state.setTarget(new MovementState.MovementTarget(RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.calculateBlockCenter(ctx.world(), positionsToBreak[0]), ctx.playerRotations()), true))
-                        .setInput(Input.CLICK_RIGHT, true);
+        // ModdedBench: a door or gate is judged by its boxes in the player's lane, measured now, not by vanilla metadata
+        // (a modded door keeps its own). Click it, look again two ticks later; three clicks that open nothing, or one
+        // that cannot reach it, and the movement cannot go on: the executor bans the edge on its second failure.
+        BlockPos shut = shutInLane();
+        if (shut != null) {
+            if (doorWait > 0) {
+                doorWait--;
+                return state;
             }
-        }
-
-        if (pb0.getBlock() instanceof BlockFenceGate || pb1.getBlock() instanceof BlockFenceGate) {
-            BlockPos blocked = !MovementHelper.isGatePassable(ctx, positionsToBreak[0], src.up()) ? positionsToBreak[0]
-                    : !MovementHelper.isGatePassable(ctx, positionsToBreak[1], src) ? positionsToBreak[1]
-                    : null;
-            if (blocked != null) {
-                Optional<Rotation> rotation = RotationUtils.reachable(ctx, blocked);
-                if (rotation.isPresent()) {
-                    return state.setTarget(new MovementState.MovementTarget(rotation.get(), true)).setInput(Input.CLICK_RIGHT, true);
-                }
+            Optional<Rotation> rotation = RotationUtils.reachable(ctx, shut);
+            if (doorClicks >= 3 || !rotation.isPresent() || BlockStateInterface.get(ctx, shut).getBlock() == Blocks.IRON_DOOR) {
+                return state.setStatus(MovementStatus.UNREACHABLE);
             }
+            doorClicks++;
+            doorWait = 2;
+            return state.setTarget(new MovementState.MovementTarget(rotation.get(), true)).setInput(Input.CLICK_RIGHT, true);
         }
 
         boolean isTheBridgeBlockThere = MovementHelper.canWalkOn(ctx, positionToPlace) || ladder || MovementHelper.canUseFrostWalker(ctx, positionToPlace);
