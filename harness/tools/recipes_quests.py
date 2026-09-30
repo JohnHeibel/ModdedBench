@@ -74,7 +74,10 @@ def mb_quest_detect(quest_id: str, task_ids: list[int] | None = None, wait_s: fl
                  for task in state.get("tasks") or []]
         return {"receipt": {"accepted": False, "reason": "already_complete"},
                 "complete": True, "canClaim": state.get("canClaim"), "tasks": tasks}
-    receipt = k.call("quest.detect", questId=quest_id, taskIds=task_ids or [])
+    task_ids = task_ids or [task["id"] for task in state.get("tasks") or []]
+    if not task_ids:
+        return {"receipt": {"accepted": False, "reason": "no_tasks"}, "complete": False}
+    receipt = k.call("quest.detect", questId=quest_id, taskIds=task_ids)
     deadline, state, clamped = time.monotonic() + max(0.0, min(wait_s, 60.0)), None, _clamped(wait_s)
     while wait_s > 0:
         state = k.call("quest.observe", questId=quest_id)

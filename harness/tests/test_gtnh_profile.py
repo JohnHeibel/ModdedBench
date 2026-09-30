@@ -316,6 +316,7 @@ class GTNHProfileTests(unittest.TestCase):
         def detecting(method, params):
             nonlocal detected
             if method == "quest.detect":
+                if not params["taskIds"]: raise ValueError("taskIds must be non-empty")
                 detected = True
                 return {"method": method, **params, "checkboxesClicked": [0]}
             if method == "quest.observe":
@@ -323,8 +324,11 @@ class GTNHProfileTests(unittest.TestCase):
             raise RuntimeError(method)
         fake = self.use(FakeKernel(detecting))
         settled = quests.mb_quest_detect("00000000-0000-0000-0000-000000000001")  # task_ids default to every task; the checkbox is clicked by Java
-        self.assertEqual(fake.last("quest.detect")[1], {"questId": "00000000-0000-0000-0000-000000000001", "taskIds": []})
+        self.assertEqual(fake.last("quest.detect")[1], {"questId": "00000000-0000-0000-0000-000000000001", "taskIds": [0]})
         self.assertEqual((settled["complete"], settled["canClaim"], settled["tasks"], settled["receipt"]["checkboxesClicked"]), (True, True, [{"id": 0, "name": "Tick", "complete": True}], [0]))
+        detected = False
+        quests.mb_quest_detect("quest", task_ids=[7], wait_s=0)
+        self.assertEqual(fake.last("quest.detect")[1]["taskIds"], [7])
         def already_complete(method, params):
             if method == "quest.observe": return quest
             raise RuntimeError(method)

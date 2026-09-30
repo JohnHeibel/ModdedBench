@@ -8,6 +8,9 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-09-30** Default detection of an unfinished quest sent an empty task
+  list rejected by the native adapter. `mb_quest_detect` now supplies observed
+  task IDs and preserves explicit selections, including checkbox quests.
 - **2026-09-21** Python build tools confine builder-mode edits to plan cells by
   default, including staged plans. Unrestricted access excavation uprooted a
   workshop station; explicit `settings.restricted: false` remains available.
