@@ -226,7 +226,11 @@ final class ReferenceConstructionProcess extends BulkJob {
                 // new block) is unreachable without scaffolding: step out to a neighbouring column first, then this adapter runs again.
                 var at=cell.pos();
                 if(!mc.thePlayer.boundingBox.intersectsWith(net.minecraft.util.AxisAlignedBB.getBoundingBox(at.getX(),at.getY(),at.getZ(),at.getX()+1,at.getY()+1,at.getZ()+1)))return goal;
-                var out=WorkAccess.buildingApproaches(world,at).stream().map(pose->pose.feet()).filter(f->(f.getX()!=at.getX()||f.getZ()!=at.getZ())&&ForgeSnapshot.liveStandable(world,f))
+                // A low neighbouring stance can still overlap a different floor
+                // cell, while searchForPlaceables refuses every upward click.
+                // Egress must reach a height where this cell becomes actionable.
+                boolean covered=world.getBlock(at.getX(),at.getY()+1,at.getZ())!=net.minecraft.init.Blocks.air;
+                var out=WorkAccess.buildingApproaches(world,at).stream().map(pose->pose.feet()).filter(f->PlacementGoalSupport.egress(at,f,covered)&&ForgeSnapshot.liveStandable(world,f))
                     .map(f->(baritone.api.pathing.goals.Goal)new baritone.api.pathing.goals.GoalBlock(f)).toArray(baritone.api.pathing.goals.Goal[]::new);
                 return out.length==0?goal:new baritone.api.pathing.goals.GoalComposite(out);
             }
@@ -312,8 +316,7 @@ final class ReferenceConstructionProcess extends BulkJob {
         // A goal must be actionable by searchForPlaceables, not merely within
         // native click reach. Its upward-placement restriction deliberately
         // leaves unsupported vertical construction to MovementPillar.
-        int dy=cell.pos().getY()-sourceFeet.getY();
-        return dy>=-5&&dy<=1&&(dy!=1||world.getBlock(cell.pos().getX(),cell.pos().getY()+1,cell.pos().getZ())!=net.minecraft.init.Blocks.air);
+        return PlacementGoalSupport.actionableHeight(cell.pos().getY(),sourceFeet.getY(),world.getBlock(cell.pos().getX(),cell.pos().getY()+1,cell.pos().getZ())!=net.minecraft.init.Blocks.air);
     }
     private void startPass(){
         passStarts++;
