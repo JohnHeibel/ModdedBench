@@ -8,6 +8,9 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-09-30** Short sneak+mouse chords still withdrew single drawer items on
+  the contained server. `mb_act` now composes a bounded native pose hold before
+  modifier clicks, reports it, and sends no click if that hold is interrupted.
 - **2026-09-30** Default detection of an unfinished quest sent an empty task
   list rejected by the native adapter. `mb_quest_detect` now supplies observed
   task IDs and preserves explicit selections, including checkbox quests.

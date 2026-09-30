@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 # Copyright (c) 2026 ModdedBench contributors
-"""Bridge meta, observation, input, time and memory tools: thin wrappers over one RPC each."""
+"""Bridge meta, observation, input, time and memory tools."""
 
 from __future__ import annotations
 
@@ -116,6 +116,10 @@ def mb_act(method: str, params: dict | None = None, timeout_s: float = 60.0) -> 
     fluid=true includes collidable fluids in the targeting ray.
     Raw input attack locks to the initial block and stops when it changes;
     allowRetarget=true explicitly enables continuous block attacking.
+    Sneak+attack/use input first holds sneak alone for poseTicks (default 15,
+    0 disables, maximum 200), allowing the pose packet to precede the click.
+    posePrelude reports that bounded native hold; an incomplete hold sends no
+    click. This is not acknowledgment of the interaction: observe its effect.
     Eat defaults to a 400-tick budget; nativeUseTicks exposes pack food penalties.
     Consumption acknowledgment releases use before another block interaction.
     Guard with expectedHeld (full observed stack), expected {id,meta} for blocks,
@@ -129,7 +133,19 @@ def mb_act(method: str, params: dict | None = None, timeout_s: float = 60.0) -> 
     """
     params = dict(params or {})
     if method_name("act", method) == "act.eat": no_threat("eat", despite=params.pop("despiteThreat", False))
-    result = kernel().call(method_name("act", method), timeout=timeout_s, **params)
+    k, prelude = kernel(), None
+    if method_name("act", method) == "act.input":
+        pose_ticks = params.pop("poseTicks", 15)
+        if type(pose_ticks) is not int or not 0 <= pose_ticks <= 200:
+            raise ValueError("poseTicks must be an integer from 0 to 200")
+        keys = params.get("keys", [])
+        if isinstance(keys, list) and "sneak" in keys and any(key in keys for key in ("attack", "use")) and pose_ticks:
+            prelude = k.call("act.input", timeout=timeout_s, keys=["sneak"], ticks=pose_ticks,
+                             overrideProtection=params.get("overrideProtection", False))
+            if prelude.get("completed") is not True:
+                return {"posePrelude": prelude, "actionSent": False}
+    result = k.call(method_name("act", method), timeout=timeout_s, **params)
+    if prelude is not None: result = {**result, "posePrelude": prelude}
     if method_name("act", method) == "act.use_block" and isinstance(result, dict) and all(isinstance(params.get(a), int) for a in "xyz"):
         from mbtools_gtnh import plan  # the block clicked and the cells around it, where a placed block lands
         spot = [params[a] for a in "xyz"]; labels = plan.labels_at(kernel(), [v - 1 for v in spot], [v + 1 for v in spot])
