@@ -211,4 +211,11 @@ public class ReferencePathingTest {
         assertNotEquals(new BetterBlockPos(1,64,0),p.positions().get(1));
         assertEquals(new BetterBlockPos(4,64,0),p.getDest());
     }
+    @Test public void aPathStartsOnlyFromCellsUnderTheHitbox(){
+        // Pinned at x.300001 against a wall, straddling two cells in z: the one with more of the footprint first, never x-1.
+        assertEquals(List.of(new BetterBlockPos(50,66,-82),new BetterBlockPos(50,66,-83)),PathingBehavior.footprint(66,50.000001,-82.29,50.600001,-81.69));
+        // Straddling a corner: all four, the largest share first.
+        var corner=PathingBehavior.footprint(64,9.8,4.8,10.4,5.4);
+        assertEquals(4,corner.size());assertEquals(new BetterBlockPos(10,64,5),corner.get(0));assertEquals(new BetterBlockPos(9,64,4),corner.get(3));
+    }
 }
