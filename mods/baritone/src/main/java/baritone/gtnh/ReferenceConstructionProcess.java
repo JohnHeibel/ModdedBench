@@ -334,7 +334,7 @@ final class ReferenceConstructionProcess extends BulkJob {
             // predictor about both poses before adjusting within this footing.
             if(engine.getBuilderProcess().canPlaceFrom(wanted,mc.thePlayer.posX,y,mc.thePlayer.posZ,slot)
                 ||!engine.getBuilderProcess().canPlaceFrom(wanted,x,y,z,slot))continue;
-            engine.getPathingBehavior().forceCancel();
+            engine.getPathingBehavior().cancelSegmentIfSafe();
             engine.getInputOverrideHandler().clearAllKeys();engine.getInputOverrideHandler().flush();
             double dx=x-mc.thePlayer.posX,dz=z-mc.thePlayer.posZ;
             lease.look((float)Math.toDegrees(Math.atan2(-dx,dz)),mc.thePlayer.rotationPitch);
