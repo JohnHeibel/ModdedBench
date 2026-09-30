@@ -25,7 +25,9 @@ COPY --chown=agent:agent mods/api/build.gradle mods/api/
 COPY --chown=agent:agent mods/core/build.gradle mods/core/
 RUN mkdir -p mods/baritone mods/client mods/server && ./gradlew build --console=plain -q && ./gradlew --stop
 COPY --chown=agent:agent . .
-RUN ./gradlew build --console=plain -q && ./gradlew --stop \
+# The throwaway test stack passes -PdevFixtures to ship the dev.* course fixtures; real images never do.
+ARG GRADLE_EXTRA=""
+RUN ./gradlew build $GRADLE_EXTRA --console=plain -q && ./gradlew --stop \
  && git config user.name agent && git config user.email agent@modbench.invalid && git tag -f modbench-base
 ENV MODBENCH_OUTBOX=/outbox MB_BRIDGE_URL=ws://gateway:47223/ws MB_BRIDGE_TOKEN_FILE=/run/bridge/bridge-47223.token \
     MB_WIKI_DB=/wiki/gtnh-wiki.sqlite MB_BRIEF=/brief/PROMPT.md \

@@ -61,6 +61,7 @@ final class GuiOperations {
         try {job.tick();}catch(Exception error) {job.fail("gui_error",error.toString());}
     }
     void cancel(String reason) {if(active!=null) active.fail("cancelled",reason);else UiInput.clear();}
+    boolean running() {return active!=null;}
     Object status() {return active==null?last:active.result("running");}
 
     private final class Job {

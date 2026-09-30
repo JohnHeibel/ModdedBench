@@ -25,5 +25,6 @@ if os.environ.get("BRIGHT_NIGHTS", "").lower() == "true" and dark.is_file():
 for jar in ("modbench-server.jar", "modbench-core.jar"):
     shutil.copyfile(HOME / jar, DATA / "mods" / jar)
 os.chdir(DATA)
-os.execvp("java", ["java", "-Xms1G", f"-Xmx{int(os.environ.get('SERVER_MEMORY_MIB', '6144'))}M", "-Dfml.readTimeout=180",
+fixtures = ["-Dmodbench.devFixtures=true"] if os.environ.get("DEV_FIXTURES", "").lower() == "true" else []  # test stack only
+os.execvp("java", ["java", "-Xms1G", f"-Xmx{int(os.environ.get('SERVER_MEMORY_MIB', '6144'))}M", "-Dfml.readTimeout=180", *fixtures,
                    "-Dmodbench.port=47224", "@java9args.txt", "-jar", "lwjgl3ify-forgePatches.jar", "nogui"])
