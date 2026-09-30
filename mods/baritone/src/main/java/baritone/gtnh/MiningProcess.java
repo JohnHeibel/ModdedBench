@@ -36,6 +36,8 @@ final class MiningProcess extends BulkJob {
     private final String toolSlotTool;
     private BlockPos breaking;
     private final Set<BlockPos> plugged=new HashSet<>();
+    // Plugs placed and the tick until which each is re-measured: a placement the server refused, or fluid already in, shows there.
+    private final Map<BlockPos,Integer> confirming=new HashMap<>();
     private int unplugged;
     // What each swing broke besides the block it was aimed at. The job knows no tool by name, so a 3x3 hammer or a vein
     // miner shows up here as a measurement, and a swing that took a protected block ends the job. A swing is one unbroken
@@ -150,7 +152,7 @@ final class MiningProcess extends BulkJob {
             }
         }
         inactiveTicks=0;
-        if(besideFluid&&plug())return; // this tick belongs to the plug
+        if(besideFluid&&(unconfirmedPlug()||plug()))return; // this tick belongs to the plug
         engine.tickStart();
         if(engine.snags.failure()!=null){finish("failed",engine.snags.failure());return;}
         if(besideFluid)watch();
@@ -279,9 +281,19 @@ final class MiningProcess extends BulkJob {
             var me=mc.thePlayer;double dx=hit.xCoord-me.posX,dy=hit.yCoord-(me.boundingBox.minY+me.getEyeHeight()),dz=hit.zCoord-me.posZ;
             me.rotationYaw=(float)(Math.toDegrees(Math.atan2(dz,dx))-90);me.rotationPitch=(float)-Math.toDegrees(Math.atan2(dy,Math.sqrt(dx*dx+dz*dz)));
             engine.getInputOverrideHandler().clearAllKeys();engine.getInputOverrideHandler().getBlockBreakHelper().stopBreakingBlock();
-            if(mc.playerController.onPlayerRightClick(me,world,me.getHeldItem(),x,y,z,n[3],hit)){me.swingItem();plugged.add(p);return true;}
+            if(mc.playerController.onPlayerRightClick(me,world,me.getHeldItem(),x,y,z,n[3],hit)){me.swingItem();plugged.add(p);confirming.put(p,ticks+5);return true;}
         }
-        unplugged++;return false;
+        // Nothing to place against: the fluid is coming in, and mining on beside it is how the player died in lava.
+        unplugged++;finish("failed","unplugged_fluid_at_"+p.getX()+","+p.getY()+","+p.getZ());return true;
+    }
+    /** From the tick after it was placed, each plug must measure solid for five ticks; true when one failed and the job ended. */
+    private boolean unconfirmedPlug(){
+        for(var it=confirming.entrySet().iterator();it.hasNext();){
+            var e=it.next();var p=e.getKey();
+            if(!world.getBlock(p.getX(),p.getY(),p.getZ()).getMaterial().blocksMovement()){unplugged++;finish("failed","unplugged_fluid_at_"+p.getX()+","+p.getY()+","+p.getZ());return true;}
+            if(ticks>=e.getValue())it.remove();
+        }
+        return false;
     }
     /** Every target the engine dropped with its reason, unreachable ones included, and the fluid beside those it will not break. */
     private List<Map<String,Object>> skipped(){
