@@ -127,6 +127,11 @@ final class InventoryView {
         for(int i=0;i<4;i++) armor.add(Json.object("slot",i,"stack",Stacks.json(mc.thePlayer.inventory.armorInventory[i])));
         JsonObject out=Json.object("selected",mc.thePlayer.inventory.currentItem,"held",Stacks.json(mc.thePlayer.getHeldItem()),"cursor",Stacks.json(mc.thePlayer.inventory.getItemStack()),"emptySlots",empty);
         if(detail.equals("counts")) out.add("totals",Json.GSON.toJsonTree(totals.values()));else {out.add("main",main);out.add("armor",armor);}
+        if(mc.thePlayer.getHealth()<=0||mc.thePlayer.isDead) { // the death screen: these slots are what was carried, not what is held
+            out.addProperty("dead",true);
+            out.add("diedAt",Json.array(Math.floor(mc.thePlayer.posX),Math.floor(mc.thePlayer.posY),Math.floor(mc.thePlayer.posZ)));
+            out.addProperty("note","you are dead: this is what you carried when you died, dropped at diedAt; respawn, then observe again");
+        }
         return out;
     }
 }
