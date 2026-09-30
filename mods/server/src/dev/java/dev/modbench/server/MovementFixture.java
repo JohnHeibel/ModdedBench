@@ -408,14 +408,14 @@ public final class MovementFixture {
             box(13,0,B,0,15,B,15,Blocks.glowstone);box(13,0,B+1,0,15,B+2,15,Blocks.air);
             box(13,6,B+1,1,9,B+2,1,Blocks.stone);box(13,6,B+1,2,6,B+2,4,Blocks.stone);box(13,9,B+1,2,9,B+2,4,Blocks.stone);
             box(13,4,B,11,11,B,11,Blocks.air);
-            set(13,7,B+1,2,Blocks.flowing_water,0,3);set(13,8,B+1,2,Blocks.flowing_water,0,3);
+            set(13,7,B+1,2,Blocks.water,0,3);set(13,8,B+1,2,Blocks.water,0,3);
         })).start(1.5,B+1,7.5,-90).goal(14,B+1,7).route(1.5,7.5,14.5,7.5).note("flowing water pushes +v");
         // Plot 14: walk down a flowing-water stream in a 1-wide stepped channel.
         add(new Case("water_stream_down",14,()->{
             box(14,0,B,6,15,B+6,8,Blocks.stone);
             int[] floor={0,0,4,4,4,3,3,2,2,1,1,0,-1,-1,-1};
             for(int u=1;u<=14;u++) {int f=B+floor[u];box(14,u,f+1,7,u,B+6,7,Blocks.air);if(f>=B) set(14,u,f,7,Blocks.stone);}
-            box(14,1,B+5,7,1,B+6,7,Blocks.air);set(14,1,B+4,7,Blocks.stone);set(14,1,B+5,7,Blocks.flowing_water,0,3);
+            box(14,1,B+5,7,1,B+6,7,Blocks.air);set(14,1,B+4,7,Blocks.stone);set(14,1,B+5,7,Blocks.water,0,3);
         })).start(2.5,B+5,7.5,-90).goal(14,B,7).route(2.5,7.5,14.5,7.5).note("source at the top step");
         // Plot 15: 3x3 lava pool, two deep; the bank is level with the air layer above it. Water bucket + pickaxe.
         add(new Case("obsidian",15,()->{
@@ -553,7 +553,7 @@ public final class MovementFixture {
         switch(name) {
             case "lava_approach_open" -> set(11,10,B,4,Blocks.air,0,3);
             case "lava_approach_close" -> set(11,10,B,4,Blocks.stone,0,3);
-            case "natural_flow_on" -> set(16,NU,B+7,NV,Blocks.flowing_water,0,3);
+            case "natural_flow_on" -> set(16,NU,B+7,NV,Blocks.water,0,3);
             case "natural_flow_off" -> set(16,NU,B+7,NV,Blocks.glowstone,0,3);
             default -> throw new IllegalArgumentException("unknown movement change: lava_approach_open|lava_approach_close|natural_flow_on|natural_flow_off");
         }
