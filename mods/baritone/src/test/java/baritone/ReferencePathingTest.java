@@ -248,4 +248,14 @@ public class ReferencePathingTest {
         res=new baritone.utils.pathing.MutableMoveResult();MovementDiagonal.cost(context(t,false),0,64,0,1,1,res);
         assertTrue(res.cost<ActionCosts.COST_INF);
     }
+    @Test public void aBlockOverSuspendedGravelIsNotBroken(){
+        Terrain t=new Terrain();t.set(1,64,0,Blocks.STONE,0);t.set(1,63,0,net.minecraft.init.Blocks.gravel,0);
+        var c=context(t,false);
+        assertFalse(MovementHelper.avoidBreaking(c.bsi,1,64,0,c.get(1,64,0)));
+        // Over air, or lava, the gravel falls when the block above it goes, and whoever walks in follows it.
+        t.set(1,62,0,Blocks.AIR,0);c=context(t,false);
+        assertTrue(MovementHelper.avoidBreaking(c.bsi,1,64,0,c.get(1,64,0)));
+        t.set(1,62,0,net.minecraft.init.Blocks.lava,0);c=context(t,false);
+        assertTrue(MovementHelper.avoidBreaking(c.bsi,1,64,0,c.get(1,64,0)));
+    }
 }
