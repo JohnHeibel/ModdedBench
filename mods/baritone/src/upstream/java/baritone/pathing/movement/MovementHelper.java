@@ -459,6 +459,12 @@ public interface MovementHelper extends ActionCosts, Helper {
         return true;
     }
 
+    /** ModdedBench: measured boxes reach above this cell's top face into the cell above (a fence, a wall). */
+    static boolean risesIntoCellAbove(IBlockState state) {
+        baritone.gtnh.BlockShapes.Shape shape = baritone.gtnh.BlockShapes.of(state);
+        return shape != null && !shape.empty() && shape.top() > 1 + 1e-5;
+    }
+
     /** ModdedBench: a measured standable floor whose top does not cover the whole cell, or null. */
     private static baritone.gtnh.BlockShapes.Shape partialFloor(IBlockState floor) {
         baritone.gtnh.BlockShapes.Shape shape = baritone.gtnh.BlockShapes.of(floor);
