@@ -127,6 +127,7 @@ final class MiningTools {
     /** A forced slot (a mining job's toolSlot), else the choice above over the player's whole inventory; with `observations`,
      *  one row per stack. Game thread only. */
     static Map<String,Object> choose(World world,BlockPos p,List<Map<String,Object>> observations) {
+        answer();
         Minecraft mc=Minecraft.getMinecraft();Block block=world.getBlock(p.getX(),p.getY(),p.getZ());int meta=world.getBlockMetadata(p.getX(),p.getY(),p.getZ());
         ItemStack[] stacks=new ItemStack[36];boolean[] eligible=new boolean[36];String[] reasons=new String[36];
         for(int i=0;i<36;i++){stacks[i]=mc.thePlayer.inventory.mainInventory[i];reasons[i]=rejected(stacks[i]);eligible[i]=reasons[i]==null;}

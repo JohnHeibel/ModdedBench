@@ -8,6 +8,9 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-09-30** Tool probes returned `game_did_not_answer` for every stack,
+  blocking mining. Native observations now initialize the game-thread answers,
+  and navigation ticks service queued path-search tool and block-identity probes.
 - **2026-09-29** Stepping: `mb_time` `step {ticks:N}` runs exactly N server
   ticks and pauses again, and acting tools take `resume=N`. `resume=True` now
   starts the action on the first resumed tick: the client runs that tick before
