@@ -48,6 +48,8 @@ public final class Baritone implements IBaritone {
     /** A mining job that plugs each hole it opens may break blocks beside fluid (never lava), as a player does. */
     public static volatile boolean besideFluid;
     public java.util.function.Predicate<BlockPos> positionAllowed=p->true;
+    /** Movement edges this job saw fail; each job resets it when it starts. */
+    public final baritone.gtnh.pathing.Snags snags=new baritone.gtnh.pathing.Snags();
     public java.util.function.Supplier<java.util.function.Predicate<IBlockState>> explicitMiningTargets=()->s->false;
     /** The single native inventory swap in flight; acknowledged through the core packet hook. */
     public LegacyInventorySwap pendingSwap;

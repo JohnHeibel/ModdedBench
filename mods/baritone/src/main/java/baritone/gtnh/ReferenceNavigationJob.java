@@ -41,7 +41,7 @@ final class ReferenceNavigationJob implements Navigation.Job {
         refreshGoal();
         ownsLease=parent==null;
         previousAllowBreak=Baritone.settings().allowBreak.value;previousAllowPlace=Baritone.settings().allowPlace.value;
-        engine.getPathingBehavior().forceCancel();BlockRules.reset();
+        engine.getPathingBehavior().forceCancel();BlockRules.reset();engine.snags.reset();
         initialCalculations=engine.getPathingBehavior().calculationsStarted();initialSegments=engine.getPathingBehavior().segmentsCompleted();
         lease=ownsLease?ControlRegistry.controls().arbiter().acquire("baritone-reference",this::cancel,override,true):parent;
         if(!lease.isActive())throw new IllegalArgumentException("navigation lease is inactive");
@@ -77,6 +77,7 @@ final class ReferenceNavigationJob implements Navigation.Job {
         // this job starts. Let the source process revalidate the corrected goal.
         if(refreshGoal())engine.getCustomGoalProcess().setGoalAndPath(goal);
         engine.tickStart();
+        if(engine.snags.failure()!=null){finish("failed",engine.snags.failure());return;}
         var pathing=engine.getPathingBehavior();var current=pathing.getCurrent();
         if(current!=null&&current.getPath()!=lastPath){
             lastPath=current.getPath();pathRevisions++;
@@ -87,7 +88,7 @@ final class ReferenceNavigationJob implements Navigation.Job {
         calculations=pathing.calculationsStarted()-initialCalculations;segmentsCompleted=pathing.segmentsCompleted()-initialSegments;
         if(!engine.getCustomGoalProcess().isActive()){
             if(goal.isInGoal(engine.getPlayerContext().playerFeet())){finish("succeeded","goal_reached");}
-            else finish("failed","path_calculation_failed");
+            else finish("failed",engine.snags.anyBanned()?engine.snags.cause():"path_calculation_failed");
         }
     }
     void finish(String state,String reason){
@@ -106,7 +107,7 @@ final class ReferenceNavigationJob implements Navigation.Job {
         result.put("goal",goal.toString());result.put("controlOwned",!done()&&lease!=null&&lease.isActive());
         result.put("allowBreak",allowBreak);result.put("allowPlace",allowPlace);result.put("overrideProtection",override);
         result.put("calculations",calculations);result.put("segmentsCompleted",segmentsCompleted);result.put("segmentHistory",List.copyOf(segmentHistory));
-        result.put("pathRevisions",pathRevisions);result.put("stall",stall.status());result.put("pathRules",BlockRules.applied());
+        result.put("pathRevisions",pathRevisions);result.put("stall",stall.status());result.put("snags",engine.snags.status());result.put("pathRules",BlockRules.applied());
         result.put("goalRenormalizations",goalRenormalizations);
         result.put("movementTypes",List.copyOf(movements));result.put("nextSegmentReady",p.getNext()!=null);result.put("planning",p.getInProgress().isPresent());
         result.put("safeToCancel",p.isSafeToCancel());result.put("pathIndex",current==null?null:current.getPosition());

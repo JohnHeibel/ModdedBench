@@ -16,19 +16,24 @@ import java.util.function.Predicate;
 public record CalculationInputs(World world,BlockStateInterface blocks,ToolSet tools,
         boolean throwaway,boolean waterPlacement,boolean sprint,int frostWalker,int depthStrider,
         WorldMemory.Snapshot protection,boolean overrideProtection,Predicate<BlockPos> positionAllowed,
-        Predicate<IBlockState> explicitMiningTargets) {
+        Predicate<IBlockState> explicitMiningTargets,baritone.gtnh.pathing.Snags snags) {
     public CalculationInputs(World world,BlockStateInterface blocks,ToolSet tools,boolean throwaway,boolean waterPlacement,
             boolean sprint,int frostWalker,int depthStrider,WorldMemory.Snapshot protection,boolean overrideProtection,Predicate<BlockPos> positionAllowed){
         this(world,blocks,tools,throwaway,waterPlacement,sprint,frostWalker,depthStrider,protection,overrideProtection,positionAllowed,s->false);
     }
+    public CalculationInputs(World world,BlockStateInterface blocks,ToolSet tools,boolean throwaway,boolean waterPlacement,
+            boolean sprint,int frostWalker,int depthStrider,WorldMemory.Snapshot protection,boolean overrideProtection,Predicate<BlockPos> positionAllowed,
+            Predicate<IBlockState> explicitMiningTargets){
+        this(world,blocks,tools,throwaway,waterPlacement,sprint,frostWalker,depthStrider,protection,overrideProtection,positionAllowed,explicitMiningTargets,new baritone.gtnh.pathing.Snags());
+    }
     public CalculationInputs {
-        Objects.requireNonNull(blocks);Objects.requireNonNull(tools);Objects.requireNonNull(protection);Objects.requireNonNull(positionAllowed);
+        Objects.requireNonNull(blocks);Objects.requireNonNull(tools);Objects.requireNonNull(protection);Objects.requireNonNull(positionAllowed);Objects.requireNonNull(snags);
     }
     public static CalculationInputs capture(IBaritone owner,boolean threaded){
         var engine=(Baritone)owner;var ctx=owner.getPlayerContext();var player=ctx.player();var world=ctx.world();
         baritone.gtnh.BlockShapes.warm(world.nativeWorld,(int)Math.floor(player.posX),(int)Math.floor(player.boundingBox.minY),(int)Math.floor(player.posZ));
         return new CalculationInputs(world,new BlockStateInterface(ctx,threaded),new ToolSet(player),
             engine.getInventoryBehavior().hasGenericThrowaway(),FallProtection.available()&&!world.provider.isHellWorld,
-            player.getFoodStats().getFoodLevel()>6,0,0,ControlRegistry.memory().memory().snapshot(),engine.overrideProtection,engine.positionAllowed,engine.explicitMiningTargets.get());
+            player.getFoodStats().getFoodLevel()>6,0,0,ControlRegistry.memory().memory().snapshot(),engine.overrideProtection,engine.positionAllowed,engine.explicitMiningTargets.get(),engine.snags);
     }
 }

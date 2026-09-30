@@ -38,7 +38,7 @@ final class ReferenceFollowJob implements Navigation.Job {
         boolean override=bool(params,"overrideProtection",false);
         var settings=Baritone.settings();
         for(var s:List.of(settings.allowBreak,settings.allowPlace,settings.followRadius,settings.followOffsetDistance,settings.followOffsetDirection))saved.put(s,s.value);
-        engine.getPathingBehavior().forceCancel();
+        engine.getPathingBehavior().forceCancel();engine.snags.reset();
         lease=ControlRegistry.controls().arbiter().acquire("baritone-follow",this::cancel,override,true);
         settings.allowBreak.value=bool(params,"allowBreak",false);settings.allowPlace.value=bool(params,"allowPlace",false);
         settings.followRadius.value=radius;settings.followOffsetDistance.value=offset;settings.followOffsetDirection.value=direction;

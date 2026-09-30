@@ -54,6 +54,26 @@ public final class BlockShapes {
             if(!answers.containsKey(k))ask(k,x,y,z);
         }
     }
+    /** On the game thread, when the player is snagged: every cell whose collision boxes touch the player's, measured
+     *  again (the cached answer may be stale), as {pos, block, boxes} for the receipt. The player touches these. */
+    public static List<Map<String,Object>> touching(net.minecraft.entity.Entity player){
+        gameThread=Thread.currentThread();
+        World world=player.worldObj;AxisAlignedBB near=player.boundingBox.expand(.05,0,.05);
+        List<Map<String,Object>> out=new ArrayList<>();
+        for(int x=(int)Math.floor(near.minX);x<=Math.floor(near.maxX);x++)for(int z=(int)Math.floor(near.minZ);z<=Math.floor(near.maxZ);z++)
+            for(int y=(int)Math.floor(near.minY)-1;y<=Math.floor(near.maxY);y++){
+                if(!ForgeSnapshot.loaded(world,x,y,z))continue;
+                Block b=world.getBlock(x,y,z);List<AxisAlignedBB> boxes=new ArrayList<>();
+                try{b.addCollisionBoxesToList(world,x,y,z,near,boxes,player);}catch(RuntimeException|LinkageError failed){continue;}
+                if(boxes.isEmpty())continue;
+                ask(key(b,world.getBlockMetadata(x,y,z),x,y,z),x,y,z);
+                Map<String,Object> row=new LinkedHashMap<>();row.put("pos",List.of(x,y,z));row.put("block",String.valueOf(Block.blockRegistry.getNameForObject(b)));
+                row.put("boxes",boxes.stream().limit(4).map(a->List.of(round(a.minX),round(a.minY),round(a.minZ),round(a.maxX),round(a.maxY),round(a.maxZ))).toList());
+                out.add(row);
+            }
+        return out;
+    }
+    private static double round(double v){return Math.round(v*1000)/1000.0;}
     private static void ask(Key k,int x,int y,int z){
         Minecraft mc=Minecraft.getMinecraft();World world=mc.theWorld;
         // The state may have changed since it was asked, or its chunk be gone: leave it unanswered.

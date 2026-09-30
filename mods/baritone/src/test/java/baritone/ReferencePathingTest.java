@@ -202,4 +202,13 @@ public class ReferencePathingTest {
         assertTrue(MovementTraverse.cost(c,1,64,0,2,0)>=ActionCosts.COST_INF);
         var p=path(c,new BetterBlockPos(0,64,0),new GoalBlock(1,64,0));assertEquals(2,p.length());
     }
+    @Test public void aBannedEdgeIsNeverPlannedAgain(){
+        var snags=new baritone.gtnh.pathing.Snags();
+        var c=new CalculationContext(PLANNING_ONLY,true,new CalculationInputs(null,new BlockStateInterface(new Terrain(),(x,z)->Math.abs(x)<64&&Math.abs(z)<64),new ToolSet(new ItemStack[9],0,1,VANILLA),false,false,false,0,0,new WorldMemory.Snapshot(0,Map.of(),Map.of(),Map.of()),false,p->true,s->false,snags));
+        assertEquals(new BetterBlockPos(1,64,0),path(c,new BetterBlockPos(0,64,0),new GoalBlock(4,64,0)).positions().get(1));
+        snags.failed(new baritone.gtnh.pathing.Snags.Edge(0,64,0,1,64,0),0,Map.of());
+        var p=path(c,new BetterBlockPos(0,64,0),new GoalBlock(4,64,0));
+        assertNotEquals(new BetterBlockPos(1,64,0),p.positions().get(1));
+        assertEquals(new BetterBlockPos(4,64,0),p.getDest());
+    }
 }

@@ -75,7 +75,7 @@ final class MiningProcess extends BulkJob {
         super.begin();engine.getPathingBehavior().forceCancel();
         for(var setting:List.of(Baritone.settings().allowBreak,Baritone.settings().allowPlace,Baritone.settings().exploreForBlocks,Baritone.settings().legitMine,Baritone.settings().allowInventory))scopedSettings.put(setting,setting.value);
         Baritone.settings().allowInventory.value=true; // the best tool anywhere in the inventory, not only the hotbar
-        MiningTools.ineffective.clear();BlockRules.reset();ReferenceToolPolicy.forcedTool=toolSlotTool;
+        MiningTools.ineffective.clear();BlockRules.reset();engine.snags.reset();ReferenceToolPolicy.forcedTool=toolSlotTool;
         Baritone.settings().allowBreak.value=allowBreak;Baritone.settings().allowPlace.value=allowPlace;
         // This action has explicit observation bounds. Exploration is a separate
         // process, not permission to start a branch mine when its bounds empty.
@@ -152,6 +152,7 @@ final class MiningProcess extends BulkJob {
         inactiveTicks=0;
         if(besideFluid&&plug())return; // this tick belongs to the plug
         engine.tickStart();
+        if(engine.snags.failure()!=null){finish("failed",engine.snags.failure());return;}
         if(besideFluid)watch();
         if(measure())return;
         if(process.isActive()){
@@ -203,6 +204,7 @@ final class MiningProcess extends BulkJob {
         var left=done()?skipped:skipped();out.put("skipped",left.stream().limit(16).toList());out.put("skippedCount",left.size());
         out.put("plugged",plugged.stream().map(MiningProcess::point).toList());out.put("plugFailures",unplugged);
         out.put("blocksBroken",broken);out.put("extraBroken",extraBroken);out.put("extraBrokenAt",extraAt);out.put("dropsLeftInBounds",dropsLeft);out.put("ineffectiveTools",ineffective);out.put("pathRules",BlockRules.applied());out.put("forcedTool",toolSlotTool);
+        if(engine!=null)out.put("snags",engine.snags.status());
         if(engine!=null){
             var current=engine.getPathingBehavior().getCurrent();
             out.put("goal",done()?finalGoal:String.valueOf(engine.getPathingBehavior().getGoal()));

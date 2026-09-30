@@ -83,7 +83,7 @@ final class FightJob implements Navigation.Job {
         }
         var settings=Baritone.settings();
         for(var s:List.of(settings.allowBreak,settings.allowPlace,settings.followRadius,settings.followOffsetDistance))saved.put(s,s.value);
-        engine.getPathingBehavior().forceCancel();
+        engine.getPathingBehavior().forceCancel();engine.snags.reset();
         lease=ControlRegistry.controls().arbiter().acquire("baritone-fight",this::cancel,false,true);
         // For this job only, shown in the receipt and restored when it ends.
         settings.allowBreak.value=bool(params,"allowBreak",false);settings.allowPlace.value=bool(params,"allowPlace",false);settings.followRadius.value=2;settings.followOffsetDistance.value=0d;
