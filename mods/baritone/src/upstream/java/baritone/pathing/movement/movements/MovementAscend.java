@@ -192,6 +192,11 @@ public class MovementAscend extends Movement {
             return state;
         }
         MovementHelper.moveTowards(ctx, state, dest);
+        if (ctx.player().isInWater()) {
+            // ModdedBench: a player in water rises only while jump is held, and climbs out when it swims into the ledge
+            // (the game's water-exit boost); the one-press timing below, tuned for land, leaves it bobbing in a flooded hole.
+            return state.setInput(Input.JUMP, true);
+        }
         if (MovementHelper.isBottomSlab(jumpingOnto) && !MovementHelper.isBottomSlab(BlockStateInterface.get(ctx, src.down()))) {
             return state; // don't jump while walking from a non double slab into a bottom slab
         }

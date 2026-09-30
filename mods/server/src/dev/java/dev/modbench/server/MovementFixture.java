@@ -45,7 +45,7 @@ import net.minecraftforge.fluids.IFluidBlock;
  */
 public final class MovementFixture {
     /** Plots run west to east four per row; plot 16 opens a fifth row, so the volume is 64 x 80. */
-    static final int PLOTS=17, SIZE=64, SIZE_Z=16*((PLOTS+3)/4), FLOOR=199, TOP=218, B=200;
+    static final int PLOTS=18, SIZE=64, SIZE_Z=16*((PLOTS+3)/4), FLOOR=199, TOP=218, B=200;
     private int sizeZ=SIZE_Z;
     /** Every item that entered the course volume since the last position, with how it left (picked, burned, gone). */
     private final List<Tracked> items=new ArrayList<>();
@@ -428,6 +428,15 @@ public final class MovementFixture {
             .mine("minecraft:obsidian",6,B,6,10,B+2,10).minY(B+2.9).note("flow running from the build; collect 4 obsidian");
         add(new Case("obsidian_natural_mid",16,natural)).start(4.5,B+3,8.5,-90).goal(8,B+2,8)
             .mine("minecraft:obsidian",6,B,6,10,B+2,10).minY(B+2.9).note("change natural_flow_on a few seconds in");
+        // Plot 17: the hole a mined crust block leaves. A stone shelf at B, a one-deep hole at (5,B,7) holding a water
+        // source; wet: a sheet of water sources lies over the shelf around it (the obsidian lake), dry: the shelf is bare.
+        add(new Case("water_hole_climb_wet",17,()->waterHole(true))).start(5.5,B,7.5,-90).goal(9,B+1,7).note("Sol round 2: MovementAscend stalled 99 ticks");
+        add(new Case("water_hole_climb_dry",17,()->waterHole(false))).start(5.5,B,7.5,-90).goal(9,B+1,7).note("a player in a flooded 1-deep hole");
+    }
+    private void waterHole(boolean wet) {
+        box(17,1,B,3,13,B,11,Blocks.stone);box(17,1,B+1,3,13,B+3,11,Blocks.air);
+        if(wet) box(17,2,B+1,4,7,B+1,10,Blocks.water);
+        set(17,5,B,7,Blocks.water,0,3);
     }
     /** Plot 16's roof water source cell (plot-relative u,v at B+7). */
     static final int NU=5,NV=4;

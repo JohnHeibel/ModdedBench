@@ -74,6 +74,8 @@ CASES: dict[str, dict] = {
     "mine_lava_pocket": dict(expect="either", bound=200, mine=True),
     "water_current": dict(expect="succeed", bound=90, max_dev=3.5, settle=60),  # a planned detour around the spread is fine; being pushed off is not (see replans)
     "water_stream_down": dict(expect="succeed", bound=80, max_dev=1.0, settle=60),
+    "water_hole_climb_wet": dict(expect="succeed", bound=60),
+    "water_hole_climb_dry": dict(expect="succeed", bound=60),
     # script: the obsidian cases (movement_obsidian.py); fixture: the fixture case to build when it differs.
     "obsidian": dict(expect="script", script="simple"),
     "obsidian_natural": dict(expect="script", script="natural"),
