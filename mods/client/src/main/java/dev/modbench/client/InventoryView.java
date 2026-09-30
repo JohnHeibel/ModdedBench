@@ -93,15 +93,6 @@ final class InventoryView {
             if(matrix!=null) entry.add("craftResultOf",Json.object("inventory",inventories.computeIfAbsent(matrix,k->inventories.size()),"size",matrix.getSizeInventory(),"width",width(matrix)));
             ItemStack held=mc.thePlayer.inventory.getItemStack();
             if(held!=null) entry.addProperty("acceptsCursor",s.isItemValid(held));
-            if(s.getClass().getName().startsWith("appeng.client.me.")) try {
-                Object ae=s.getClass().getMethod("getAEStack").invoke(s);
-                if(ae!=null) {
-                    JsonObject me=new JsonObject();
-                    for(String[] property:new String[][]{{"stored","getStackSize"},{"craftable","isCraftable"},{"requestable","getCountRequestable"}})
-                        me.add(property[0],Json.GSON.toJsonTree(ae.getClass().getMethod(property[1]).invoke(ae)));
-                    entry.add("me",me);
-                }
-            } catch(ReflectiveOperationException failure) {entry.addProperty("meObservationError",failure.toString());}
             slots.add(entry);
         }
         out.add("slots",slots);out.addProperty("slotCount",c.inventorySlots.size());out.addProperty("omittedEmptyPlayerSlots",omitted);
