@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "mcp"))
 from kernel import bridge_url  # noqa: E402
 from urllib.parse import urlparse  # noqa: E402
 CLIENT_PORT, SERVER_PORT = urlparse(bridge_url()).port, urlparse(bridge_url("server")).port  # one source: MB_BRIDGE_URL
+GAME_PORT = int(os.environ.get("MB_GAME_PORT", "25575"))  # where the client joins; 25576 is the spectator mirror (docs/MIRROR.md)
 CLIENT_COMPONENTS = {"client", "core", "baritone"}   # jars the managed Prism instance carries
 SERVER_COMPONENTS = {"server", "core"}              # jars the managed dedicated server carries; core is the coremod both need
 MAIN_MENU_SCREENS = {
@@ -587,7 +588,7 @@ def open_client_kernel():
     return Kernel(url=f"ws://127.0.0.1:{CLIENT_PORT}/ws", timeout=10)
 
 
-def game_server_ready(host: str = "127.0.0.1", port: int = 25575) -> bool:
+def game_server_ready(host: str = "127.0.0.1", port: int = GAME_PORT) -> bool:
     """Server-list ping. The port accepts TCP, and FML answers "still starting", long before a login can succeed; one sent then hangs."""
     try:
         with socket.create_connection((host, port), 2) as s:
@@ -618,10 +619,10 @@ def wait_for_client_join(timeout: float) -> dict[str, Any]:
             # A disconnect screen is a place to connect from: a restarted server leaves one, a booting server refuses, a fresh one can drop its first login.
             if ("GuiDisconnected" in screen or not connected and screen in MAIN_MENU_SCREENS) and time.monotonic() >= retry_at:
                 if not game_server_ready():
-                    last_error = "the game server is not answering on 127.0.0.1:25575"
+                    last_error = f"the game server is not answering on 127.0.0.1:{GAME_PORT}"
                     time.sleep(2)
                     continue
-                kernel.call("sys.connect", host="127.0.0.1", port=25575)
+                kernel.call("sys.connect", host="127.0.0.1", port=GAME_PORT)
                 connected += 1; retry_at = time.monotonic() + 10
             elif not connected:
                 time.sleep(1)
