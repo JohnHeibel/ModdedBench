@@ -164,6 +164,9 @@ final class MiningProcess extends BulkJob {
             rejectedSeen=lastRejected.size();int have=have();
             rejections=have==haveAtReject?rejections+1:1;haveAtReject=have;
             if(rejections>=4){finish("failed","no_path_to_targets");return;}
+            // Unreachable targets among reachable ones (the tops of trees) reset that count with every block gained, and the
+            // job spends most of its time on searches that fail. More failed searches than blocks gained ends it the same way.
+            if(rejectedSeen>Math.max(8,gained())){finish("failed","no_path_to_most_targets");return;}
         }
         state=engine.getInputOverrideHandler().isInputForcedDown(baritone.api.utils.input.Input.CLICK_LEFT)?"mining":"pathing";
         // MineProcess keeps its goal while every remaining target is one it may not break (beside still water, say) or
