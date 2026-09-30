@@ -8,6 +8,9 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-09-30** Builder block goals could stop at a boundary overlapping the
+  next placement, oscillating between stances. Construction now centres on its
+  verified footing when native prediction permits the centred pose only.
 - **2026-09-30** Construction egress accepted low neighbouring stances beneath
   open floor cells, repeatedly reaching a goal with no actionable placement.
   Egress now applies the source placement scan's height restrictions.
