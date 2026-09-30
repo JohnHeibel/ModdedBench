@@ -166,6 +166,7 @@ public final class BaritoneNavigation implements Navigation {
     void tickChild(Job job) {if(job instanceof ReferenceProcessJob process)process.tick();else if(job instanceof ReferenceFollowJob follow)follow.tick();else if(job instanceof FightJob fight)fight.tick();else if(job instanceof ReferenceNavigationJob run)run.tick();else if(job instanceof MiningJob mine)mine.tick();else if(job instanceof PlacingJob place)place.tick();}
     void afterTick(){reference.tickEnd();}
     void tick() {
+        ReferenceToolPolicy.answer();
         reference.getWorldProvider().tick();
         if(active!=null && !active.done()) {
             try { if(active instanceof BulkJob work){work.symptoms.sample(mc.thePlayer);work.tick();}else if(active instanceof RouteRun route) route.tick();else tickChild(active); }
