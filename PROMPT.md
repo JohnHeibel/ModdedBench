@@ -332,6 +332,15 @@ repository copy stays true. Constraints that keep the harness healthy:
   A task ("make circuits", "restock the furnace") is never a tool; it is a
   script for `mb_run`, thrown away when the base outgrows it. New primitives
   will be needed as the game opens up, and adding them is right.
+- Mod-specific tools are yours to build. The harness is deliberately
+  mod-agnostic: it reads the pack through the game's own screens and the
+  player's information mods (NEI, the quest book, JourneyMap, Waila). When a
+  mod shows the player something the generic tools miss (a machine's energy
+  bar, a terminal's stored counts, a tool's charge), write the adapter
+  yourself, or extend an existing tool to understand that mod: teach
+  `mb_obs` a mod's slots or readings, `mb_mine` its tools. Put it on the client side, reading what that mod
+  shows the player, since in a contained run only client-side code deploys.
+  It lives in your checkout.
 - Keep it small. Prefer deleting or generalising an existing tool over adding a
   near-duplicate. A new tool needs the `@tool(...)` decorator with an honest
   `effect` and `lane`, a docstring that says what it verifies, and a unit test
