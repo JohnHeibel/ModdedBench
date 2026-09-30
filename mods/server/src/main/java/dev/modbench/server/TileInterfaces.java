@@ -42,8 +42,6 @@ final class TileInterfaces {
             out.add("fluids",Json.object("unit","mB","views",views,"aggregation","side views may overlap; do not sum views","tanksAlias","UNKNOWN view only; missing or errors mean unknown, not zero"));
         }
         JsonArray energy=new JsonArray();
-        adapter(tile,energy,"gregtech.api.interfaces.tileentity.IBasicEnergyContainer","gregtech_eu","EU",new String[]{"getStoredEU","getEUCapacity"},new String[]{"stored","capacity"});
-        adapter(tile,energy,"ic2.api.tile.IEnergyStorage","ic2_eu","EU",new String[]{"getStored","getCapacity","getOutput"},new String[]{"stored","capacity","output"});
         // RF storage/receiver/provider interfaces expose side-dependent readings.
         for(String name:new String[]{"cofh.api.energy.IEnergyReceiver","cofh.api.energy.IEnergyProvider"})try{
             Class<?> api=Class.forName(name);if(!api.isInstance(tile))continue;JsonArray views=new JsonArray();
