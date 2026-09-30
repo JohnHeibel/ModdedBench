@@ -318,6 +318,15 @@ class GTNHProfileTests(unittest.TestCase):
         part = work.mb_scan(None, {"min":[0,0,0],"max":[63,199,63]}, limit=1, detail="full")
         self.assertEqual((part["done"], part["cursor"]), (False, [1, 0]))
         with self.assertRaisesRegex(ValueError, "512x512"): work.mb_scan(None, {"min":[0,0,0],"max":[600,1,600]})
+        # A block the client cannot name yet (buried GregTech ore) is reported as not revealed, not as a lang key.
+        ores = [{"pos": [0, 0, 0], "id": "gregtech:gt.blockores", "meta": 0, "pickedItem": {"name": "gt.blockores.0.name"}},
+                {"pos": [1, 0, 0], "id": "gregtech:gt.blockores", "meta": 0, "pickedItem": {"name": "Pyrite Ore"}}]
+        self.use(FakeKernel(lambda method, params: {"pos": [0, 0, 0]} if method == "obs.player" else
+                            {"matches": ores, "cursor": 2, "done": True, "scanned": 2, "unloaded": 0}))
+        rows = work.mb_scan(None, {"min": [0, 0, 0], "max": [1, 0, 0]}, detail="rows")
+        self.assertEqual([r["name"] for r in rows["matches"]], [None, "Pyrite Ore"])
+        self.assertEqual(rows["notRevealed"]["count"], 1)
+        self.assertEqual(sorted(k["name"] or "" for k in work.mb_scan(None, {"min": [0, 0, 0], "max": [1, 0, 0]})["kinds"]), ["", "Pyrite Ore"])
         self.use(fake)
         work.mb_work_status("job-7")
         self.assertEqual(fake.calls[-1], ("nav.work_status", {"jobId":"job-7"}))

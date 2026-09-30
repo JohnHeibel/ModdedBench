@@ -516,9 +516,12 @@ Prospect, let the map record what you find, and explore outward early so you
 know what your region has. Finding a few blocks of the wrong ore usually means you are in the
 wrong layer of the right vein, so look the vein up before you walk away from it.
 A vein you have found is an asset for the rest of the run: note its position,
-extent and contents, give it a safe lit entrance, and take from it what the next
-chapter needs, not only what this quest counts: `mb_mine(vein=[x,y,z])` takes one
-ore block you have seen and works the whole vein around it. The receipt's
+extent and contents, and give it a safe lit entrance. When you reach one, mine it
+out in one job rather than in batches: `mb_mine(vein=[x,y,z])` takes one ore block
+you have seen and works the whole vein around it; resume the job until it
+finishes or your inventory is full. Veins are finite, every ore in them is used
+later, and each return trip costs more than staying. Light as you go: lighting
+is part of the job, not a boundary for it. The receipt's
 `veinDefaults` says which bounds, blocks and items it chose; your own `bounds`
 or `vein_grid` replace them, and `VEIN_GRID` in work.py is yours to correct.
 A vein counts `VEIN_ITEMS` unless you name `items`; any other `mb_mine`
