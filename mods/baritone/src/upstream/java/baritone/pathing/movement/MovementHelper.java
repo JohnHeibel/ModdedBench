@@ -69,7 +69,10 @@ public interface MovementHelper extends ActionCosts, Helper {
                 || avoidAdjacentBreaking(bsi, x + 1, y, z, false)
                 || avoidAdjacentBreaking(bsi, x - 1, y, z, false)
                 || avoidAdjacentBreaking(bsi, x, y, z + 1, false)
-                || avoidAdjacentBreaking(bsi, x, y, z - 1, false);
+                || avoidAdjacentBreaking(bsi, x, y, z - 1, false)
+                // ModdedBench: a falling block held over air or fluid drops when the block above it goes, and the player
+                // walking into that cell drops with it (a lava death). Upstream never looked below.
+                || bsi.get0(x, y - 1, z).getBlock() instanceof BlockFalling && bsi.get0(x, y - 2, z).canFallThrough();
     }
 
     static boolean avoidAdjacentBreaking(BlockStateInterface bsi, int x, int y, int z, boolean directlyAbove) {
