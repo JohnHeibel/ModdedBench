@@ -30,38 +30,71 @@ public final class BlockShapes {
     }
     private static final Shape FAILED=new Shape(false,false,Double.NaN,new double[0][]);
     private record Key(Block block,int meta,long pos) {}
+    // A block's answer, one per block and meta: bounded by the registry, so never dropped. A block with a tile entity may
+    // take its shape from it (a pipe's connections), so its answer is per position: those are forgotten when the block or
+    // a neighbour changes, and the farthest from the player go first when there are too many.
     private static final Map<Key,Shape> answers=new ConcurrentHashMap<>();
+    private record Placed(Block block,int meta,Shape shape) {}
+    private static final Map<Long,Placed> placed=new ConcurrentHashMap<>();
     private static final Map<Key,int[]> asked=new ConcurrentHashMap<>();
     private static volatile Thread gameThread;
+    private static final long NO_POS=Long.MIN_VALUE;
 
-    private static Key key(Block b,int meta,int x,int y,int z){
-        // A block with a tile entity may take its shape from it (a pipe's connections): its answer is per position.
-        return new Key(b,meta,b.hasTileEntity(meta)?(((long)x&0x3FFFFFF)<<38)|(((long)y&0xFFF)<<26)|((long)z&0x3FFFFFF):Long.MIN_VALUE);
+    private static long pos(int x,int y,int z){return (((long)x&0x3FFFFFF)<<38)|(((long)y&0xFFF)<<26)|((long)z&0x3FFFFFF);}
+    private static Key key(Block b,int meta,int x,int y,int z){return new Key(b,meta,b.hasTileEntity(meta)?pos(x,y,z):NO_POS);}
+    private static Shape get(Key k){
+        if(k.pos()==NO_POS)return answers.get(k);
+        Placed p=placed.get(k.pos());return p!=null&&p.block()==k.block()&&p.meta()==k.meta()?p.shape():null;
     }
-    /** The game's answer for this state at its position, or null when there is none yet. */
+    private static void put(Key k,Shape s){if(k.pos()==NO_POS)answers.put(k,s);else placed.put(k.pos(),new Placed(k.block(),k.meta(),s));}
+    /** The game's answer for this state at its position, or null when there is none yet: the search then treats the
+     *  block as unknown (its own fallback, never cached) and the game thread measures it by the next tick. */
     public static Shape of(IBlockState s){
         if(gameThread==null||!s.hasAccess())return null;
         Key k=key(s.getBlock(),s.meta,s.x,s.y,s.z);
-        Shape known=answers.get(k);
-        if(known==null&&Thread.currentThread()==gameThread){ask(k,s.x,s.y,s.z);known=answers.get(k);}
-        else if(known==null&&asked.size()<1024)asked.putIfAbsent(k,new int[]{s.x,s.y,s.z});
+        Shape known=get(k);
+        if(known==null&&Thread.currentThread()==gameThread){ask(k,s.x,s.y,s.z);known=get(k);}
+        else if(known==null&&asked.size()<4096)asked.putIfAbsent(k,new int[]{s.x,s.y,s.z});
         return known==FAILED?null:known;
     }
-    /** Once a game tick: answer what the search asked since the last one. */
+    /** Once a game tick: answer what the search asked since the last one, for at most two milliseconds. */
     public static void answer(){
         gameThread=Thread.currentThread();
-        if(answers.size()>16384)answers.clear();
-        int n=0;
-        for(var it=asked.entrySet().iterator();it.hasNext()&&n++<256;){var e=it.next();it.remove();var p=e.getValue();ask(e.getKey(),p[0],p[1],p[2]);}
+        if(placed.size()>16384)forgetFarthest();
+        long until=System.nanoTime()+2_000_000;
+        for(var it=asked.entrySet().iterator();it.hasNext()&&System.nanoTime()<until;){var e=it.next();it.remove();var p=e.getValue();ask(e.getKey(),p[0],p[1],p[2]);}
     }
-    /** On the game thread before a search: answer the blocks around the player, so the first search rarely lacks one. */
+    /** On the game thread when a block changes: its per-position answer, and its neighbours' (a pipe reconnects), go. */
+    public static void changed(int x,int y,int z){
+        if(placed.isEmpty())return;
+        for(int[] d:new int[][]{{0,0,0},{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}})placed.remove(pos(x+d[0],y+d[1],z+d[2]));
+    }
+    private static void forgetFarthest(){
+        var player=Minecraft.getMinecraft().thePlayer;if(player==null){placed.clear();return;}
+        long x=(long)Math.floor(player.posX),z=(long)Math.floor(player.posZ);
+        var keys=new ArrayList<>(placed.keySet());
+        keys.sort(Comparator.comparingLong(p->-(Math.abs((p>>38)-x)+Math.abs(((p<<38)>>38)-z))));
+        for(int i=0;i<keys.size()/2;i++)placed.remove(keys.get(i));
+    }
+    private static int warmX,warmY=-1,warmZ;
+    private static long warmedAt;
+    /** On the game thread before a search: answer the blocks around the player, nearest rings first, for at most five
+     *  milliseconds, so the first search rarely lacks one. A context is made every tick, so a complete warm-up stands
+     *  for a second while the player stays within four blocks of it. */
     public static void warm(World world,int px,int py,int pz){
-        gameThread=Thread.currentThread();
-        for(int x=px-8;x<=px+8;x++)for(int z=pz-8;z<=pz+8;z++)for(int y=Math.max(0,py-4);y<=Math.min(255,py+4);y++){
-            if(!ForgeSnapshot.loaded(world,x,y,z))continue;
-            Block b=world.getBlock(x,y,z);Key k=key(b,world.getBlockMetadata(x,y,z),x,y,z);
-            if(!answers.containsKey(k))ask(k,x,y,z);
+        gameThread=Thread.currentThread();long now=System.nanoTime(),until=now+5_000_000;
+        if(warmY>=0&&Math.abs(px-warmX)<4&&Math.abs(py-warmY)<4&&Math.abs(pz-warmZ)<4&&now-warmedAt<1_000_000_000L)return;
+        warmY=-1;
+        for(int r=0;r<=16;r++)for(int x=px-r;x<=px+r;x++)for(int z=pz-r;z<=pz+r;z++){
+            if(Math.max(Math.abs(x-px),Math.abs(z-pz))!=r)continue;
+            if(System.nanoTime()>until)return;
+            for(int y=Math.max(0,py-6);y<=Math.min(255,py+6);y++){
+                if(!ForgeSnapshot.loaded(world,x,y,z))continue;
+                Block b=world.getBlock(x,y,z);Key k=key(b,world.getBlockMetadata(x,y,z),x,y,z);
+                if(get(k)==null)ask(k,x,y,z);
+            }
         }
+        warmX=px;warmY=py;warmZ=pz;warmedAt=now;
     }
     /** On the game thread, when the player is snagged: every cell whose collision boxes touch the player's, measured
      *  again (the cached answer may be stale), as {pos, block, boxes} for the receipt. The player touches these. */
@@ -89,10 +122,10 @@ public final class BlockShapes {
         if(world==null||!ForgeSnapshot.loaded(world,x,y,z)||world.getBlock(x,y,z)!=k.block()||world.getBlockMetadata(x,y,z)!=k.meta())return;
         List<AxisAlignedBB> boxes=new ArrayList<>();
         try{k.block().addCollisionBoxesToList(world,x,y,z,AxisAlignedBB.getBoundingBox(x-1,y-1,z-1,x+2,y+3,z+2),boxes,mc.thePlayer);}
-        catch(RuntimeException|LinkageError failed){answers.put(k,FAILED);return;}
+        catch(RuntimeException|LinkageError failed){put(k,FAILED);return;}
         List<double[]> relative=new ArrayList<>();
         for(var b:boxes)relative.add(new double[]{b.minX-x,b.minY-y,b.minZ-z,b.maxX-x,b.maxY-y,b.maxZ-z});
-        answers.put(k,classify(relative));
+        put(k,classify(relative));
     }
     /** Boxes relative to the cell's corner, as {minX,minY,minZ,maxX,maxY,maxZ}. */
     static Shape classify(List<double[]> boxes){

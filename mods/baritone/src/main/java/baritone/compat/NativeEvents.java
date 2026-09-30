@@ -45,7 +45,7 @@ public final class NativeEvents implements GameEvents {
         count("chunk_"+state(post));bus().onChunkEvent(new ChunkEvent(state(post),load?ChunkEvent.Type.LOAD:ChunkEvent.Type.UNLOAD,x,z));
     }
     @Override public void blockChanged(Object world,int x,int y,int z){
-        count("block_change");World view=new World((WorldClient)world);BlockPos pos=new BlockPos(x,y,z);
+        count("block_change");baritone.gtnh.BlockShapes.changed(x,y,z);World view=new World((WorldClient)world);BlockPos pos=new BlockPos(x,y,z);
         bus().onBlockChange(new BlockChangeEvent(new ChunkPos(x>>4,z>>4),List.of(new Pair<>(pos,view.getBlockState(pos)))));
     }
     @Override public void packetSent(Object manager,Object packet,boolean post){

@@ -172,16 +172,9 @@ public interface MovementHelper extends ActionCosts, Helper {
         if (shape != null) {
             return shape.empty() ? YES : NO;
         }
-        try { // not answered by the game thread yet: the material's own flag, as upstream
-            if (block.getBlocksMovement(null, 0, 0, 0)) {
-                return YES;
-            } else {
-                return NO;
-            }
-        } catch (Throwable exception) {
-            if (WARNED.add(state.getBlock())) System.out.println("The block " + state.getBlock().getLocalizedName() + " requires a special case due to the exception " + exception.getMessage());
-            return MAYBE;
-        }
+        // Not measured yet: MAYBE, so the per-state cache keeps no guess and the position check asks again (the game
+        // thread answers by the next tick). Upstream's material flag stays the fallback there until then.
+        return MAYBE;
     }
 
     static boolean canWalkThroughPosition(BlockStateInterface bsi, int x, int y, int z, IBlockState state) {
@@ -250,19 +243,7 @@ public interface MovementHelper extends ActionCosts, Helper {
         if (shape != null) {
             return shape.empty() ? YES : NO;
         }
-        // door, fence gate, liquid, trapdoor have been accounted for, nothing else uses the world or pos parameters
-        // at least in 1.12.2 vanilla, that is.....
-        try { // A dodgy catch-all at the end, for most blocks with default behaviour this will work, however where blocks are special this will error out, and we can handle it when we have this information
-            if (block.getBlocksMovement(null, 0, 0, 0)) {
-                return YES;
-            } else {
-                return NO;
-            }
-        } catch (Throwable exception) {
-            // see PR #1087 for why
-            if (WARNED.add(state.getBlock())) System.out.println("The block " + state.getBlock().getLocalizedName() + " requires a special case due to the exception " + exception.getMessage());
-            return MAYBE;
-        }
+        return MAYBE; // ModdedBench: not measured yet, never cached; the position check asks again
     }
 
     /**
@@ -434,8 +415,8 @@ public interface MovementHelper extends ActionCosts, Helper {
             }
             return YES;
         }
-        if (block.hasTileEntity(state.meta)) {
-            return MAYBE;
+        if (block.hasTileEntity(state.meta) || baritone.gtnh.BlockShapes.of(state) == null) {
+            return MAYBE; // ModdedBench: per position, or not measured yet: never cached per state
         }
         return standable(state) ? YES : NO;
     }
