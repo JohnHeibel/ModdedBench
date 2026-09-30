@@ -227,6 +227,17 @@ class Course:
             except BridgeError: pass
         raise RuntimeError("client did not rejoin the test server")
 
+    def resync(self):
+        try: self.c.call("sys.disconnect")
+        except BridgeError: pass
+        until = time.monotonic() + 30
+        while time.monotonic() < until:
+            time.sleep(1)
+            try: self.c.call("obs.player")
+            except BridgeError: break
+        self.ensure_world()
+        self.evidence["rejoins"] = self.evidence.get("rejoins", 0) + 1
+
     def setup(self):
         self.ensure_world()
         state = self.c.call("time.status")["state"]
@@ -255,14 +266,29 @@ class Course:
 
     # -- one trial
     def place(self, name: str, yaw: float) -> dict:
-        info = self.s.call(FIX + ".position", name=CASES[name].get("fixture", name), yaw=yaw)
-        if info.get("missing"): return info
-        start = info["start"]; settle = CASES[name].get("settle", 10)
-        until = time.monotonic() + 10
-        while time.monotonic() < until:
-            p = self.c.call("obs.player")["pos"]
-            if abs(p[0] - start[0]) < .05 and abs(p[2] - start[2]) < .05 and abs(p[1] - start[1]) < .6: break
-            time.sleep(.1)
+        # Deaths are caught by the fixture, but a player who did die is only usable again after a clean rejoin
+        # (the fixture revives them on login); check both sides stand at the start, and rejoin if they do not.
+        for attempt in range(3):
+            try: info = self.s.call(FIX + ".position", name=CASES[name].get("fixture", name), yaw=yaw)
+            except BridgeError as e:
+                if "rejoin" not in str(e) or attempt == 2: raise
+                self.resync(); continue
+            if info.get("missing"): return info
+            start = info["start"]; settle = CASES[name].get("settle", 10)
+            until, placed = time.monotonic() + 6, False
+            while time.monotonic() < until and not placed:
+                try: p = self.c.call("obs.player")["pos"]
+                except BridgeError: time.sleep(.5); continue
+                placed = abs(p[0] - start[0]) < .05 and abs(p[2] - start[2]) < .05 and abs(p[1] - start[1]) < .6
+                if not placed: time.sleep(.1)
+            if placed:
+                q = self.s.call(FIX + ".status")["pos"]      # the server's player must be the one the client drives
+                placed = abs(q[0] - start[0]) < .5 and abs(q[2] - start[2]) < .5 and abs(q[1] - start[1]) < 1
+            if placed: break
+            # The client and the server's player disagree about where the player is: rejoin.
+            self.resync()
+        else:
+            raise RuntimeError(f"client never reached the start {start}")
         tick = self.c.call_reply("obs.player").tick
         while self.c.call_reply("obs.player").tick < tick + settle: time.sleep(.05)
         info["startActual"] = self.c.call("obs.player")["pos"]
@@ -325,7 +351,8 @@ class Course:
             "state": receipt.get("state") or ("succeeded" if kind == "ok" else "failed"),
             "reason": receipt.get("reason") or receipt.get("errorMsg"), "ticks": receipt.get("ticks"), "wallS": round(wall, 2),
             "healthBefore": before["health"], "healthAfter": after["health"], "healthMin": health_min,
-            "burned": any(s.get("burning") for s in samples) or after["burning"], "dead": after["dead"],
+            "burned": any(s.get("burning") for s in samples) or after["burning"], "dead": after["dead"] or after.get("fatal", 0) > 0,
+            "fatal": after.get("fatal"), "fatalCause": after.get("fatalCause") or None,
             "final": [round(v, 3) for v in after["pos"]], "maxDeviation": deviation(samples, info.get("route")),
             "minY": round(min([s["pos"][1] for s in samples] + [after["pos"][1]]), 3),
             "movementTypes": receipt.get("movementTypes"), "stall": receipt.get("stall"),
