@@ -40,7 +40,7 @@ final class FluidFixture {
         throw new IllegalArgumentException("fixture requires ModbenchDev in overworld");
     }
     private WorldServer world() {return server.worldServerForDimension(0);}
-    private int toolMaterial(String name) throws Exception {
+    static int toolMaterial(String name) throws Exception {
         // Use the installed pack's ToolBuilder; vanilla pickaxes are disabled by IguanaTweaks.
         Class<?> registry=Class.forName("tconstruct.library.TConstructRegistry");
         java.util.Map<?,?> materials=(java.util.Map<?,?>)registry.getField("toolMaterials").get(null);
@@ -49,7 +49,7 @@ final class FluidFixture {
         if(material<0) throw new IllegalStateException("GTNH "+name+" tool material not found");
         return material;
     }
-    private ItemStack buildTool(String headField,int material,String name,boolean bindingRequired) throws Exception {
+    static ItemStack buildTool(String headField,int material,String name,boolean bindingRequired) throws Exception {
         Class<?> tools=Class.forName("tconstruct.tools.TinkerTools"),builder=Class.forName("tconstruct.library.crafting.ToolBuilder");
         ItemStack head=new ItemStack((Item)tools.getField(headField).get(null),1,material);
         ItemStack rod=new ItemStack((Item)tools.getField("toolRod").get(null),1,material);
