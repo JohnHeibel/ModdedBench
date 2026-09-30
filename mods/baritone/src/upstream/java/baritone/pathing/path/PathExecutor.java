@@ -83,7 +83,8 @@ public class PathExecutor implements IPathExecutor, Helper {
     private boolean sprintNextTick;
 
     // ModdedBench: snag recovery. Backing up to the snagged movement's source, ticks spent (-1: not), then retry or re-plan.
-    private static final int BACKUP_TICKS = 30;
+    private static final int BACKUP_TICKS = 30, UNLOADED_TICKS = 100;
+    private int unloadedTicks;
     private int backup = -1;
     private boolean replanAfterBackup;
     private BlockPos backupTo;
@@ -200,9 +201,16 @@ public class PathExecutor implements IPathExecutor, Helper {
             if (!behavior.baritone.bsi.worldContainsLoadedChunk(next.getDest().x, next.getDest().z)) {
                 logDebug("Pausing since destination is at edge of loaded chunks");
                 clearKeys();
+                // ModdedBench: a chunk that does not arrive in five seconds ends the job with its place, before the
+                // stall watch ends it with none.
+                if (++unloadedTicks > UNLOADED_TICKS) {
+                    snags().fail("unloaded_chunk_at_" + next.getDest().x + "," + next.getDest().z);
+                    cancel();
+                }
                 return true;
             }
         }
+        unloadedTicks = 0;
         boolean canCancel = movement.safeToCancel();
         if (costEstimateIndex == null || costEstimateIndex != pathPosition) {
             costEstimateIndex = pathPosition;
