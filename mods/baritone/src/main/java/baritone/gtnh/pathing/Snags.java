@@ -4,7 +4,6 @@
 package baritone.gtnh.pathing;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Movement edges that failed in this job. A snag is forward held against a collision with the player not moving for
@@ -19,14 +18,15 @@ public final class Snags {
         List<List<Integer>> points(){return List.of(List.of(sx,sy,sz),List.of(dx,dy,dz));}
     }
     public enum Verdict{RETRY,BAN}
-    private final Set<Edge> banned=ConcurrentHashMap.newKeySet();
+    // Copy-on-write, at most MAX_BANS+1 long: the search scans it per movement without allocating.
+    private volatile Edge[] banned=new Edge[0];
     private final Map<Edge,Integer> tries=new HashMap<>();
     private int still;
     // The receipt reads these from the bridge thread.
     private volatile String failure;
     private volatile Map<String,Object> last;
 
-    public void reset(){banned.clear();tries.clear();still=0;failure=null;last=null;}
+    public void reset(){banned=new Edge[0];tries.clear();still=0;failure=null;last=null;}
     /** One tick of a running movement; true on the tick the player has been snagged for TICKS ticks. */
     public boolean tick(boolean forward,boolean collided,double moved){
         still=forward&&collided&&moved<.01?still+1:0;
@@ -38,18 +38,19 @@ public final class Snags {
         int n=tries.merge(edge,1,Integer::sum);
         Map<String,Object> row=new LinkedHashMap<>(detail);row.put("edge",edge.points());row.put("failures",n);last=row;
         if(n<=retries)return Verdict.RETRY;
-        banned.add(edge);
+        if(allows(edge.sx(),edge.sy(),edge.sz(),edge.dx(),edge.dy(),edge.dz())){Edge[] more=Arrays.copyOf(banned,banned.length+1);more[banned.length]=edge;banned=more;}
         // A job that keeps finding new walls is not going to find a way round them: stop with the last one.
-        if(banned.size()>MAX_BANS)fail(cause());
+        if(banned.length>MAX_BANS)fail(cause());
         return Verdict.BAN;
     }
     public boolean allows(int sx,int sy,int sz,int dx,int dy,int dz){
-        return banned.isEmpty()||!banned.contains(new Edge(sx,sy,sz,dx,dy,dz));
+        for(Edge e:banned)if(e.sx()==sx&&e.sy()==sy&&e.sz()==sz&&e.dx()==dx&&e.dy()==dy&&e.dz()==dz)return false;
+        return true;
     }
     /** The job cannot go on here: backing out failed, or too many edges were banned. The job ends with this cause. */
     public void fail(String cause){if(failure==null)failure=cause;}
     public String failure(){return failure;}
-    public boolean anyBanned(){return !banned.isEmpty();}
+    public boolean anyBanned(){return banned.length>0;}
     /** snagged_at_x,y,z (where the player stood) for the last failure, or null when none happened. */
     public String cause(){
         if(last==null)return null;
@@ -58,7 +59,7 @@ public final class Snags {
     }
     public Map<String,Object> status(){
         Map<String,Object> out=new LinkedHashMap<>();
-        out.put("banned",banned.stream().limit(16).map(Edge::points).toList());
+        out.put("banned",Arrays.stream(banned).map(Edge::points).toList());
         out.put("last",last);out.put("failure",failure);return out;
     }
 }
