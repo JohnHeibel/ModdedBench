@@ -159,7 +159,7 @@ public interface MovementHelper extends ActionCosts, Helper {
         }
         if (block instanceof BlockLiquid) {
             if (state.getValue(LegacyProperties.LEVEL) != 0) {
-                return NO;
+                return isWater(block) ? MAYBE : NO; // ModdedBench: flowing water over a floor is wadeable; the position check decides
             } else {
                 return MAYBE;
             }
@@ -200,6 +200,11 @@ public interface MovementHelper extends ActionCosts, Helper {
         }
 
         if (block instanceof BlockLiquid) {
+            // ModdedBench: shallow water with a floor under it is waded, still or flowing: GTNH caves are full of streams, and
+            // refusing them left the player unable to start or finish in one. The current only nudges; the executor steers.
+            if (isWater(block) && !isStillLiquid(bsi.get0(x, y + 1, z)) && canWalkOn(bsi, x, y - 1, z)) {
+                return true;
+            }
             if (isFlowing(x, y, z, state, bsi)) {
                 return false;
             }
@@ -675,6 +680,11 @@ public interface MovementHelper extends ActionCosts, Helper {
      */
     static boolean isLiquid(IPlayerContext ctx, BlockPos p) {
         return BlockStateInterface.getBlock(ctx, p) instanceof BlockLiquid;
+    }
+
+    /** ModdedBench: a source block, i.e. water deep enough to swim in when it sits at head height; a flowing sheet is spray. */
+    static boolean isStillLiquid(IBlockState state) {
+        return state.getBlock() instanceof BlockLiquid && state.getValue(LegacyProperties.LEVEL) == 0;
     }
 
     static boolean possiblyFlowing(IBlockState state) {
