@@ -263,7 +263,6 @@ public class PathExecutor implements IPathExecutor, Helper {
             ticksOnCurrent++;
             // ModdedBench: pressed against something and not moving. Measure what, back up to the source, then retry or re-plan.
             if (snags().tick(behavior.baritone.getInputOverrideHandler().isInputForcedDown(Input.MOVE_FORWARD), ctx.player().isCollidedHorizontally, moved)) {
-                logDebug("Snagged on " + movement.getClass().getSimpleName() + " at " + ctx.playerFeet());
                 replanAfterBackup = edgeFailed(movement, "snagged", Snags.RETRIES, Map.of()) == Snags.Verdict.BAN;
                 backupTo = movement.getSrc();
                 backup = 0;
@@ -330,7 +329,6 @@ public class PathExecutor implements IPathExecutor, Helper {
         }
         boolean snaggedAgain = snags().tick(true, ctx.player().isCollidedHorizontally, moved);
         if (++backup > BACKUP_TICKS || snaggedAgain) {
-            logDebug("Could not back out of the snag");
             snags().fail(snags().cause());
             cancel();
             return true;

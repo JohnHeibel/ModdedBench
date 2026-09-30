@@ -249,7 +249,7 @@ public class MovementDiagonal extends Movement {
                 multiplier *= SPRINT_MULTIPLIER;
             }
         }
-        if (!descend && !water && !MovementHelper.footingAlong(context, y - 1, x, z, destX, destZ)) {
+        if (!descend && !ascend && !water && !MovementHelper.footingAlong(context, y - 1, x, z, fromDown, destX, destZ, destWalkOn)) {
             return; // ModdedBench: the floors hold the player at both centres but not across the shared corner
         }
         res.cost = multiplier * SQRT_2;
