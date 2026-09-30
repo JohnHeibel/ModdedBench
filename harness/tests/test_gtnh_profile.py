@@ -92,6 +92,33 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual(error["procedureReceipts"][0]["transfer"]["moved"], 2)
         self.assertEqual(error["reply"]["error"]["receipt"]["state"], "failed")
 
+    def test_modified_input_primes_pose_and_preserves_click_parameters(self):
+        core = module_with(self.loaded(), "mb_act")
+        fake = self.use(FakeKernel(lambda method, params: {"completed": True}))
+        params = {"keys": ["sneak", "attack", "forward"], "ticks": 1, "overrideProtection": True}
+        out = core.mb_act("input", params)
+        self.assertEqual(fake.calls, [
+            ("act.input", {"timeout": 60.0, "keys": ["sneak"], "ticks": 15, "overrideProtection": True}),
+            ("act.input", {"timeout": 60.0, **params}),
+        ])
+        self.assertTrue(out["posePrelude"]["completed"])
+        self.assertNotIn("poseTicks", params)
+        fake.calls.clear()
+        core.mb_act("input", {"keys": ["sneak", "use"], "poseTicks": 0, "ticks": 1})
+        self.assertEqual(len(fake.calls), 1)
+        self.assertNotIn("poseTicks", fake.calls[0][1])
+
+    def test_modified_input_does_not_click_after_interrupted_pose_hold(self):
+        core = module_with(self.loaded(), "mb_act")
+        fake = self.use(FakeKernel(lambda method, params: {"completed": False, "outcome": "guard_pause"}))
+        out = core.mb_act("act.input", {"keys": ["sneak", "use"], "ticks": 1})
+        self.assertFalse(out["actionSent"])
+        self.assertEqual(len(fake.calls), 1)
+        fake.calls.clear()
+        with self.assertRaises(ValueError):
+            core.mb_act("input", {"keys": ["sneak", "attack"], "poseTicks": -1})
+        self.assertEqual(fake.calls, [])
+
     def test_tool_set_lanes_and_metadata(self):
         srv = self.loaded()
         self.assertEqual(set(srv.name_owner), TOOLS)
