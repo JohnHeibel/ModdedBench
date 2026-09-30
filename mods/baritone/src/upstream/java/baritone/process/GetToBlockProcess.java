@@ -61,13 +61,16 @@ public final class GetToBlockProcess extends BaritoneProcessHelper implements IG
     }
 
     /** ModdedBench: any lookup, such as a job's scan of blocks named by picked identity. */
+    /** ModdedBench: why the process gave up, or null. */
+    public String stopReason;
+
     public void getToBlock(BlockOptionalMetaLookup block) {
         onLostControl();
         gettingTo = block;
         start = ctx.playerFeet();
         blacklist = new ArrayList<>();
         arrivalTickCount = 0;
-        arrived=false;
+        arrived=false;stopReason=null;
         rescan(new ArrayList<>(), new GetToBlockCalculationContext(false));
     }
 
@@ -96,6 +99,7 @@ public final class GetToBlockProcess extends BaritoneProcessHelper implements IG
                 }, PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH);
             }
             logDirect("No known locations of " + gettingTo + ", canceling GetToBlock");
+            stopReason = "no_known_target"; // ModdedBench: the job's receipt names why it stopped
             if (isSafeToCancel) {
                 onLostControl();
             }
@@ -109,6 +113,7 @@ public final class GetToBlockProcess extends BaritoneProcessHelper implements IG
                 return onTick(false, isSafeToCancel); // gamer moment
             } else {
                 logDirect("Unable to find any path to " + gettingTo + ", canceling GetToBlock");
+                stopReason = "no_path_to_target";
                 if (isSafeToCancel) {
                     onLostControl();
                 }

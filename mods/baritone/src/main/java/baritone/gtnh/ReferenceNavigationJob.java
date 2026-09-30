@@ -31,6 +31,7 @@ final class ReferenceNavigationJob implements Navigation.Job {
     private final long initialCalculations,initialSegments;
     private long calculations,segmentsCompleted;
     private IPath lastPath;
+    private final Map<String,Object> failure=new LinkedHashMap<>();
     private final LinkedHashSet<String> movements=new LinkedHashSet<>();
     private final List<Map<String,Object>> segmentHistory=new ArrayList<>();
     private final boolean previousAllowBreak,previousAllowPlace;
@@ -88,7 +89,7 @@ final class ReferenceNavigationJob implements Navigation.Job {
         calculations=pathing.calculationsStarted()-initialCalculations;segmentsCompleted=pathing.segmentsCompleted()-initialSegments;
         if(!engine.getCustomGoalProcess().isActive()){
             if(goal.isInGoal(engine.getPlayerContext().playerFeet())){finish("succeeded","goal_reached");}
-            else finish("failed",engine.snags.anyBanned()?engine.snags.cause():"path_calculation_failed");
+            else finish("failed",PathFailure.cause(engine,initialCalculations,failure));
         }
     }
     void finish(String state,String reason){
@@ -107,7 +108,7 @@ final class ReferenceNavigationJob implements Navigation.Job {
         result.put("goal",goal.toString());result.put("controlOwned",!done()&&lease!=null&&lease.isActive());
         result.put("allowBreak",allowBreak);result.put("allowPlace",allowPlace);result.put("overrideProtection",override);
         result.put("calculations",calculations);result.put("segmentsCompleted",segmentsCompleted);result.put("segmentHistory",List.copyOf(segmentHistory));
-        result.put("pathRevisions",pathRevisions);result.put("stall",stall.status());result.put("snags",engine.snags.status());result.put("pathRules",BlockRules.applied());
+        result.put("pathRevisions",pathRevisions);result.put("stall",stall.status());result.put("snags",engine.snags.status());if(!failure.isEmpty())result.put("failure",failure);result.put("pathRules",BlockRules.applied());
         result.put("goalRenormalizations",goalRenormalizations);
         result.put("movementTypes",List.copyOf(movements));result.put("nextSegmentReady",p.getNext()!=null);result.put("planning",p.getInProgress().isPresent());
         result.put("safeToCancel",p.isSafeToCancel());result.put("pathIndex",current==null?null:current.getPosition());
