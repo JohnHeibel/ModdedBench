@@ -52,7 +52,7 @@ public final class Settings {
     public final Setting<java.util.List<net.minecraft.block.Block>> blocksToTrackInCache = new Setting<>(new java.util.ArrayList<>());
 
     /** ModdedBench extension: ticks a work job may go with no progress and no new ground before it stops as stalled; 0 is off. A job's stallTicks param overrides it. */
-    public final Setting<Integer> stallTicks = new Setting<>(800);
+    public final Setting<Integer> stallTicks = new Setting<>(200); // well under the 80-1000 tick jobs the model runs, so a stuck job ends before its deadline
 
     /**
      * Allow Baritone to break blocks

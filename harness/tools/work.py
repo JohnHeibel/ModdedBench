@@ -123,7 +123,7 @@ def mb_follow(target: dict, duration_ticks: int = 1200, radius: int = 2,
     GoalXZ follow offset. Completion after duration means the bounded follow window
     elapsed, not that the entity was reached or remains present afterwards.
     Ticks within radius+2 of a followed entity count as progress, so waiting beside one that stands
-    still is not a stall; stall_ticks (default the stallTicks setting, 800; 0 off) ticks away from
+    still is not a stall; stall_ticks (default the stallTicks setting, 200; 0 off) ticks away from
     every target on ground already covered end it as stalled_no_progress_near_x,y,z (paused if it
     had been beside one this job, else failed). A death ends any job as failed, player_died.
     """
@@ -245,7 +245,7 @@ def mb_process(process: str, duration_ticks: int = 1200, goal: dict | None = Non
     wait. Goal/get_to_block report success only when source completion reaches their
     native condition, and fail with timeout when duration runs out first. Explore and
     farm have no end of their own: their duration running out is state paused, reason
-    timeout, not a success. stall_ticks (default the stallTicks setting, 800; 0 off) ticks
+    timeout, not a success. stall_ticks (default the stallTicks setting, 200; 0 off) ticks
     on ground already covered with no progress (for farm: no inventory change) end it as
     stalled_no_progress_near_x,y,z.
     pathRules: which of your block rules decided about which block, as in mb_mine.
@@ -385,7 +385,7 @@ def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, q
     paused (reason timeout_with_progress), which is not a failure: mb_work_resume
     continues it. Paused or failed is judged on this session's gain alone, and so is
     blocksPerMinute. The receipt's bounds is the box it scanned (radius covers y-16..y+16 within 1..254).
-    stall_ticks (default: the stallTicks setting, 800; 0 is off) is the shared watchdog: that many
+    stall_ticks (default: the stallTicks setting, 200; 0 is off) is the shared watchdog: that many
     ticks with nothing gained or broken and no block stood in that it had not stood in since, and the
     job ends with reason stalled_no_progress_near_x,y,z, as paused if this session gained something,
     else failed. Pacing or circling on the same ground counts as standing still.
@@ -498,7 +498,7 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
     normal-interaction adapters. Retain jobId for status or resume. A finished or
     failed build is journaled as an auto world note at its location. drawing: see mb_build_preview.
     The receipt's `labels` names the region notes of yours that the build touches.
-    stall_ticks (default the stallTicks setting, 800; 0 off): that many ticks with no cell placed,
+    stall_ticks (default the stallTicks setting, 200; 0 off): that many ticks with no cell placed,
     cleared or pending and no new ground stood on end it as stalled_no_progress_near_x,y,z, paused
     if this session placed something, else failed (a cell nothing can be placed against, a standing
     cell it cannot leave). Holding a break on one block that long counts as stalled too.
