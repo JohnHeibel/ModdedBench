@@ -52,6 +52,11 @@ public class StallTest {
         assertEquals(-1,run(stall,50,t->new int[]{t,64,0},t->1));
     }
 
+    @Test public void replanningBetweenTwoCellsIsNoNewGround() {
+        // A pit replan loop: the start alternates between the landing cell and one mid-fall, never a third.
+        assertEquals(201,run(new Stall(200),2000,t->new int[]{58,t%3==0?19:17,-159},t->0));
+    }
+
     @Test public void zeroTurnsItOff() {
         assertEquals(-1,run(new Stall(0),100000,t->new int[]{0,64,0},t->0));
     }

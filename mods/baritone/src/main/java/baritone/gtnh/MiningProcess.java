@@ -104,8 +104,9 @@ final class MiningProcess extends BulkJob {
         return out;
     }
     @Override int progress(){return mc.thePlayer==player?gained():progressSeen;}
-    // Digging toward a target is work before any ore arrives, and so is the first scan of the bounds, which stands still.
-    @Override long activity(){return progress()+(long)broken+(observation.passes==0?observation.cursor:0);}
+    // Digging toward a target is work before any ore arrives, and so is the first scan of the bounds, which stands still,
+    // and so is holding a swing the game promised to finish (its own limit ends a useless one): a slow block is no stall.
+    @Override long activity(){return progress()+(long)broken+(observation.passes==0?observation.cursor:0)+(swing==null?0:ticks-swing.start());}
     @Override String phase(){return "reference_mine";}
     @Override void step(){
         if(gained()>=quantity){finish("succeeded","requested_inventory_gain_observed");return;}

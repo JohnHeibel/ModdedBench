@@ -571,7 +571,7 @@ budget with something gained is paused, not failed; `mb_work_resume` carries
 on where it stood.
 
 **Jobs and what they report.** Every work job has one stall watchdog:
-`stallTicks` ticks (default 800, 0 off, `stall_ticks` per job) with no
+`stallTicks` ticks (default 200, 0 off, `stall_ticks` per job) with no
 progress and no new ground stood on end it as `stalled_no_progress_near_x,y,z`,
 paused if it had made progress, else failed; pacing or circling counts as
 standing still. A death ends any job as failed, `player_died`. Explore and
