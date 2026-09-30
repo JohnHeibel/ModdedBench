@@ -52,7 +52,9 @@ stays paused. Tools expose this as `resume=True` or `resume=N`.
 
 Guards (`healthDrop`, `healthBelow`, `airBelow`, `foodBelow`, `burning`,
 `pauseOnDisconnect`, and `actionFailed`, which pauses when a caller sends
-`time.report_failure`) pause at a tick boundary. They never act.
+`time.report_failure`) pause at a tick boundary. They never act. While a
+fight job runs, `healthDrop` and `threat` from mobs within its range (4 blocks,
+8 standing) stay quiet; the rest stay armed.
 
 A snapshot read while paused is responsive, not a transactionally frozen view
 of the client. The gate is a bounded development control: it does not claim

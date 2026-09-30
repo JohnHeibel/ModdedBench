@@ -136,9 +136,9 @@ def mb_follow(target: dict, duration_ticks: int = 1200, radius: int = 2,
 
 
 @tool(rung=1, coverage=["combat"])
-def mb_fight(entity_id: int | None = None, hold: bool = False, leash: float = 16, bail_health: float = 8,
+def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = False, leash: float = 16, bail_health: float = 8,
              max_attackers: int = 2, weapon_slot: int | None = None, duration_ticks: int = 600,
-             crit: bool = True, block: bool = True, ranged: dict | bool | None = None,
+             crit: bool | None = None, block: bool | None = None, ranged: dict | bool | None = None,
              timeout_s: float = 60.0, target: dict | None = None, hostile: list[dict] | None = None,
              allow_break: bool = False, allow_place: bool = False) -> Any:
     """Fight one mob as a job, the way mb_mine mines: you choose the mob and the limits, it does the footwork.
@@ -151,6 +151,14 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, leash: float = 16
     in sight. Against more than one melee mob, first stand where only one can reach you (a doorway,
     a one-wide tunnel, a pillar two blocks up) and use hold; pursuing one mob of a group walks you
     into the others. It never chooses to chase a different mob.
+    swarm=True is for many small mobs at once (silverfish, a spawner): it stands like hold but
+    always swings at whichever hostile is nearest in reach, never stops as outnumbered, and
+    defaults crit and block off so every swing lands at the weapon's full rate. It takes no
+    entity_id or target.
+    While a fight runs, being hit does not trip the healthDrop guard, and a mob taking you as its
+    target within 4 blocks (8 with hold or swarm) does not trip threat: that is the fight you
+    chose. Every other guard (health, air, burning, food, a swelling creeper, a threat farther
+    out) still pauses the world and ends the fight.
     weapon_slot is the hotbar slot to fight with (default: whatever is in hand). leash is how far
     from where you started the mob may be before the job stops chasing; bail_health is the health
     at which it stops; max_attackers is how many hostile mobs may be within 4 blocks.
@@ -179,11 +187,15 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, leash: float = 16
     (settings forced for the job, restored after), hostileRule, target class/hostile/health, and for
     ranged fights adjustments and shotEntities (a shot is any new non-living entity flying away from you).
     """
-    if entity_id is None and target is None and not hold:
-        raise ValueError("entity_id or target is required unless hold=True")
+    if entity_id is None and target is None and not hold and not swarm:
+        raise ValueError("entity_id or target is required unless hold=True or swarm=True")
+    if swarm and (entity_id is not None or target is not None):
+        raise ValueError("swarm fights whatever is in reach: pass no entity_id or target")
     params = {"hold": hold, "leash": leash, "bailHealth": bail_health, "maxAttackers": max_attackers,
-              "durationTicks": duration_ticks, "crit": crit, "block": block}
+              "durationTicks": duration_ticks, "crit": not swarm if crit is None else crit,
+              "block": not swarm if block is None else block}
     if entity_id is not None: params["entityId"] = entity_id
+    if swarm: params["swarm"] = True
     if weapon_slot is not None: params["weaponSlot"] = weapon_slot
     if target is not None: params["target"] = target
     if hostile is not None: params["hostile"] = hostile

@@ -15,6 +15,7 @@ public final class SimulationClock {
     private boolean healthDrop, actionFailed, burning, pauseOnDisconnect = true;
     private int airBelow = -1, foodBelow = -1;
     private double healthBelow = -1, threatWithin = -1;
+    private long fightUntil = -1; private double fightRadius; // a fight job the model started: its hits and its mobs are not news
     private final java.util.Map<String,Long> knownThreats = new java.util.HashMap<>(); // key -> tick last seen
     private com.google.gson.JsonArray threats = new com.google.gson.JsonArray();
     private Float lastHealth;
@@ -47,7 +48,7 @@ public final class SimulationClock {
     }
     public void observe(float health, int air, int food, boolean onFire) {
         if(!paused) {
-            if(healthDrop && lastHealth!=null && health<lastHealth) pause("health_dropped");
+            if(healthDrop && !fighting() && lastHealth!=null && health<lastHealth) pause("health_dropped");
             else if(healthBelow>=0 && health<=healthBelow) pause("health_threshold");
             else if(airBelow>=0 && air<=airBelow) pause("air_threshold");
             else if(burning && onFire) pause("burning");
@@ -63,10 +64,21 @@ public final class SimulationClock {
      */
     /** The mob a fight job was sent after is expected to notice the player: not news for as long as a fight can last. */
     public void expectThreat(int entityId) { knownThreats.put(String.valueOf(entityId), simulationTicks+6000); knownThreats.put(entityId+"!", simulationTicks+6000); }
+    /**
+     * A fight job runs for at most `ticks`: until it ends, taking a hit does not pause (healthDrop), and neither does a mob
+     * taking the player as its target within `radius` blocks, which is the fight the model chose. Every other guard stays
+     * armed: health, air, burning and food thresholds, a creeper starting to swell, and threats beyond the radius. 0 ends it.
+     */
+    public void fight(int ticks, double radius) { fightUntil = ticks > 0 ? simulationTicks + ticks : -1; fightRadius = radius; lastHealth = null; }
+    public boolean fighting() { return simulationTicks < fightUntil; }
     public void threats(com.google.gson.JsonArray now) {
         boolean fresh = false; knownThreats.values().removeIf(seen -> simulationTicks - seen > 200);
         // A mob that is hit drops its target for a few ticks: it is the same threat when it comes back, not a new one.
-        for (com.google.gson.JsonElement t : now) fresh |= knownThreats.put(t.getAsJsonObject().get("key").getAsString(), simulationTicks) == null;
+        for (com.google.gson.JsonElement t : now) {
+            JsonObject threat = t.getAsJsonObject(); String key = threat.get("key").getAsString();
+            boolean joined = fighting() && !key.endsWith("!") && threat.has("distance") && threat.get("distance").getAsDouble() <= fightRadius;
+            fresh |= knownThreats.put(key, simulationTicks) == null && !joined;
+        }
         threats = now;
         if (fresh && !paused && threatWithin >= 0) pause("threat");
     }
@@ -95,6 +107,7 @@ public final class SimulationClock {
             "wallMs",(now-started)/1_000_000L,"pausedMs",(pausedNanos+(paused?now-changed:0))/1_000_000L,
             "conditions",Json.object("healthDrop",healthDrop,"healthBelow",healthBelow,"airBelow",airBelow,
                 "foodBelow",foodBelow,"burning",burning,"threatWithin",threatWithin,
-                "actionFailed",actionFailed,"pauseOnDisconnect",pauseOnDisconnect),"threats",threats,"events",events);
+                "actionFailed",actionFailed,"pauseOnDisconnect",pauseOnDisconnect),"threats",threats,"events",events,
+            "fight",fighting()?Json.object("untilTick",fightUntil,"radius",fightRadius):null);
     }
 }
