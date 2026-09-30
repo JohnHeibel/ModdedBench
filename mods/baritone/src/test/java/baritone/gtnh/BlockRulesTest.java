@@ -61,6 +61,19 @@ public class BlockRulesTest {
         assertFalse(shape(new double[]{.375,0,.375,.625,1.5,.625}).standable());                  // a fence post
         assertFalse(shape(new double[]{0,0,0,1,.3125,1},new double[]{0,0,0,.125,1,1}).standable()); // a cauldron's rim
         assertFalse(shape(new double[]{0,0,0,1,.1875,1}).empty());                                // a closed trapdoor
+        // A top under 0.875 puts the player's feet cell, floor(minY+0.1251), inside the block: not a floor to plan on.
+        assertFalse(shape(new double[]{0,0,0,1,.8125,1}).standable());
+    }
+    @Test public void aStandableTopKeepsItsSurfaceForFootprintChecks(){
+        var cube=shape(new double[]{0,0,0,1,1,1});
+        assertTrue(cube.full());assertTrue(cube.supports(1.25,-.25));assertFalse(cube.supports(1.31,.5));
+        // A floor of thin vertical pipe: holds a centred player, not one at the corner a diagonal crosses.
+        var pipe=shape(new double[]{.375,0,.375,.625,1,.625});
+        assertTrue(pipe.standable());assertFalse(pipe.full());
+        assertTrue(pipe.supports(.5,.5));assertTrue(pipe.supports(.9,.5));assertFalse(pipe.supports(1,1));assertFalse(pipe.supports(.95,.5));
+        // Only boxes at the top count: a stair's low step does not hold a player at the far edge.
+        var stairs=shape(new double[]{0,0,0,1,.5,1},new double[]{.5,.5,0,1,1,1});
+        assertFalse(stairs.full());assertTrue(stairs.supports(.5,.5));assertFalse(stairs.supports(.1,.5));
     }
     @Test public void anyItemGainKeysAStackByIdMetaAndNbtButAToolByIdAndMeta(){
         var pick=new net.minecraft.item.ItemStack(net.minecraft.init.Items.iron_pickaxe);var worn=pick.copy();worn.setTagCompound(new net.minecraft.nbt.NBTTagCompound());worn.getTagCompound().setInteger("wear",3);

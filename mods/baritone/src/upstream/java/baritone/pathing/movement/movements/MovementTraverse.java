@@ -81,6 +81,9 @@ public class MovementTraverse extends Movement {
         boolean standingOnABlock = MovementHelper.mustBeSolidToWalkOn(context, x, y - 1, z, srcDown);
         boolean frostWalker = standingOnABlock && !context.assumeWalkOnWater && MovementHelper.canUseFrostWalker(context, destOn);
         if (frostWalker || MovementHelper.canWalkOn(context, destX, y - 1, destZ, destOn)) { //this is a walk, not a bridge
+            if (!MovementHelper.footingAlong(context, y - 1, x, z, destX, destZ)) {
+                return COST_INF; // ModdedBench: the floors hold the player at both centres but not between them
+            }
             double WC = WALK_ONE_BLOCK_COST;
             boolean water = false;
             if (MovementHelper.isWater(pb0.getBlock()) || MovementHelper.isWater(pb1.getBlock())) {

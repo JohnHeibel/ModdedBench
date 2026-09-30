@@ -16,10 +16,16 @@ import net.minecraft.world.World;
  *  search runs on its own thread, reads the answers kept here and queues the ones it lacks for the next game tick. */
 public final class BlockShapes {
     private BlockShapes(){}
-    /** empty: nothing collides in the cell. standable: the top is within 0.2 of the cell's top, nothing rises above
-     *  it, and a box at that top lies under a centred player's footprint. */
-    public record Shape(boolean empty,boolean standable) {}
-    private static final Shape FAILED=new Shape(false,false);
+    /** empty: nothing collides in the cell. standable: the top is at least 0.875 (a lower top puts the player's feet,
+     *  floor(minY+0.1251), in this cell), nothing rises above it, and a box at that top lies under a centred player's
+     *  footprint. top: the highest box top; surface: the {minX,minZ,maxX,maxZ} of each box at that top. */
+    public record Shape(boolean empty,boolean standable,double top,double[][] surface) {
+        /** One box covers the whole top: a player anywhere over the cell stands on it. */
+        public boolean full(){for(double[] r:surface)if(r[0]<=1e-5&&r[1]<=1e-5&&r[2]>=1-1e-5&&r[3]>=1-1e-5)return true;return false;}
+        /** A 0.6 footprint centred at (x,z), relative to the cell's corner and possibly beyond it, overlaps the top. */
+        public boolean supports(double x,double z){for(double[] r:surface)if(r[0]<x+.3&&r[2]>x-.3&&r[1]<z+.3&&r[3]>z-.3)return true;return false;}
+    }
+    private static final Shape FAILED=new Shape(false,false,Double.NaN,new double[0][]);
     private record Key(Block block,int meta,long pos) {}
     private static final Map<Key,Shape> answers=new ConcurrentHashMap<>();
     private static final Map<Key,int[]> asked=new ConcurrentHashMap<>();
@@ -87,9 +93,11 @@ public final class BlockShapes {
     }
     /** Boxes relative to the cell's corner, as {minX,minY,minZ,maxX,maxY,maxZ}. */
     static Shape classify(List<double[]> boxes){
-        double top=Double.NEGATIVE_INFINITY;boolean under=false;
+        double top=Double.NEGATIVE_INFINITY;
         for(double[] b:boxes)top=Math.max(top,b[4]);
-        for(double[] b:boxes)under|=b[4]>=top-1e-5&&b[0]<.8&&b[3]>.2&&b[2]<.8&&b[5]>.2;
-        return new Shape(boxes.isEmpty(),!boxes.isEmpty()&&top>=.8&&top<=1+1e-5&&under);
+        List<double[]> surface=new ArrayList<>();
+        for(double[] b:boxes)if(b[4]>=top-1e-5)surface.add(new double[]{b[0],b[2],b[3],b[5]});
+        Shape shape=new Shape(boxes.isEmpty(),false,top,surface.toArray(new double[0][]));
+        return new Shape(shape.empty(),!boxes.isEmpty()&&top>=.875-1e-5&&top<=1+1e-5&&shape.supports(.5,.5),top,shape.surface());
     }
 }
