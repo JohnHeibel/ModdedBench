@@ -323,7 +323,10 @@ final class ReferenceConstructionProcess extends BulkJob {
         var feet=engine.getPlayerContext().playerFeet();
         double y=mc.thePlayer.boundingBox.minY,x=feet.getX()+.5,z=feet.getZ()+.5;
         if(!ForgeSnapshot.liveStandable(world,feet)||!ForgeSnapshot.liveClear(world,x,y,z,y+1.8))return false;
-        for(Cell cell:desired.values()){
+        // Only the source builder's active layer may request a placement pose.
+        // Future roof cells must not pull the player back from a wall traversal.
+        for(var target:engine.getBuilderProcess().incorrectPositions()){
+            Cell cell=desired.get(new BlockPos(target.getX(),target.getY(),target.getZ()));if(cell==null)continue;
             if(cell.clear()||correct.getOrDefault(cell.pos(),false)||!sourcePlacementHeight(cell,feet))continue;
             var p=cell.pos();
             if(!mc.thePlayer.boundingBox.intersectsWith(net.minecraft.util.AxisAlignedBB.getBoundingBox(p.getX(),p.getY(),p.getZ(),p.getX()+1,p.getY()+1,p.getZ()+1)))continue;
