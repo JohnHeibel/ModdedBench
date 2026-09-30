@@ -8,20 +8,23 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
-- **2026-09-30** Builder block goals could stop at a boundary overlapping the
+- **2026-09-29** Builder block goals could stop at a boundary overlapping the
   next placement, oscillating between stances. Construction now centres on its
   verified footing when native prediction permits the centred pose only;
   recovery cancels the movement segment without cancelling the builder and
   considers only its active layer, so future cells cannot interrupt traversal.
-- **2026-09-30** Construction egress accepted low neighbouring stances beneath
+- **2026-09-29** Construction egress accepted low neighbouring stances beneath
   open floor cells, repeatedly reaching a goal with no actionable placement.
   Egress now applies the source placement scan's height restrictions.
-- **2026-09-30** Short sneak+mouse chords still withdrew single drawer items on
+- **2026-09-29** Short sneak+mouse chords still withdrew single drawer items on
   the contained server. `mb_act` now composes a bounded native pose hold before
   modifier clicks, reports it, and sends no click if that hold is interrupted.
-- **2026-09-30** Default detection of an unfinished quest sent an empty task
+- **2026-09-29** Default detection of an unfinished quest sent an empty task
   list rejected by the native adapter. `mb_quest_detect` now supplies observed
   task IDs and preserves explicit selections, including checkbox quests.
+- **2026-09-22** Detecting an already completed Better Questing quest sent an
+  empty task request that the native adapter rejected. `mb_quest_detect` now
+  returns the observed completion without sending a detect packet.
 - **2026-09-21** Python build tools confine builder-mode edits to plan cells by
   default, including staged plans. Unrestricted access excavation uprooted a
   workshop station; explicit `settings.restricted: false` remains available.
@@ -34,9 +37,6 @@ contract notes. What was still true is now in the current docs.
 - **2026-09-21** Named key presses now dispatch native FML input events with
   synthetic event state. Better Questing's key previously queued a binding but
   never opened its screen; a GUI opened by the press now completes that input.
-- **2026-09-22** Detecting an already completed Better Questing quest sent an
-  empty task request that the native adapter rejected. `mb_quest_detect` now
-  returns the observed completion without sending a detect packet.
 - **2026-09-21** Saving a survival camp waypoint exposed `mb_view` assuming array
   coordinates. It now accepts the native world-memory coordinate objects for
   waypoints and protected regions, retaining spatial filtering.
