@@ -43,6 +43,7 @@ import baritone.compat.BlockPos;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -434,23 +435,11 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
         BetterBlockPos feet = ctx.playerFeet();
         if (!MovementHelper.canWalkOn(ctx, feet.down())) {
             if (ctx.player().onGround) {
-                double playerX = ctx.player().posX;
-                double playerZ = ctx.player().posZ;
-                ArrayList<BetterBlockPos> closest = new ArrayList<>();
-                for (int dx = -1; dx <= 1; dx++) {
-                    for (int dz = -1; dz <= 1; dz++) {
-                        closest.add(new BetterBlockPos(feet.x + dx, feet.y, feet.z + dz));
-                    }
-                }
-                closest.sort(Comparator.comparingDouble(pos -> ((pos.x + 0.5D) - playerX) * ((pos.x + 0.5D) - playerX) + ((pos.z + 0.5D) - playerZ) * ((pos.z + 0.5D) - playerZ)));
-                for (int i = 0; i < 4; i++) {
-                    BetterBlockPos possibleSupport = closest.get(i);
-                    double xDist = Math.abs((possibleSupport.x + 0.5D) - playerX);
-                    double zDist = Math.abs((possibleSupport.z + 0.5D) - playerZ);
-                    if (xDist > 0.8 && zDist > 0.8) {
-                        // can't possibly be sneaking off of this one, we're too far away
-                        continue;
-                    }
+                // ModdedBench: only a cell under the hitbox can hold the player up. Upstream tried the four nearest centres
+                // of the 3x3 and skipped any 0.8 away on both axes; a player pinned at x.300001 against a wall stands on
+                // the one cell its footprint shares with the floor, which that ordering could miss. Most overlap first.
+                net.minecraft.util.AxisAlignedBB bb = ctx.player().boundingBox;
+                for (BetterBlockPos possibleSupport : footprint(feet.y, bb.minX, bb.minZ, bb.maxX, bb.maxZ)) {
                     if (MovementHelper.canWalkOn(ctx, possibleSupport.down()) && MovementHelper.canWalkThrough(ctx, possibleSupport) && MovementHelper.canWalkThrough(ctx, possibleSupport.up())) {
                         // this is plausible
                         //logDebug("Faking path start assuming player is standing off the edge of a block");
@@ -458,16 +447,32 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
                     }
                 }
 
-            } else {
+            } else if (!MovementHelper.isLiquid(ctx, feet)) {
                 // !onGround
-                // we're in the middle of a jump
-                if (MovementHelper.canWalkOn(ctx, feet.down().down())) {
-                    //logDebug("Faking path start assuming player is midair and falling");
-                    return feet.down();
+                // ModdedBench: plan from where the fall lands, not one cell down (upstream): a re-plan from mid-fall and
+                // one from the landing cell alternated in a pit, each path failing the other's first movement.
+                BetterBlockPos below = feet;
+                for (int i = 0; i < 24 && below.y > 0 && MovementHelper.canWalkThrough(ctx, below); i++, below = below.down()) {
+                    if (i > 0 && MovementHelper.canWalkOn(ctx, below.down())) {
+                        //logDebug("Faking path start assuming player is midair and falling");
+                        return below;
+                    }
                 }
             }
         }
         return feet;
+    }
+
+    /** ModdedBench: the cells at feet level under a footprint, the one sharing most of its area first. */
+    public static List<BetterBlockPos> footprint(int y, double minX, double minZ, double maxX, double maxZ) {
+        List<BetterBlockPos> cells = new ArrayList<>();
+        for (int x = (int) Math.floor(minX + 1e-4); x <= Math.floor(maxX - 1e-4); x++) {
+            for (int z = (int) Math.floor(minZ + 1e-4); z <= Math.floor(maxZ - 1e-4); z++) {
+                cells.add(new BetterBlockPos(x, y, z));
+            }
+        }
+        cells.sort(Comparator.comparingDouble(c -> -(Math.min(maxX, c.x + 1) - Math.max(minX, c.x)) * (Math.min(maxZ, c.z + 1) - Math.max(minZ, c.z))));
+        return cells;
     }
 
     /**
