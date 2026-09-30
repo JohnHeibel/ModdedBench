@@ -491,11 +491,16 @@ world is stopped, so decide before you resume: fight, leave, or put a block
 between you, and do it with `resume=True` on that call (`mb_fight(...,
 resume=True)`). `mb_fight` fights one mob you name and stops the moment the fight
 gets worse than the one you chose. It will not pick a second mob for you.
+While a fight runs, its hits and the mobs it engages do not trip `healthDrop`
+or `threat`; every other guard still pauses and ends it, so there is no guard
+to switch off before fighting.
 With `ranged=True` it uses whatever bow, crossbow or throwable is in the slot you
 name, and learns that weapon from its own shots: what shoots at you, and what
 explodes, is better killed from a distance.
 Against several, do not chase: get to where only one can reach you (a doorway, a
-one-wide tunnel, two blocks up a pillar) and use `mb_fight(hold=True)`. Kill
+one-wide tunnel, two blocks up a pillar) and use `mb_fight(hold=True)`; against
+a swarm of small ones (silverfish), `mb_fight(swarm=True)` hits whichever is
+nearest in reach and does not stop for being outnumbered. Kill
 what shoots first or break its line of sight; a creeper is fought in the open,
 never in your base. Eating, crafting or opening a GUI with a threat listed is
 refused by default: the refusal names the threats and its override
@@ -858,7 +863,7 @@ shipped: once you start editing tools, `mb_tools_status` (what is loaded) and
 | Use a GUI neither `mb_craft` nor `mb_move_items` can drive | `mb_act` (use_block) to open it, `mb_inventory(container=True)` | `mb_transfer`, `mb_click_slot`, `mb_gui`; if no tool can drive it, that is a missing primitive: write one |
 | Complete a quest | `mb_quest_detect` | `mb_quest_select_choice`, `mb_quest_claim`, then observe the quest and your inventory |
 | Wait for something | `mb_interrupt` (add a watch with a deadline) | `mb_wait`; `mb_interrupt_events` to replay what you missed |
-| Deal with a hostile mob | the clock's `threats`, `mb_obs` entities | `mb_fight` (one named mob, or `hold=True` at a chokepoint); `mb_process` goal `run_away` to leave |
+| Deal with a hostile mob | the clock's `threats`, `mb_obs` entities | `mb_fight` (one named mob, `hold=True` at a chokepoint, `swarm=True` for many small ones); `mb_process` goal `run_away` to leave |
 | Stop something now | `mb_stop`, `mb_build_pause` | `mb_time` pause when you need to think |
 | Remember something | `mb_note_write` (after `mb_notes` capture) | `mb_goal` for where you are; `mb_memory` for waypoints, routes, protected regions |
 | Learn how the pack works | `mb_wiki_search` | `mb_wiki_read`, then a topic note |

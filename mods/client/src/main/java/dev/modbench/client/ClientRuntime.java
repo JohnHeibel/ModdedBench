@@ -50,7 +50,7 @@ public final class ClientRuntime extends BridgeRuntime {
     private Request control;
     private InputArbiter.Lease inputLease;
     private Request navigationRequest;
-    private Navigation.Job navigationJob;
+    private Navigation.Job navigationJob, fightJob;
     private long refusalMark; // clicks the harness had refused when the current job or hold began
     private InputChord inputChord;
     private Object lastWorld, lastPlayer, identity;
@@ -223,10 +223,13 @@ public final class ClientRuntime extends BridgeRuntime {
             requirePlayer();Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");controlsChanged("superseded");ControlRegistry.controls().focusForInput();
             navigationJob=navigation().follow(params);navigationRequest=r;return null;
         });
-        register("nav.fight","One fight as a job: {entityId (from obs.entities or time.status threats) or target:{entityId|uuid|type|name|class} (any entity, nearest match in sight), hostile:[selectors] (default [{class:net.minecraft.entity.monster.IMob}]; used for hold, maxAttackers and the report, never to refuse a target), allowBreak:false, allowPlace:false, hold:false, durationTicks:600 (<=6000), leash:16 blocks from where you stood, bailHealth:8, maxAttackers:2, weaponSlot:0..8, crit:true, block:true, intervalTicks:10, ranged:{drawTicks,reloadTicks,minRange:6,maxRange:20,clickAfterLoad,speed,gravity,drag}}. ranged fights with the launcher or throwable in hand: usage is found by trying (hold and release, else click), ballistics are measured from its own shots and kept per weapon name; fails no_projectile_fired after three tries. Paths to the mob without breaking or placing, then in reach blocks with a sword and swings while falling for critical hits; backs away from its target creeper while it swells. hold:true never moves: it hits the named target, or with none the nearest match of the hostile rule in sight, when one comes into reach, and succeeds once none is in sight. Fails, which the actionFailed guard turns into a pause, on health_at_bail_line, outnumbered, creeper_swelling (another one), target_beyond_leash, target_lost, cannot_reach_target, duration_elapsed. Receipt: target {entityId,type,class,health (null when not living),hostile,distance}, hostileRule, jobSettings (the settings in force for this job, restored after), and for ranged adjustments (changes made to the given numbers, from->to) and shotEntities (classes seen as the shot).","interaction",r->{
+        register("nav.fight","One fight as a job: {entityId (from obs.entities or time.status threats) or target:{entityId|uuid|type|name|class} (any entity, nearest match in sight), hostile:[selectors] (default [{class:net.minecraft.entity.monster.IMob}]; used for hold, maxAttackers and the report, never to refuse a target), allowBreak:false, allowPlace:false, hold:false, swarm:false, durationTicks:600 (<=6000), leash:16 blocks from where you stood, bailHealth:8, maxAttackers:2, weaponSlot:0..8, crit:true, block:true, intervalTicks:10, ranged:{drawTicks,reloadTicks,minRange:6,maxRange:20,clickAfterLoad,speed,gravity,drag}}. ranged fights with the launcher or throwable in hand: usage is found by trying (hold and release, else click), ballistics are measured from its own shots and kept per weapon name; fails no_projectile_fired after three tries. Paths to the mob without breaking or placing, then in reach blocks with a sword and swings while falling for critical hits; backs away from its target creeper while it swells. hold:true never moves: it hits the named target, or with none the nearest match of the hostile rule in sight, when one comes into reach, and succeeds once none is in sight. swarm:true is hold that switches to whichever hostile is nearest in reach, never bails as outnumbered, and defaults crit and block off (no entityId or target). While a fight runs, being hit does not trip healthDrop and a mob taking you as its target within 4 blocks (8 for hold/swarm) does not trip threat; every other guard still pauses and ends it. Fails, which the actionFailed guard turns into a pause, on health_at_bail_line, outnumbered, creeper_swelling (another one), target_beyond_leash, target_lost, cannot_reach_target, duration_elapsed. Receipt: target {entityId,type,class,health (null when not living),hostile,distance}, hostileRule, jobSettings (the settings in force for this job, restored after), and for ranged adjustments (changes made to the given numbers, from->to) and shotEntities (classes seen as the shot).","interaction",r->{
             requirePlayer();Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");controlsChanged("superseded");ControlRegistry.controls().focusForInput();
-            navigationJob=navigation().fight(params);navigationRequest=r;
+            navigationJob=fightJob=navigation().fight(params);navigationRequest=r;
             if(params.get("entityId") instanceof Number id)clock.expectThreat(id.intValue()); // the threat guard warns of mobs the model has not answered yet
+            // While it runs, its hits and the mobs it engages do not pause the world; every other guard still does.
+            boolean standing=Boolean.TRUE.equals(params.get("hold"))||Boolean.TRUE.equals(params.get("swarm"));
+            clock.fight(params.get("durationTicks") instanceof Number d?d.intValue():600,standing?8:4);
             return null;
         });
         register("nav.settings","Source settings {operation:get|set|reset,query,values,save}; typed values or source syntax, atomic edits while idle. Optional declarations do not promise runtime support.","interaction",r->navigation().settings(Json.GSON.fromJson(r.params,Map.class)));
@@ -503,6 +506,7 @@ public final class ClientRuntime extends BridgeRuntime {
                 held.fail("cancelled",why,receipt);
             }
         }
+        if (fightJob != null && (navigationJob != fightJob || fightJob.done())) { fightJob=null; clock.fight(0,0); } // ended, however: its guards are back
         if (control == null) return;
         if (control.isDone() || !control.session.connected || control.expired()) controlsChanged("cancelled");
     }

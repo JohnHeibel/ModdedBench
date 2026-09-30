@@ -35,7 +35,7 @@ final class FightJob implements Navigation.Job {
     private final Integer chosen;
     private final Predicate<Entity> named,hostile;
     private final List<Map<String,Object>> hostileRule;
-    private final boolean hold,crit,block;
+    private final boolean hold,swarm,crit,block;
     private final int duration,interval,maxAttackers;
     private final double leash,bailHealth,ax,ay,az;
     private String state="fighting",reason="",phase="starting";
@@ -60,7 +60,9 @@ final class FightJob implements Navigation.Job {
 
     FightJob(Baritone engine,Map<String,Object> params){
         this.engine=engine;
-        hold=bool(params,"hold",false);crit=bool(params,"crit",true);block=bool(params,"block",true);
+        // Swarm: stand and hit whichever mob of the hostile rule is nearest in reach, at the weapon's full rate, however many come.
+        swarm=bool(params,"swarm",false);hold=swarm||bool(params,"hold",false);crit=bool(params,"crit",!swarm);block=bool(params,"block",!swarm);
+        if(swarm&&(params.containsKey("entityId")||params.containsKey("target")))throw new IllegalArgumentException("swarm fights whatever the hostile rule matches in reach: it takes no entityId or target");
         chosen=params.containsKey("entityId")?integer(params,"entityId",0,Integer.MIN_VALUE,Integer.MAX_VALUE):null;
         named=chosen!=null?e->e.getEntityId()==chosen:params.containsKey("target")?ReferenceFollowJob.selector(child(params,"target")):null;
         hostileRule=params.containsKey("hostile")?list(params.get("hostile")).stream().map(o->object(o)).toList():List.of(Map.of("class","net.minecraft.entity.monster.IMob"));
@@ -102,7 +104,7 @@ final class FightJob implements Navigation.Job {
         if(ticks++>=duration){finish("failed","duration_elapsed");return;}
         if(me.getHealth()<=bailHealth){finish("failed","health_at_bail_line");return;}
         List<Entity> near=hostiles(4);
-        if(near.size()>maxAttackers){finish("failed","outnumbered: "+near.size()+" entities of the hostile rule within 4 blocks");return;}
+        if(!swarm&&near.size()>maxAttackers){finish("failed","outnumbered: "+near.size()+" entities of the hostile rule within 4 blocks");return;}
         for(Entity e:matching(x->x instanceof EntityCreeper,7))if(e!=target&&((EntityCreeper)e).getCreeperState()>0){finish("failed","creeper_swelling: entity "+e.getEntityId());return;}
 
         if(target!=null&&dead(target)){kills++;target=null;if(chosen!=null){finish("succeeded","target_dead");return;}}
@@ -111,6 +113,7 @@ final class FightJob implements Navigation.Job {
             if(target==null||dead(target)){target=null;finish("failed",attacks>0?"target_lost":"no_such_entity");return;}
         } else {
             // A selector (or, holding, the hostile rule) keeps its target while it lives, else takes the nearest match in sight.
+            if(swarm){Entity closest=hostiles(REACH+2).stream().filter(e->reach(e)<=REACH).findFirst().orElse(null);if(closest!=null)target=closest;}
             if(target==null){List<Entity> all=matching(named!=null?named:hostile,hold?8:leash);target=all.isEmpty()?null:all.get(0);}
             if(target==null){phase="clear";rest(Set.of());if(++clearTicks>=40)finish("succeeded","clear");return;}
             clearTicks=0;
@@ -263,7 +266,7 @@ final class FightJob implements Navigation.Job {
     @Override public boolean succeeded(){return state.equals("succeeded");}
     @Override public Map<String,Object> status(){
         var out=new LinkedHashMap<String,Object>();var me=mc.thePlayer;
-        out.put("action","fight");out.put("state",state);out.put("reason",reason);out.put("phase",phase);out.put("ticks",ticks);
+        out.put("action","fight");out.put("swarm",swarm);out.put("state",state);out.put("reason",reason);out.put("phase",phase);out.put("ticks",ticks);
         out.put("attacks",attacks);out.put("criticalHits",crits);out.put("kills",kills);
         if(shots>0||ranged||!adjustments.isEmpty()){out.put("shots",shots);out.put("hitsObserved",hits);out.put("weapon",weaponKey);
             out.put("ballistics",Map.of("speed",speed,"gravity",gravity,"drag",drag,"drawTicks",drawTicks,"reloadTicks",reloadTicks,"clickAfterLoad",clickAfterLoad));

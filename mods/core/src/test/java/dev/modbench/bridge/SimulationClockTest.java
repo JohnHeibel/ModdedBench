@@ -99,6 +99,61 @@ public class SimulationClockTest {
         assertTrue(clock.paused());
     }
 
+    @Test
+    public void aFightQuietsItsOwnHitsAndMobsButNotTheOtherGuards() {
+        SimulationClock clock = new SimulationClock(() -> 0L);
+        JsonObject config = new JsonObject();
+        config.addProperty("healthDrop", true);
+        config.addProperty("healthBelow", 8.0);
+        config.addProperty("threatWithin", 12.0);
+        clock.configure(config);
+        clock.fight(100, 8);
+
+        clock.observe(20.0F, 300);
+        clock.observe(15.0F, 300); // A hit taken in the fight.
+        assertFalse(clock.paused());
+        clock.threats(near("7", 2.0, "9", 7.5)); // The swarm it is fighting.
+        assertFalse(clock.paused());
+        clock.threats(near("7", 2.0, "11", 11.0)); // A skeleton beyond the fight is still news.
+        assertTrue(clock.paused());
+        assertEquals("threat", clock.status().get("reason").getAsString());
+
+        clock.resume();
+        clock.threats(near("7", 2.0, "4!", 3.0)); // So is a creeper starting to swell next to it.
+        assertTrue(clock.paused());
+
+        clock.resume();
+        clock.observe(7.0F, 300); // And the health floor.
+        assertTrue(clock.paused());
+        assertEquals("health_threshold", clock.status().get("reason").getAsString());
+
+        clock.resume();
+        clock.fight(0, 0); // The fight ended: a hit pauses again.
+        clock.observe(12.0F, 300);
+        clock.observe(11.0F, 300);
+        assertTrue(clock.paused());
+        assertEquals("health_dropped", clock.status().get("reason").getAsString());
+    }
+
+    @Test
+    public void aFightWindowRunsOutByItselfIfItsEndIsNeverReported() {
+        SimulationClock clock = new SimulationClock(() -> 0L);
+        JsonObject config = new JsonObject();
+        config.addProperty("healthDrop", true);
+        clock.configure(config);
+        clock.fight(10, 4);
+        for (int i = 0; i < 10; i++) clock.tickFinished();
+        clock.observe(20.0F, 300);
+        clock.observe(19.0F, 300);
+        assertTrue(clock.paused());
+    }
+
+    private static JsonArray near(Object... keyDistance) {
+        JsonArray out = new JsonArray();
+        for (int i = 0; i < keyDistance.length; i += 2) out.add(Json.object("key", keyDistance[i], "distance", keyDistance[i + 1]));
+        return out;
+    }
+
     private static JsonArray threats(String... keys) {
         JsonArray out = new JsonArray();
         for (String key : keys) out.add(Json.object("key", key));
