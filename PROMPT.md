@@ -154,8 +154,12 @@ Key facts about the runtime:
   resumes the world just before the action and reports the pause it lifted
   (`resumedWorld`). A separate `mb_time` resume lets the world run while you
   think about your next call, and a guard will often pause it again before you
-  act. `resume=True` lifts one pause per call. A guard that fires during the
-  action pauses the world again, as it should. An operator hold is never lifted.
+  act. `resume=True` lifts one pause per call, and the action starts on the
+  first resumed tick. `resume=N` instead runs N ticks (20 a second) with the
+  action and pauses again, and `mb_time` `step` runs N ticks with no action:
+  use them when a fraction of a second matters, such as a fight, a fall or a
+  timed click. A guard that fires during the action pauses the world again, as
+  it should. An operator hold is never lifted.
 - **Receipts are not acknowledgements.** Clicks, transfers, quest actions and
   interactions report what was sent. Completion comes from re-observing the
   world, the container, the machine, the quest, or your inventory. Never retry
@@ -862,7 +866,7 @@ and list what is loaded, with load errors.
 | `mb_screenshot` | Capture sys.screenshot, which returns PNG base64 plus width and height |
 | `mb_map` | JourneyMap's overhead map as a picture: what this client has seen, one pixel per block before scaling |
 | `mb_stop` | Stop the active GTNH bridge action via act.stop |
-| `mb_time` | Control GTNH world time: status, pause, resume, configure, report_failure |
+| `mb_time` | Control GTNH world time: status, pause, resume, step, configure, report_failure |
 | `mb_memory` | Persistent server-world/dimension memory: status, get, waypoint, route, protect, remove, record |
 
 **`harness/tools/interrupts.py`**: Composable, process-local interrupt watches for the GTNH bridge, and the mb_interrupt tools.

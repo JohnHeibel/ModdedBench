@@ -2,8 +2,9 @@
 
 An opt-in whole-simulation-tick gate on the dedicated server. Real time is the
 default. `time.pause` stops complete server ticks, `time.resume` returns to
-real time, and there is no stepping or client/server lockstep. The tool is
-`mb_time` (`status`, `pause`, `resume`, `configure`, `report_failure`).
+real time, and `time.step` runs exactly N server ticks, then pauses again. The
+tool is `mb_time` (`status`, `pause`, `resume`, `step`, `configure`,
+`report_failure`).
 
 Two rules sit above the agent. Time control belongs to the bridge session that
 last used it, and losing that session pauses the world (`agent_disconnected`).
@@ -18,7 +19,36 @@ An operator hold (the file `modbench-hold` in the server directory, status
 | Client simulation | The client gates its own simulation ticks while the server is paused. |
 | Still live | Networking, keepalives, bridge requests, reconnect negotiation, chunk delivery, observations, screenshots, NEI inspection. |
 | Gameplay packets | Deferred, then released in per-connection order at the network stage of the first resumed tick, after world updates. |
-| Actions | `act.*` and `gui.*` actions are rejected before any input; resume first. A running action can still be stopped. |
+| Actions | `act.*` and `gui.*` actions are rejected before any input unless they carry `_resume`. A running action can still be stopped. |
+
+## Stepping
+
+`time.step {ticks:N}` (1..72000) resumes, counts N complete server ticks and
+pauses with reason `step`. It replies once that pause has settled, like
+`time.pause`. `time.resume {ticks:N}` does the same but replies at once. The
+state carries `step {id, ticks, remaining}` while stepping and `lastStep {id,
+ticks, ran, endedBy, clientTicks}` after: `endedBy` is `step`, a guard's reason,
+or `superseded` when another pause or resume ended it. The fixture windows are
+steps that end with `fixture_checkpoint`.
+
+The client is not in lockstep. It receives the step with the state broadcast and
+runs at most `remaining` ticks of its own, then waits for the pause
+(`clientTicks` in `lastStep` is what it ran). A held input, a click in progress
+or a navigation job ends at the step's pause and reports why, as it does at a
+guard pause; a pause the agent asked for leaves them waiting instead.
+
+## Resume and act in one request
+
+An acting request may carry `_resume`: `true` to resume, `N` to step N ticks.
+Reads ignore it. When the world is paused, the client admits the action, runs
+its first tick while the server is still paused, and only then sends
+`time.resume` on the same connection. The server defers that tick's gameplay
+packets (they arrive before the resume) and replays them first in its first
+resumed tick, so the action starts on that tick, and the client counts its
+early tick as the first of a step. The reply carries `resumedWorld` (the pause
+it lifted). The client refuses up front when the pause is unsettled or held; if
+the server still refuses, the action ends with `resume_refused` and the world
+stays paused. Tools expose this as `resume=True` or `resume=N`.
 
 Guards (`healthDrop`, `healthBelow`, `airBelow`, `foodBelow`, `burning`,
 `pauseOnDisconnect`, and `actionFailed`, which pauses when a caller sends

@@ -22,7 +22,16 @@ public final class ClientClock implements ClockHooks.Driver {
     private NetworkManager connection;
     private JsonObject state=Json.object("mode","unavailable","paused",false);
     private boolean supported, paused, runningTick;
-    private long lastHeartbeat, requestId;
+    private long lastHeartbeat, requestId, stepId;
+    /** Ticks this client may still run in the server's current step (-1: no step), and how many it ran. */
+    private int stepBudget=-1, stepRan;
+    /**
+     * Resume-and-act: an action that asked to resume a paused world runs the first tick here while the server is still
+     * paused, then asks the server to resume. Its packets reach the server ahead of the resume on the same connection, so
+     * the server defers them and replays them first in its first resumed tick: the action starts on that tick.
+     */
+    private boolean resuming, creditTick, resumeSent;
+    private int resumeTicks, creditRan;
     private Session agent;
     final PausedFrame presentation=new PausedFrame(this);
 
@@ -47,6 +56,39 @@ public final class ClientClock implements ClockHooks.Driver {
     public void expectThreat(int entityId) { if(supported) send(Json.object("type","expect_threat","entityId",entityId)); }
     /** Paused by a guard, which wants the model's attention, rather than by a request or a lost connection, which a job waits out. */
     boolean guardPause() { return paused && java.util.Set.of("threat","health_dropped","health_threshold","air_threshold","food_threshold","burning").contains(pauseReason()); }
+    /** Paused where no tick will finish running work: by a guard, or at the end of a step. */
+    boolean endsWork() { return !resuming && (guardPause() || paused && "step".equals(pauseReason())); }
+    /** Paused for the purpose of refusing actions: false once an action has asked to resume. */
+    boolean refusesActions() { return paused && !resuming; }
+    /**
+     * Admits an action that carries _resume while the world is paused: true (resume) or N (step N ticks). The same
+     * checks the server makes are made here first, so a refusal fails the call before anything runs.
+     */
+    void resumeFor(Request r,int ticks) {
+        if(!paused || resuming) return;
+        if(!supported || connection==null || !connection.isChannelOpen()) throw new IllegalArgumentException("server does not advertise ModdedBench time control");
+        if(agent!=null && agent.connected && agent!=r.session) throw new IllegalArgumentException("time control belongs to another connected agent session");
+        if(Json.bool(state,"held",false)) throw new IllegalArgumentException("the operator is holding the world paused; wait for the release");
+        if(!"paused".equals(Json.string(state,"mode",""))) throw new IllegalArgumentException("pause has not settled; inspect time.status before resuming");
+        agent=r.session;resuming=creditTick=true;resumeSent=false;resumeTicks=ticks;
+        JsonObject record=Json.object("pausedBy",pauseReason(),"threats",state.has("threats")?state.get("threats"):new com.google.gson.JsonArray());
+        if(ticks>0) record.addProperty("ticks",ticks);
+        r.resumed=record;
+    }
+    private void sendResume() {
+        resumeSent=true;
+        Request resume=new Request(new com.google.gson.JsonPrimitive("resume-for-action-"+requestId),"time.resume",
+            Json.object("ticks",resumeTicks,"_timeout_ms",10000),agent,runtime,envelope->{
+                if(envelope.get("ok").getAsBoolean()) return;
+                resuming=false;creditRan=0;  // the world stays paused: the action that asked for it ends now, with why
+                runtime.resumeRefused(envelope.getAsJsonObject("error").get("msg").getAsString());
+            });
+        String id=Long.toString(++requestId);pending.put(id,resume);
+        send(Json.object("type","command","id",id,"method","time.resume","params",resume.params));
+    }
+
+    String endedWhy() { return guardPause()?"world paused by a guard ("+pauseReason()+"): read mb_time status, decide, resume"
+        :"the step ended and the world paused: step or resume to continue"; }
     void interruptPause(Request original,JsonObject receipt,String reason) {
         Request pause=new Request(new com.google.gson.JsonPrimitive("interrupt-pause-"+java.util.UUID.randomUUID()),"time.pause",
             Json.object("reason","interrupt:"+reason,"_timeout_ms",10000),original.session,runtime,envelope->{
@@ -111,7 +153,13 @@ public final class ClientClock implements ClockHooks.Driver {
                     state=data.getAsJsonObject("state");supported=true;
                     if(state.has("worldId")) dev.modbench.api.ControlRegistry.memory().bind(state.get("worldId").getAsString());
                     paused=state.get("paused").getAsBoolean();
-                    if(paused) send(Json.object("type","paused","generation",state.get("generation").getAsLong()));
+                    int credit=0;
+                    if(!paused) { if(resuming) credit=creditRan;resuming=creditTick=false;creditRan=0; }
+                    JsonObject step=state.has("step")?state.getAsJsonObject("step"):null;
+                    if(step==null) stepBudget=-1;
+                    else if(step.get("id").getAsLong()!=stepId) { // the credit tick was this step's first
+                        stepId=step.get("id").getAsLong();stepBudget=Math.max(0,step.get("remaining").getAsInt()-credit);stepRan=credit; }
+                    if(paused) send(Json.object("type","paused","generation",state.get("generation").getAsLong(),"step",stepId,"stepTicks",stepRan));
                 }
                 case "hurt" -> {
                     String type=Json.string(data,"damageType","unknown"),by=Json.string(data,"by","");float amount=data.get("amount").getAsFloat();
@@ -137,13 +185,13 @@ public final class ClientClock implements ClockHooks.Driver {
         if(current!=connection) {
             for(Request r:pending.values()) r.fail("disconnected","clock connection changed");
             dev.modbench.api.ControlRegistry.memory().disconnected();
-            pending.clear();observationFrames.clear();incoming.clear();connection=current;supported=false;paused=false;
+            pending.clear();observationFrames.clear();incoming.clear();connection=current;supported=false;paused=false;resuming=creditTick=false;creditRan=0;
             state=Json.object("mode","unavailable","paused",false);
             if(connection!=null) send(Json.object("type","hello"));
         }
         // Vanilla notices a dead connection only inside a tick: a server that went away while paused must reopen the gate.
         if(paused && connection!=null && !connection.isChannelOpen()) paused=false;
-        if(paused && connection!=null) connection.processReceivedPackets();
+        if((paused || stepBudget==0) && connection!=null) connection.processReceivedPackets(); // a spent step waits for the pause the same way
         receive();
         if(connection!=null && System.nanoTime()-lastHeartbeat>1_000_000_000L) {
             lastHeartbeat=System.nanoTime();send(Json.object("type","heartbeat"));
@@ -159,11 +207,13 @@ public final class ClientClock implements ClockHooks.Driver {
         });
         observationFrames.keySet().removeIf(id->!pending.containsKey(id));
         runtime.service(runtime.identity());
-        if(paused) {
+        if(creditTick && paused) { creditTick=false;creditRan=1;runningTick=true;runtime.simulationTick();return true; }
+        if(paused || stepBudget==0) { // a spent step allowance waits for the server's pause like a pause does
             // GUI calls are serviced above; renderGameLoop remains running. No physical input polling here.
             if(mc.theWorld!=null) mc.entityRenderer.getMouseOver(1.0F);
             return false;
         }
+        if(stepBudget>0) { stepBudget--;stepRan++; }
         runningTick=true;
         runtime.simulationTick();
         return true;
@@ -174,5 +224,6 @@ public final class ClientClock implements ClockHooks.Driver {
         runtime.endTick();
         dev.modbench.api.ControlRegistry.memory().endTick();
         runningTick=false;
+        if(resuming && !creditTick && !resumeSent) sendResume(); // after the tick's own packets, on the same connection
     }
 }

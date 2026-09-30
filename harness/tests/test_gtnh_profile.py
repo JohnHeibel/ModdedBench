@@ -277,8 +277,8 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual(fake.calls[-1], ("time.pause", {"timeout": 120}))
         with self.assertRaises(ValueError):
             core.mb_time("dev.time_fixture.hurt")
-        with self.assertRaises(ValueError):
-            core.mb_time("step")
+        core.mb_time("step", {"ticks": 1200})
+        self.assertEqual(fake.calls[-1], ("time.step", {"ticks": 1200, "timeout": 150}))  # the reply waits out the step
         core.mb_memory("protect", {"name": "base", "min": [1,2,3], "max": [4,5,6]})
         self.assertEqual(fake.calls[-1], ("memory.protect", {"name": "base", "min": [1,2,3], "max": [4,5,6]}))
         with self.assertRaises(ValueError):

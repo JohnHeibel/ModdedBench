@@ -222,14 +222,20 @@ def mb_stop() -> Any:
 
 @tool(lane=lambda kw: "read" if (kw.get("method") or "status").removeprefix("time.") == "status" else "control", coverage=["time"])
 def mb_time(method: str = "status", params: dict | None = None, timeout_s: float = 60.0) -> Any:
-    """Control GTNH world time: status, pause, resume, configure, report_failure.
+    """Control GTNH world time: status, pause, resume, step, configure, report_failure.
 
     Real time is the default: finishing an action does not pause machines or mobs.
     Pause explicitly for deliberation; resume to keep production running while thinking.
     Pause waits for coordinated client/server quiescence. Inspect status for pausing
     or pause_error; a timed-out pause leaves simulation gated. Resume explicitly
     before executing game actions. Screenshots, observations and cancellation remain
-    available during pause. Exact stepping is not supported yet.
+    available during pause.
+    step {ticks:N} (1..72000) runs exactly N server ticks and pauses again with reason
+    step; the reply comes once that pause has settled and its lastStep says how many ticks
+    ran and what ended the step (a guard can end it early). Work in progress (a held input,
+    a click, a job) stops at the step's end and reports it; step or resume to go on.
+    Any acting tool takes resume=N to step N ticks with its action starting on the first,
+    and resume=True to resume with it: one call, no tick lost between resume and action.
     configure params: healthDrop, burning, actionFailed, pauseOnDisconnect are booleans;
     healthBelow (health points), airBelow (air ticks, 300 is full) and foodBelow (food
     points) are numeric thresholds, and -1 disables one. threatWithin N (blocks, at most 32)
@@ -246,9 +252,11 @@ def mb_time(method: str = "status", params: dict | None = None, timeout_s: float
     The reply keeps the three latest pause events; params {events:true} on status returns all 32.
     """
     name = method.removeprefix("time.")
-    if name not in {"status", "pause", "resume", "configure", "report_failure"}:
+    if name not in {"status", "pause", "resume", "step", "configure", "report_failure"}:
         raise ValueError("unknown time method")
     params = dict(params or {}); every = params.pop("events", False)
+    if name == "step":  # 20 ticks a second when the server keeps up; the reply waits for the pause at the end
+        timeout_s = max(timeout_s, int(params.get("ticks") or 0) / 10 + 30)
     out = kernel().call(f"time.{name}", timeout=timeout_s, **params)
     state = out.get("state") if isinstance(out, dict) else None
     if not every and isinstance(state, dict) and len(state.get("events") or []) > 3: state["events"] = state["events"][-3:]

@@ -185,4 +185,72 @@ public class PauseCoordinatorTest {
         assertEquals("pause_timeout; simulation remains gated",f.replies.get(0).get("error").getAsString());
         assertTrue(f.clock.paused());
     }
+
+    /** Runs gated ticks until the gate stays closed; returns how many simulated. */
+    private static int run(Fixture f,int max) {
+        int n=0;
+        while(n<max && f.coordinator.before()) { f.coordinator.after();n++; }
+        return n;
+    }
+    private static void settlePause(Fixture f) { f.command("time.pause");f.coordinator.before();f.replies.clear(); }
+
+    @Test
+    public void stepRunsExactlyNTicksThenPausesAndRepliesOnceSettled() {
+        Fixture f=new Fixture();f.host.connected=true;settlePause(f);
+        f.coordinator.clientPaused(f.coordinator.generation());f.coordinator.before();f.replies.clear();
+        f.coordinator.command("time.step",Json.object("ticks",5),f.replies::add);
+        assertTrue("step replies at its end",f.replies.isEmpty());
+        JsonObject stepping=f.coordinator.status();
+        assertTrue(stepping.get("stepping").getAsBoolean());
+        assertEquals(5,stepping.getAsJsonObject("step").get("remaining").getAsInt());
+        assertEquals(5,run(f,100));
+        assertEquals("step",f.clock.reason());
+        assertTrue("waits for the client's ack",f.replies.isEmpty());
+        f.coordinator.clientPaused(f.coordinator.generation(),f.coordinator.status().getAsJsonObject("lastStep").get("id").getAsLong(),4);
+        assertFalse(f.coordinator.before());
+        JsonObject last=f.replies.get(0).getAsJsonObject("lastStep");
+        assertEquals(5,last.get("ran").getAsInt());assertEquals("step",last.get("endedBy").getAsString());
+        assertEquals(4,last.get("clientTicks").getAsInt());
+        assertFalse(f.replies.get(0).get("stepping").getAsBoolean());
+    }
+
+    @Test
+    public void aGuardEndsAStepEarlyAndIsRecorded() {
+        Fixture f=new Fixture();settlePause(f);
+        f.coordinator.command("time.resume",Json.object("ticks",10),f.replies::add);
+        assertEquals("resume with ticks replies at once",1,f.replies.size());
+        assertEquals(3,run(f,3));
+        f.clock.pause("threat");
+        assertFalse(f.coordinator.before());
+        JsonObject last=f.coordinator.status().getAsJsonObject("lastStep");
+        assertEquals(3,last.get("ran").getAsInt());assertEquals("threat",last.get("endedBy").getAsString());
+    }
+
+    @Test
+    public void aPlainResumeSupersedesAStepAndRunsFreely() {
+        Fixture f=new Fixture();settlePause(f);
+        f.coordinator.command("time.step",Json.object("ticks",10),f.replies::add);
+        run(f,2);
+        f.command("time.resume");
+        assertEquals("superseded",f.replies.get(0).get("error").getAsString());
+        assertEquals("superseded",f.coordinator.status().getAsJsonObject("lastStep").get("endedBy").getAsString());
+        assertEquals(50,run(f,50));
+        assertFalse(f.clock.paused());
+    }
+
+    @Test
+    public void stepNeedsAtLeastOneTick() {
+        Fixture f=new Fixture();settlePause(f);
+        f.command("time.step");
+        assertTrue(f.replies.get(0).get("error").getAsString().contains("ticks"));
+        assertTrue(f.clock.paused());
+    }
+
+    @Test
+    public void fixtureWindowIsAStepEndingAtACheckpoint() {
+        Fixture f=new Fixture();settlePause(f);
+        f.coordinator.runForFixture(7);
+        assertEquals(7,run(f,100));
+        assertEquals("fixture_checkpoint",f.clock.reason());
+    }
 }

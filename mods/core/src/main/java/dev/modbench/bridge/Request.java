@@ -26,6 +26,8 @@ public final class Request {
     private final AtomicInteger state = new AtomicInteger(QUEUED);
     private final BridgeRuntime runtime;
     private final Consumer<JsonObject> output;
+    /** Set when this request resumed a paused world to run (resume-and-act); the reply carries it as {@code resumedWorld}. */
+    public volatile JsonObject resumed;
 
     public Request(JsonElement id, String method, JsonObject params, Session session,
                    BridgeRuntime runtime, Consumer<JsonObject> output) {
@@ -63,6 +65,7 @@ public final class Request {
             "seq", runtime.nextSequence(), "src", runtime.side(), "worldEpoch", runtime.worldEpoch(),
             "cost_ms", (System.nanoTime() - start) / 1_000_000.0);
         if (previous == RUNNING && expired()) envelope.addProperty("late", true);
+        if (resumed != null) envelope.add("resumedWorld", resumed);
         envelope.add(ok ? "data" : "error", value);
         output.accept(envelope);
     }

@@ -63,3 +63,31 @@ def test_the_server_adds_resume_to_acting_tools_and_reports_it():
     assert "resume" not in inspect.signature(srv._worker(look)).parameters
     out = asyncio.run(wrapped(resume=True))
     assert out["done"] and out["resumedWorld"]["pausedBy"] == "threat"
+
+
+class ResumingClient(FakeWorld):
+    """A client with resume-and-act: an action carrying _resume resumes the paused world itself and runs on its first tick."""
+    def call_reply(self, method, timeout=None, **params):
+        self.sent.append((method, params.get("_resume")))
+        if method.startswith("obs."): return Reply(True, 0, 0, 0, {"seen": True})
+        if self.paused and params.get("_resume"):
+            self.paused = False; self.ran += 1
+            record = {"pausedBy": "threat", "threats": []} | ({"ticks": params["_resume"]} if params["_resume"] is not True else {})
+            return Reply(True, 0, 0, 0, {"done": True}, raw={"resumedWorld": record})
+        if self.paused: return Reply(False, 0, 0, 0, error={"code": "bad_request", "msg": "time_paused: resume before starting simulation actions"})
+        return Reply(True, 0, 0, 0, {"done": True})
+
+
+def test_resume_and_act_is_one_request_and_reads_do_not_resume():
+    k = ResumingClient(); record = {}; resume_once.set(record)
+    k.call("obs.player"); k.call("act.input"); k.call("act.input")
+    assert k.sent == [("obs.player", True), ("act.input", True), ("act.input", None)]  # the directive stops once used
+    assert record == {"pausedBy": "threat", "threats": [], "resumed": True}
+
+
+def test_resume_with_ticks_steps_instead():
+    k = ResumingClient(); record = {"ticks": 5}; resume_once.set(record)
+    k.call("act.input")
+    assert k.sent == [("act.input", 5)] and record["resumed"] and record["ticks"] == 5
+    with pytest.raises(ValueError): server._resume_arg(-1)
+    assert server._resume_arg(True) is True and server._resume_arg(3) == 3 and server._resume_arg(0) is False

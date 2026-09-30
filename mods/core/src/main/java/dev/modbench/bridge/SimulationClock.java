@@ -25,6 +25,7 @@ public final class SimulationClock {
     public SimulationClock(LongSupplier nanos) { this.nanos=nanos; started=changed=nanos.getAsLong(); }
     public boolean paused() { return paused; }
     public long ticks() { return simulationTicks; }
+    public String reason() { return reason; }
     public boolean pauseOnDisconnect() { return pauseOnDisconnect; }
     public boolean actionFailed() { return actionFailed; }
     public void pause(String why) {
