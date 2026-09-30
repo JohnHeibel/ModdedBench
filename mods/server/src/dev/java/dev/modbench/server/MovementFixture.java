@@ -109,16 +109,39 @@ public final class MovementFixture {
     // ---------------------------------------------------------------- world helpers
     private WorldServer world() {return server.worldServerForDimension(0);}
     private EntityPlayerMP player() {
+        // After a death the list can briefly hold a stale entity as well; the live one has an open connection
+        // and is the latest added.
+        EntityPlayerMP found=null;
         for(Object o:server.getConfigurationManager().playerEntityList) {
-            EntityPlayerMP p=(EntityPlayerMP)o;if(p.getCommandSenderName().equals("ModbenchDev")&&p.dimension==0) return p;
+            EntityPlayerMP p=(EntityPlayerMP)o;
+            if(!p.getCommandSenderName().equals("ModbenchDev")||p.dimension!=0) continue;
+            boolean open=p.playerNetServerHandler!=null&&p.playerNetServerHandler.netManager.isChannelOpen();
+            if(open&&!p.isDead||found==null) found=p;
         }
-        throw new IllegalArgumentException("fixture requires ModbenchDev in overworld");
+        if(found==null) throw new IllegalArgumentException("fixture requires ModbenchDev in overworld");
+        return found;
     }
-    /** A player who died in a trial is respawned (server side; the client follows the respawn packet) before reuse. */
+    /** A player at zero health (a death outside the safety net, saved and loaded again) is revived in place:
+     *  respawnPlayer leaves the client driving a different entity from the one the server tracks and saves. */
     private EntityPlayerMP livePlayer() {
         EntityPlayerMP p=player();
-        if(p.isDead||p.getHealth()<=0) p=server.getConfigurationManager().respawnPlayer(p,0,false);
+        if(p.isDead) throw new IllegalArgumentException("player entity is dead; rejoin the client (it is revived on login)");
+        if(p.getHealth()<=0) revive(p);
         return p;
+    }
+    private static void revive(EntityPlayerMP p) {
+        p.setHealth(p.getMaxHealth());p.deathTime=0;p.extinguish();
+        p.playerNetServerHandler.sendPacket(new S06PacketUpdateHealth(p.getHealth(),p.getFoodStats().getFoodLevel(),p.getFoodStats().getSaturationLevel()));
+    }
+    @cpw.mods.fml.common.eventhandler.SubscribeEvent public void login(cpw.mods.fml.common.gameevent.PlayerEvent.PlayerLoggedInEvent event) {
+        if(saved!=null&&event.player instanceof EntityPlayerMP p&&p.getCommandSenderName().equals("ModbenchDev")&&p.getHealth()<=0) revive(p);
+    }
+    /** Deaths inside the course are recorded, not suffered: a trial that would kill the player leaves them at one
+     *  health and counts a fatal event. Respawning mid-run desynchronises the client from the server's player. */
+    private int fatal;private String fatalCause="";
+    @cpw.mods.fml.common.eventhandler.SubscribeEvent public void death(net.minecraftforge.event.entity.living.LivingDeathEvent event) {
+        if(!(event.entityLiving instanceof EntityPlayerMP p)||p.worldObj.isRemote||!inside(p.posX,p.posZ)||!p.getCommandSenderName().equals("ModbenchDev")) return;
+        event.setCanceled(true);p.setHealth(1f);fatal++;fatalCause=event.source==null?"":event.source.getDamageType();
     }
     private void require() {if(saved==null) throw new IllegalArgumentException("create movement fixture first");}
     private void write() throws Exception {try(FileOutputStream out=new FileOutputStream(journal)) {CompressedStreamTools.writeCompressed(saved,out);}}
@@ -428,8 +451,7 @@ public final class MovementFixture {
     // ---------------------------------------------------------------- lifecycle
     Object create() throws Exception {
         if(saved!=null) throw new IllegalArgumentException("restore existing movement fixture first");
-        EntityPlayerMP p=player();
-        if(p.isDead||p.getHealth()<=0) throw new IllegalArgumentException("fixture requires a living player");
+        EntityPlayerMP p=livePlayer();
         if(p.theItemInWorldManager.getGameType()!=net.minecraft.world.WorldSettings.GameType.SURVIVAL) throw new IllegalArgumentException("fixture tests require survival player");
         int x=(((int)Math.floor(p.posX))>>4<<4)-8,z=(((int)Math.floor(p.posZ))>>4<<4)-8;
         for(int cx=x>>4;cx<=(x+SIZE-1)>>4;cx++) for(int cz=z>>4;cz<=(z+SIZE_Z-1)>>4;cz++) world().getChunkFromChunkCoords(cx,cz);
@@ -496,7 +518,9 @@ public final class MovementFixture {
     /** Rebuilds the case's plot, resets the player and places them at the start. yaw (degrees) overrides the default. */
     Object position(String name,JsonObject params) throws Exception {
         require();Case c=cases.get(name);if(c==null) throw new IllegalArgumentException("unknown movement case; see status.cases");
-        EntityPlayerMP p=livePlayer();if(!p.getUniqueID().toString().equals(saved.getString("uuid"))) throw new IllegalArgumentException("fixture player mismatch");
+        EntityPlayerMP p=livePlayer();
+        if(!p.getUniqueID().toString().equals(saved.getString("uuid"))) throw new IllegalArgumentException("fixture player mismatch");
+        fatal=0;fatalCause="";
         rebuild(c.plot);if(name.equals("obsidian_natural")) change("natural_flow_on");
         resetPlayer(p,name);synchronized(items) {items.clear();broken.clear();dropped.clear();}
         float yaw=params.has("yaw")?(float)Json.number(params,"yaw",c.yaw,-360,360):c.yaw;
@@ -542,7 +566,7 @@ public final class MovementFixture {
         for(int i=0;i<p.inventory.mainInventory.length;i++) {ItemStack s=p.inventory.mainInventory[i];
             if(s!=null) inv.add(Json.GSON.toJsonTree(Json.object("slot",i,"id",Item.itemRegistry.getNameForObject(s.getItem()),"meta",s.getItemDamage(),"count",s.stackSize)));}
         JsonObject out=(JsonObject)Json.object("origin",Json.array(x0,FLOOR,z0),"pos",Json.array(p.posX,p.posY,p.posZ),"health",p.getHealth(),"burning",p.isBurning(),
-            "fireTicks",fireTicks(p),"air",p.getAir(),"inWater",p.isInWater(),"inLava",p.handleLavaMovement(),"onGround",p.onGround,"dead",p.isDead||p.getHealth()<=0,"inventory",inv,
+            "fireTicks",fireTicks(p),"air",p.getAir(),"inWater",p.isInWater(),"inLava",p.handleLavaMovement(),"onGround",p.onGround,"dead",p.isDead||p.getHealth()<=0,"fatal",fatal,"fatalCause",fatalCause,"inventory",inv,
             "serverTick",server.getTickCounter());
         String name=Json.string(params,"name","");
         if(name.isEmpty()) {out.add("cases",Json.GSON.toJsonTree(caseList()));out.add("picks",Json.GSON.toJsonTree(picks()));return out;}
