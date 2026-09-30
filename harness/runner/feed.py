@@ -13,6 +13,7 @@ import json, re, time
 from pathlib import Path
 
 BLOB = re.compile(r"[A-Za-z0-9+/=]{4000,}")  # base64 image data inside a logged tool result
+ACTIVE = ("thinking", "acting", "waiting")  # the states of a running turn
 BASE = 30000  # tokens every call carries before the conversation: system prompt, brief and the tool schemas (a guess, corrected at turn end)
 
 
@@ -75,11 +76,15 @@ def line(tool, args, result):
 class Feed:
     def __init__(self, folder):
         self.folder = Path(folder); self.folder.mkdir(parents=True, exist_ok=True)
-        self.live = {"goal": {}, "status": {}, "stats": {"startedAt": time.time(), "turns": 0, "calls": 0, "failed": 0, "scripts": 0, "claims": 0,
+        self.live = {"goal": {}, "status": {}, "stats": {"activeSeconds": 0.0, "activeSince": None, "turns": 0, "calls": 0, "failed": 0, "scripts": 0, "claims": 0,
                                                        "tokens": {"input": 0, "cached": 0, "output": 0, "estimated": 0, "uncounted": 0}}}
         self.context = 0  # characters Codex has been shown this turn, for the estimate below
         try: self.live.update(json.loads((self.folder / "live.json").read_text(encoding="utf-8")))  # a restarted loop keeps the run's totals
         except (OSError, ValueError): pass
+        stats = self.live["stats"]; stats.setdefault("activeSeconds", 0.0)
+        if stats.get("activeSince"):  # the last loop was killed inside a turn: count it up to its last recorded change
+            stats["activeSeconds"] += max(0.0, (self.live["status"].get("since") or stats["activeSince"]) - stats["activeSince"])
+        stats["activeSince"] = None
 
     def _save(self):
         tmp = self.folder / "live.tmp"; tmp.write_text(json.dumps(self.live), encoding="utf-8")
@@ -96,7 +101,11 @@ class Feed:
         t = self.live["stats"]["tokens"]; return t["input"] + t.get("uncounted", 0) + t.get("estimated", 0)
     def status(self, state, text=""):
         """thinking | acting | waiting | between_turns | game_down | backing_off | ended"""
-        self.live["status"] = {"state": state, "text": text, "since": time.time()}; self._save()
+        now, stats = time.time(), self.live["stats"]
+        # The overlay's clock is agent time: it runs only inside a turn, never between turns, in backoff or with the game down.
+        if state in ACTIVE and not stats.get("activeSince"): stats["activeSince"] = now
+        elif state not in ACTIVE and stats.get("activeSince"): stats["activeSeconds"] += now - stats["activeSince"]; stats["activeSince"] = None
+        self.live["status"] = {"state": state, "text": text, "since": now}; self._save()
 
     def event(self, e):
         kind, item = e.get("type"), e.get("item") if isinstance(e.get("item"), dict) else {}
