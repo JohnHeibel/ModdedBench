@@ -446,6 +446,40 @@ public interface MovementHelper extends ActionCosts, Helper {
         return shape != null ? shape.standable() : state.isBlockNormalCube();
     }
 
+    /**
+     * ModdedBench: whether the floors at level y hold the player's 0.6 footprint all along a walk between the centres
+     * of (sx,sz) and (dx,dz). A floor standable at its centre can still drop the player off its edge: a floor of thin
+     * GT pipe posts holds a centred player but not one crossing between two posts, or a diagonal's shared corner.
+     * Whole tops and blocks not yet measured are left to canWalkOn, as upstream.
+     */
+    static boolean footingAlong(CalculationContext context, int y, int sx, int sz, int dx, int dz) {
+        if (partialFloor(context, sx, y, sz) == null && partialFloor(context, dx, y, dz) == null) {
+            return true;
+        }
+        for (int i = 1; i < 10; i++) {
+            double px = sx + 0.5 + (dx - sx) * i / 10.0, pz = sz + 0.5 + (dz - sz) * i / 10.0;
+            boolean held = false;
+            for (int cx = (int) Math.floor(px - 0.3); cx <= Math.floor(px + 0.3) && !held; cx++) {
+                for (int cz = (int) Math.floor(pz - 0.3); cz <= Math.floor(pz + 0.3) && !held; cz++) {
+                    if (canWalkOn(context, cx, y, cz)) {
+                        baritone.gtnh.BlockShapes.Shape shape = partialFloor(context, cx, y, cz);
+                        held = shape == null || shape.supports(px - cx, pz - cz);
+                    }
+                }
+            }
+            if (!held) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** ModdedBench: a measured standable floor whose top does not cover the whole cell, or null. */
+    private static baritone.gtnh.BlockShapes.Shape partialFloor(CalculationContext context, int x, int y, int z) {
+        baritone.gtnh.BlockShapes.Shape shape = baritone.gtnh.BlockShapes.of(context.get(x, y, z));
+        return shape != null && shape.standable() && !shape.full() ? shape : null;
+    }
+
     static boolean canWalkOnPosition(BlockStateInterface bsi, int x, int y, int z, IBlockState state) {
         Block block = state.getBlock();
         if (isWater(block)) {
