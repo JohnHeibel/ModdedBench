@@ -47,6 +47,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.LinkedBlockingQueue;
+import baritone.gtnh.pathing.Cost; // ModdedBench
 
 public final class PathingBehavior extends Behavior implements IPathingBehavior, Helper {
 
@@ -527,6 +528,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
                 if (inProgress != pathfinder) {
                     return;
                 }
+                Cost.searched((System.nanoTime()-started)/1000000); // ModdedBench: shown in job status
                 lastCalculation = java.util.Map.of("type",calcResult.getType().name(),
                     "elapsedMs",(System.nanoTime()-started)/1000000,
                     "failure",pathfinder.failureDescription(),

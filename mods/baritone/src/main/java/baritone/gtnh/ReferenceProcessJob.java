@@ -52,7 +52,7 @@ final class ReferenceProcessJob implements Navigation.Job {
         if(kind.equals("explore")&&engine.getWorldProvider().getCurrentWorld()==null)throw new IllegalArgumentException("exploration requires the server world identity and cache");
         var settings=Baritone.settings();
         for(var s:List.of(settings.allowBreak,settings.allowPlace,settings.exploreForBlocks,settings.rightClickContainerOnArrival,settings.enterPortal))saved.put(s,s.value);
-        engine.getPathingBehavior().forceCancel();BlockRules.reset();engine.snags.reset();initialCalculations=engine.getPathingBehavior().calculationsStarted();
+        engine.getPathingBehavior().forceCancel();BlockRules.reset();engine.snags.reset();baritone.gtnh.pathing.Cost.reset();initialCalculations=engine.getPathingBehavior().calculationsStarted();
         try{
             lease=ControlRegistry.controls().arbiter().acquire("baritone-"+kind,this::cancel,bool(params,"overrideProtection",false),true);
             settings.allowBreak.value=bool(params,"allowBreak",false);settings.allowPlace.value=bool(params,"allowPlace",false);
@@ -105,7 +105,7 @@ final class ReferenceProcessJob implements Navigation.Job {
     @Override public boolean succeeded(){return state.equals("succeeded");}
     @Override public Map<String,Object> status(){
         var out=new LinkedHashMap<String,Object>();out.put("engine","baritone-1.2.19-source-port");out.put("action",kind);out.put("state",state);out.put("reason",reason);
-        out.put("ticks",ticks);out.put("controlOwned",!done()&&lease!=null&&lease.isActive());out.put("scope",scope);out.put("movementTypes",List.copyOf(movements));out.put("stall",stall.status());out.put("snags",engine.snags.status());if(!failure.isEmpty())out.put("failure",failure);out.put("pathRules",BlockRules.applied());
+        out.put("ticks",ticks);out.put("controlOwned",!done()&&lease!=null&&lease.isActive());out.put("scope",scope);out.put("movementTypes",List.copyOf(movements));out.put("stall",stall.status());out.put("snags",engine.snags.status());out.put("cost",baritone.gtnh.pathing.Cost.status());if(!failure.isEmpty())out.put("failure",failure);out.put("pathRules",BlockRules.applied());
         out.put("goal",String.valueOf(engine.getPathingBehavior().getGoal()));
         if(farm!=null){out.put("farmRules",farm.rules());out.put("farmSeen",farm.seen);}
         if(scan!=null){out.put("scanPasses",scan.passes);out.put("scanMatches",scan.observedLocations().size());}
