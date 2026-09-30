@@ -13,6 +13,10 @@ contract notes. What was still true is now in the current docs.
   starts the action on the first resumed tick: the client runs that tick before
   asking the server to resume, and the server replays its packets first. Live in
   a test world: the server position matched the client's after one-tick steps.
+- **2026-09-29** Spectator mirror (`harness/mirror`, [MIRROR.md](MIRROR.md)): a host-side byte pipe between the
+  client and the server whose copy feeds a read-only, compacted world for stock GTNH clients on a separate port.
+  A stock client joined it live; that found GTNH's extra item varint, the need to pace the snapshot on the
+  viewer's FML handshake, and a crash on an avatar spawn with no metadata. Join by Direct Connect.
 - **2026-09-29** Builder block goals could stop at a boundary overlapping the
   next placement, oscillating between stances. Construction now centres on its
   verified footing when native prediction permits the centred pose only;
