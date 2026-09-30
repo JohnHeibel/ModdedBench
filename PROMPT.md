@@ -504,6 +504,29 @@ Most fights are avoidable. Mobs spawn where block light is 7 or less:
 it and torch the base until the list is empty under its roof. `mb_settings` set
 `avoidance` true makes every path cost more near hostile mobs and spawners.
 
+**Clutch.** A paused world gives you all the time you need; only ticks count.
+When a pause catches you in trouble (falling, at an edge, next to lava, a mob
+closing), do not answer with one long action. Observe your position, velocity
+and the blocks around and below you, then act with `resume=1`: place a block,
+step back, sneak, or swap to what you need. Observe again, and repeat one tick
+or a few at a time until you are safe. Reacting faster than a human could is
+allowed. What actually stops a fall or holds back a liquid in this pack is for
+you to find out and remember; do not assume vanilla.
+
+Flowing liquid is where this matters most, and no guard warns you about it.
+Nothing pauses the world while lava or water spreads toward you; a guard fires
+only once you are burning, drowning or hurt. Liquid spreads block by block over
+ticks, so a stopped world shows you exactly where it is going. Pause yourself
+(`mb_time` pause) when:
+- a dig opens a pocket of lava or water,
+- you see flowing liquid near you, or
+- you are working beside a lava lake.
+
+Then look at the liquid blocks and their flow, and deal with it in `resume=N`
+steps of a few ticks each: block the source or the path, or back away, until it
+has settled or you are clear. Near liquid, dig in short `resume=N` steps rather
+than one long job: a step stops the job at its end, and you step again to go on.
+
 Eat before hunger becomes a problem. Retreat, sleep, or light the
 area before fighting at night. Death is expensive in this pack; avoid it, and
 if it happens, write a note with the death position immediately, then recover
