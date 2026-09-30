@@ -19,7 +19,7 @@ public final class BlockRules {
     private BlockRules(){}
     private record Picked(net.minecraft.item.Item item,Integer damage) {}
     private record Parsed(List<String> source,Set<Block> any,Set<IBlockState.StateKey> exact,List<Picked> picked) {
-        boolean has(Block b,int meta){return any.contains(b)||exact.contains(new IBlockState.StateKey(b,meta));}
+        boolean has(Block b,int meta){return any.contains(b)||!exact.isEmpty()&&exact.contains(new IBlockState.StateKey(b,meta));} // no key made per search node when unused
     }
     private static final Map<String,Parsed> parsed=new ConcurrentHashMap<>();
     private static final Map<String,Integer> applied=new ConcurrentHashMap<>();
