@@ -69,6 +69,25 @@ public class PathingControlManager implements IPathingControlManager {
         return processes.stream().anyMatch(process -> !process.isTemporary() && process.isActive());
     }
 
+    /** ModdedBench: whether `process` is active and no other non-temporary process is (PathingBehavior.planWhilePaused). */
+    public boolean aloneInControl(IBaritoneProcess process) {
+        for (IBaritoneProcess p : processes) {
+            if (p != process && !p.isTemporary() && p.isActive()) {
+                return false;
+            }
+        }
+        return process.isActive();
+    }
+
+    /**
+     * ModdedBench: a command taken while the world was paused is this tick's, so the first real tick sees its process as
+     * in control last tick: a search that failed in the pause then ends the process as it would have after a tick.
+     */
+    public void tookControlWhilePaused(IBaritoneProcess process, PathingCommand command) {
+        inControlThisTick = process;
+        this.command = command;
+    }
+
     public void cancelEverything() { // called by PathingBehavior on TickEvent Type OUT
         inControlLastTick = null;
         inControlThisTick = null;

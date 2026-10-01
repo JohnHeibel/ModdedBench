@@ -26,7 +26,7 @@ public final class BaritoneMod {
     }
     @SubscribeEvent public void tick(TickEvent.ClientTickEvent event) {
         long started=System.nanoTime();
-        if(event.phase==TickEvent.Phase.START){events.finishWorldTransition();BlockShapes.answer();navigation.tick();}
+        if(event.phase==TickEvent.Phase.START){events.finishWorldTransition();navigation.tick();}
         else navigation.afterTick();
         baritone.gtnh.pathing.Cost.add(System.nanoTime()-started);
         if(event.phase==TickEvent.Phase.END)baritone.gtnh.pathing.Cost.endTick();

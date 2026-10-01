@@ -12,8 +12,11 @@ public final class Cost {
     private Cost(){}
     private static long tickNs,maxNs,totalNs,ticks;
     private static long searches,searchMsLast,searchMsMax;
+    private static long pausedNs,pausedMaxNs,pausedFrames;
 
-    public static synchronized void reset(){tickNs=maxNs=totalNs=ticks=0;searches=searchMsLast=searchMsMax=0;}
+    public static synchronized void reset(){tickNs=maxNs=totalNs=ticks=0;searches=searchMsLast=searchMsMax=0;pausedNs=pausedMaxNs=pausedFrames=0;}
+    /** Game thread, world paused: one frame's servicing and planning (BaritoneNavigation.whilePaused), no tick. */
+    public static synchronized void paused(long ns){pausedFrames++;pausedNs+=ns;pausedMaxNs=Math.max(pausedMaxNs,ns);}
     /** Game thread: time spent in Baritone during this tick, added up over its phases. */
     public static synchronized void add(long ns){tickNs+=ns;}
     /** Game thread: the tick is over. */
@@ -25,6 +28,7 @@ public final class Cost {
     public static synchronized Map<String,Object> status(){
         Map<String,Object> out=new LinkedHashMap<>();
         out.put("tickNsMax",maxNs);out.put("tickNsMean",ticks==0?0:totalNs/ticks);out.put("ticks",ticks);
+        out.put("pausedFrames",pausedFrames);out.put("pausedNsMax",pausedMaxNs);out.put("pausedNsMean",pausedFrames==0?0:pausedNs/pausedFrames);
         out.put("searches",searches);out.put("searchMsLast",searchMsLast);out.put("searchMsMax",searchMsMax);
         return out;
     }

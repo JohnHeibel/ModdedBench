@@ -36,6 +36,7 @@ import baritone.pathing.calc.AbstractNodeCostSearch;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.path.PathExecutor;
+import baritone.process.CustomGoalProcess; // ModdedBench
 import baritone.utils.PathingCommandContext;
 import baritone.utils.PathRenderer;
 import baritone.utils.pathing.Favoring;
@@ -288,6 +289,46 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
                 }
                 queuePathEvent(PathEvent.CALC_STARTED);
                 findPathInNewThread(expectedSegmentStart, true, context);
+                return true;
+            }
+        }
+    }
+
+    /**
+     * ModdedBench: the planning half of a first tick, for a world that is paused. The custom goal's first command is taken
+     * and its search started from where the player stands, as that tick's preTick and postTick would; nothing is followed,
+     * pressed, sent or dispatched (the events wait for the tick). The first tick then finds the search in flight, or its
+     * path ready, and follows the path at once. Only while the custom goal alone is active and has issued no command.
+     * True when a search started.
+     */
+    public boolean planWhilePaused() {
+        return ctx.player() != null && planWhilePaused(pathStart(), () -> new CalculationContext(baritone, true));
+    }
+
+    /** As above, from `start`, with the context made only when a search starts: the tests' way in, with no player. */
+    public boolean planWhilePaused(BetterBlockPos start, java.util.function.Supplier<CalculationContext> context) {
+        CustomGoalProcess process = baritone.getCustomGoalProcess();
+        if (!process.pathRequested() || !baritone.getPathingControlManager().aloneInControl(process)) {
+            return false;
+        }
+        synchronized (pathPlanLock) {
+            if (current != null) {
+                return false;
+            }
+            synchronized (pathCalcLock) {
+                if (inProgress != null) {
+                    return false;
+                }
+                PathingCommand command = process.onTick(false, true); // FORCE_REVALIDATE_GOAL_AND_PATH, taken once
+                baritone.getPathingControlManager().tookControlWhilePaused(process, command);
+                expectedSegmentStart = start;
+                secretInternalSetGoal(command.goal);
+                if (goal == null || goal.isInGoal(start)) {
+                    return false;
+                }
+                this.context = context.get();
+                queuePathEvent(PathEvent.CALC_STARTED);
+                findPathInNewThread(start, true, this.context);
                 return true;
             }
         }
