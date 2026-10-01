@@ -50,6 +50,12 @@ it lifted). The client refuses up front when the pause is unsettled or held; if
 the server still refuses, the action ends with `resume_refused` and the world
 stays paused. Tools expose this as `resume=True` or `resume=N`.
 
+A navigation job still running when its step ends is suspended, not cancelled:
+the request is answered with state `suspended` and a `suspendedJobId`, and the
+job keeps its controls, break progress and path, and runs on whenever the
+world runs. `nav.resume {jobId: suspendedJobId}` waits on it again (or returns
+its outcome if it finished meanwhile). A guard pause or any new action ends it.
+
 Guards (`healthDrop`, `healthBelow`, `airBelow`, `foodBelow`, `burning`,
 `pauseOnDisconnect`, and `actionFailed`, which pauses when a caller sends
 `time.report_failure`) pause at a tick boundary. They never act. While a

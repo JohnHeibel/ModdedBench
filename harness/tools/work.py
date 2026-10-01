@@ -700,7 +700,11 @@ def mb_work_status(job_id: str) -> Any:
 @tool(rung=1, coverage=["move", "machine"])
 def mb_work_resume(job_id: str, options: dict | None = None,
                    timeout_s: float = 600.0) -> Any:
-    """Resume a durable blocked/interrupted mining or build job after correction.
+    """Resume a durable blocked/interrupted mining or build job, or wait again on a suspended one.
+
+    A job whose step ended returns state "suspended" with a suspendedJobId. A suspended job of any kind (mine, build, goto, process, fight) is held where it stopped,
+    break progress and path kept, and runs on whenever the world runs; this call waits on it
+    as it is, and returns at once with its outcome if it already finished. resume=N steps it.
 
     Options may supply a fresh timeoutTicks and explicit per-attempt permissions,
     including overrideProtection, a stallTicks for this session, and retry: true to try

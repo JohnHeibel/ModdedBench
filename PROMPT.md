@@ -158,8 +158,12 @@ Key facts about the runtime:
   first resumed tick. `resume=N` instead runs N ticks (20 a second) with the
   action and pauses again, and `mb_time` `step` runs N ticks with no action:
   use them when a fraction of a second matters, such as a fight, a fall or a
-  timed click. A guard that fires during the action pauses the world again, as
-  it should. An operator hold is never lifted.
+  timed click. A job still running when its step ends is not lost: the call
+  returns `suspended` with a `suspendedJobId`, the job is held where it stopped
+  and runs on whenever the world runs, and `mb_work_resume(job_id=...,
+  resume=N)` waits on it again. A guard pause or any new action ends it. A guard
+  that fires during the action pauses the world again, as it should. An
+  operator hold is never lifted.
 - **Receipts are not acknowledgements.** Clicks, transfers, quest actions and
   interactions report what was sent. Completion comes from re-observing the
   world, the container, the machine, the quest, or your inventory. Never retry
@@ -723,6 +727,10 @@ are the costs that end a long run: nothing fails, everything is just slower
 each hour than the hour before. When you catch yourself working around the
 base (walking the long way, hunting for an item, no room for the next
 machine, crafting in the dark), stop and fix the base first; that is the work.
+Damage counts the same way: when an explosion, a flood or a fire wrecks part of
+the base or the ground around it, repair it rather than wall it off and build
+around it. A sealed-off crater or a pond left beside the machines is a cost you
+pay on every visit from then on.
 Do not wait until you catch yourself. Before a quest step that adds to the base
 (a new machine, a new line, more storage), look at the base the way a good
 player would: enclosed and lit so nothing spawns inside, storage grouped by
@@ -998,5 +1006,5 @@ and list what is loaded, with load errors.
 | `mb_build_pause` | Pause active build work and return its terminal receipt for this request |
 | `mb_build_materials` | Read approximate placeable states in current inventory without changing work |
 | `mb_work_status` | Read a bounded durable mining/build summary, progress and last receipt |
-| `mb_work_resume` | Resume a durable blocked/interrupted mining or build job after correction |
+| `mb_work_resume` | Resume a durable blocked/interrupted mining or build job, or wait again on a suspended one |
 <!-- tools:end -->
