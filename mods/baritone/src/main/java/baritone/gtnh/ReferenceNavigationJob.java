@@ -56,6 +56,9 @@ final class ReferenceNavigationJob implements Navigation.Job,PlansWhilePaused {
             engine.positionAllowed=p->corridor.contains(p);
         }else engine.positionAllowed=p->true;
         engine.getInputOverrideHandler().attach(lease);
+        // The cells the model named, by their physical floors: a goal no body fits in is refused before a search floods for it.
+        var refused=GoalRoom.refusal(physicalGoals.size()==1?new GoalBlock(physicalGoals.get(0)):new GoalComposite(physicalGoals.stream().map(GoalBlock::new).toArray(Goal[]::new)),GoalRoom.of(engine,mc.theWorld,mc.thePlayer,allowBreak),allowPlace);
+        if(refused!=null){failure.putAll(refused);finish("failed","goal_not_standable");return;}
         engine.getCustomGoalProcess().setGoalAndPath(goal);
     }
     private boolean refreshGoal(){
@@ -95,7 +98,7 @@ final class ReferenceNavigationJob implements Navigation.Job,PlansWhilePaused {
         calculations=pathing.calculationsStarted()-initialCalculations;segmentsCompleted=pathing.segmentsCompleted()-initialSegments;
         if(!engine.getCustomGoalProcess().isActive()){
             if(goal.isInGoal(engine.getPlayerContext().playerFeet())){finish("succeeded","goal_reached");}
-            else finish("failed",PathFailure.cause(engine,initialCalculations,failure));
+            else finish("failed",PathFailure.cause(engine,initialCalculations,goal,failure));
         }
     }
     void finish(String state,String reason){
