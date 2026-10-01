@@ -42,6 +42,9 @@ final class DevFixtures {
         runtime.fixture("dev.movement_fixture.change","Named mid-run world change {name:lava_approach_open|lava_approach_close}","privileged",r->movement.change(Json.string(r.params,"name","")));
         runtime.fixture("dev.movement_fixture.shapes","Measured partial collision shapes {filter:picked|thin|low|all,limit}","privileged",r->movement.shapes(r.params));
         runtime.fixture("dev.movement_fixture.restore","Restore original player, game rules, and remove the course","privileged",r->movement.restore());
+        ReplayFixture replay=new ReplayFixture(server);
+        runtime.fixture("dev.replay.place","Teleport the only connected player to {x,y,z,yaw?,pitch?} in a cloned world; changes no blocks","privileged",r->replay.place(r.params));
+        runtime.fixture("dev.replay.status","The player as the server sees it, and block id/meta at {cells:[[x,y,z],...]} (<=64)","read",r->replay.status(r.params));
         WorkProcessFixture processes=new WorkProcessFixture(server);
         runtime.fixture("dev.work_process_fixture.create","Create journalled bounded mining/building course with native ToolBuilder loadout","privileged",r->processes.create());
         runtime.fixture("dev.work_process_fixture.position","Position development player {name:ore_line|selection|build|descend_start|descend_step_1|descend_step_2|descend_goal}","privileged",r->processes.position(Json.string(r.params,"name","ore_line")));
