@@ -34,6 +34,8 @@ public class ConstructionSettingsTest {
             "item",Map.of("id","pack:placement_tool","meta",17),"verify",Map.of("pickedItem",Map.of("id","pack:shared_item","meta",314,"nbt","{variant:7}")))));
         var cell=WorkSpec.cells(spec).get(0);assertEquals(3,cell.meta());assertEquals(17,cell.item().get("meta"));assertEquals(314,WorkSpec.child(cell.verify(),"pickedItem").get("meta"));
         invalid(()->WorkSpec.verification(Map.of("tileType","guessed")));
+        spec.put("cells",List.of(Map.of("pos",List.of(0,40,0),"id","pack:machines","meta",0,"tile",true,"name","Steam Macerator")));  // nav.copy output builds as it is
+        assertEquals("pack:machines",WorkSpec.cells(spec).get(0).id());
         invalid(()->WorkSpec.verification(Map.of("pickedItem",Map.of("meta",314))));
     }
 }

@@ -91,7 +91,7 @@ public final class WorkSpec {
         Set<BlockPos> seen=new HashSet<>();List<Cell> cells=new ArrayList<>();
         for(Map<String,Object> e:entries) {
             if(e.containsKey("tileNbt")||e.containsKey("nbt"))throw new IllegalArgumentException("tile state requires an explicit normal-interaction adapter; do not silently discard schematic NBT");
-            fields(e,Set.of("pos","id","meta","clear","item","placement","replace","verify"));
+            fields(e,Set.of("pos","id","meta","clear","item","placement","replace","verify","tile","name"));  // tile, name: what nav.copy saw, so a copy builds as it is; never read
             placement(child(e,"placement"));
             verification(child(e,"verify"));
             BlockPos local=pos(e.get("pos"));long x=(long)local.getX()+origin.getX(),y=(long)local.getY()+origin.getY(),z=(long)local.getZ()+origin.getZ();
