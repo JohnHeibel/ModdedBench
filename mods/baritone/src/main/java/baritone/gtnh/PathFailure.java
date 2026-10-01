@@ -12,7 +12,7 @@ import java.util.*;
 final class PathFailure {
     private PathFailure(){}
     /** On the game thread. `calculationsBefore` is the engine's count when the job started; `detail` gets the evidence. */
-    static String cause(Baritone engine,long calculationsBefore,Map<String,Object> detail){
+    static String cause(Baritone engine,long calculationsBefore,baritone.api.pathing.goals.Goal goal,Map<String,Object> detail){
         var snags=engine.snags;
         if(snags.failure()!=null||snags.anyBanned()){detail.put("snags",snags.status());return snags.failure()!=null?snags.failure():snags.cause();}
         var pathing=engine.getPathingBehavior();
@@ -28,7 +28,24 @@ final class PathFailure {
             detail.put("startCells",footing(engine));
             return "invalid_start_at_"+s.get(0)+","+s.get(1)+","+s.get(2);
         }
-        return "search_failed_"+(search.get("why") instanceof String why?why:"unknown");
+        Object why=search.get("why");Boolean goalLoaded=null;
+        if("unloaded_chunks".equals(why)){
+            var world=engine.getPlayerContext().world().nativeWorld;
+            goalLoaded=GoalRoom.loaded(goal,(x,y,z)->ForgeSnapshot.loaded(world,x,Math.max(0,Math.min(255,y)),z));
+            if(goalLoaded!=null)detail.put("goalLoaded",goalLoaded);
+        }
+        return searchEnded(why,goalLoaded);
+    }
+    /**
+     * A search that returned no path at all, by why its loop ended. Only the reason changes: whatever partial path a search
+     * returns is walked as before. Exhausted: every cell reachable from the start was searched. Unloaded chunks: the
+     * frontier reached the edge of the chunks the client holds often enough to stop; when the goal itself is in loaded
+     * chunks that edge is not where it lies, so the search found no route through the loaded ground it covered.
+     */
+    static String searchEnded(Object why,Boolean goalLoaded){
+        if("exhausted".equals(why))return "no_route_to_goal";
+        if("unloaded_chunks".equals(why))return Boolean.TRUE.equals(goalLoaded)?"no_route_in_loaded_chunks":"search_failed_unloaded_chunks";
+        return "search_failed_"+(why instanceof String w?w:"unknown");
     }
     /** Each cell under the player's footprint as the engine judges it: what is below, at the feet and at the head. */
     static List<Map<String,Object>> footing(Baritone engine){

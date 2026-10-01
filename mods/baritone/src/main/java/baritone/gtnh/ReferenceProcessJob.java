@@ -63,7 +63,10 @@ final class ReferenceProcessJob implements Navigation.Job,PlansWhilePaused {
             engine.overrideProtection=bool(params,"overrideProtection",false);engine.positionAllowed=p->true;engine.explicitMiningTargets=()->s->false;
             engine.getInputOverrideHandler().attach(lease);engine.bsi=new baritone.utils.BlockStateInterface(engine.getPlayerContext());
             switch(kind){
-                case "goal"->engine.getCustomGoalProcess().setGoalAndPath(goal);
+                case "goal"->{
+                    var refused=GoalRoom.refusal(goal,GoalRoom.of(engine,mc.theWorld,mc.thePlayer,settings.allowBreak.value),settings.allowPlace.value);
+                    if(refused==null)engine.getCustomGoalProcess().setGoalAndPath(goal);else{failure.putAll(refused);finish("failed","goal_not_standable");}
+                }
                 case "explore"->engine.getExploreProcess().explore(center.getX(),center.getZ());
                 case "get_to_block"->{if(scan==null)engine.getGetToBlockProcess().getToBlock(block);}
                 case "farm"->engine.getFarmProcess().farm(radius,center,farm);
@@ -96,7 +99,7 @@ final class ReferenceProcessJob implements Navigation.Job,PlansWhilePaused {
             boolean success=switch(kind){case "goal"->goal.isInGoal(engine.getPlayerContext().playerFeet());case "get_to_block"->engine.getGetToBlockProcess().arrived;case "explore"->engine.getExploreProcess().completed;default->false;};
             // Not arriving has a measured cause: the process's own give-up, a snag, or how the last search ended.
             String stopped=kind.equals("get_to_block")?engine.getGetToBlockProcess().stopReason:null;
-            finish(success?"succeeded":"failed",success?"source_process_complete":stopped!=null?stopped:PathFailure.cause(engine,initialCalculations,failure));
+            finish(success?"succeeded":"failed",success?"source_process_complete":stopped!=null?stopped:PathFailure.cause(engine,initialCalculations,kind.equals("goal")?goal:engine.getPathingBehavior().getGoal(),failure));
         }
     }
     private long inventory(){long sum=0;for(var s:mc.thePlayer.inventory.mainInventory)if(s!=null)sum=sum*31+s.stackSize*7919L+net.minecraft.item.Item.getIdFromItem(s.getItem());return sum;}
