@@ -304,6 +304,7 @@ function banner(d) {
     else if (r.startsWith("interrupt:")) chip = ["ITS OWN WATCH", "key", "stopped by its own watch: " + r.slice(10).replace(/_/g, " ")];
     else chip = PLAIN[r] || ["PAUSED", "dim", r.replace(/_/g, " ")];
     if (c.stepping && r !== "step") chip = PLAIN.step;
+    if (c.player && c.player.health <= 0) chip = ["DEAD", "bad", "it died; respawning comes next"];
   }
   if (!chip) { b.className = "off"; return; }
   b.className = "on " + chip[1];
