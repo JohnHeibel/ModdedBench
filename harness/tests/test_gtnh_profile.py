@@ -386,8 +386,12 @@ class GTNHProfileTests(unittest.TestCase):
             "allowBreak":False,"allowPlace":False,"overrideProtection":False}))
         tools.mb_fight(7, weapon_slot=0, timeout_s=20)
         self.assertEqual(fake.last("nav.fight"), ("nav.fight", {"timeout":20, "hold":False, "leash":16, "bailHealth":8,
-            "maxAttackers":2, "durationTicks":600, "crit":True, "block":True, "entityId":7, "weaponSlot":0}))
+            "maxAttackers":2, "maxHealthLoss":10, "maxGrowth":3, "durationTicks":600, "crit":True, "block":True, "entityId":7, "weaponSlot":0}))
         with self.assertRaises(ValueError): tools.mb_fight()
+        tools.mb_fight(swarm=True, timeout_s=20)  # swarm: stands, takes no target, swings at the full rate unless asked otherwise
+        sent = fake.last("nav.fight")[1]
+        self.assertEqual((sent["swarm"], sent["crit"], sent["block"], "entityId" in sent), (True, False, False, False))
+        with self.assertRaises(ValueError): tools.mb_fight(7, swarm=True)
         import mbtools_gtnh.plan as plan
         def world(method, params):
             if method == "obs.player": return {"pos": [10.5, 64.0, 20.5]}

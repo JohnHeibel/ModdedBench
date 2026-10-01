@@ -36,8 +36,8 @@ final class FightJob implements Navigation.Job {
     private final Predicate<Entity> named,hostile;
     private final List<Map<String,Object>> hostileRule;
     private final boolean hold,swarm,crit,block;
-    private final int duration,interval,maxAttackers;
-    private final double leash,bailHealth,ax,ay,az;
+    private final int duration,interval,maxAttackers,maxGrowth,startHostiles;
+    private final double leash,bailHealth,maxHealthLoss,startHealth,ax,ay,az;
     private String state="fighting",reason="",phase="starting";
     private Entity target;
     private int ticks,lastAttack=-100,lastUseful,attacks,crits,kills,clearTicks;
@@ -70,7 +70,9 @@ final class FightJob implements Navigation.Job {
         if(named==null&&!hold)throw new IllegalArgumentException("fight needs entityId (from obs.entities or the clock's threats) or a target selector {entityId|uuid|type|name|class}, or hold:true to stand and hit whatever the hostile rule matches");
         duration=integer(params,"durationTicks",600,1,6000);interval=integer(params,"intervalTicks",10,10,40);
         maxAttackers=integer(params,"maxAttackers",2,1,8);leash=number(params,"leash",16,2,48);bailHealth=number(params,"bailHealth",8,0,40);
-        var me=mc.thePlayer;ax=me.posX;ay=me.boundingBox.minY;az=me.posZ;
+        // Going badly, before the bail line: this much health lost in this fight, or this many more hostiles in sight than at the start.
+        maxHealthLoss=number(params,"maxHealthLoss",10,1,100);maxGrowth=integer(params,"maxGrowth",3,0,64);
+        var me=mc.thePlayer;ax=me.posX;ay=me.boundingBox.minY;az=me.posZ;startHealth=me.getHealth();startHostiles=hostiles(8).size();
         if(params.containsKey("weaponSlot")){me.inventory.currentItem=integer(params,"weaponSlot",0,0,8);mc.playerController.updateController();}
         ranged=params.containsKey("ranged");
         if(ranged){
@@ -103,6 +105,9 @@ final class FightJob implements Navigation.Job {
         if(mc.currentScreen!=null){cancel("gui_open");return;}
         if(ticks++>=duration){finish("failed","duration_elapsed");return;}
         if(me.getHealth()<=bailHealth){finish("failed","health_at_bail_line");return;}
+        if(startHealth-me.getHealth()>=maxHealthLoss){finish("failed","health_lost: "+Math.round((startHealth-me.getHealth())*10)/10.0+" of "+startHealth+" lost in this fight, "+kills+" kills");return;}
+        int inSight=hostiles(8).size();
+        if(inSight>startHostiles+maxGrowth){finish("failed","swarm_growing: "+startHostiles+" hostiles in sight at the start, "+inSight+" now after "+kills+" kills");return;}
         List<Entity> near=hostiles(4);
         if(!swarm&&near.size()>maxAttackers){finish("failed","outnumbered: "+near.size()+" entities of the hostile rule within 4 blocks");return;}
         for(Entity e:matching(x->x instanceof EntityCreeper,7))if(e!=target&&((EntityCreeper)e).getCreeperState()>0){finish("failed","creeper_swelling: entity "+e.getEntityId());return;}

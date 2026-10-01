@@ -493,7 +493,11 @@ resume=True)`). `mb_fight` fights one mob you name and stops the moment the figh
 gets worse than the one you chose. It will not pick a second mob for you.
 While a fight runs, its hits and the mobs it engages do not trip `healthDrop`
 or `threat`; every other guard still pauses and ends it, so there is no guard
-to switch off before fighting.
+to switch off before fighting. The call holds you until the fight ends, so
+its limits are where you change your mind: it stops with health left when the
+fight has cost `max_health_loss` or more mobs are arriving than you kill
+(`swarm_growing`). Fight in short spans (`duration_ticks`) and decide again
+from each receipt.
 With `ranged=True` it uses whatever bow, crossbow or throwable is in the slot you
 name, and learns that weapon from its own shots: what shoots at you, and what
 explodes, is better killed from a distance.
