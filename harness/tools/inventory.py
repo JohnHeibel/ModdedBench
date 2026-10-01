@@ -405,6 +405,12 @@ def mb_craft(pattern: list[list[dict | None]] | None = None, times: int = 1, at:
         raise ValueError("give pattern (a crafting grid) or inputs (a machine), not both")
     if type(times) is not int or times < 1 or not 0 <= wait_s <= 300 or pattern is not None and not (pattern and all(isinstance(row, list) and row for row in pattern)):
         raise ValueError("pattern is a non-empty list of rows; times is a whole number from 1; wait_s is 0..300")
+    selectors = [cell for row in pattern for cell in row if cell is not None] if pattern is not None else inputs or []
+    for cell in selectors:
+        if not isinstance(cell, dict) or not isinstance(cell.get("id"), str) or not cell["id"]:
+            raise ValueError("craft cells and machine inputs require an item id")
+        if "count" in cell and (type(cell["count"]) is not int or cell["count"] < 1):
+            raise ValueError("craft cell and machine input counts must be positive whole numbers")
     k = kernel()
     opened = _station(k, at, despite_threat)
     try:
