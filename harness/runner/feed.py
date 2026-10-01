@@ -5,11 +5,12 @@
 The loop hands every Codex event to ``Feed.event``. Two files come out, in ``$MODBENCH_OUTBOX/overlay`` (the
 host sees that folder, ``.state/overlay`` without one; the console serves it to OBS): ``feed.jsonl``, one line per thing the model said or
 did ({ts, kind: say|tool|fail|mark, text, tool?}; ``mark`` lines are the run's milestones), and ``live.json``,
-the goal stack, what the agent is doing now, and running totals. Nothing here is shown to the model or asked
+the goal stack, what the agent is doing now, and running totals; and ``pops.json`` with ``pop-<n>.png``, the last few
+things it looked at, for the stream's pop-ups. Nothing here is shown to the model or asked
 of it: the goal is the one it already keeps with ``mb_goal``, and tool lines are templates, not summaries.
 """
 from __future__ import annotations
-import json, re, time
+import base64, json, re, time
 from pathlib import Path
 
 BLOB = re.compile(r"[A-Za-z0-9+/=]{4000,}")  # base64 image data inside a logged tool result
@@ -49,6 +50,7 @@ LINES = {  # tool -> line from (arguments, result); anything absent gets the gen
     "mb_build_preview": lambda a, r: "planning a build",
     "mb_process": lambda a, r: (("going to " + _pos([v for k, v in sorted((a.get("goal") or {}).items()) if k in "xyz"])).removesuffix("going to ") or "walking" if a.get("process") == "goal" else str(a.get("process", "")).replace("_", " ")),
     "mb_route": lambda a, r: "following route " + str(a.get("name")),
+    "mb_view": lambda a, r: "looking down on the area" if a.get("look_down") else "looking at the blocks around it",
     "mb_scan": lambda a, r: "looking for " + _name(a.get("blocks") or [{"id": "blocks"}]),
     "mb_inventory": lambda a, r: "checking inventory", "mb_find": lambda a, r: "looking for " + _name(a.get("selector")),
     "mb_transfer": lambda a, r: f"moving {a.get('count', '')} {_name(a.get('expected'))}".replace("  ", " "),
@@ -73,11 +75,63 @@ def line(tool, args, result):
     return (tool.removeprefix("mb_").replace("_", " ") + " " + " ".join(str(v) for v in args.values() if isinstance(v, (str, int)) and len(str(v)) < 40)[:80]).strip()
 
 
+# Pop-ups: for the stream only, what the agent just looked at, drawn big for a few seconds. Each record is the part of a
+# look tool's result the page draws, so the page never sees the rest; images (the map, a screenshot) go beside it as files.
+POPS = 8  # records kept in pops.json, with the images they name
+def _stack(s): return {"name": _name(s), "count": s.get("count", 1), "id": s.get("id", "")} if isinstance(s, dict) else {}
+def _plain(lines): return [t for t in (re.sub("§.|¤¦.", "", str(x)).strip() for x in lines or []) if t and not t.startswith("{")][:8]  # not raw NBT
+
+def _view(a, r, me):
+    legend = {ch: {k: v[k] for k in ("id", "count", "name", "tile") if k in v} for ch, v in (r.get("legend") or {}).items()}
+    named = [{"name": t.get("name"), "pos": t.get("pos")} for t in r.get("things") or [] if t.get("pos") and t.get("name")]
+    return ("down" if a.get("look_down") else "view"), {"origin": r["origin"], "layers": r["layers"], "legend": legend, "things": named[:12], "you": r.get("you") or me}
+
+def _radar(a, r, me):
+    keep = ("type", "name", "pos", "distance", "visible", "hostile")
+    ents = [{**{k: e[k] for k in keep if k in e}, "stack": _stack(e.get("stack")) or None} for e in r.get("entities") or []]
+    return "radar", {"radius": (a.get("params") or {}).get("radius") or 32, "me": me, "entities": sorted(ents, key=lambda e: e.get("distance", 99))[:60]}
+
+def _obs(a, r, me):
+    m = a.get("method")
+    if m == "entities": return _radar(a, r, me)
+    if m == "waila": return "block", {"pos": r.get("pos"), "title": (_plain(r.get("head")) or ["?"])[0], "lines": _plain((r.get("body") or []) + (r.get("tail") or []))}
+    if m == "tile": return "block", {"pos": r.get("pos"), "title": str(r.get("tileClass") or "?").split(".")[-1], "lines": [_name({"id": r.get("id")})]}
+    if m == "block" and r.get("id") not in (None, "minecraft:air"):
+        return "block", {"pos": r.get("pos"), "title": _name(r.get("picked") or r), "lines": [f"hardness {r['hardness']}" if "hardness" in r else "", "a tile entity" if r.get("hasTile") else ""]}
+
+def _inventory(a, r, me):
+    if r.get("totals"): return "inventory", {"totals": [{"name": _name(t.get("identity") or {}), "count": t.get("count")} for t in r["totals"]][:36]}
+    if not r.get("main"): return None  # a container's slots: not drawn yet
+    return "inventory", {"selected": r.get("selected"), "slots": [{"slot": s.get("slot"), **_stack(s.get("stack"))} for s in r.get("main") or [] if s.get("stack")],
+                         "armor": [_stack(s.get("stack", s)) for s in r.get("armor") or [] if isinstance(s, dict)]}
+
+def _recipe(a, r, me):
+    first = (r.get("recipes") or [None])[0]
+    if not isinstance(first, dict) or not first.get("inputs"): return None
+    cell = lambda c: {"x": c.get("x"), "y": c.get("y"), **_stack((c.get("alternatives") or c.get("examples") or [None])[0])} if isinstance(c, dict) else {}
+    return "recipe", {"handler": first.get("name") or "", "inputs": [cell(c) for c in first["inputs"]][:16], "result": cell(first.get("result")) or _stack(r.get("target")),
+                      "target": _name(r.get("target") or a), "total": r.get("total")}
+
+def _notes(a, r, me):
+    if r.get("title"): return "note", {"title": r["title"], "text": str(r.get("text", ""))[:500], "tags": r.get("tags") or []}
+    if "notes" in r: return "note", {"title": "searching its notes", "titles": [n.get("title") for n in r["notes"]][:8]}
+
+POP = {  # tool -> (arguments, result, last known position of the player) -> (kind, data), or None for nothing worth showing
+    "mb_view": _view, "mb_obs": _obs, "mb_inventory": _inventory, "mb_recipes": _recipe, "mb_notes": _notes,
+    "mb_scan": lambda a, r, me: ("scan", {"what": _name(a.get("blocks") or [{"id": "blocks"}]), "found": r.get("found", len(r.get("matches") or [])),
+                                         "matches": [{"pos": m.get("pos"), "name": _name(m)} for m in r.get("matches") or []][:40], "me": me}),
+    "mb_map": lambda a, r, me: ("map", {k: r.get(k) for k in ("bounds", "blocksPerPixel", "player", "layer")}),
+    "mb_screenshot": lambda a, r, me: ("shot", {}),
+    "mb_note_write": lambda a, r, me: ("note", {"title": r["note"].get("title"), "text": str(r["note"].get("text", ""))[:500], "wrote": True}) if r.get("saved") else None,
+}
+
+
 class Feed:
     def __init__(self, folder):
         self.folder = Path(folder); self.folder.mkdir(parents=True, exist_ok=True)
         self.live = {"goal": {}, "status": {}, "stats": {"activeSeconds": 0.0, "activeSince": None, "turns": 0, "calls": 0, "failed": 0, "scripts": 0, "claims": 0,
                                                        "tokens": {"input": 0, "cached": 0, "output": 0, "estimated": 0, "uncounted": 0}}}
+        self.me = None  # where the player was last seen, for pop-ups of results that do not say
         self.context = 0  # characters Codex has been shown this turn, for the estimate below
         try: self.live.update(json.loads((self.folder / "live.json").read_text(encoding="utf-8")))  # a restarted loop keeps the run's totals
         except (OSError, ValueError): pass
@@ -151,4 +205,28 @@ class Feed:
                 why = "" if not failed else ": bad arguments" if why.get("code") == "bad_request" else ": " + str(why.get("code") or "failed").replace("_", " ")
                 text = line(tool, item.get("arguments"), result)
                 self.add("fail" if failed or isinstance(result, dict) and result.get("stopped") else "tool", text and text + why, tool=tool)
+            if not failed:
+                try: self.look(tool, item.get("arguments"), result, item["result"].get("content") or [])
+                except Exception: pass  # a pop-up is decoration: a shape it did not expect shows nothing
             self.status("thinking")
+
+    def look(self, tool, args, result, content):
+        """Record a look tool's result as a pop-up for the stream: pops.json, the last few, and an image file for the map or a screenshot."""
+        args, result = (args if isinstance(args, dict) else {}), (result if isinstance(result, dict) else {})
+        me = result.get("pos") if tool == "mb_obs" and args.get("method") == "player" else result.get("you") if tool == "mb_view" else result.get("player") if tool == "mb_map" else None
+        if isinstance(me, list) and len(me) == 3: self.me = me
+        made = POP[tool](args, result, self.me) if tool in POP else None
+        if not made: return
+        try: pops = json.loads((self.folder / "pops.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError): pops = []
+        seq = (pops[-1]["seq"] + 1) if pops else 1
+        record = {"seq": seq, "ts": time.time(), "kind": made[0], "tool": tool, "data": made[1]}
+        image = next((c for c in content if isinstance(c, dict) and c.get("type") == "image" and c.get("data")), None)
+        if made[0] in ("map", "shot"):
+            if not image: return
+            (self.folder / f"pop-{seq}.png").write_bytes(base64.b64decode(image["data"])); record["image"] = f"pop-{seq}.png"
+        pops = (pops + [record])[-POPS:]
+        tmp = self.folder / "pops.tmp"; tmp.write_text(json.dumps(pops), encoding="utf-8")
+        try: tmp.replace(self.folder / "pops.json")
+        except OSError: pass
+        for old in set(self.folder.glob("pop-*.png")) - {self.folder / p["image"] for p in pops if p.get("image")}: old.unlink(missing_ok=True)

@@ -23,7 +23,7 @@ COMPOSE = [DOCKER, "compose", "-f", str(REPO / "docker" / "compose.yaml"), "--en
 PY = [sys.executable, "-u"]
 LAUNCHER, DEPLOY = str(REPO / "harness" / "launcher" / "runtime.py"), str(REPO / "harness" / "launcher" / "deploy.py")
 BRIEF = REPO / ".runtime" / "brief"
-OVERLAY = REPO / ".runtime" / "outbox" / "overlay"  # written by the loop (harness/runner/feed.py)
+OVERLAY = Path(os.environ.get("MODBENCH_OVERLAY") or REPO / ".runtime" / "outbox" / "overlay")  # written by the loop (harness/runner/feed.py)
 TOKEN = secrets.token_urlsafe(24)
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 # One line of JSON about the loop, produced inside the agent container.
@@ -146,11 +146,22 @@ class Console:
         if clock is None: status = {"state": "game_down", "text": "", "since": status.get("since")}
         elif clock.get("paused") and status.get("state") in ("thinking", "acting", "waiting"):  # between turns the world is always paused; that is not news
             status = {"state": "held" if clock.get("held") else "paused", "text": "" if clock.get("held") else str(clock.get("reason") or "").replace("_", " "), "since": status.get("since")}
+        # The banner over the game says why the world stands still in words a viewer reads: the cause and its specifics.
+        why = None
+        if clock is not None:
+            near = min(clock.get("threats") or [], key=lambda t: t.get("distance") or 99, default=None)
+            why = {k: clock.get(k) for k in ("paused", "reason", "held", "stepping")}
+            if near: why["threat"] = {"type": near.get("type"), "distance": near.get("distance"), "ranged": near.get("ranged"), "swelling": near.get("swelling")}
+            if clock.get("paused") and str(clock.get("reason")) in ("health_dropped", "health_threshold", "air_threshold", "food_threshold", "burning"):
+                try: why["player"] = {k: v for k, v in self.call("obs.player").items() if k in ("health", "food", "air", "burning")}
+                except Exception: pass
+        try: pops = json.loads((OVERLAY / "pops.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError): pops = []
         goal = dict(live.get("goal") or {}); goal["short"] = self.shorten.get("goal", goal.get("subgoal"))
         for entry in [e for e in feed if e.get("kind") == "say"][-12:]: entry["short"] = self.shorten.get("say", entry.get("text"))
         try: target = re.search(r'^TARGET_QUEST\s*=\s*"([^"<]+)"', (BRIEF / "PROMPT.md").read_text(encoding="utf-8"), re.M).group(1)
         except (OSError, AttributeError): target = ""
-        return {"now": time.time(), "goal": goal, "status": status, "stats": live.get("stats"), "run": live.get("run"), "budget": live.get("budget"), "target": target, "feed": feed, "chapters": self.book[1]}
+        return {"now": time.time(), "goal": goal, "status": status, "stats": live.get("stats"), "run": live.get("run"), "budget": live.get("budget"), "target": target, "feed": feed, "chapters": self.book[1], "clock": why, "pops": pops}
 
     # Actions. Anything slow runs as the single background job; its command lines and output are the job log.
     def run_job(self, name, steps):
@@ -236,6 +247,10 @@ class Handler(BaseHTTPRequestHandler):
         # The overlay is for OBS browser sources, which cannot send the token: it is read only and says nothing the stream does not show.
         if self.path.split("?")[0] == "/overlay": return self.reply(200, Path(__file__).with_name("overlay.html").read_bytes(), "text/html; charset=utf-8")
         if self.path in ("/overlay/fonts/Monocraft.ttf", "/overlay/fonts/Monocraft-Bold.ttf"): return self.reply(200, (Path(__file__).parent / self.path[9:]).read_bytes(), "font/ttf")
+        if re.fullmatch(r"/overlay/pop-\d{1,9}\.png", self.path):
+            try: return self.reply(200, (OVERLAY / self.path[9:]).read_bytes(), "image/png")
+            except OSError: return self.reply(404, {"error": "gone"})
+        if self.path == "/overlay/pops.js": return self.reply(200, Path(__file__).with_name("overlay_pops.js").read_bytes(), "text/javascript; charset=utf-8")
         if self.path == "/overlay/data":
             try: return self.reply(200, self.console.overlay())
             except Exception as e: return self.reply(500, {"error": f"{type(e).__name__}: {e}"})
