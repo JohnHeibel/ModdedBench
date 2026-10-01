@@ -526,6 +526,15 @@ Most fights are avoidable. Mobs spawn where block light is 7 or less:
 it and torch the base until the list is empty under its roof. `mb_settings` set
 `avoidance` true makes every path cost more near hostile mobs and spawners.
 
+**Enclose your base completely.** Light only stops mobs spawning inside; it
+does nothing about the ones that spawn outside and walk in. Every GTNH player
+learns this early, and it is easy to miss coming from vanilla habits: mobs here
+hit hard and keep coming, and an open side, a missing roof block or a gap
+beside a door is how they reach you and your machines. Wall every side, roof it
+over, and enter only through doors, before the base holds anything you would
+hate to lose. Then walk the edge, look for any gap a mob could walk, jump or
+fall through, and close it. A base you can be attacked in is not a base.
+
 **Clutch.** A paused world gives you all the time you need; only ticks count.
 When a pause catches you in trouble (falling, at an edge, next to lava, a mob
 closing), do not answer with one long action. Observe your position, velocity
