@@ -98,6 +98,10 @@ public final class Baritone implements IBaritone {
     public baritone.cache.WorldProvider getWorldProvider(){return worlds;}
     public baritone.selection.SelectionManager getSelectionManager(){return selections;}
     public void tickStart(){
+        tickStart(null);
+    }
+    /** Let an adapter finish its input decision before the tick's single publication. */
+    public void tickStart(Runnable beforeFlush){
         bsi=new BlockStateInterface(ctx);
         // The 1.7 render crosshair is interpolated and mods may refresh it with
         // their own partial tick. Source processes need the current native pose
@@ -107,6 +111,7 @@ public final class Baritone implements IBaritone {
         events.onTick(event);
         events.onPlayerUpdate(new baritone.api.event.events.PlayerUpdateEvent(baritone.api.event.events.type.EventState.PRE));
         dev.modbench.api.ControlRegistry.targeting().refresh();
+        if(beforeFlush!=null)beforeFlush.run();
         input.flush();
         // PathExecutor consumes SPRINT to compute continuity across movements.
         if(pathing.getCurrent()!=null)mc.thePlayer.setSprinting(pathing.getCurrent().isSprinting());
