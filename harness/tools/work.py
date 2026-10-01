@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import time
+from statistics import median
 from typing import Any
 
 from kernel import BridgeError
@@ -234,9 +235,13 @@ def fit_ballistics(before: dict, receipt: dict) -> dict | None:
         pairs = list(zip(shot, shot[1:]))
         ratios = [b[0] / a[0] for a, b in pairs if a[0]]  # a shot straight up or down has no horizontal speed to measure drag by
         if not pairs: continue  # one sample measures nothing
-        drag = min(1.0, max(.9, sum(ratios) / len(ratios))) if ratios else out.get("drag", 1.0)
-        gravity = min(.3, max(0.0, sum(a[1] * drag - b[1] for a, b in pairs) / len(pairs)))
-        new = {"speed": (shot[0][0] ** 2 + shot[0][1] ** 2) ** .5 / drag, "gravity": gravity, "drag": drag}
+        drag = min(1.0, max(.9, median(ratios))) if ratios else out.get("drag", 1.0)
+        # An impact can slow a still-live projectile before Java stops tracking it.
+        # Fit the consistent flight samples, not that final collision impulse.
+        flight = [(a, b) for a, b in pairs if not a[0] or abs(b[0] / a[0] - drag) <= .02 * drag]
+        if not flight: continue
+        gravity = min(.3, max(0.0, median(a[1] * drag - b[1] for a, b in flight)))
+        new = {"speed": (shot[0][0] ** 2 + (shot[0][1] + gravity) ** 2) ** .5 / drag, "gravity": gravity, "drag": drag}
         n = out.get("shotsMeasured", 0)
         for key, value in new.items(): out[key] = round(value if not n else (out[key] * min(n, 4) + value) / (min(n, 4) + 1), 5)
         out["shotsMeasured"] = n + 1
