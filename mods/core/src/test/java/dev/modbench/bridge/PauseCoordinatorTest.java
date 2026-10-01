@@ -81,6 +81,20 @@ public class PauseCoordinatorTest {
     }
 
     @Test
+    public void releaseLeavesAPauseTheHoldDidNotMake() {
+        Fixture f=new Fixture();
+        f.command("time.pause");f.coordinator.before();
+        f.coordinator.hold(true);f.coordinator.hold(false);
+        assertFalse("paused before the hold: still paused after it",f.coordinator.before());
+        assertFalse(f.coordinator.status().get("held").getAsBoolean());
+        f.command("time.resume");f.coordinator.before();
+        f.coordinator.hold(true);f.coordinator.before();
+        f.command("time.pause");f.coordinator.before();
+        f.coordinator.hold(false);
+        assertFalse("paused again during the hold: still paused after it",f.coordinator.before());
+    }
+
+    @Test
     public void releaseBeforeThePauseSettlesIsRetried() {
         Fixture f=new Fixture();f.gregtech.active=1;
         f.coordinator.hold(true);assertFalse(f.coordinator.before());
