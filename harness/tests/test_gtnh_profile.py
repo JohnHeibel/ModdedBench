@@ -417,6 +417,13 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertAlmostEqual(learned["drag"], .99, 3); self.assertAlmostEqual(learned["gravity"], .05, 3)
         self.assertEqual((learned["drawTicks"], learned["clickAfterLoad"], learned["shotsMeasured"]), (30, True, 1))
         self.assertIsNone(work.fit_ballistics({}, {"shots":0}))
+        h, v, flight = 2.2 * .99, -.05, []
+        for _ in range(7): flight.append([h, v]); h, v = h * .99, v * .99 - .05
+        flight.append([h * .5, v * .5])  # impact velocity remains visible for one tick
+        measured = work.fit_ballistics({}, {"shots": 1, "tracks": [flight]})
+        self.assertAlmostEqual(measured["speed"], 2.2, 4)
+        self.assertAlmostEqual(measured["drag"], .99, 4)
+        self.assertAlmostEqual(measured["gravity"], .05, 4)
         tools.mb_mine([{"id":"gregtech:gt.blockores"}], vein=[33,56,-70], quantity=128, allow_break=True, allow_place=True)
         mine = fake.last("nav.mine")[1]  # chunk 1 is the ore chunk nearest x=33, chunk -4 nearest z=-70
         self.assertEqual((mine["bounds"], mine["besideFluid"], mine["items"]),
