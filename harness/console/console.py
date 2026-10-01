@@ -50,7 +50,8 @@ class Shortener:
     agent never sees the result. Without a key, or until an answer arrives, or if the call fails, the page shows the original, clamped.
     """
     ASK = {"goal": (70, "This is an AI agent's current goal in a modded Minecraft factory run. Rewrite it as one short imperative goal of at most 9 words. Keep the specific item or machine. Add nothing that is not there. Answer with the goal only."),
-           "say": (220, "This is a remark by an AI agent playing a modded Minecraft factory game, shown to stream viewers. Rewrite it in the first person in at most two short plain sentences, 30 words in all. Keep concrete items, numbers and the reason for what it does. Drop tables, lists and formatting. Add nothing that is not there. Answer with the rewrite only.")}
+           "say": (220, "This is a remark by an AI agent playing a modded Minecraft factory game, shown to stream viewers. Rewrite it in the first person in at most two short plain sentences, 30 words in all. Keep concrete items, numbers and the reason for what it does. Drop tables, lists and formatting. Add nothing that is not there. Answer with the rewrite only."),
+           "note": (140, "This is a note an AI agent keeps in its journal while playing a modded Minecraft factory game; its first line is the title. Say for stream viewers what the note records, in at most two short plain sentences, 30 words in all. Keep the key items, machines and numbers; drop coordinates, slot numbers and abbreviations. Add nothing that is not there. Answer with the summary only.")}
 
     def __init__(self, path):
         self.path, self.lock, self.pending, self.slots = path, threading.Lock(), set(), threading.Semaphore(2)
@@ -157,6 +158,8 @@ class Console:
                 except Exception: pass
         try: pops = json.loads((OVERLAY / "pops.json").read_text(encoding="utf-8"))
         except (OSError, ValueError): pops = []
+        for p in pops:  # a journal page as the agent writes it is dense shorthand; the card shows a plain summary once it arrives
+            if p.get("kind") == "note" and (p.get("data") or {}).get("text"): p["data"]["short"] = self.shorten.get("note", f'{p["data"].get("title") or ""}\n{p["data"]["text"]}')
         goal = dict(live.get("goal") or {}); goal["short"] = self.shorten.get("goal", goal.get("subgoal"))
         for entry in [e for e in feed if e.get("kind") == "say"][-12:]: entry["short"] = self.shorten.get("say", entry.get("text"))
         try: target = re.search(r'^TARGET_QUEST\s*=\s*"([^"<]+)"', (BRIEF / "PROMPT.md").read_text(encoding="utf-8"), re.M).group(1)

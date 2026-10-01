@@ -243,7 +243,7 @@ function block(p) {
 function note(p) {
   const d = p.data, el = document.createElement("div"); el.className = "pop small";
   el.innerHTML = `<div class="head"><i class="eye"></i>${d.wrote ? "Writing in its journal" : "Reading its journal"}<span class="tool">${esc(p.tool)}</span></div>` +
-    `<div class="paper"><b>${esc(d.title)}</b>${d.titles ? d.titles.map(t => `<div>· ${esc(t)}</div>`).join("") : `<p>${esc(d.text)}</p>`}</div><div class="timer"></div>`;
+    `<div class="paper"><b>${esc(d.title)}</b>${d.titles ? d.titles.map(t => `<div>· ${esc(t)}</div>`).join("") : `<p>${esc(d.short || d.text)}</p>`}</div><div class="timer"></div>`;
   return el;
 }
 
@@ -276,6 +276,12 @@ function pops(list, now) {
   if (seen === null) { seen = list.length ? list[list.length - 1].seq : 0; const last = list[list.length - 1]; if (last && now - last.ts < 4) offer(last); return; }
   if (list.length && list[list.length - 1].seq < seen) seen = 0;  // a new run started a new list
   for (const p of list) if (p.seq > seen) { seen = p.seq; offer(p); }
+  // a journal summary arrives a poll or two after its card: swap it into the card already up or waiting
+  for (const p of list) {
+    if (p.kind !== "note" || !p.data.short) continue;
+    if (pending && pending.seq === p.seq) pending = p;
+    if (shown && shown.p.seq === p.seq && !shown.p.data.short) { shown.p = p; const t = shown.el.querySelector(".paper p"); if (t) t.textContent = p.data.short; }
+  }
 }
 
 /* the banner: why the world stands still, in words, with the specifics */
