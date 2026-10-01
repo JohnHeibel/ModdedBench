@@ -10,28 +10,33 @@ import java.util.*;
  * measure changed nor the player stood in a block it had not stood in since that measure last changed. New ground
  * rather than distance from one spot: pacing between two places however far apart, or circling, is caught once the
  * ground repeats, and a long walk never is. Only ticks the job runs count, so a paused world costs nothing; a new job
- * (a resume included) starts a new watch.
+ * (a resume included) starts a new watch. A path search in flight is the job working, not stalling: its ticks are excused,
+ * up to one search's whole budget per watch, so a re-plan loop (searches back to back on the same ground) still trips, at
+ * most one budget later.
  */
 public final class Stall {
     public final int limit;
     private long progress;
     private boolean started,advanced;
-    private int still,x,y,z;
+    private int still,excused,x,y,z;
     private final Set<Long> ground=new HashSet<>();
     public Stall(int limit){this.limit=limit;}
     /** One job tick at the player's feet; true once the job has stalled. */
-    public boolean tick(long progress,int x,int y,int z){
+    public boolean tick(long progress,int x,int y,int z){return tick(progress,x,y,z,0);}
+    /** As above, with `searchBudget` the ticks the path search in flight may take in all, 0 when none is. */
+    public boolean tick(long progress,int x,int y,int z,int searchBudget){
         if(limit<=0)return false;
         this.x=x;this.y=y;this.z=z;
         if(!started||progress!=this.progress){advanced|=started;started=true;this.progress=progress;ground.clear();}
         long cell=((long)x&0x3FFFFFF)<<38|((long)z&0x3FFFFFF)<<12|(y&0xFFF);
-        if(ground.add(cell)){still=0;if(ground.size()>65536){ground.clear();ground.add(cell);}return false;}
+        if(ground.add(cell)){still=0;excused=0;if(ground.size()>65536){ground.clear();ground.add(cell);}return false;}
+        if(excused<searchBudget){excused++;return false;}
         return ++still>=limit;
     }
     /** Whether the progress measure moved at all under this watch: a stall then pauses the job rather than failing it. */
     public boolean advanced(){return advanced;}
     public String reason(){return "stalled_no_progress_near_"+x+","+y+","+z;}
     public Map<String,Object> status(){
-        Map<String,Object> out=new LinkedHashMap<>();out.put("stallTicks",limit);out.put("ticksWithoutProgress",still);out.put("groundCells",ground.size());return out;
+        Map<String,Object> out=new LinkedHashMap<>();out.put("stallTicks",limit);out.put("ticksWithoutProgress",still);out.put("searchTicksExcused",excused);out.put("groundCells",ground.size());return out;
     }
 }
