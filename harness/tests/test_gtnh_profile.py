@@ -630,6 +630,21 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertFalse([t for t in plan.mb_view(bounds=box)["things"] if t["what"] == "block"])  # 8 of one id is over rare=6
         seen = plan.mb_view(bounds=box, rare=8, lookups=3)["things"]
         self.assertEqual(([t["what"] for t in seen].count("block"), next(t["count"] for t in seen if t["what"] == "unnamed")), (3, 5))
+        names = ["Steam Macerator", "Steam Macerator", "Steam Compressor", "Bronze Boiler", "Steam Macerator", "Steam Compressor", "Steam Forge Hammer", "Steam Alloy Smelter"]
+        machines = [{"pos": [x, 0, 0], "id": "gregtech:gt.blockmachines", "meta": 0, "tile": True, "name": n} for x, n in enumerate(names)]
+        self.use(FakeKernel(lambda method, params: {"obs.player": {"pos": [0.5, 64.0, 0.5]}, "nav.copy": {"plan": {"cells": machines}}}.get(method, {})))
+        seen = plan.mb_view(bounds=box)  # one id, five machines: five characters, named, and nothing looked up one by one
+        self.assertEqual(seen["legend"]["#"], {"id": "gregtech:gt.blockmachines", "meta": 0, "name": "Steam Macerator", "count": 3, "tile": True})
+        self.assertEqual((len(seen["legend"]), seen["layers"][0]["rows"][0][1:], [t for t in seen["things"] if t["what"] in ("block", "unnamed")]), (5, "#=%#=*&", []))
+        built, _ = plan.from_drawing({"origin": seen["origin"], "layers": [layer["rows"] for layer in seen["layers"]], "legend": seen["legend"]})
+        self.assertEqual(built[0], {"pos": [1, 0, 0], "id": "gregtech:gt.blockmachines", "meta": 0})  # the builder takes id and meta, not the name
+        crowd = [{"pos": [x % 90, 0, x // 90], "id": "pack:cable", "meta": 0, "tile": True, "name": f"Cable {x}"} for x in range(70)]
+        crowd += [{"pos": [x, 1, 0], "id": "pack:pipe", "meta": 0, "tile": True, "name": f"Pipe {x}"} for x in range(4)] + [{"pos": [0, 2, 0], "id": "minecraft:stone"}]
+        self.use(FakeKernel(lambda method, params: {"obs.player": {"pos": [0.5, 70.0, 0.5]}, "nav.copy": {"plan": {"cells": crowd}}}.get(method, {})))
+        seen = plan.mb_view(bounds={"min": [0, 64, 0], "max": [89, 66, 0]}, lookups=0)  # 75 kinds do not fit 70 characters: the cables give their names up
+        self.assertEqual([t for t in seen["things"] if t["what"] == "names merged"], [{"what": "names merged", "id": "pack:cable", "meta": 0, "kinds": 70, "why": f"more named kinds than {len(plan.CHARS)} characters: these share one, unnamed"}])
+        self.assertEqual(seen["legend"]["#"], {"id": "pack:cable", "meta": 0, "count": 70, "tile": True})
+        self.assertEqual(sorted(v["name"] for v in seen["legend"].values() if "name" in v), ["Pipe 0", "Pipe 1", "Pipe 2", "Pipe 3"])
 
     def test_run_chains_tools_in_one_call_and_reports_where_a_script_stopped(self):
         tools = module_with(self.loaded(), "mb_run")

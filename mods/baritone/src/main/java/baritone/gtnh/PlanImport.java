@@ -9,6 +9,7 @@ import java.nio.file.*;
 import java.util.*;
 import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
+import net.minecraft.item.*;
 import net.minecraft.nbt.*;
 import net.minecraft.world.World;
 import static baritone.gtnh.pathing.WorkSpec.*;
@@ -62,7 +63,16 @@ final class PlanImport {
         }
         Map<String,Object> out=result(cells,w,h,l,air,unknown);out.put("tileEntities",tag.getTagList("TileEntities",10).tagCount());return out;
     }
-    /** {bounds:{min,max},origin?,includeAir?}: loaded blocks through the same view baritone.scan uses. */
+    /** The name a player sees on hover: the pick-block stack's, as obs.block and build verification read it. Machines that
+     *  share one id differ only here; mods throw from getPickBlock, and then the cell simply has no name. */
+    private static String name(World world,Block block,BlockPos p){
+        ItemStack stack=null;try{stack=WorkAccess.picked(world,p);}catch(Exception|LinkageError failed){}
+        try{
+            Item item=stack==null?Item.getItemFromBlock(block):null;if(item!=null)stack=new ItemStack(item,1,block.getDamageValue(world,p.getX(),p.getY(),p.getZ()));
+            return stack==null||stack.getItem()==null?null:stack.getDisplayName();
+        }catch(Exception|LinkageError failed){return null;}
+    }
+    /** {bounds:{min,max},origin?,includeAir?}: loaded blocks through the same view baritone.scan uses; a tile-entity cell adds tile:true and its hover name, which builders ignore. */
     static Map<String,Object> copy(World world,Map<String,Object> params) {
         Bounds bounds=bounds(child(params,"bounds"));if(bounds.volume()>LIMIT)throw new IllegalArgumentException("copy volume exceeds "+LIMIT);
         BlockPos origin=origin(params);boolean includeAir=bool(params,"includeAir",false);
@@ -73,8 +83,8 @@ final class PlanImport {
             if(world.isAirBlock(p.getX(),p.getY(),p.getZ())){if(!includeAir){air++;continue;}cells.add(new LinkedHashMap<>(Map.of("pos",at(origin,x,y,z),"clear",true)));continue;}
             Block block=world.getBlock(p.getX(),p.getY(),p.getZ());String id=Registry.name(block);
             if(id==null){unknown++;continue;}
-            if(world.getTileEntity(p.getX(),p.getY(),p.getZ())!=null)tiles++;
             Map<String,Object> cell=new LinkedHashMap<>();cell.put("pos",at(origin,x,y,z));cell.put("id",id);cell.put("meta",world.getBlockMetadata(p.getX(),p.getY(),p.getZ()));cells.add(cell);
+            if(world.getTileEntity(p.getX(),p.getY(),p.getZ())!=null){tiles++;cell.put("tile",true);String name=name(world,block,p);if(name!=null)cell.put("name",name);}
         }
         Map<String,Object> out=result(cells,bounds.max().getX()-bounds.min().getX()+1,bounds.max().getY()-bounds.min().getY()+1,bounds.max().getZ()-bounds.min().getZ()+1,air,unknown);
         ((Map<String,Object>)out.get("skipped")).put("unloaded",unloaded);out.put("tileEntities",tiles);return out;

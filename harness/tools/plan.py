@@ -49,16 +49,18 @@ def mb_view(bounds: dict | None = None, radius: int = 10, below: int = 2, above:
     that. bounds {min:[x,y,z],max:[x,y,z]} picks any box instead: every y in it is one layer, bottom first (up to
     9000 cells a call). Rows run north to south, characters west to east; `columns` and `rows`
     give the world x and z of each edge. '.' is air, '@' you, '+' a planned block that is not
-    built yet, and legend maps every other character to its block. things lists what stands
-    in the box that is more than a block: machines and other rare blocks by name (a kind of block
-    found at most `rare` times in the box, the first `lookups` of them; a thing "unnamed" counts
-    those left out. Every GregTech machine shares one id: in a room of many, raise rare), your notes
-    on blocks, locations and regions (with note ids), waypoints, protected regions, containers
-    you have notes on. Regions are given as world boxes, not drawn, so that they hide nothing.
+    built yet, and legend maps every other character to its block. A block with a tile entity
+    (machines, chests, cables) is marked tile:true in the legend and named as you see it on hover,
+    each name its own character, so ten machines sharing one id draw as ten; if names would not
+    fit the characters, the most common id's names share one character ("names merged" in things).
+    things lists what stands in the box that is more than a block: other rare blocks by name (a kind
+    found at most `rare` times, the first `lookups` of them, one look each, 0 skips them; a thing
+    "unnamed" counts those left out), your notes on blocks, locations and regions (with note
+    ids), waypoints, protected regions, containers you have notes on. Regions are given as world boxes, not drawn, so that they hide nothing.
     look_down=True draws one layer instead: the highest block of each column in the box, as on
     a map, for surveying ground rather than rooms; its default box reaches 24 below and 24 above.
     The result is a drawing: edit its layers and hand it to mb_build(drawing=...) or
-    mb_build_preview, or keep it as a plan by writing it to a region note's data.drawing
+    mb_build_preview (they build by id and meta; name and tile are for you), or keep it as a plan by writing it to a region note's data.drawing
     (mb_note_write); the view then shows the unbuilt part of that plan as '+'.
     A note's data holds 16 KB: a large plan is several region notes, one per part.
     """
@@ -71,21 +73,30 @@ def mb_view(bounds: dict | None = None, radius: int = 10, below: int = 2, above:
     if size[0] * size[1] * size[2] > MAX_CELLS * (4 if look_down else 1) or size[0] > 96 or size[2] > 96:
         raise ValueError(f"{size[0]}x{size[1]}x{size[2]} is too much for one view: at most {MAX_CELLS} cells and 96 wide; look at fewer layers or a smaller box")
     found = k.call("nav.copy", bounds=bounds, includeAir=False)["plan"]["cells"]
-    grid = {tuple(c["pos"]): (c["id"], c.get("meta", 0)) for c in found}
+    grid = {tuple(c["pos"]): (c["id"], c.get("meta", 0), c.get("name") if c.get("tile") else None) for c in found}  # a machine's identity is its name, not its id
+    tiled = {grid[tuple(c["pos"])] for c in found if c.get("tile")}
     if look_down:
         top = {}
         for (x, y, z), block in grid.items():
             if (x, z) not in top or y > top[x, z][0]: top[x, z] = (y, block)
         grid, heights, size = {(x, 0, z): b for (x, z), (y, b) in top.items()}, {(x, z): lo[1] + y for (x, z), (y, b) in top.items()}, [size[0], 1, size[2]]
-    count: dict = {}
-    for block in grid.values(): count[block] = count.get(block, 0) + 1
+    kinds = len({b[:2] for b in grid.values()})
+    if kinds > len(CHARS): raise ValueError(f"{kinds} kinds of block in view, more than there are characters: look at a smaller box")
+    things, count = [], {}
+    while True:
+        count.clear()
+        for block in grid.values(): count[block] = count.get(block, 0) + 1
+        if len(count) <= len(CHARS): break
+        named: dict = {}  # too many named kinds (cables come in dozens): the most common id gives its names up first
+        for b in count: named.setdefault(b[:2], []).extend([b] if b[2] is not None else [])
+        merge = max((base for base, bs in named.items() if len(bs) + ((*base, None) in count) > 1), key=lambda base: sum(count[b] for b in named[base]))
+        things.append({"what": "names merged", "id": merge[0], "meta": merge[1], "kinds": len(named[merge]), "why": f"more named kinds than {len(CHARS)} characters: these share one, unnamed"})
+        grid = {pos: (*merge, None) if b[:2] == merge else b for pos, b in grid.items()}; tiled.add((*merge, None))
     ranked = sorted(count, key=lambda b: -count[b])
-    if len(ranked) > len(CHARS): raise ValueError(f"{len(ranked)} kinds of block in view, more than there are characters: look at a smaller box")
     char = {block: CHARS[i] for i, block in enumerate(ranked)}
     layers = [[[char.get(grid.get((x, y, z)), AIR) for x in range(size[0])] for z in range(size[2])] for y in range(size[1])]
 
-    things = []
-    candidates = [(pos, b) for pos, b in grid.items() if count[b] <= rare]  # a machine's identity is in its tile, not its id
+    candidates = [(pos, b) for pos, b in grid.items() if count[b] <= rare and b not in tiled]  # tile blocks are named in the legend already
     if len(candidates) > lookups: things.append({"what": "unnamed", "count": len(candidates) - lookups, "why": f"only the first lookups={lookups} rare blocks are looked up"})
     for pos, block in candidates[:lookups]:
         world = [lo[0] + pos[0], heights[pos[0], pos[2]] if look_down else lo[1] + pos[1], lo[2] + pos[2]]
@@ -124,7 +135,8 @@ def mb_view(bounds: dict | None = None, radius: int = 10, below: int = 2, above:
     if all(0 <= here[i] < size[i] for i in range(3)): layers[here[1]][here[2]][here[0]] = PLAYER
     out = {"origin": lo if not look_down else [lo[0], hi[1], lo[2]], "columns": {"west": lo[0], "east": hi[0]}, "rows": {"north": lo[2], "south": hi[2]},
            "layers": [{"y": "highest block per column" if look_down else lo[1] + y, "rows": ["".join(row) for row in layer]} for y, layer in enumerate(layers)],
-           "legend": {c: {"id": b[0], "meta": b[1], "count": count[b]} for b, c in char.items()}, "things": things, "you": me}
+           "legend": {c: {"id": b[0], "meta": b[1], **({"name": b[2]} if b[2] else {}), "count": count[b], **({"tile": True} if b in tiled else {})} for b, c in char.items()},
+           "things": things, "you": me}
     return out
 
 
