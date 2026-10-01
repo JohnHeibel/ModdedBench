@@ -20,6 +20,7 @@ class ChestKernel:
 
     def call(self, method, **p):
         self.calls.append((method, p))
+        if method == 'obs.inventory': return dict(held=None)
         if method == 'obs.container': return deepcopy(dict(open=self.open, windowId=1, epoch=1, slots=self.slots, **{'class': self.cls}))
         if method in ('act.use_block', 'gui.open_inventory'): self.open = True; return {}
         if method == 'gui.close': self.open = False; return {}

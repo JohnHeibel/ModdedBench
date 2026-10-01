@@ -8,6 +8,9 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-01** Opening machine GUIs with a held tool toggled machines instead.
+  Container compositions now prepare and verify an empty hand, restoring parked
+  stacks after the GUI opens; full inventories require explicit interaction.
 - **2026-10-01** A malformed machine input moved an unrelated tool before failing.
   Crafting now validates every item selector and count before opening a GUI or
   transferring anything; fake-kernel tests cover invalid later inputs too.

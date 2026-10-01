@@ -179,6 +179,27 @@ def _player(view):
     return [s for s in view["slots"] if s["kind"] not in ("container", "armor")]
 
 
+def _empty_hand(k):
+    """Open blocks without letting a held item's interaction intercept the GUI click."""
+    view = k.call("obs.inventory", detail="full")
+    if not view.get("held"):
+        return
+    empty = next((s for s in view["main"] if not s.get("stack") and s["kind"] == "hotbar"), None)
+    if empty is not None:
+        k.call("act.select_hotbar", slot=empty["slot"])
+    else:
+        if not any(not s.get("stack") for s in view["main"]):
+            raise ValueError("opening a block GUI needs an empty hand: make one inventory slot free, or open the GUI explicitly with mb_act first")
+        k.call("gui.open_inventory")
+        session = ContainerSession(k)
+        empty = next(s for s in session.observe()["slots"] if s["kind"] == "main" and not s.get("stack"))
+        session.click(empty["i"], "swap", button=view["selected"])
+        k.call("gui.close")
+    if k.call("obs.inventory", detail="compact").get("held"):
+        raise ValueError("empty-hand preparation was not observed; inspect inventory before opening the block")
+    return (view["selected"], empty["idx"]) if empty.get("kind") == "main" else None
+
+
 def _station(k, at, despite_threat=False):
     """The GUI one mb_craft call works in: the one already open, else the block at `at`, else your inventory. True if this call opened it."""
     seen = k.call("obs.container")
@@ -187,13 +208,20 @@ def _station(k, at, despite_threat=False):
     no_threat("open a GUI", k, despite_threat)
     if seen["open"]:
         k.call("gui.close")  # your own inventory left open (an interrupted craft does that) is not the station you named
+    restore = None
     if at is None: k.call("gui.open_inventory")
-    else: k.call("act.use_block", x=at[0], y=at[1], z=at[2])  # no face: the bridge clicks the one you can see
+    else:
+        restore = _empty_hand(k)
+        k.call("act.use_block", x=at[0], y=at[1], z=at[2])  # no face: the bridge clicks the one you can see
     deadline = time.monotonic() + 3
     while not k.call("obs.container")["open"]:
         if time.monotonic() > deadline:
             raise ValueError(f"no GUI opened at {at}: stand within reach (4 blocks) with a clear line to the block, and resume time first")
         time.sleep(.1)
+    if restore is not None:
+        session = ContainerSession(k)
+        original = next(s for s in session.observe()["slots"] if s["kind"] == "main" and s["idx"] == restore[1])
+        session.click(original["i"], "swap", button=restore[0])
     return True
 
 
@@ -316,6 +344,9 @@ def mb_move_items(at: list[int] | None = None, put: list[dict] | str | None = No
     whether it fits: chests of any mod, crates, backpacks, a machine's input, a storage terminal taking items in.
     at=[x,y,z] is the block to open (stand within reach); omit it to work in the GUI that is already open, or,
     for drop alone, in your own inventory.
+    Block GUIs are opened with an observed empty hand so held tools cannot configure the block.
+    With a full hotbar the held stack is temporarily parked and restored after opening; a full
+    inventory needs a free slot or a GUI explicitly opened through mb_act.
     A selector is {id?, meta?, nbt_hash?, nbt?, name?}: every field given must match (name: part of the display
     name, any case); give id or name. put: selectors of stacks to move in, or "all" for everything outside your
     hotbar; keep: selectors never moved by put. take: selectors with count? for whole stacks to bring out until at
@@ -379,6 +410,8 @@ def mb_craft(pattern: list[list[dict | None]] | None = None, times: int = 1, at:
     Station: at=[x,y,z] is the block to open (crafting table or a variant, furnace, any machine);
     omit it for your inventory's own 2x2 grid. Stand within reach. A GUI that is already open is
     used as it is and left open.
+    Block GUIs are opened with an observed empty hand; held tools are temporarily parked if
+    needed and restored after opening. A full inventory needs a free slot or an explicitly opened GUI.
     Grid crafting: pattern is rows of cells, each {id, meta?} or null, laid out as mb_recipes
     shows the shaped recipe, e.g. sticks: [[{"id":"minecraft:planks"}],[{"id":"minecraft:planks"}]].
     times loads that many items per cell, up to the grid slot's own limit; a cell's count overrides its
