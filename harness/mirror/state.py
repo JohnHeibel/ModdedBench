@@ -12,6 +12,7 @@ from collections import deque
 from .wire import Reader, frame, pack, payload, string, varint
 
 VIEWER_EID = 0x7FFFFFFF
+SPECTATOR = 3  # Et Futurum Requiem's spectator game type (enableSpectatorMode); a client without it falls back to survival
 EYE = 1.62  # S08 carries the eye height; C04/C06 and entity positions carry the feet
 # Server packets about the host or its screens, never shown to viewers.
 DROP = {0x00, 0x06, 0x09, 0x1F, 0x2D, 0x2E, 0x2F, 0x30, 0x31, 0x32, 0x36, 0x37, 0x39, 0x3A, 0x01}
@@ -203,7 +204,7 @@ class Mirror:
                 r = Reader(body)
                 self.eid, gm, self.dim = r.u("iBb")
                 self.join = len(self.prelude) - 1
-                self.prelude[-1] = frame(0x01, pack("iBb", VIEWER_EID, gm & 8 | 2, self.dim) + body[6:])
+                self.prelude[-1] = frame(0x01, pack("iBb", VIEWER_EID, gm & 8 | SPECTATOR, self.dim) + body[6:])
             return []
         r = Reader(body)
         if pid in DROP:
@@ -222,7 +223,7 @@ class Mirror:
             out = []
             if dim != self.dim:
                 self._world(); self.dim = dim
-                g = frame(0x07, pack("iBB", dim, diff, 2) + body[6:])
+                g = frame(0x07, pack("iBB", dim, diff, SPECTATOR) + body[6:])
                 self.respawn, self.place = (self.seq, g), True
                 out = [g, abilities()]
             elif self.avatar:
