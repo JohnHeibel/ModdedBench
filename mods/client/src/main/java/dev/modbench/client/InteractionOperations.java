@@ -150,13 +150,24 @@ final class InteractionOperations {
         }
         /** No face given: the one a player standing here would click, top first. Top when none is in sight, so delivery reports it. */
         int visibleFace() {
-            for(int f:new int[]{1,2,3,4,5,0}) {
-                double[] h=facePoint(f);Vec3 eye=eyes();
-                double dx=x+h[0]-eye.xCoord,dy=y+h[1]-eye.yCoord,dz=z+h[2]-eye.zCoord,far=1+.05/Math.max(.05,Math.sqrt(dx*dx+dy*dy+dz*dz));
-                MovingObjectPosition m=world.rayTraceBlocks(eye,Vec3.createVectorHelper(eye.xCoord+dx*far,eye.yCoord+dy*far,eye.zCoord+dz*far));
-                if(m!=null&&m.typeOfHit==MovingObjectPosition.MovingObjectType.BLOCK&&m.blockX==x&&m.blockY==y&&m.blockZ==z&&m.sideHit==f)return f;
-            }
+            for(int f:new int[]{1,2,3,4,5,0})if(sees(f))return f;
             return 1;
+        }
+        boolean sees(int f) {
+            double[] h=facePoint(f);Vec3 eye=eyes();
+            double dx=x+h[0]-eye.xCoord,dy=y+h[1]-eye.yCoord,dz=z+h[2]-eye.zCoord,far=1+.05/Math.max(.05,Math.sqrt(dx*dx+dy*dy+dz*dz));
+            MovingObjectPosition m=world.rayTraceBlocks(eye,Vec3.createVectorHelper(eye.xCoord+dx*far,eye.yCoord+dy*far,eye.zCoord+dz*far));
+            return m!=null&&m.typeOfHit==MovingObjectPosition.MovingObjectType.BLOCK&&m.blockX==x&&m.blockY==y&&m.blockZ==z&&m.sideHit==f;
+        }
+        /** What a player looking from here would see instead: where the look stopped, how far the target is, and which faces are in sight. */
+        String unseen(MovingObjectPosition hit) {
+            Vec3 eye=eyes();double reach=mc.playerController.getBlockReachDistance();
+            double dist=Math.round(eye.distanceTo(Vec3.createVectorHelper(x+.5,y+.5,z+.5))*10)/10.0;
+            String stopped=hit==null||hit.typeOfHit!=MovingObjectPosition.MovingObjectType.BLOCK?"the look reached nothing within reach"
+                :hit.blockX==x&&hit.blockY==y&&hit.blockZ==z?"the look reached face "+hit.sideHit+" of the target, not face "+face
+                :"the look stopped at "+hit.blockX+","+hit.blockY+","+hit.blockZ+" ("+net.minecraft.block.Block.blockRegistry.getNameForObject(world.getBlock(hit.blockX,hit.blockY,hit.blockZ))+", face "+hit.sideHit+")";
+            List<Integer> faces=new ArrayList<>();for(int f=0;f<6;f++)if(sees(f))faces.add(f);
+            return stopped+"; target centre "+dist+" blocks from the eye, reach "+reach+"; faces in sight from here: "+(faces.isEmpty()?"none":faces);
         }
         // Forge 1.7's local player eyeHeight is an offset from its stance, not feet.
         // The native override includes that offset and matches Item's own ray.
@@ -203,7 +214,7 @@ final class InteractionOperations {
                 try {
                     if(blockTarget) {
                         MovingObjectPosition hit=ray();
-                        if(hit==null||hit.typeOfHit!=MovingObjectPosition.MovingObjectType.BLOCK||hit.blockX!=x||hit.blockY!=y||hit.blockZ!=z||kind.equals("use_block")&&hit.sideHit!=face)throw new IllegalArgumentException("target_not_visible: reach, obstruction or face changed");
+                        if(hit==null||hit.typeOfHit!=MovingObjectPosition.MovingObjectType.BLOCK||hit.blockX!=x||hit.blockY!=y||hit.blockZ!=z||kind.equals("use_block")&&hit.sideHit!=face)throw new IllegalArgumentException("target_not_visible: "+unseen(hit));
                         if(kind.equals("use_block")) {
                             if(hit.hitVec.distanceTo(point)>.03)throw new IllegalArgumentException("target_not_visible: requested hit point is not on the visible surface");
                             accepted=mc.playerController.onPlayerRightClick(player,world,player.getHeldItem(),x,y,z,face,hit.hitVec);if(accepted)player.swingItem();
