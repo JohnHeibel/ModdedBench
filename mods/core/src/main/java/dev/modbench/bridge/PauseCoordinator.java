@@ -128,7 +128,9 @@ public final class PauseCoordinator {
     public void hold(boolean value) {
         if(value==held) return;
         held=value;
-        if(!value) command("time.resume",new JsonObject(),result->{ if(result.has("error")) held=true; });
+        // A release resumes only the pause the hold made: a world already paused (an agent thinking, a guard,
+        // a disconnect) or paused again during the hold stays paused, so a backup's hold never sets it running.
+        if(!value) { if(clock.paused() && clock.reason().equals("operator_hold")) command("time.resume",new JsonObject(),result->{ if(result.has("error")) held=true; }); }
         else if(!clock.paused()) command("time.pause",Json.object("reason","operator_hold"),result->{});
     }
     private void interrupt(String reason) {
