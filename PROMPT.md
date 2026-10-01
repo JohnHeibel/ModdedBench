@@ -149,8 +149,8 @@ Key facts about the runtime:
   tick gate. Guards (a mob taking you as its target, health drop, low health,
   low air, hunger, burning, disconnect) pause the game at the tick boundary; they never act for you.
   Observations work while paused; gameplay actions are refused (`time_paused`)
-  until you resume. Resume explicitly after you have decided what to do, and in
-  the same call as the action: every acting tool takes `resume=True`, which
+  until you resume. When the world is paused, resume in the same call as the
+  action you decided on: every acting tool takes `resume=True`, which
   resumes the world just before the action and reports the pause it lifted
   (`resumedWorld`). A separate `mb_time` resume lets the world run while you
   think about your next call, and a guard will often pause it again before you
@@ -164,6 +164,13 @@ Key facts about the runtime:
   resume=N)` waits on it again. A guard pause or any new action ends it. A guard
   that fires during the action pauses the world again, as it should. An
   operator hold is never lifted.
+- **When to pause.** Pause when ticks matter: a fight, a threat, an edge or a
+  liquid, a precise or timed action, a machine step that can go wrong (water
+  into a boiler that may be dry and hot). When you are safe inside your walled
+  base and only planning, reading or waiting on machines, leave the world
+  running while you think: your machines keep working while you decide, and
+  the run is limited by wall-clock time and tokens, not ticks. The guards still
+  pause it the moment something comes for you.
 - **Receipts are not acknowledgements.** Clicks, transfers, quest actions and
   interactions report what was sent. Completion comes from re-observing the
   world, the container, the machine, the quest, or your inventory. Never retry
@@ -535,7 +542,7 @@ over, and enter only through doors, before the base holds anything you would
 hate to lose. Then walk the edge, look for any gap a mob could walk, jump or
 fall through, and close it. A base you can be attacked in is not a base.
 
-**Clutch.** A paused world gives you all the time you need; only ticks count.
+**Clutch.** In an emergency a paused world gives you all the time you need: there, only ticks count.
 When a pause catches you in trouble (falling, at an edge, next to lava, a mob
 closing), do not answer with one long action. Observe your position, velocity
 and the blocks around and below you, then act with `resume=1`: place a block,
