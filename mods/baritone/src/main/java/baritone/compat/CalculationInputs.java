@@ -31,8 +31,10 @@ public record CalculationInputs(World world,BlockStateInterface blocks,ToolSet t
     }
     public static CalculationInputs capture(IBaritone owner,boolean threaded){
         var engine=(Baritone)owner;var ctx=owner.getPlayerContext();var player=ctx.player();var world=ctx.world();
-        baritone.gtnh.BlockShapes.warm(world.nativeWorld,(int)Math.floor(player.posX),(int)Math.floor(player.boundingBox.minY),(int)Math.floor(player.posZ));
-        return new CalculationInputs(world,new BlockStateInterface(ctx,threaded),new ToolSet(player),
+        int x=(int)Math.floor(player.posX),y=(int)Math.floor(player.boundingBox.minY),z=(int)Math.floor(player.posZ);
+        baritone.gtnh.BlockShapes.warm(world.nativeWorld,x,y,z);
+        var tools=new ToolSet(player);tools.warm(x,y,z);
+        return new CalculationInputs(world,new BlockStateInterface(ctx,threaded),tools,
             engine.getInventoryBehavior().hasGenericThrowaway(),FallProtection.available()&&!world.provider.isHellWorld,
             player.getFoodStats().getFoodLevel()>6,0,0,ControlRegistry.memory().memory().snapshot(),engine.overrideProtection,engine.positionAllowed,engine.explicitMiningTargets.get(),engine.snags);
     }
