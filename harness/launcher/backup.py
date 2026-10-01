@@ -46,15 +46,37 @@ def sh(*args, to: Path | None = None) -> bool:
     return True
 
 
+def clock():
+    """A bridge session on the agent's client, or None when the client is down."""
+    sys.path[:0] = [str(REPO / "harness" / "launcher"), str(REPO / "harness" / "mcp")]
+    try:
+        import runtime
+        from kernel import Kernel
+        return Kernel(url=f"ws://127.0.0.1:{runtime.CLIENT_PORT}/ws", timeout=10)
+    except Exception: return None
+
+
 def snapshot() -> Path | None:
     folder = OUT / time.strftime("%Y%m%d-%H%M%S"); folder.mkdir(parents=True)
     held = sh("server", "test", "-f", "/data/modbench-hold")  # an operator pause already in force stays in force
+    # The server resumes when the hold goes away, so a world that was already paused (the agent thinking,
+    # or no agent at all) is paused again at once; otherwise every snapshot would set it running.
+    k = None if held else clock()
+    try: paused = bool(k) and k.call("time.status")["state"]["paused"]
+    except Exception: paused = False
     if not held: sh("server", "touch", "/data/modbench-hold"); time.sleep(5)  # the hold lands on the next tick; let chunk IO drain
     try:
         world = sh("server", "sh", "-c", WORLD, to=folder / "world.tar.gz")
         notes = sh("agent", "python3", "-c", NOTES, to=folder / "notes.tar.gz")
     finally:
         if not held: sh("server", "rm", "-f", "/data/modbench-hold")
+        if paused:
+            for _ in range(100):  # the release lands on the next server tick; pause the moment it has
+                try:
+                    if not k.call("time.status")["state"]["held"]: k.call("time.pause"); break
+                except Exception: break
+                time.sleep(0.02)
+        if k: k.close()
     if not world:
         shutil.rmtree(folder); print("no snapshot: the server container is not running", file=sys.stderr); return None
     print(f"{folder.name}: world {(folder / 'world.tar.gz').stat().st_size >> 20} MiB, notes {'ok' if notes else 'MISSING (agent container down?)'}")
