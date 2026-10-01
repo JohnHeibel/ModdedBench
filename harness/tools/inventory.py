@@ -200,7 +200,7 @@ def _empty_hand(k):
     return (view["selected"], empty["idx"]) if empty.get("kind") == "main" else None
 
 
-def _station(k, at, despite_threat=False):
+def _station(k, at, despite_threat=False, face=None, hit=None):
     """The GUI one mb_craft call works in: the one already open, else the block at `at`, else your inventory. True if this call opened it."""
     seen = k.call("obs.container")
     if seen["open"]:
@@ -212,7 +212,10 @@ def _station(k, at, despite_threat=False):
     if at is None: k.call("gui.open_inventory")
     else:
         restore = _empty_hand(k)
-        k.call("act.use_block", x=at[0], y=at[1], z=at[2])  # no face: the bridge clicks the one you can see
+        target = dict(x=at[0], y=at[1], z=at[2])
+        if face is not None: target["face"] = face
+        if hit is not None: target["hit"] = hit
+        k.call("act.use_block", **target)
     deadline = time.monotonic() + 3
     while not k.call("obs.container")["open"]:
         if time.monotonic() > deadline:
@@ -337,13 +340,16 @@ def _shift(session, slot):
 
 @tool(coverage=["inventory"])
 def mb_move_items(at: list[int] | None = None, put: list[dict] | str | None = None, keep: list[dict] | None = None,
-                  take: list[dict] | None = None, drop: list[dict] | None = None, despite_threat: bool = False) -> Any:
+                  take: list[dict] | None = None, drop: list[dict] | None = None, despite_threat: bool = False,
+                  face: int | None = None, hit: list[float] | None = None) -> Any:
     """Store, fetch and discard in ONE call, at anything with a GUI: it opens the block, shift-clicks whole stacks, and closes.
 
     It knows no container by name. A shift-click hands the stack to the GUI, and the GUI decides where it goes and
     whether it fits: chests of any mod, crates, backpacks, a machine's input, a storage terminal taking items in.
     at=[x,y,z] is the block to open (stand within reach); omit it to work in the GUI that is already open, or,
     for drop alone, in your own inventory.
+    face=0..5 and block-local hit=[x,y,z] optionally target an exposed part of the block;
+    omit them to use the native visible face. They only apply when this call opens at.
     Block GUIs are opened with an observed empty hand so held tools cannot configure the block.
     With a full hotbar the held stack is temporarily parked and restored after opening; a full
     inventory needs a free slot or a GUI explicitly opened through mb_act.
@@ -363,7 +369,7 @@ def mb_move_items(at: list[int] | None = None, put: list[dict] | str | None = No
     if put is not None and put != "all" and not isinstance(put, list): raise ValueError('put is a list of selectors or "all"')
     if not all(isinstance(w, dict) and (w.get("id") or w.get("name")) for w in [*(put if isinstance(put, list) else []), *(keep or []), *(take or []), *(drop or [])]):
         raise ValueError("every selector is a {id?, meta?, nbt_hash?, nbt?, name?} with id or name")
-    k = kernel(); opened = _station(k, at, despite_threat)
+    k = kernel(); opened = _station(k, at, despite_threat, face, hit)
     try:
         session = ContainerSession(k); view = session.observe()
         if view.get("cursor"): raise ValueError("the cursor must be empty before mb_move_items")
@@ -402,7 +408,8 @@ def mb_move_items(at: list[int] | None = None, put: list[dict] | str | None = No
 @tool(coverage=["inventory"])
 def mb_craft(pattern: list[list[dict | None]] | None = None, times: int = 1, at: list[int] | None = None,
              inputs: list[dict] | None = None, wait_s: float = 0.0, grid: list[list[int]] | None = None,
-             result_slot: int | None = None, despite_threat: bool = False) -> Any:
+             result_slot: int | None = None, despite_threat: bool = False,
+             face: int | None = None, hit: list[float] | None = None) -> Any:
     """Make something in ONE call, at any station with a GUI: it opens the station, moves the items, takes the result and closes.
 
     Look the recipe up first (mb_recipes), every time it is new to you: assume no recipe in this pack,
@@ -410,6 +417,8 @@ def mb_craft(pattern: list[list[dict | None]] | None = None, times: int = 1, at:
     Station: at=[x,y,z] is the block to open (crafting table or a variant, furnace, any machine);
     omit it for your inventory's own 2x2 grid. Stand within reach. A GUI that is already open is
     used as it is and left open.
+    face=0..5 and block-local hit=[x,y,z] optionally target an exposed part of the station;
+    omit them to use the native visible face. They only apply when this call opens at.
     Block GUIs are opened with an observed empty hand; held tools are temporarily parked if
     needed and restored after opening. A full inventory needs a free slot or an explicitly opened GUI.
     Grid crafting: pattern is rows of cells, each {id, meta?} or null, laid out as mb_recipes
@@ -445,7 +454,7 @@ def mb_craft(pattern: list[list[dict | None]] | None = None, times: int = 1, at:
         if "count" in cell and (type(cell["count"]) is not int or cell["count"] < 1):
             raise ValueError("craft cell and machine input counts must be positive whole numbers")
     k = kernel()
-    opened = _station(k, at, despite_threat)
+    opened = _station(k, at, despite_threat, face, hit)
     try:
         session = ContainerSession(k)
         if session.observe().get("cursor"):
