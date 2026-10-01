@@ -36,15 +36,18 @@ TUNNEL = dict(group="A", snapshot=SNAP_A, allow=(True, True), expect="arrive")
 # start: feet cell. goal: the mb_process goal. expect: arrive | refuse | label | ab. cells: what the case's snapshot had
 # there ({"x,y,z": block}); a clone that differs makes the expectation unverifiable. settings: nav.settings over TIMEOUTS.
 CASES: dict[str, dict] = {
+    # 113831 was taken before the dig: these chain from the cave the agent dug from (18:42), each leg starting where the last ended.
+    "a_cave_96": dict(TUNNEL, utc="18:42:08..18:46", start=[34, 39, -186], goal={"type": "block", "pos": [96, 38, -199]}, duration=4000, stall=600),
     "a_near_120": dict(TUNNEL, utc="18:46:24", start=[96, 38, -199], goal={"type": "near", "pos": [120, 38, -200], "radius": 3}, duration=1000),
     "a_block_104": dict(TUNNEL, utc="18:46:37", start=[96, 38, -199], goal={"type": "block", "pos": [104, 38, -200]}, duration=1000),
+    "a_down_120_223": dict(TUNNEL, utc="18:48..18:52", start=[120, 38, -200], goal={"type": "block", "pos": [120, 35, -223]}, duration=2000, stall=600),
     "a_stall_120_248": dict(TUNNEL, utc="18:52:13/18:53:25", start=[120, 35, -223], goal={"type": "block", "pos": [120, 35, -248]}, duration=1600, stall=200,
                             settings={"planAheadPrimaryTimeoutMS": 8000, "planAheadFailureTimeoutMS": 15000}, no_stall=True),
     "a_deep_72": dict(TUNNEL, utc="19:00:59", start=[72, 12, -250], goal={"type": "block", "pos": [72, 12, -296]}, duration=2400, stall=600),
     "b_tunnel_ab": dict(group="B", utc="18:52:13 leg", snapshot=SNAP_A, start=[120, 35, -223], goal={"type": "block", "pos": [120, 35, -248]},
                         allow=(True, True), duration=1600, expect="ab"),
     "b_surface_ab": dict(group="B", utc="base, starts of 19:32:34 and 02:38:00", snapshot="any", start=BASE, goal={"type": "block", "pos": [72, 65, -50]},
-                         duration=1200, expect="ab"),
+                         allow=(True, True), duration=1200, expect="ab"),
     "c_cobble_48_67_89": dict(group="C", utc="19:31:47", snapshot="20261001-120846", start=[51, 66, -86], goal={"type": "block", "pos": [48, 67, -89]},
                               allow=(False, True), override=True, duration=600, expect="refuse", why="no_room_for_the_body",
                               cells={"48,67,-89": "minecraft:cobblestone", "48,68,-89": "minecraft:cobblestone"}),
@@ -56,7 +59,7 @@ CASES: dict[str, dict] = {
                            cells={"49,67,-89": "minecraft:air", "49,68,-89": "minecraft:air", "49,66,-89": "minecraft:air"}),
     "c_label_48_69_82": dict(group="C", utc="06:34:24", snapshot="20260930-232051", start=[47, 68, -82], goal={"type": "block", "pos": [48, 69, -82]},
                              duration=120, expect="label", cells={"48,69,-82": "minecraft:air", "48,70,-82": "minecraft:air", "48,68,-82": "minecraft:cobblestone"}),
-    "d_far_xz": dict(group="D", utc="new", snapshot="any", start=BASE, goal={"type": "xz", "x": BASE[0] - 400, "z": BASE[2]}, duration=12000, expect="arrive"),
+    "d_far_xz": dict(group="D", utc="new", snapshot="any", start=BASE, goal={"type": "xz", "x": BASE[0] - 400, "z": BASE[2]}, allow=(True, True), duration=12000, expect="arrive"),
 }
 REFUSED_LABELS = ("no_route_to_goal", "no_route_in_loaded_chunks", "search_failed_timeout")
 
@@ -75,6 +78,8 @@ def line_cells(a: list[int], b: list[int], step: int = 4) -> list[list[int]]:
 class Replay(Course):
     def __init__(self, args):
         super().__init__(args)
+        # The tools must act through the session that owns the clock, or a _resume is refused as another agent's.
+        mc.mbtool.set_kernel_factory(lambda: self.c)
         self.evidence = {"snapshotRestored": args.snapshot, "started": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
 
     def setup(self):
@@ -90,6 +95,11 @@ class Replay(Course):
         self.settings = {r["name"]: r["value"] for r in rows}
         self.previous_timeouts = {k: self.settings.get(k) for k in TIMEOUTS}
         self.player0 = self.s.call("dev.replay.status")
+        if self.player0.get("dead") or not self.player0.get("health"):  # a restored world can leave the player on the death screen
+            self.c.call("gui.button", index=0)
+            until = time.monotonic() + 20
+            while time.monotonic() < until and not self.s.call("dev.replay.status").get("health"): time.sleep(.5)
+            self.player0 = self.s.call("dev.replay.status")
         print(f"player {self.player0['name']} at {[round(v, 2) for v in self.player0['pos']]}, health {self.player0['health']}, "
               f"inventory {[(i['slot'], i['id'], i['count']) for i in self.player0['inventory']]}", flush=True)
 
@@ -102,7 +112,12 @@ class Replay(Course):
             except Exception as e: self.evidence.setdefault("teardownErrors", []).append(str(e))
 
     def place(self, spec: dict) -> dict:
+        if self.args.from_here:  # chained legs: the previous leg's end is the start the agent really had
+            return {"startActual": self.c.call("obs.player")["pos"]}
         x, y, z = spec["start"]
+        body = {",".join(map(str, c["pos"])): c["block"] for c in self.s.call("dev.replay.status", cells=[[x, y, z], [x, y + 1, z]])["cells"]}
+        if any(b != "minecraft:air" for b in body.values()):  # a start inside rock suffocates the player: it was dug after the snapshot
+            raise RuntimeError(f"start {spec['start']} is not open in this clone: {body}")
         for attempt in range(3):
             self.s.call("dev.replay.place", x=x + .5, y=y, z=z + .5, yaw=0)
             until, placed = time.monotonic() + 15, False
@@ -264,6 +279,7 @@ def main():
     ap.add_argument("--snapshot", default="", help="the snapshot this clone was restored from (warns on cases from another)")
     ap.add_argument("--no-idle", action="store_true", help="skip the idle performance baseline")
     ap.add_argument("--server-host", default="127.0.0.1", help="the server address as the client sees it, to rejoin")
+    ap.add_argument("--from-here", action="store_true", help="start from the player's position instead of the case's start (chained legs)")
     ap.add_argument("--list", action="store_true")
     args = ap.parse_args()
     args.seed = 1
