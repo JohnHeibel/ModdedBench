@@ -116,10 +116,13 @@ final class MiningTools {
         }
         return out;
     }
-    /** Once a game tick: answer what the path search asked since the last one, then go on warming, within TICK_BUDGET_NS. */
+    static boolean onGameThread(){return Thread.currentThread()==gameThread;}
+    /** Once a game tick: answer what the path search asked since the last one (pick-blocks first), then go on warming,
+     *  within TICK_BUDGET_NS. */
     static void answer() {
-        gameThread=Thread.currentThread();BlockIdentity.answer();
+        gameThread=Thread.currentThread();
         long end=System.nanoTime()+TICK_BUDGET_NS;
+        BlockIdentity.answer(end);
         for(var it=asked.entrySet().iterator();it.hasNext()&&System.nanoTime()<end;) {
             var e=it.next();it.remove();var k=e.getKey();var a=e.getValue();
             if(known(k)!=null)continue;
@@ -129,7 +132,7 @@ final class MiningTools {
         warmStep(end);
     }
     // The warm-up: rings round the player out to WARM_R, WARM_Y up and down, every stack the search will ask about each
-    // block it might break, as much a tick as the budget leaves, resumed where the last tick stopped (within a cell too). A
+    // block it might break (and its pick-block, when a hazard rule names one), as much a tick as the budget leaves, resumed where the last tick stopped (within a cell too). A
     // state without a tile entity is asked once a warm-up, a cell with one per position. Game thread only.
     private static final int WARM_R=8,WARM_Y=4;
     private static ItemStack[] warmStacks=new ItemStack[0];
@@ -155,6 +158,7 @@ final class MiningTools {
         if(warmDone)return;
         Minecraft mc=Minecraft.getMinecraft();World world=mc==null?null:mc.theWorld;
         if(world==null||mc.thePlayer==null)return;
+        boolean picks=BlockRules.picksIdentity();
         while(System.nanoTime()<end) {
             int x=warmX+BlockShapes.ringX(warmRing,warmK),z=warmZ+BlockShapes.ringZ(warmRing,warmK),y=warmY+warmDy;
             if(y>=0&&y<=255&&ForgeSnapshot.loaded(world,x,y,z)) {
@@ -162,6 +166,7 @@ final class MiningTools {
                 long cell=cell(b,meta,x,y,z,true);int state=id<0?-1:id<<4|meta&15;
                 if(!b.isAir(world,x,y,z)&&(warmI>0||cell!=Long.MIN_VALUE||state<0||!warmSeen.get(state))) {
                     if(cell==Long.MIN_VALUE&&state>=0)warmSeen.set(state);
+                    if(warmI==0&&picks)BlockIdentity.warm(b,meta,x,y,z);
                     for(;warmI<warmStacks.length;warmI++) {
                         if(System.nanoTime()>=end)return;
                         Key w=warmKeys[warmI],k=new Key(w.item(),w.damage(),w.nbt(),b,meta,cell);
@@ -183,7 +188,7 @@ final class MiningTools {
     static void reset() {
         for(int i=0;i<SLOTS;i++)answers.set(i,null);
         for(int i=0;i<KINDS;i++)weakest.set(i,null);
-        asked.clear();warmDone=true;warmY=-1;gameThread=null;
+        asked.clear();warmDone=true;warmY=-1;gameThread=null;BlockIdentity.reset();
     }
     static int pending(){return asked.size();}
     private static ReferenceToolPolicy.Answer ask(ItemStack stack,Block block,int meta,int x,int y,int z,boolean placed,boolean queued) {
