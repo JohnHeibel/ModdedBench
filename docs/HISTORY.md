@@ -8,6 +8,15 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-01** A malformed machine input moved an unrelated tool before failing.
+  Crafting now validates every item selector and count before opening a GUI or
+  transferring anything; fake-kernel tests cover invalid later inputs too.
+- **2026-10-01** Ranged calibration averaged impact velocities into flight drag.
+  It now fits consistent velocity samples and undoes gravity as well as drag
+  when estimating launch speed; recorded throwing-weapon impacts reproduced it.
+- **2026-10-01** Construction stopped with `invalid pitch` after a native vertical
+  aiming nudge exceeded 90 degrees. Placement now clamps generated fallback pitch
+  while continuing to reject out-of-range explicit angles.
 - **2026-10-01** Reached-goal quantity mining reset its swing by publishing
   input twice per tick. Adapter aiming now runs before the single publication;
   direct mining proved the same tool and target could break normally.

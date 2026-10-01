@@ -557,6 +557,19 @@ class GTNHProfileTests(unittest.TestCase):
         for bad in ({}, {"min":[0,0,0]}, {"min":1,"max":2}):
             with self.assertRaises(ValueError): tools.mb_copy(bad)
 
+    def test_craft_rejects_malformed_selectors_before_opening_or_moving(self):
+        tools = module_with(self.loaded(), "mb_craft")
+        fake = self.use(FakeKernel(lambda method, params: {}))
+        for kwargs in (
+            {"inputs": [{"id": "example:valid"}, {"item": {"id": "example:fuel"}, "count": 4}]},
+            {"pattern": [[{"id": "example:valid"}, {}]]},
+            {"inputs": [{"id": "example:fuel", "count": -1}]},
+            {"pattern": [[{"id": "example:valid", "count": 1.5}]]},
+        ):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                tools.mb_craft(at=[1, 64, 1], **kwargs)
+        self.assertEqual(fake.calls, [])
+
     def test_craft_runs_a_machine_in_one_call_and_cells_without_meta_accept_any_facing(self):
         tools = module_with(self.loaded(), "mb_craft")
         cobble, coal, stone = ({"id": f"minecraft:{n}", "meta": 0, "count": c} for n, c in (("cobblestone", 3), ("coal", 1), ("stone", 2)))
