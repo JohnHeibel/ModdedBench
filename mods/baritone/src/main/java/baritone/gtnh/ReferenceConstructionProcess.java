@@ -194,7 +194,7 @@ final class ReferenceConstructionProcess extends BulkJob {
         };
         engine.getBuilderProcess().placementRotation=(state,rotation)->{
             Cell c=snapshot.get(new BlockPos(state.x,state.y,state.z));if(c==null)return rotation;
-            return new baritone.api.utils.Rotation((float)number(c.placement(),"yaw",rotation.getYaw(),-360000,360000),(float)number(c.placement(),"pitch",rotation.getPitch(),-90,90));
+            return new baritone.api.utils.Rotation((float)number(c.placement(),"yaw",rotation.getYaw(),-360000,360000),(float)number(c.placement(),"pitch",baritone.api.utils.Rotation.clampPitch(rotation.getPitch()),-90,90));
         };
         engine.getBuilderProcess().deferredPlacementState=state->{Cell c=snapshot.get(new BlockPos(state.x,state.y,state.z));return c!=null&&bool(c.placement(),"verifyAfterPlacement",false);};
         engine.getBuilderProcess().placementGoalAdapter=(target,goal)->{
