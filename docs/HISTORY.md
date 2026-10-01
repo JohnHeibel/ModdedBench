@@ -8,6 +8,12 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-01** Reached-goal quantity mining reset its swing by publishing
+  input twice per tick. Adapter aiming now runs before the single publication;
+  direct mining proved the same tool and target could break normally.
+- **2026-10-01** Quantity mining could reach an exposed target's approach goal
+  and stall without swinging. The adapter now uses native tool selection,
+  reachable targeting and attack input at a reached goal, retaining break safety.
 - **2026-10-01** Single-block mining and placement could immediately lose input
   focus after closing a container. They now restore logical game focus before
   starting, matching the other navigation actions.

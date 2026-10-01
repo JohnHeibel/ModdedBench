@@ -47,7 +47,7 @@ final class MiningProcess extends BulkJob {
     private Swing swing;
     private final List<Swing> settling=new ArrayList<>();
     private final Set<BlockPos> aimed=new HashSet<>();
-    private int broken,extraBroken;
+    private int broken,extraBroken,reachableAttackTicks;
     private final List<List<Integer>> extraAt=new ArrayList<>();
     private Integer dropsLeft;
     MiningProcess(BaritoneNavigation nav,WorkJournal journal,Map<String,Object> options){
@@ -153,7 +153,7 @@ final class MiningProcess extends BulkJob {
         }
         inactiveTicks=0;
         if(besideFluid&&(unconfirmedPlug()||plug()))return; // this tick belongs to the plug
-        engine.tickStart();
+        engine.tickStart(this::mineAtReachedGoal);
         if(engine.snags.failure()!=null){finish("failed",engine.snags.failure());return;}
         if(besideFluid)watch();
         if(measure())return;
@@ -180,6 +180,29 @@ final class MiningProcess extends BulkJob {
         pathlessTicks=pathless?pathlessTicks+1:0;
         if(pathlessTicks>100)finish("failed","no_path_to_remaining_targets");
     }
+    /** An exposed target need not obstruct a movement or stand directly over the player. */
+    private void mineAtReachedGoal(){
+        var pathing=engine.getPathingBehavior();var goal=pathing.getGoal();var feet=WorkAccess.feet();
+        if(goal==null||!goal.isInGoal(feet)||!mc.thePlayer.onGround||!pathing.isSafeToCancel()
+                ||engine.getInputOverrideHandler().isInputForcedDown(baritone.api.utils.input.Input.CLICK_LEFT))return;
+        for(var p:engine.getMineProcess().knownLocations().stream().sorted(Comparator.comparingDouble(feet::distanceSq)).toList()){
+            if(p.getY()<feet.getY())continue; // Never turn an idle stance into a downward dig.
+            var block=engine.bsi.get0(p);
+            if(!observation.has(block)||baritone.pathing.movement.MovementHelper.avoidBreaking(engine.bsi,p.getX(),p.getY(),p.getZ(),block))continue;
+            var point=MiningJob.reachable(mc,world,p);if(point==null)continue;
+            var input=engine.getInputOverrideHandler();input.clearAllKeys();
+            baritone.pathing.movement.MovementHelper.switchToBestToolFor(engine.getPlayerContext(),block);
+            if(engine.getInventoryBehavior().hasPendingMove())return;
+            var eye=mc.thePlayer.getPosition(1);double dx=point.xCoord-eye.xCoord,dy=point.yCoord-eye.yCoord,dz=point.zCoord-eye.zCoord;
+            lease.look((float)Math.toDegrees(Math.atan2(-dx,dz)),(float)-Math.toDegrees(Math.atan2(dy,Math.hypot(dx,dz))));
+            dev.modbench.api.ControlRegistry.targeting().refresh();var hit=mc.objectMouseOver;
+            if(hit!=null&&hit.typeOfHit==net.minecraft.util.MovingObjectPosition.MovingObjectType.BLOCK
+                    &&hit.blockX==p.getX()&&hit.blockY==p.getY()&&hit.blockZ==p.getZ()){
+                input.setInputForceState(baritone.api.utils.input.Input.CLICK_LEFT,true);reachableAttackTicks++;
+            }
+            return;
+        }
+    }
     @Override void releaseProcess(){
         finalCount=mc.thePlayer==player?have():null;
         if(finalCount!=null)journal.progress.put("gained",Math.max(0,finalCount-baseline));
@@ -202,6 +225,7 @@ final class MiningProcess extends BulkJob {
         out.put("scanPasses",observation==null?0:observation.passes);out.put("scanCursor",observation==null?0:observation.cursor);
         out.put("scanVolume",bounds==null?0:bounds.volume());out.put("targets",lastKnown);out.put("bounds",journal.spec.get("bounds"));
         out.put("initialTargetDiagnostics",diagnostics);
+        out.put("reachableAttackTicks",reachableAttackTicks);
         // Targets it left, and why: will_not_break_here names the fluid beside it (plug or drain that, or pass besideFluid).
         var left=done()?skipped:skipped();out.put("skipped",left.stream().limit(16).toList());out.put("skippedCount",left.size());
         out.put("plugged",plugged.stream().map(MiningProcess::point).toList());out.put("plugFailures",unplugged);
