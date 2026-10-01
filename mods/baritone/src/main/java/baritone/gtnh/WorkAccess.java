@@ -124,6 +124,11 @@ final class WorkAccess {
     }
     /** The shared stall watchdog: the job's stallTicks param, else the stallTicks setting. */
     static Stall stall(Map<String,Object> params){return new Stall(integer(params,"stallTicks",baritone.Baritone.settings().stallTicks.value,0,72000));}
+    /** For the stall watchdog: the ticks a path search may take in all (its longest timeout) while one is in flight, else 0. */
+    static int searchBudget(baritone.Baritone engine){
+        if(engine.getPathingBehavior().getInProgress().isEmpty())return 0;
+        var s=baritone.Baritone.settings();return (int)Math.min(72000,(Math.max(s.failureTimeoutMS.value,s.planAheadFailureTimeoutMS.value)+49)/50);
+    }
     /** A dead player, or the one that died and was replaced by a respawn. */
     static boolean died(Object player){return player instanceof net.minecraft.entity.EntityLivingBase p&&(p.isDead||p.getHealth()<=0);}
     static String protection(BlockPos p,boolean override){return ControlRegistry.memory().editProblem(p.getX(),p.getY(),p.getZ(),override,true);}

@@ -78,7 +78,7 @@ final class ReferenceProcessJob implements Navigation.Job {
         if(ticks++>=duration){finish(kind.equals("farm")||kind.equals("explore")?"paused":"failed","timeout");return;}
         // A farm's work shows in the inventory (harvest in, seeds out); everything else only in new ground.
         var feet=engine.getPlayerContext().playerFeet();
-        if(stall.tick(kind.equals("farm")?inventory():0,feet.x,feet.y,feet.z)){finish(stall.advanced()?"paused":"failed",stall.reason());return;}
+        if(stall.tick(kind.equals("farm")?inventory():0,feet.x,feet.y,feet.z,WorkAccess.searchBudget(engine))){finish(stall.advanced()?"paused":"failed",stall.reason());return;}
         if(scan!=null){
             scan.tick();
             if(scan.passes==0)return;

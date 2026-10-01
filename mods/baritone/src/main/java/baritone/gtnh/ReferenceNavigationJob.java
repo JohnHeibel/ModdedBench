@@ -73,7 +73,7 @@ final class ReferenceNavigationJob implements Navigation.Job {
         if(++ticks>timeout){finish("failed","timeout");return;}
         // Travel has no measure but new ground: a planner pacing or re-planning on the same few blocks is stuck.
         var feet=engine.getPlayerContext().playerFeet();
-        if(stall.tick(0,feet.x,feet.y,feet.z)){finish("failed",stall.reason());return;}
+        if(stall.tick(0,feet.x,feet.y,feet.z,WorkAccess.searchBudget(engine))){finish("failed",stall.reason());return;}
         // A destination can first become observable hundreds of blocks after
         // this job starts. Let the source process revalidate the corrected goal.
         if(refreshGoal())engine.getCustomGoalProcess().setGoalAndPath(goal);
