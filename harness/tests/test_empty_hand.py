@@ -74,3 +74,15 @@ class EmptyHandTests(unittest.TestCase):
             k = HandKernel(empty_hotbar=empty_hotbar, reject=True)
             with self.assertRaisesRegex(ValueError, 'not observed'): _empty_hand(k)
             self.assertFalse(any(m == 'act.use_block' for m, _ in k.calls))
+
+    def test_station_targets_requested_face_and_hit_once_with_empty_hand(self):
+        k = HandKernel()
+        _station(k, [1, 2, 3], face=0, hit=[.2, .8, .5])
+        clicks = [p for m, p in k.calls if m == 'act.use_block']
+        self.assertEqual(clicks, [dict(x=1, y=2, z=3, face=0, hit=[.2, .8, .5])])
+
+    def test_default_station_leaves_target_selection_to_native_click(self):
+        k = HandKernel(empty_hotbar=True)
+        _station(k, [1, 2, 3])
+        self.assertEqual([p for m, p in k.calls if m == 'act.use_block'],
+                         [dict(x=1, y=2, z=3)])
