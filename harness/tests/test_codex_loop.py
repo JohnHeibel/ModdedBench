@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 # Copyright (c) 2026 ModdedBench contributors
 """codex_loop against a fake Codex command; no model is ever called."""
-import contextlib, io, json, os, sys, tempfile, unittest, unittest.mock
+import base64, contextlib, io, json, os, sys, tempfile, unittest, unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runner"))
@@ -138,5 +138,29 @@ class CodexLoopTests(unittest.TestCase):
                           ("mark", "quest claimed: Your First Night"), ("tool", "made up 1")], feed)
         self.assertEqual((goal, "ended", 1, 5, 1, 1, 107), (live["goal"], live["status"]["state"], live["stats"]["turns"], live["stats"]["calls"], live["stats"]["failed"],
                                                            live["stats"]["claims"], live["stats"]["tokens"]["input"] + live["stats"]["tokens"]["output"]))
+
+    def test_look_tools_leave_pop_ups_for_the_stream_and_only_their_latest_images(self):
+        from feed import Feed, POPS
+        def call(tool, args, result, status="completed", image=None):
+            content = ([{"type": "text", "text": json.dumps(result)}] if result is not None else []) + ([{"type": "image", "data": image, "mimeType": "image/png"}] if image else [])
+            return {"type": "item.completed", "item": {"type": "mcp_tool_call", "tool": tool, "arguments": args, "status": status, "result": {"content": content}}}
+        view = {"origin": [0, 64, 0], "layers": [{"y": 64, "rows": ["#~", "#@"]}], "legend": {"#": {"id": "minecraft:stone", "count": 2}, "~": {"id": "gregtech:gt.blockmachines", "meta": 3, "count": 1, "name": "Steam Macerator", "tile": True}},
+                "things": [{"what": "unnamed", "count": 2}], "you": [1, 64, 1]}
+        with tempfile.TemporaryDirectory() as d:
+            f = Feed(Path(d)); pops = lambda: json.loads((Path(d) / "pops.json").read_text(encoding="utf-8"))
+            f.event(call("mb_obs", {"method": "player"}, {"pos": [5.5, 64.0, 7.5]}))
+            f.event(call("mb_obs", {"method": "entities", "params": {"radius": 16}}, {"entities": [{"type": "Zombie", "pos": [8, 64, 7], "distance": 2.5, "hostile": True}]}))
+            f.event(call("mb_view", {"look_down": False}, view))
+            f.event(call("mb_scan", {"blocks": [{"id": "x:y"}]}, {"ok": False}, status="failed"))  # a failure shows nothing
+            f.event(call("mb_inventory", {"container": True}, {"windowId": 3}))  # a container's slots are not drawn
+            radar, shown = pops()[0], pops()[1]
+            self.assertEqual(("radar", [5.5, 64.0, 7.5], "Zombie"), (radar["kind"], radar["data"]["me"], radar["data"]["entities"][0]["type"]))
+            self.assertEqual(("view", {"id": "gregtech:gt.blockmachines", "count": 1, "name": "Steam Macerator", "tile": True}, []), (shown["kind"], shown["data"]["legend"]["~"], shown["data"]["things"]))
+            self.assertEqual(2, len(pops()))
+            png = base64.b64encode(b"\x89PNG fake").decode()
+            for i in range(POPS + 2): f.event(call("mb_screenshot", {}, None, image=png))
+            kept = pops(); self.assertEqual(POPS, len(kept))
+            self.assertEqual(sorted(p["image"] for p in kept), sorted(x.name for x in Path(d).glob("pop-*.png")))  # images go with their records
+            self.assertEqual(b"\x89PNG fake", (Path(d) / kept[-1]["image"]).read_bytes())
 
 if __name__ == "__main__": unittest.main()
