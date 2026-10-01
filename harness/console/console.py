@@ -190,13 +190,7 @@ class Console:
                 done = sh([*COMPOSE, "exec", "-T", "server", *cmd, "/data/modbench-hold"])
                 if done.returncode: raise RuntimeError((done.stderr or done.stdout).strip()[-300:])
             if name == "time.pause": hold("touch")
-            else:  # a release resumes only the hold's own pause; the operator's resume also ends any other pause
-                hold("rm", "-f")
-                for _ in range(50):
-                    state = self.call("time.status")["state"]
-                    if not state.get("held"): break
-                    time.sleep(0.1)
-                if state.get("paused"): self.call("time.resume")
+            else: hold("rm", "-f")  # the release resumes only the hold's own pause: an agent's pause stays its own to end
         elif name == "client.launch": self.run_job(name, [[*PY, LAUNCHER, "launch-client", "--installed-as-is"]])
         elif name == "client.stop": self.run_job(name, [[*PY, LAUNCHER, "stop-client"]])
         elif name == "client.install":  # the host's own build of this checkout, client side only
