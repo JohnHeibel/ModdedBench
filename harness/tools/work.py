@@ -137,7 +137,7 @@ def mb_follow(target: dict, duration_ticks: int = 1200, radius: int = 2,
 
 @tool(rung=1, coverage=["combat"])
 def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = False, leash: float = 16, bail_health: float = 8,
-             max_attackers: int = 2, weapon_slot: int | None = None, duration_ticks: int = 600,
+             max_attackers: int = 2, max_health_loss: float = 10, max_growth: int = 3, weapon_slot: int | None = None, duration_ticks: int = 600,
              crit: bool | None = None, block: bool | None = None, ranged: dict | bool | None = None,
              timeout_s: float = 60.0, target: dict | None = None, hostile: list[dict] | None = None,
              allow_break: bool = False, allow_place: bool = False) -> Any:
@@ -162,8 +162,14 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = Fal
     weapon_slot is the hotbar slot to fight with (default: whatever is in hand). leash is how far
     from where you started the mob may be before the job stops chasing; bail_health is the health
     at which it stops; max_attackers is how many hostile mobs may be within 4 blocks.
+    It also stops while it is going badly, with health left to act on: max_health_loss is how
+    much health this fight may cost (health_lost), and max_growth how many more hostiles may be
+    in sight within 8 blocks than when it began (swarm_growing: more are arriving than you kill).
+    Both hold in swarm mode. The call blocks until the fight ends, so these limits and a short
+    duration_ticks are where you get to change your mind: fight in short spans and decide again
+    from each receipt whether to go on, retreat, pillar up or wall in.
     It stops, as a failure that the actionFailed guard turns into a pause, the moment the fight
-    gets worse than the one you chose: health_at_bail_line, outnumbered, creeper_swelling (a
+    gets worse than the one you chose: health_at_bail_line, health_lost, swarm_growing, outnumbered, creeper_swelling (a
     different creeper), target_beyond_leash, target_lost, cannot_reach_target, duration_elapsed.
     ranged=True fights with whatever launcher or throwable is in weapon_slot, and knows no
     weapon by name: it holds use and releases; if nothing flies it clicks (a crossbow loads,
@@ -192,6 +198,7 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = Fal
     if swarm and (entity_id is not None or target is not None):
         raise ValueError("swarm fights whatever is in reach: pass no entity_id or target")
     params = {"hold": hold, "leash": leash, "bailHealth": bail_health, "maxAttackers": max_attackers,
+              "maxHealthLoss": max_health_loss, "maxGrowth": max_growth,
               "durationTicks": duration_ticks, "crit": not swarm if crit is None else crit,
               "block": not swarm if block is None else block}
     if entity_id is not None: params["entityId"] = entity_id
