@@ -58,7 +58,7 @@ public class MiningToolsTest {
         // Nothing measured yet: a bare hand without harvest at stone's hardness (1.5), for every stack.
         assertEquals(new Answer(1/150.,false),first[0]);assertEquals(first[0],first[1]);
         assertTrue(asks.isEmpty());assertEquals(2,MiningTools.pending());
-        MiningTools.answer();
+        for(int tick=0;tick<100&&MiningTools.pending()>0;tick++)MiningTools.answer(); // a tick answers what its budget allows
         assertEquals(Set.of("pick queued","hand queued"),new HashSet<>(asks));assertEquals(0,MiningTools.pending());
         var second=search(()->MiningTools.answers(stacks,Blocks.stone,0,1,2,3,true));
         assertEquals(new Answer(.25,true),second[0]);assertEquals(new Answer(1/150.,false),second[1]);
