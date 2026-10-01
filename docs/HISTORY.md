@@ -8,6 +8,9 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-01** Single-block mining and placement could immediately lose input
+  focus after closing a container. They now restore logical game focus before
+  starting, matching the other navigation actions.
 - **2026-09-30** Tool probes returned `game_did_not_answer` for every stack,
   blocking mining. Native observations now initialize the game-thread answers,
   and navigation ticks service queued path-search tool and block-identity probes.

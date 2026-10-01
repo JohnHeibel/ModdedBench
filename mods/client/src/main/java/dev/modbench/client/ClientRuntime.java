@@ -172,6 +172,7 @@ public final class ClientRuntime extends BridgeRuntime {
             if(provider==null) throw new IllegalArgumentException("Baritone mod is not installed");
             if(!r.params.has("x")||!r.params.has("y")||!r.params.has("z")) throw new IllegalArgumentException("x,y,z required");
             controlsChanged("superseded");
+            ControlRegistry.controls().focusForInput();
             navigationJob=provider.placeBlock(Json.integer(r.params,"x",0,-30000000,30000000),Json.integer(r.params,"y",0,1,254),Json.integer(r.params,"z",0,-30000000,30000000),Json.integer(r.params,"timeoutTicks",1200,1,6000),Json.bool(r.params,"overrideProtection",false),r.params.has("items")?Json.GSON.fromJson(r.params.get("items"),List.class):null);
             navigationRequest=r;return null;
         });
@@ -181,6 +182,7 @@ public final class ClientRuntime extends BridgeRuntime {
             if(provider==null) throw new IllegalArgumentException("Baritone mod is not installed");
             if(!r.params.has("x")||!r.params.has("y")||!r.params.has("z")) throw new IllegalArgumentException("x,y,z required");
             controlsChanged("superseded");
+            ControlRegistry.controls().focusForInput();
             navigationJob=provider.mineBlock(Json.integer(r.params,"x",0,-30000000,30000000),Json.integer(r.params,"y",0,1,254),Json.integer(r.params,"z",0,-30000000,30000000),Json.integer(r.params,"timeoutTicks",1200,1,6000),Json.bool(r.params,"autoTool",true),Json.bool(r.params,"overrideProtection",false));
             navigationRequest=r;
             return null;
