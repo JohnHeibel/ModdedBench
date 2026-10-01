@@ -98,7 +98,7 @@ class Snapshot(unittest.TestCase):
     def test_prelude_and_join_rewritten(self):
         self.assertEqual([p for p, _ in self.snap[:3]], [0x3F, 0x3F, 0x01])
         eid, gm, dim = Reader(self.snap[2][1]).u("iBb")
-        self.assertEqual((eid, gm, dim), (state.VIEWER_EID, 2, 0))
+        self.assertEqual((eid, gm, dim), (state.VIEWER_EID, state.SPECTATOR, 0))
         self.assertIsNone(self.hub.disabled)
 
     def test_filtered(self):
@@ -155,7 +155,7 @@ class Snapshot(unittest.TestCase):
         self.assertEqual({p for p, _ in parsed(m.server(frame(0x08, pos), 0x08, pos))}, {0x0C, 0x04})  # avatar and its equipment
         nether = pack("iBB", -1, 1, 0) + string("default")
         out = parsed(m.server(frame(0x07, nether), 0x07, nether))
-        self.assertEqual(out, [(0x07, pack("iBB", -1, 1, 2) + string("default")), (0x39, pack("Bff", 7, 0.1, 0.1))])
+        self.assertEqual(out, [(0x07, pack("iBB", -1, 1, 3) + string("default")), (0x39, pack("Bff", 7, 0.1, 0.1))])
         out = [p for p, _ in parsed(m.server(frame(0x08, pos), 0x08, pos))]
         self.assertEqual(out[:2], [0x08, 0x0C])  # viewers follow the host through the portal
         snap = [p for p, _ in parsed(m.snapshot())]
