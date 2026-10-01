@@ -14,7 +14,7 @@ import net.minecraft.client.Minecraft;
 import java.util.*;
 
 /** Transport/action lifetime only. Planning and movement belong to the upstream processes. */
-final class ReferenceNavigationJob implements Navigation.Job {
+final class ReferenceNavigationJob implements Navigation.Job,PlansWhilePaused {
     private final Minecraft mc=Minecraft.getMinecraft();
     private final Baritone engine;
     private Goal goal;
@@ -36,8 +36,10 @@ final class ReferenceNavigationJob implements Navigation.Job {
     private final List<Map<String,Object>> segmentHistory=new ArrayList<>();
     private final boolean previousAllowBreak,previousAllowPlace;
     private final baritone.gtnh.pathing.Stall stall=WorkAccess.stall(Map.of());
+    private final FirstTick first;
     ReferenceNavigationJob(Baritone engine,List<baritone.compat.BlockPos> goals,int timeout,boolean allowBreak,boolean allowPlace,boolean override,InputArbiter.Lease parent,baritone.compat.BlockPos corridorStart,double radius){
         this.engine=engine;this.timeout=timeout;this.allowBreak=allowBreak;this.allowPlace=allowPlace;this.override=override;
+        first=new FirstTick(engine,mc.thePlayer);
         physicalGoals=List.copyOf(goals);normalizedGoals=physicalGoals;
         refreshGoal();
         ownsLease=parent==null;
@@ -64,6 +66,9 @@ final class ReferenceNavigationJob implements Navigation.Job {
         normalizedGoals=List.copyOf(next);var nodes=next.stream().map(GoalBlock::new).toArray(Goal[]::new);
         goal=nodes.length==1?nodes[0]:new GoalComposite(nodes);return true;
     }
+    @Override public boolean planningWhilePaused(){return !done()&&first.planning(ticks);}
+    // Whatever would end the job on its first tick ends nothing here: that tick still comes and ends it.
+    @Override public void planWhilePaused(){if(mc.theWorld==world&&mc.thePlayer==player&&lease.isActive())first.plan();}
     void tick(){
         if(done())return;
         if(WorkAccess.died(player)){finish("failed","player_died");return;}
@@ -71,13 +76,14 @@ final class ReferenceNavigationJob implements Navigation.Job {
         if(!lease.isActive()){cancel("control_lost");return;}
         if(mc.currentScreen!=null&&!dev.modbench.api.ControlRegistry.controls().ownsPlayerInventory(lease)){cancel("gui_open");return;}
         if(++ticks>timeout){finish("failed","timeout");return;}
+        first.before(ticks,mc.thePlayer);
         // Travel has no measure but new ground: a planner pacing or re-planning on the same few blocks is stuck.
         var feet=engine.getPlayerContext().playerFeet();
         if(stall.tick(0,feet.x,feet.y,feet.z,WorkAccess.searchBudget(engine))){finish("failed",stall.reason());return;}
         // A destination can first become observable hundreds of blocks after
         // this job starts. Let the source process revalidate the corrected goal.
         if(refreshGoal())engine.getCustomGoalProcess().setGoalAndPath(goal);
-        engine.tickStart();
+        engine.tickStart();first.after(ticks);
         if(engine.snags.failure()!=null){finish("failed",engine.snags.failure());return;}
         var pathing=engine.getPathingBehavior();var current=pathing.getCurrent();
         if(current!=null&&current.getPath()!=lastPath){
@@ -109,7 +115,7 @@ final class ReferenceNavigationJob implements Navigation.Job {
         result.put("allowBreak",allowBreak);result.put("allowPlace",allowPlace);result.put("overrideProtection",override);
         result.put("calculations",calculations);result.put("segmentsCompleted",segmentsCompleted);result.put("segmentHistory",List.copyOf(segmentHistory));
         result.put("pathRevisions",pathRevisions);result.put("stall",stall.status());result.put("snags",engine.snags.status());result.put("cost",baritone.gtnh.pathing.Cost.status());if(!failure.isEmpty())result.put("failure",failure);result.put("pathRules",BlockRules.applied());
-        result.put("goalRenormalizations",goalRenormalizations);
+        result.put("goalRenormalizations",goalRenormalizations);first.status(result);
         result.put("movementTypes",List.copyOf(movements));result.put("nextSegmentReady",p.getNext()!=null);result.put("planning",p.getInProgress().isPresent());
         result.put("safeToCancel",p.isSafeToCancel());result.put("pathIndex",current==null?null:current.getPosition());
         result.put("path",lastPath==null?List.of():lastPath.positions().stream().map(ReferenceNavigationJob::pos).toList());
