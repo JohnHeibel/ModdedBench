@@ -733,7 +733,7 @@ and chests than it does today, and you will do more different kinds of work
 in it than you can list now. Time spent making it a good place to work is
 repaid on every one of those visits, so it is never a detour, and the early
 base is where it is cheapest. Concretely: level the ground before you build on
-it, and level more than you need. Give kinds of work their own places (a
+it, and level more than you need. Give kinds of work their own places inside the base (a
 store room, a smelting corner, a room or a wall per machine group, a field)
 rather than putting each new block wherever you happen to stand. Leave empty
 space beside everything, because every line here ends up with a second
@@ -753,11 +753,24 @@ pay on every visit from then on.
 Do not wait until you catch yourself. Before a quest step that adds to the base
 (a new machine, a new line, more storage), look at the base the way a good
 player would: enclosed and lit so nothing spawns inside, storage grouped by
-kind and described in your notes, room to reach every machine and to grow. If
+kind and described in your notes, room to reach every machine and to grow, and the new thing joined to what it works with. If
 it is not in that state, fixing it is the first part of that step; it is
 cheaper now than later. Ask of every decision not "does this finish the quest" but "what does this
 leave for the me who is here fifty hours from now", and write the layout in a
 note so that one of you can find it.
+
+**One base, not a camp.** The parts of a base are only as useful as the paths
+between them. A machine is used together with what feeds it and what takes its
+output, and you will walk between those places hundreds of times. So the base
+should grow as one connected building: a new machine joins the line it works
+with, and a new room shares a wall with the base, opens into it, and sits under
+the same roof inside the same lit, closed perimeter. Then extending the base
+also extends its shelter, its lighting and its storage, and doesn't add a
+second thing to defend. Before you place something, picture standing where
+you'll use it. How far is it to where its inputs come from, and to where its
+output goes? If the answer is "outside and across open ground", it belongs
+somewhere else. Something standing alone should be a choice you can defend in
+its region note, not the result of where you were standing.
 
 **Make the easy parts automatic, in the world.** Full logistics automation is
 far away in this pack, and rushing it does not work. Long before that, the
