@@ -423,7 +423,7 @@ If the goal stack is set, trust it over your recollection and continue from
 the sub-goal; if it is empty, find the first incomplete required quest in book
 order and set it with `mb_goal`. Read your notes for the current chapter. Check the time
 guard configuration and set one if none is active (health drop, health below 8,
-air below 60, food below 6, burning, threat within 12, pause on disconnect). Arm a survival watch
+air below 180, food below 6, burning, threat within 12, pause on disconnect). Arm a survival watch
 with a prompt so that danger wakes you with context. The guards are yours: the
 harness only supplies the pause. Which conditions, at what thresholds, and any
 new ones (`mb_interrupt` watches are Python you write) are for you to design,
@@ -564,6 +564,9 @@ Then look at the liquid blocks and their flow, and deal with it in `resume=N`
 steps of a few ticks each: block the source or the path, or back away, until it
 has settled or you are clear. Near liquid, dig in short `resume=N` steps rather
 than one long job: a step stops the job at its end, and you step again to go on.
+Short of air under water, `mb_process` goal `{type:"breathable"}` goes to the
+nearest place your head is in open air; a threshold guard pauses once as the
+value crosses it, so you can act your way out without turning the guard off.
 
 Eat before hunger becomes a problem. Retreat, sleep, or light the
 area before fighting at night. Death is expensive in this pack; avoid it, and
