@@ -51,7 +51,7 @@ abstract class BulkJob implements Navigation.Job {
             // The upstream engine re-plans for ever around a target it cannot reach (bobbing in a pond, pacing a ledge): the
             // shared watchdog ends that with where it happened, judged the same way as the deadline.
             progressSeen=progress();
-            if(stall.tick(activity(),(int)Math.floor(mc.thePlayer.posX),(int)Math.floor(mc.thePlayer.boundingBox.minY+.001),(int)Math.floor(mc.thePlayer.posZ))){finish(session()>0?"paused":"failed",stall.reason());return;}
+            if(stall.tick(activity(),(int)Math.floor(mc.thePlayer.posX),(int)Math.floor(mc.thePlayer.boundingBox.minY+.001),(int)Math.floor(mc.thePlayer.posZ),WorkAccess.searchBudget(navigation.reference()))){finish(session()>0?"paused":"failed",stall.reason());return;}
             for(int transitions=0;transitions<8&&!done();transitions++) {
                 String oldPhase=phase();step();
                 if(oldPhase.equals(phase()))return;

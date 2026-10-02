@@ -31,7 +31,10 @@ public final class BlockRules {
     public static boolean hazardAt(IBlockState s){
         Parsed p=parsed(Baritone.settings().hazards);
         if(p.picked().isEmpty()||s.getBlock().getMaterial()==net.minecraft.block.material.Material.air)return false;
-        var stack=BlockIdentity.at(s);if(stack==null)return false;
+        var picked=BlockIdentity.at(s);
+        // Not picked yet (the search's thread, before the next game tick): avoided for this search, never assumed safe.
+        if(picked==null){applied.merge("hazards item=not_picked_yet",1,Integer::sum);return true;}
+        if(picked.isEmpty())return false;var stack=picked.get();
         for(var e:p.picked())if(e.item()==stack.getItem()&&(e.damage()==null||e.damage()==stack.getItemDamage())){
             String key="hazards item="+Registry.name(stack.getItem())+":"+stack.getItemDamage();
             if(applied.size()<128||applied.containsKey(key))applied.merge(key,1,Integer::sum);
@@ -39,6 +42,8 @@ public final class BlockRules {
         }
         return false;
     }
+    /** Whether a hazard rule names a pick-block item, so the warm-up picks the blocks round the player. */
+    static boolean picksIdentity(){return !parsed(Baritone.settings().hazards).picked().isEmpty();}
     /** TRUE: the model said stand on it; FALSE: it said never, or it is a hazard; null: the game's shape decides. */
     public static Boolean standOn(IBlockState s){
         var settings=Baritone.settings();

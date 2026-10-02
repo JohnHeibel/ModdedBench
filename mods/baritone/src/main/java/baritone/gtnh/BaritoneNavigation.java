@@ -92,7 +92,9 @@ public final class BaritoneNavigation implements Navigation {
     @Override public Map<String,Object> status() {
         var out=new LinkedHashMap<String,Object>(apiSession.active()?apiSession.status():active==null?Map.of("state","idle","available",true,"movement",MOVEMENT,"mining",true,"automaticTools",true,"excavation",true,"placement",true):active.status());
         out.put("nativeEvents",baritone.compat.NativeEvents.diagnostics());out.put("javaApi",apiSession.status());
-        out.put("lastCalculation",reference.getPathingBehavior().lastCalculation());return out;
+        out.put("lastCalculation",reference.getPathingBehavior().lastCalculation());
+        if(baritone.gtnh.pathing.MovementTrace.on())out.put("trace",baritone.gtnh.pathing.MovementTrace.recent(600));
+        return out;
     }
     @Override public void cancel(String reason){if(active!=null&&!active.done())active.cancel(reason);apiSession.stop(reason);}
     void stop(){cancel("cancelled");}
@@ -165,15 +167,28 @@ public final class BaritoneNavigation implements Navigation {
     }
     void tickChild(Job job) {if(job instanceof ReferenceProcessJob process)process.tick();else if(job instanceof ReferenceFollowJob follow)follow.tick();else if(job instanceof FightJob fight)fight.tick();else if(job instanceof ReferenceNavigationJob run)run.tick();else if(job instanceof MiningJob mine)mine.tick();else if(job instanceof PlacingJob place)place.tick();}
     void afterTick(){reference.tickEnd();}
+    /** The path search's game-thread answers (block shapes, tools, pick-blocks) asked since the last service, and the
+     *  warm-up round the player: once a client tick, or once a frame while the world is paused and no tick runs. */
+    static void answerSearch(){BlockShapes.answer();ReferenceToolPolicy.answer();}
+    @Override public boolean planningWhilePaused(){return active instanceof PlansWhilePaused job&&!active.done()&&job.planningWhilePaused();}
+    // Gated frames never reach the client tick, so nothing here is serviced twice.
+    @Override public void whilePaused(){
+        if(mc.theWorld==null||mc.thePlayer==null)return;
+        long started=System.nanoTime();
+        answerSearch();
+        if(planningWhilePaused())try{((PlansWhilePaused)active).planWhilePaused();}catch(Exception e){failed(e);}
+        Cost.paused(System.nanoTime()-started);
+    }
+    private void failed(Exception e){
+        String reason="game_error: "+e.getClass().getSimpleName()+": "+e.getMessage();
+        if(active instanceof RouteRun route) route.finish("failed",reason);else if(active instanceof ReferenceNavigationJob run)run.finish("failed",reason); else active.cancel(reason);
+    }
     void tick() {
-        ReferenceToolPolicy.answer();
+        answerSearch();
         reference.getWorldProvider().tick();
         if(active!=null && !active.done()) {
             try { if(active instanceof BulkJob work){work.symptoms.sample(mc.thePlayer);work.tick();}else if(active instanceof RouteRun route) route.tick();else tickChild(active); }
-            catch(Exception e) {
-                String reason="game_error: "+e.getClass().getSimpleName()+": "+e.getMessage();
-                if(active instanceof RouteRun route) route.finish("failed",reason);else if(active instanceof ReferenceNavigationJob run)run.finish("failed",reason); else active.cancel(reason);
-            }
+            catch(Exception e) {failed(e);}
         }else apiSession.tick();
     }
     private BlockPos feet() {

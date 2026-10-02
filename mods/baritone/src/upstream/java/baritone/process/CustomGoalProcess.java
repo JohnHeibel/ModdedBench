@@ -73,6 +73,11 @@ public final class CustomGoalProcess extends BaritoneProcessHelper implements IC
         this.state = State.PATH_REQUESTED;
     }
 
+    /** ModdedBench: a path was asked for and the first command has not been taken (PathingBehavior.planWhilePaused). */
+    public boolean pathRequested() {
+        return this.state == State.PATH_REQUESTED;
+    }
+
     @Override
     public Goal getGoal() {
         return this.goal;

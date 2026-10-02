@@ -589,6 +589,10 @@ public final class ClientRuntime extends BridgeRuntime {
         Map<String,Object> out=new LinkedHashMap<>(status);out.putAll(refusals);return out;
     }
 
+    /** A frame with no client tick (the world paused): the navigation provider's computation, see Navigation.whilePaused. */
+    void whilePaused(){Navigation n=NavigationRegistry.get();if(n!=null&&mc.thePlayer!=null)n.whilePaused();}
+    /** The action's job is still planning before its first tick. Only the job this runtime started counts. */
+    boolean planningWhilePaused(){Navigation n=NavigationRegistry.get();return n!=null&&mc.thePlayer!=null&&navigationJob!=null&&!navigationJob.done()&&n.planningWhilePaused();}
     private void cancelNavigation(String reason){var navigation=NavigationRegistry.get();if(navigation!=null)navigation.cancel(reason);}
     void interruptControls() {cancelQueuedInteractions();controlsChanged("interrupted");cancelNavigation("interrupted");}
     /** The server refused the resume an action asked for: the world stays paused and that action ends here. */

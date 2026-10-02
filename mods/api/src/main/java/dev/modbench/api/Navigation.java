@@ -50,6 +50,14 @@ public interface Navigation {
     Map<String, Object> inspectTerrain(int x, int y, int z);
     Map<String, Object> status();
     default Map<String,Object> settings(Map<String,Object> params){throw new UnsupportedOperationException("source settings unavailable");}
+    /**
+     * Game thread, once a frame while the world is paused and no client tick runs: computation only. The provider answers
+     * what its path search asked of the game thread, and a job that has not had its first tick may do that tick's planning.
+     * Never moves, presses, sends or counts a tick.
+     */
+    default void whilePaused() {}
+    /** Whether the active job still has planning to do before its first tick (cheap): that tick is worth holding for. */
+    default boolean planningWhilePaused() {return false;}
 
     interface Job {
         boolean done();

@@ -73,7 +73,7 @@ final class ReferenceFollowJob implements Navigation.Job {
         if(ticks++>=duration){finish("succeeded","follow_duration_complete");return;}
         // Standing beside a target that stands still is following it: each tick within reach of one counts as work.
         if(engine.getFollowProcess().following().stream().anyMatch(e->e.getDistanceToEntity(mc.thePlayer)<=radius+2))near++;
-        if(stall.tick(near,(int)Math.floor(mc.thePlayer.posX),(int)Math.floor(mc.thePlayer.boundingBox.minY+.001),(int)Math.floor(mc.thePlayer.posZ))){finish(stall.advanced()?"paused":"failed",stall.reason());return;}
+        if(stall.tick(near,(int)Math.floor(mc.thePlayer.posX),(int)Math.floor(mc.thePlayer.boundingBox.minY+.001),(int)Math.floor(mc.thePlayer.posZ),WorkAccess.searchBudget(engine))){finish(stall.advanced()?"paused":"failed",stall.reason());return;}
         engine.tickStart();
         var path=engine.getPathingBehavior().getCurrent();
         if(path!=null)path.getPath().movements().forEach(m->movements.add(m.getClass().getSimpleName()));

@@ -51,6 +51,8 @@ public final class ToolSet {
             return new Pick(slot<0?selected:slot,answer==null?0:answer.strength(),answer!=null&&answer.harvest());
         });
     }
+    /** On the game thread before a search: the game answers for these stacks around (x,y,z) over the next ticks. */
+    public void warm(int x,int y,int z){ReferenceToolPolicy.warm(stacks,x,y,z);}
     public double getStrVsBlock(IBlockState state){
         double speed=pick(state).strength()*amplifier;
         return Baritone.settings().blocksToAvoidBreaking.value.contains(state.getBlock())?speed*Baritone.settings().avoidBreakingMultiplier.value:speed;
