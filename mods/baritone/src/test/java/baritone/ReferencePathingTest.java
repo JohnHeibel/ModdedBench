@@ -119,6 +119,53 @@ public class ReferencePathingTest {
         var p=path(context(t,true),new BetterBlockPos(0,64,0),new GoalBlock(3,64,0));
         assertTrue(p.movements().get(0) instanceof MovementParkour);
     }
+    /** A 2-block gap along x, landing at x=3, with lava under it when lava is true, and a dry walkway round it (z=2) when around is. */
+    private static Terrain gap(boolean lava,boolean around){
+        Terrain t=new Terrain();t.floor=false;t.set(0,63,0,Blocks.STONE,0);t.set(3,63,0,Blocks.STONE,0);
+        if(lava){t.set(1,63,0,Blocks.LAVA,0);t.set(2,63,0,Blocks.LAVA,0);}
+        if(around){for(int x=0;x<=3;x++) t.set(x,63,2,Blocks.STONE,0);t.set(0,63,1,Blocks.STONE,0);t.set(3,63,1,Blocks.STONE,0);}
+        return t;
+    }
+    /**
+     * The gauntlet's dam: a 2-high bedrock corridor (feet 64) cut at x=3 by a 2-deep still water hole (63..64) under a
+     * stone at head height with two gravel over it. Breaking the stone drops the gravel into the water.
+     */
+    private static Terrain dam(){
+        Terrain t=new Terrain();t.floor=false;
+        for(int x=-1;x<=7;x++) for(int y=61;y<=69;y++) for(int z=-1;z<=1;z++) t.set(x,y,z,Blocks.BEDROCK,0);
+        for(int x=0;x<=6;x++) if(x!=3){t.set(x,64,0,Blocks.AIR,0);t.set(x,65,0,Blocks.AIR,0);}
+        t.set(3,63,0,Blocks.WATER,0);t.set(3,64,0,Blocks.WATER,0);t.set(3,65,0,Blocks.STONE,0);t.set(3,66,0,net.minecraft.init.Blocks.gravel,0);t.set(3,67,0,net.minecraft.init.Blocks.gravel,0);
+        return t;
+    }
+    @Test public void aDamOverWaterIsDugThrough(){
+        var c=context(dam(),false);
+        var search=new AStarPathFinder(0,64,0,new GoalBlock(6,64,0),new Favoring(null,c),c);
+        var result=search.calculate(2000,4000);
+        assertEquals(result+" "+search.failureDescription(),PathCalculationResult.Type.SUCCESS_TO_GOAL,result.getType());
+    }
+    /** The dam as the planner meets it mid-collapse: stone gone, gravel falling or landed, the pond's water spilling. */
+    @Test public void aDamWhoseStoneIsGoneIsCrossed(){
+        for(int g=0;g<6;g++){
+            Terrain t=dam();
+            for(int y=65;y<=67;y++) t.set(3,y,0,Blocks.AIR,0);
+            if(g==1) t.set(3,64,0,Blocks.FLOWING_WATER,0);
+            if(g==2){t.set(2,64,0,Blocks.FLOWING_WATER,1);t.set(4,64,0,Blocks.FLOWING_WATER,1);}
+            if(g==3){t.set(3,63,0,net.minecraft.init.Blocks.gravel,0);t.set(2,64,0,Blocks.FLOWING_WATER,1);t.set(4,64,0,Blocks.FLOWING_WATER,1);}
+            if(g>=4){t.set(3,63,0,net.minecraft.init.Blocks.gravel,0);t.set(3,64,0,net.minecraft.init.Blocks.gravel,0);t.set(2,64,0,Blocks.FLOWING_WATER,5);t.set(4,64,0,Blocks.FLOWING_WATER,7);}
+            if(g==5){t.set(1,64,0,Blocks.FLOWING_WATER,6);t.set(0,64,0,Blocks.FLOWING_WATER,7);}
+            var c=context(t,false);
+            var search=new AStarPathFinder(4,64,0,new GoalBlock(0,64,0),new Favoring(null,c),c);
+            var result=search.calculate(2000,4000);
+            assertEquals("state "+g+" "+result+" "+search.searchStats(),PathCalculationResult.Type.SUCCESS_TO_GOAL,result.getType());
+        }
+    }
+    @Test public void aJumpOverLavaIsAllowedButADryWayRoundWins(){
+        Baritone.settings().allowParkour.value=true;
+        BetterBlockPos start=new BetterBlockPos(0,64,0);Goal goal=new GoalBlock(3,64,0);
+        assertTrue("lava under the first gap cell",path(context(gap(true,false),true),start,goal).movements().get(0) instanceof MovementParkour);
+        assertTrue("no lava: the jump is shorter",path(context(gap(false,true),true),start,goal).movements().stream().anyMatch(m->m instanceof MovementParkour));
+        assertFalse("lava: walk round",path(context(gap(true,true),true),start,goal).movements().stream().anyMatch(m->m instanceof MovementParkour));
+    }
     /** A 1x1 water shaft four deep at x=1 into a 2-high flooded tunnel along x=1..5, in solid stone. */
     private static Terrain floodedU(){
         Terrain t=new Terrain();

@@ -147,6 +147,12 @@ public final class Settings {
     public final Setting<Double> currentHazardPenalty = new Setting<>(20D);
 
     /**
+     * ModdedBench: added to a parkour jump over lava, another harmful fluid or a hazard, which only a jump that falls short
+     * touches. The jump stays allowed; a dry way round costing up to this many ticks more is taken instead.
+     */
+    public final Setting<Double> jumpOverHarmPenalty = new Setting<>(20D);
+
+    /**
      * ModdedBench: how little the search trusts its own swim estimates when it spends air. A move with the head under
      * water costs its estimated ticks times this in air, from the air the player has now, refilled on surfacing as in
      * 1.7.10; no planned route runs out before the head is out of water. A route that ends under water keeps this times

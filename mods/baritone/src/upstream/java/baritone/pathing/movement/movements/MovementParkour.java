@@ -82,9 +82,6 @@ public class MovementParkour extends Movement {
             // second most common case -- we could just traverse not parkour
             return;
         }
-        if (MovementHelper.avoidWalkingInto(adj) && adj.getBlock() != Blocks.WATER && adj.getBlock() != Blocks.FLOWING_WATER) { // magma sucks
-            return;
-        }
         if (!MovementHelper.fullyPassable(context, x + xDiff, y + 1, z + zDiff)) {
             return;
         }
@@ -137,7 +134,7 @@ public class MovementParkour extends Movement {
                     res.x = destX;
                     res.y = y + 1;
                     res.z = destZ;
-                    res.cost = i * SPRINT_ONE_BLOCK_COST + context.jumpPenalty;
+                    res.cost = i * SPRINT_ONE_BLOCK_COST + context.jumpPenalty + harmBelow(context, x, y, z, xDiff, zDiff, i);
                     return;
                 }
                 break;
@@ -154,7 +151,7 @@ public class MovementParkour extends Movement {
                     res.x = destX;
                     res.y = y;
                     res.z = destZ;
-                    res.cost = costFromJumpDistance(i) + context.jumpPenalty;
+                    res.cost = costFromJumpDistance(i) + context.jumpPenalty + harmBelow(context, x, y, z, xDiff, zDiff, i);
                     return;
                 }
                 break;
@@ -202,6 +199,21 @@ public class MovementParkour extends Movement {
                 }
             }
         }
+    }
+
+    /**
+     * ModdedBench: Settings.jumpOverHarmPenalty when a fluid other than water, or a hazard, is under the gap of a jump of
+     * distance i. Nothing down there is touched unless the jump falls short, so the jump stays allowed (upstream refused
+     * it under the first gap cell only, and allowed it under the rest), priced so a dry way round wins where there is one.
+     */
+    private static double harmBelow(CalculationContext context, int x, int y, int z, int xDiff, int zDiff, int i) {
+        for (int j = 1; j < i; j++) {
+            IBlockState below = context.get(x + xDiff * j, y - 1, z + zDiff * j);
+            if (MovementHelper.avoidWalkingInto(below) && !MovementHelper.isWater(below.getBlock())) {
+                return context.jumpOverHarmPenalty;
+            }
+        }
+        return 0;
     }
 
     private static boolean checkOvershootSafety(BlockStateInterface bsi, int x, int y, int z) {
