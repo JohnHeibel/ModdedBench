@@ -95,6 +95,11 @@ public interface MovementHelper extends ActionCosts, Helper {
             if (directlyAbove || Baritone.settings().strictLiquidCheck.value) {
                 return true;
             }
+            // ModdedBench: water beside the cell may flow in; that is shallow water to wade, and a dug head cell beside
+            // water is planned as under water (AStarPathFinder#headUnderWater). A spilled pond round a dug dam is the case.
+            if (isWater(block)) {
+                return false;
+            }
             int level = state.getValue(LegacyProperties.LEVEL);
             if (level == 0) {
                 return true; // source blocks like to flow horizontally
