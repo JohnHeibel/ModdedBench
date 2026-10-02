@@ -8,6 +8,9 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-02** Resuming mining reread the original forced-tool slot after
+  crafting had rearranged it. The journal now retains the chosen tool kind
+  across resumes and client restarts; missing tools cannot become other items.
 - **2026-10-02** Farming rejected empty selector lists, preventing pickup-only jobs.
   Explicit empty lists now disable individual farm phases; omitted fields retain
   their defaults, and nonempty selectors keep their normal validation.

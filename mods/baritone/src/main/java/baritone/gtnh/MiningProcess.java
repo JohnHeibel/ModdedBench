@@ -60,8 +60,9 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
         quantity=integer(params,"quantity",1,1,1000000);
         besideFluid=bool(params,"besideFluid",false);
         // toolSlot forces the tool in that slot now, wherever a swap later moves it; what it breaks is still measured.
-        if(params.containsKey("toolSlot")){var stack=mc.thePlayer.inventory.getStackInSlot(integer(params,"toolSlot",0,0,35));
-            if(stack==null)throw new IllegalArgumentException("toolSlot is empty");toolSlotTool=MiningTools.toolKind(stack);}
+        if(params.containsKey("toolSlot"))toolSlotTool=ReferenceToolPolicy.remember(journal.progress,()->{
+            var stack=mc.thePlayer.inventory.getStackInSlot(integer(params,"toolSlot",0,0,35));
+            if(stack==null)throw new IllegalArgumentException("toolSlot is empty");return MiningTools.toolKind(stack);});
         else toolSlotTool=null;
         if(besideFluid&&!allowPlace)throw new IllegalArgumentException("besideFluid plugs the holes it opens: it needs allowPlace and a throwaway block (cobblestone, dirt) in the hotbar");
         BlockPos origin=WorkAccess.feet();int radius=integer(params,"radius",24,1,64);

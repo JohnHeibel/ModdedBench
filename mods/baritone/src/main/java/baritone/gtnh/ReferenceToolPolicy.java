@@ -11,6 +11,12 @@ public final class ReferenceToolPolicy {
     /** The tool kind (MiningTools.toolKind) a running mining job's toolSlot forces, or null. It is the kind, not the slot:
      *  a swap onto the hotbar moves the tool, and durability changes with every swing. */
     public static volatile String forcedTool;
+    /** Resolve the original slot once; durable resumes retain its kind after inventory changes. */
+    static String remember(java.util.Map<String,Object> progress,java.util.function.Supplier<String> current){
+        Object saved=progress.get("forcedTool");
+        if(saved instanceof String kind)return kind;
+        String kind=current.get();progress.put("forcedTool",kind);return kind;
+    }
     /** The slot holding the forced tool, the selected one first; -1 when nothing is forced or it is gone. */
     public static int forced(net.minecraft.item.ItemStack[] stacks,int selected){
         String kind=forcedTool;if(kind==null)return -1;
