@@ -243,8 +243,10 @@ def mb_time(method: str = "status", params: dict | None = None, timeout_s: float
     2N with a clear line of sight, or a creeper starts to swell: once per mob, before it has
     hurt you. status.threats lists every mob after you now: entityId, type, distance, pos,
     lineOfSight, ranged, swelling, health. A usual set: {healthDrop:true,healthBelow:8,
-    airBelow:60,foodBelow:6,burning:true,threatWithin:12,pauseOnDisconnect:true}. Conditions pause globally
-    and report a reason. Baritone terminal failures signal actionFailed automatically;
+    airBelow:180,foodBelow:6,burning:true,threatWithin:12,pauseOnDisconnect:true}; air falls 1 a tick
+    under water, so 180 leaves 9 seconds. Conditions pause globally and report a reason. A threshold
+    pauses once as the value crosses it, and again only after it has recovered above it, so you can
+    act out of the danger without disabling the guard: for air, mb_process goal {type:"breathable"}. Baritone terminal failures signal actionFailed automatically;
     agent-written tools can call report_failure to signal their own failures.
     pauseOnDisconnect defaults true; set false for a planned
     client restart with continued server production, then restore it after reconnect.

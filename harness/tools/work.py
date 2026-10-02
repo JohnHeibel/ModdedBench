@@ -260,9 +260,11 @@ def mb_process(process: str, duration_ticks: int = 1200, goal: dict | None = Non
     """Run one bounded source process: goal, explore, get_to_block, or farm.
 
     goal needs a structured source goal for process='goal': block, near, adjacent,
-    two_blocks, xz, y, axis, inverted, composite, or run_away. Positions are arrays:
+    two_blocks, xz, y, axis, inverted, composite, run_away, or breathable. Positions are arrays:
     {type:"block",pos:[x,y,z]}, {type:"near",pos:[x,y,z],radius:2}, {type:"xz",x:10,z:-20},
-    {type:"y",y:64}. An xz goal ends wherever that column is reachable, which can be in
+    {type:"y",y:64}. {type:"breathable",radius:12} (1..24) is the way out of water: the nearest
+    cells where your head is in open air, on ground or floating at the surface; with allow_break
+    it may dig up to them. An xz goal ends wherever that column is reachable, which can be in
     water or a hole: prefer near/block with a y you have seen on the map or in a scan. get_to_block needs
     block {id,meta?}; explore uses center (defaults to player feet) with no
     radius bound. Farm uses center and radius 1..64. duration_ticks is simulation time, whereas timeout_s is the real RPC

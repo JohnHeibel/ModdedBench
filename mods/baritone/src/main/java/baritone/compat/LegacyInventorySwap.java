@@ -21,7 +21,7 @@ public final class LegacyInventorySwap {
     private final ClickReceipt receipt=new ClickReceipt();
     private final int source,hotbar;
     private final ItemStack wanted,displaced;
-    private int age;
+    private int age,acceptedAt=-1;
     private boolean sent;
     public LegacyInventorySwap(Baritone engine,int source,int hotbar){
         if(engine.pendingSwap!=null)throw new IllegalStateException("an inventory swap is already pending");
@@ -52,6 +52,10 @@ public final class LegacyInventorySwap {
         }
         if(receipt.rejected())throw new IllegalStateException("server rejected inventory swap; inspect synchronized inventory");
         if(receipt.accepted()&&ItemStack.areItemStacksEqual(wanted,mc.thePlayer.inventory.getStackInSlot(hotbar))&&ItemStack.areItemStacksEqual(displaced,mc.thePlayer.inventory.getStackInSlot(source))){close();return Outcome.COMPLETE;}
+        // The server took the click, but a stack changed on its own meanwhile (wear, a pickup, a mod tick):
+        // the swap is done and the exact stacks will never match, so select again from what is there now.
+        if(receipt.accepted()&&acceptedAt<0)acceptedAt=age;
+        if(acceptedAt>=0&&age-acceptedAt>20){close();return Outcome.REPLAN;}
         if(age>100)throw new IllegalStateException("inventory swap acknowledgement or synchronized stacks timed out: "+receipt.status());
         return Outcome.WAITING;
     }

@@ -256,6 +256,8 @@ class Kernel:
             # resumed tick; reads ignore the directive. ticks N steps N ticks instead of resuming.
             params["_resume"] = wanted.get("ticks") or True
         r = self.call_reply(method, timeout, **params)
+        if not r.ok and str((r.error or {}).get("msg", "")).startswith("pause has not settled") and self._await_settled():
+            r = self.call_reply(method, timeout, **params)  # refused before it ran: this is still its first run
         if wanted is not None and isinstance(r.raw.get("resumedWorld"), dict):
             wanted.update(r.raw["resumedWorld"], resumed=True)
         if not r.ok and wanted is not None and not wanted.get("resumed") and str((r.error or {}).get("msg", "")).startswith("time_paused"):
@@ -268,6 +270,16 @@ class Kernel:
                 msg += " (or call the tool again with resume=True: it resumes the world and acts in one step)"
             raise BridgeError((r.error or {}).get("code", "?"), msg, method, r.raw)
         return r.data
+
+    def _await_settled(self, limit_s: float = 3.0) -> bool:
+        """A step's pause settles a few ticks after it is reported; wait that out instead of handing the model a refusal."""
+        until = time.monotonic() + limit_s
+        while time.monotonic() < until:
+            mode = (self.call("time.status", timeout=5).get("state") or {}).get("mode")
+            if mode != "pausing":
+                return mode in ("paused", "realtime")
+            time.sleep(0.05)
+        return False
 
     def _resume_for(self, record: dict) -> None:
         """Resume the world for a resume=True call and wait until the client runs ticks again."""

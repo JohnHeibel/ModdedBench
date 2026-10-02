@@ -91,3 +91,29 @@ def test_resume_with_ticks_steps_instead():
     assert k.sent == [("act.input", 5)] and record["resumed"] and record["ticks"] == 5
     with pytest.raises(ValueError): server._resume_arg(-1)
     assert server._resume_arg(True) is True and server._resume_arg(3) == 3 and server._resume_arg(0) is False
+
+
+class SettlingWorld(Kernel):
+    """A step's pause that reports 'pausing' for `polls` status reads, then settles."""
+    def __init__(self, polls, end="paused"):
+        self.polls, self.end, self.sent = polls, end, []
+
+    def call_reply(self, method, timeout=None, **params):
+        self.sent.append(method)
+        if method == "time.status":
+            self.polls -= 1
+            return Reply(True, 0, 0, 0, {"state": {"mode": "pausing" if self.polls >= 0 else self.end}})
+        if self.polls >= 0: return Reply(False, 0, 0, 0, error={"code": "bad_request", "msg": "pause has not settled; inspect time.status before resuming"})
+        return Reply(True, 0, 0, 0, {"done": True})
+
+
+def test_an_unsettled_pause_is_waited_out_and_the_request_sent_again():
+    k = SettlingWorld(polls=3)
+    assert k.call("time.step", ticks=20) == {"done": True}
+    assert k.sent.count("time.step") == 2
+
+
+def test_a_pause_that_fails_to_settle_keeps_its_refusal():
+    k = SettlingWorld(polls=1, end="pause_error")
+    with pytest.raises(BridgeError, match="not settled"): k.call("time.step", ticks=20)
+    assert k.sent.count("time.step") == 1

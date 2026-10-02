@@ -601,7 +601,7 @@ def game_server_ready(host: str = "127.0.0.1", port: int = GAME_PORT) -> bool:
 
 
 def wait_for_client_join(timeout: float) -> dict[str, Any]:
-    """Wait for the title screen, then make the bridge-owned FML connection."""
+    """Wait for the title screen, then make the bridge-owned FML connection; a client already in the world counts as joined."""
     deadline = time.monotonic() + timeout
     kernel = None
     connected, retry_at = 0, 0.0  # sys.connect attempts
@@ -624,9 +624,7 @@ def wait_for_client_join(timeout: float) -> dict[str, Any]:
                     continue
                 kernel.call("sys.connect", host="127.0.0.1", port=GAME_PORT)
                 connected += 1; retry_at = time.monotonic() + 10
-            elif not connected:
-                time.sleep(1)
-                continue
+            # Before connecting, still look: a client that joined by itself (an auto-join, a restart) is a joined client.
             world = kernel.call("obs.world")
             if isinstance(world, dict) and world.get("inWorld") is True:
                 player = kernel.call("obs.player")

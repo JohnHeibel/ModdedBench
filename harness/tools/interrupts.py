@@ -404,7 +404,8 @@ def mb_interrupt(operation: str, name: str = "", spec: dict | None = None, repla
     exposes modelPrompts; an MCP host blocks in mb_wait to be woken. No inline inference.
     supports edge, consecutive, cooldown, timeout_s, operationScope and latch.
     Runs while the model thinks. Read events to learn triggers/faults. Cancel/pause
-    latch new actions until ack(event_id); ack does not resume time. Faults disarm;
+    latch new actions until ack(event_id) or until one action is refused with the events
+    (that refusal delivers them and releases the latch); ack does not resume time. Faults disarm;
     transport outages and failed deliveries do not (fire is retried, then re-armed).
     Python edits reload without client restart; failed reload retains previous code.
     """
