@@ -258,6 +258,9 @@ public class MovementTraverse extends Movement {
             if (doorClicks >= 3 || !rotation.isPresent() || BlockStateInterface.get(ctx, shut).getBlock() == Blocks.IRON_DOOR) {
                 return state.setStatus(MovementStatus.UNREACHABLE);
             }
+            if (doorClicks == 0 && Baritone.settings().closeDoorsBehind.value) {
+                ((Baritone) baritone).doorsBehind.opened(shut, dest.x != src.x); // ModdedBench: shut when we came, shut when we leave
+            }
             doorClicks++;
             doorWait = 2;
             return state.setTarget(new MovementState.MovementTarget(rotation.get(), true)).setInput(Input.CLICK_RIGHT, true);

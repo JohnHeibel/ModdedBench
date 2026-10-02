@@ -399,6 +399,11 @@ public final class Settings {
     public final Setting<Boolean> allowParkour = new Setting<>(true); // ModdedBench: a player jumps gaps; upstream default false
 
     /**
+     * ModdedBench: close the doors and gates a path opened (only those that were shut) once the player is clear of them
+     */
+    public final Setting<Boolean> closeDoorsBehind = new Setting<>(true);
+
+    /**
      * Actually pretty reliable.
      * <p>
      * Doesn't make it any more dangerous compared to just normal allowParkour th

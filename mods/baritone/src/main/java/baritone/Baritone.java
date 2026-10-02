@@ -50,6 +50,8 @@ public final class Baritone implements IBaritone {
     public java.util.function.Predicate<BlockPos> positionAllowed=p->true;
     /** Movement edges this job saw fail; each job resets it when it starts. */
     public final baritone.gtnh.pathing.Snags snags=new baritone.gtnh.pathing.Snags();
+    /** Doors and gates a path opened, to close behind it. */
+    public final baritone.gtnh.pathing.DoorsBehind doorsBehind=new baritone.gtnh.pathing.DoorsBehind();
     public java.util.function.Supplier<java.util.function.Predicate<IBlockState>> explicitMiningTargets=()->s->false;
     /** The single native inventory swap in flight; acknowledged through the core packet hook. */
     public LegacyInventorySwap pendingSwap;
