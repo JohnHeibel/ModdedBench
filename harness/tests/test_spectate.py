@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from harness.mirror import forwarder, link, relay, state  # noqa: E402
-from harness.mirror.wire import Reader, Splitter, frame, pack, split, string  # noqa: E402
+from harness.mirror.wire import Reader, Splitter, frame, pack, split, string, varint  # noqa: E402
 from harness.tests.test_mirror import CLIENT, SERVER, block, chunk, handshake, parsed, s3f  # noqa: E402
 
 SECRET = b"a test secret of enough length"
@@ -53,6 +53,14 @@ class Watcher:
         return self.got
 
     def notices(self): return [Reader(b).string() for p, b in self.got if p == 0x02 and b"[spectators]" in b]
+
+    def say(self, f): self.w.write(f)
+
+
+def slots(got):
+    """The 45 slots of the last window-1 S30 in got."""
+    r = Reader(next(b for p, b in reversed(got) if p == 0x30 and b[0] == relay.WINDOW)); r.u("Bh")
+    return [r.item() for _ in range(45)]
 
 
 class EndToEnd(unittest.IsolatedAsyncioTestCase):
@@ -107,7 +115,8 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
         await until(lambda: not self.relay.world.tail and len(self.relay.world.snap) > 5)
         v = await Watcher().join(self.vport)
         want = parsed([f for f in self.fw.mirror.snapshot() if forwarder.public(f)])
-        self.assertEqual((await v.until(lambda g: len(g) > len(want)))[1:], want)
+        got = await v.until(lambda g: len(g) > len(want) + 1)
+        self.assertEqual([f for f in got[1:] if b"[spectators]" not in f[1]], want)
 
     async def test_a_new_session_replaces_the_world_in_place(self):
         await self.play(1)
@@ -115,8 +124,7 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
         await v.until(lambda g: any(p == 0x08 for p, _ in g))
         first = self.fw.open
         self.tap.write(rec(forwarder.CLOSED, 1)); await self.tap.drain()
-        await v.until(lambda g: v.notices())
-        self.assertIn(relay.FROZEN, v.notices()[-1])
+        await v.until(lambda g: any(relay.FROZEN in t for t in v.notices()))
         n = len(v.got)
         await self.play(2)
         self.assertNotEqual(self.fw.open, first)
@@ -137,7 +145,7 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
         v = await Watcher().join(self.vport)
         await v.until(lambda g: any(p == 0x08 for p, _ in g))
         self.tap.write(rec(forwarder.CLOSED, 1)); await self.tap.drain()
-        await v.until(lambda g: v.notices())
+        await v.until(lambda g: any(relay.FROZEN in t for t in v.notices()))
         n = len(v.got)
         await self.play(2, dimension(-1))
         fresh = (await v.until(lambda g: relay.BACK in "".join(v.notices())))[n:]
@@ -167,6 +175,49 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(again.world.session, self.relay.world.session)
         self.assertEqual(again.world.catch_up(), self.relay.world.catch_up())
         again.log.close()
+
+    async def inventory(self, slot, item):
+        self.tap.write(rec(1, 1, frame(0x2F, pack("bh", 0, slot) + item))); await self.tap.drain()
+
+    async def test_invsee_shows_the_agents_inventory_live_and_read_only(self):
+        await self.play(1)
+        dirt, stone = pack("hbhh", 3, 5, 0, -1) + varint(5), pack("hbhh", 1, 64, 0, -1) + varint(64)
+        await self.inventory(36, dirt)                          # the first hotbar slot
+        await until(lambda: self.relay.inventory is not None)
+        v = await Watcher().join(self.vport)
+        await v.until(lambda g: any(p == 0x08 for p, _ in g))
+        v.say(frame(0x01, string("/invsee")))
+        got = await v.until(lambda g: any(p == 0x30 for p, _ in g))
+        opened = next(b for p, b in got if p == 0x2D)
+        r = Reader(opened); self.assertEqual(r.u("BB"), (relay.WINDOW, 0)); self.assertIn("Agent", r.string())
+        self.assertEqual(r.u("B?"), (45, True))
+        self.assertEqual(slots(got)[27], dirt)                 # main inventory first, then the hotbar
+        await self.inventory(9, stone)
+        got = await v.until(lambda g: len([p for p, _ in g if p == 0x30]) >= 2)
+        self.assertEqual(slots(got)[0], stone)
+        n = len(v.got)
+        v.say(frame(0x0E, pack("bhbhb", relay.WINDOW, 0, 0, 1, 0) + stone))  # takes the stone
+        got = (await v.until(lambda g: any(p == 0x30 for p, _ in g[n:])))[n:]
+        self.assertIn((0x2F, pack("bh", -1, -1) + pack("h", -1)), got)  # the cursor is emptied again
+        self.assertEqual(slots(got)[0], stone)                 # and the stone put back
+        self.assertNotIn(b"/invsee", bytes(self.wire))         # nothing a viewer says reaches the link
+
+    async def test_spectator_chat_reaches_viewers_only_and_slowly(self):
+        await self.play(1)
+        a, b = await Watcher().join(self.vport, "Alice"), await Watcher().join(self.vport, "Bob")
+        for v in (a, b): await v.until(lambda g: any(p == 0x08 for p, _ in g))
+        a.say(frame(0x01, string("hi §kthere")))
+        a.say(frame(0x01, string("again")))
+        chat = lambda g: [Reader(x).string() for p, x in g if p == 0x02 and b"[spectator] " in x]
+        got = await b.until(lambda g: chat(g))
+        self.assertIn('": hi kthere"', chat(got)[0])
+        await a.until(lambda g: any("slower" in t for t in a.notices()))
+        self.assertEqual(len(chat(b.got)), 1)
+        a.say(frame(0x01, string("/nope")))
+        await a.until(lambda g: any("/nope" in t for t in a.notices()))
+        a.say(frame(0x14, string("/in")))
+        got = await a.until(lambda g: any(p == 0x3A for p, _ in g))
+        r = Reader(next(x for p, x in got if p == 0x3A)); self.assertEqual((r.varint(), r.string()), (1, "/invsee"))
 
     async def test_a_wrong_token_is_refused(self):
         bad = forwarder.Forwarder(self.fw.relay, b"not the secret, wrong one", None)
