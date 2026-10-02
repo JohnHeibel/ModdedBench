@@ -248,7 +248,7 @@ function note(p) {
 }
 
 const MAKE = {view, down, radar, map, shot, scan, inventory, recipe, block, note}, SMALL = new Set(["block", "note"]);
-const LIFE = {big: 8000, small: 4000}, DWELL = 3000, QUIET = 5000;  // a small card never cuts into the first QUIET ms of a big one
+const LIFE = {big: 12000, small: 6000}, DWELL = 4500, QUIET = 7500;  // a small card never cuts into the first QUIET ms of a big one
 let shown = null, pending = null, seen = null;
 function life(k) { return SMALL.has(k) ? LIFE.small : LIFE.big; }
 function swap(p) {
