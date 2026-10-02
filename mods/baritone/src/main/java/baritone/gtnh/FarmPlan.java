@@ -28,14 +28,19 @@ public final class FarmPlan {
     /** What the last farm tick saw, for the receipt. */
     public volatile Map<String,Object> seen=Map.of();
     FarmPlan(World world,BlockPos center,int radius,Map<String,Object> params){
-        crops=params.containsKey("crops")?WorkAccess.selectors(params.get("crops")):CROPS;
-        soils=params.containsKey("soils")?WorkAccess.selectors(params.get("soils")):SOILS;
-        seeds=params.containsKey("seeds")?WorkAccess.itemSelectors(params.get("seeds")):null;
-        fertilizers=params.containsKey("fertilizers")?WorkAccess.itemSelectors(params.get("fertilizers")):FERTILIZERS;
-        collect=params.containsKey("collect")?WorkAccess.itemSelectors(params.get("collect")):null;
+        crops=params.containsKey("crops")?selectors(params.get("crops"),false):CROPS;
+        soils=params.containsKey("soils")?selectors(params.get("soils"),false):SOILS;
+        seeds=params.containsKey("seeds")?selectors(params.get("seeds"),true):null;
+        fertilizers=params.containsKey("fertilizers")?selectors(params.get("fertilizers"),true):FERTILIZERS;
+        collect=params.containsKey("collect")?selectors(params.get("collect"),true):null;
         List<Map<String,Object>> both=new ArrayList<>(crops);both.addAll(soils);
         scan=new MiningObservation(world,bounds(Map.of("min",List.of(center.getX()-radius,Math.max(1,center.getY()-16),center.getZ()-radius),
             "max",List.of(center.getX()+radius,Math.min(254,center.getY()+16),center.getZ()+radius))),List.copyOf(both),List.of());
+    }
+    /** An explicit empty list disables a phase; omitted fields keep their defaults. */
+    private static List<Map<String,Object>> selectors(Object value,boolean items){
+        if(value instanceof List<?> entries&&entries.isEmpty())return List.of();
+        return items?WorkAccess.itemSelectors(value):WorkAccess.selectors(value);
     }
     /** Scan a slice; true once a whole pass has been seen. */
     public boolean tick(){scan.tick();return scan.passes>0;}
