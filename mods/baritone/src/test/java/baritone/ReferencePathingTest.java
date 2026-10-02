@@ -144,6 +144,65 @@ public class ReferencePathingTest {
         assertEquals(new BetterBlockPos(7,64,0),p.getDest());
         for(BetterBlockPos q:p.positions()) assertNotEquals("head under water at "+q,Blocks.WATER,t.getBlock(q.x,q.y+1,q.z));
     }
+    private CalculationContext context(Terrain terrain,int air){
+        ItemStack[] hotbar=new ItemStack[9];hotbar[0]=new ItemStack(net.minecraft.init.Items.iron_pickaxe);
+        return new CalculationContext(PLANNING_ONLY,true,new CalculationInputs(null,new BlockStateInterface(terrain,(x,z)->Math.abs(x)<64&&Math.abs(z)<64),new ToolSet(hotbar,0,1,VANILLA),false,false,false,0,0,
+                new WorldMemory.Snapshot(0,Map.of(),Map.of(),Map.of()),false,p->true,s->false,new baritone.gtnh.pathing.Snags(),air));
+    }
+    private PathCalculationResult search(CalculationContext c,BetterBlockPos start,Goal goal){
+        return new AStarPathFinder(start.x,start.y,start.z,goal,new Favoring(null,c),c).calculate(2000,4000);
+    }
+    /**
+     * A sunken passage: a wall three high across the whole surface at x=10, and under it the only way: a 1x1 water shaft
+     * four deep at x=1, a flooded 2-high tunnel along x=1..exit under a stone ceiling, and a shaft up at x=exit. pocket>0
+     * leaves one cell of air in the ceiling there, where a swimmer can put their head up and breathe.
+     */
+    private static Terrain sunkenPassage(int exit,int pocket){
+        Terrain t=new Terrain();
+        for(int z=-64;z<=64;z++) for(int y=64;y<67;y++) t.set(10,y,z,Blocks.STONE,0);
+        for(int y=60;y<64;y++){t.set(1,y,0,Blocks.WATER,0);t.set(exit,y,0,Blocks.WATER,0);}
+        for(int x=1;x<=exit;x++) for(int y=60;y<62;y++) t.set(x,y,0,Blocks.WATER,0);
+        if(pocket>0) t.set(pocket,62,0,Blocks.AIR,0);
+        return t;
+    }
+    private static boolean headUnderWater(Terrain t,BetterBlockPos q){return t.getBlock(q.x,q.y+1,q.z)==Blocks.WATER;}
+    @Test public void aSwimLongerThanABreathIsNeverPlanned(){
+        Baritone.settings().allowBreak.value=false;Baritone.settings().allowPlace.value=false;
+        Terrain t=sunkenPassage(29,0);
+        var r=search(context(t,300),new BetterBlockPos(0,64,0),new GoalBlock(30,64,0));
+        assertNotEquals(PathCalculationResult.Type.SUCCESS_TO_GOAL,r.getType());
+        r.getPath().ifPresent(p->{for(BetterBlockPos q:p.positions()) assertFalse("went under at "+q,headUnderWater(t,q)&&q.x>4);});
+    }
+    @Test public void aSwimBrokenByAnAirPocketIsPlannedThroughThePocket(){
+        Baritone.settings().allowBreak.value=false;Baritone.settings().allowPlace.value=false;
+        Terrain t=sunkenPassage(29,15);
+        // The route comes back down through the cell under the pocket, so the path stops at the breath ...
+        var r=search(context(t,300),new BetterBlockPos(0,64,0),new GoalBlock(30,64,0));
+        assertEquals(PathCalculationResult.Type.SUCCESS_SEGMENT,r.getType());
+        assertEquals(new BetterBlockPos(15,61,0),r.getPath().orElseThrow().getDest());
+        // ... and the next segment, planned from the pocket with the air refilled, reaches the far side.
+        assertEquals(new BetterBlockPos(30,64,0),path(context(t,300),new BetterBlockPos(15,61,0),new GoalBlock(30,64,0)).getDest());
+    }
+    @Test public void aGoalUnderWaterKeepsTheAirToSwimBack(){
+        Baritone.settings().allowBreak.value=false;Baritone.settings().allowPlace.value=false;
+        Terrain t=sunkenPassage(29,0);
+        // A few blocks in, there and back fits in a breath; fourteen in, the way back would not.
+        assertEquals(PathCalculationResult.Type.SUCCESS_TO_GOAL,search(context(t,300),new BetterBlockPos(0,64,0),new GoalBlock(5,60,0)).getType());
+        assertNotEquals(PathCalculationResult.Type.SUCCESS_TO_GOAL,search(context(t,300),new BetterBlockPos(0,64,0),new GoalBlock(14,60,0)).getType());
+    }
+    @Test public void aSwimmerLowOnAirIsStillPlannedOutButNotDeeperIn(){
+        Baritone.settings().allowBreak.value=false;Baritone.settings().allowPlace.value=false;
+        Terrain t=floodedU();
+        // Under water in the tunnel with little air left: the way out is still planned.
+        var p=path(context(t,90),new BetterBlockPos(3,60,0),new GoalBlock(6,64,0));
+        assertEquals(new BetterBlockPos(6,64,0),p.getDest());
+        // With no air at all, nothing is.
+        assertNotEquals(PathCalculationResult.Type.SUCCESS_TO_GOAL,search(context(t,0),new BetterBlockPos(3,60,0),new GoalBlock(6,64,0)).getType());
+        // Low on air, a goal further along the tunnel is not swum to directly (the time already under water is the way
+        // back): the path goes up a shaft to breathe first.
+        var r=search(context(t,40),new BetterBlockPos(2,60,0),new GoalBlock(4,60,0)).getPath().orElseThrow();
+        assertTrue("never breathed: "+r.positions(),r.positions().stream().anyMatch(q->!headUnderWater(t,q)));
+    }
     @Test public void compositeGoalSelectsReachableGroundInsteadOfElevatedTarget(){
         Terrain t=new Terrain();Baritone.settings().allowBreak.value=false;
         var p=path(context(t,false),new BetterBlockPos(0,64,0),new GoalComposite(new GoalBlock(2,70,0),new GoalBlock(9,64,0)));
