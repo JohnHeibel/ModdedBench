@@ -36,7 +36,12 @@ public final class EventTransformer implements IClassTransformer {
                 case "net.minecraft.network.NetworkManager":
                     // Receipt is routed by ClockTransformer (which runs first) through
                     // ClockPackets.dispatch, after the clock's admission decision.
-                    expected=2;
+                    expected=3;
+                    if(match(m,"(Lio/netty/channel/ChannelHandlerContext;)V","channelActive")){  // Netty's name: never obfuscated
+                        InsnList l=new InsnList();load(l,Opcodes.ALOAD,1);
+                        l.add(new MethodInsnNode(Opcodes.INVOKESTATIC,"dev/modbench/hooks/SpectatorTap","attach","(Ljava/lang/Object;)V",false));
+                        m.instructions.insert(l);edits++;
+                    }
                     if(match(m,"(Lnet/minecraft/network/Packet;[Lio/netty/util/concurrent/GenericFutureListener;)V","scheduleOutboundPacket","func_150725_a")){
                         phases(m,post->{InsnList l=new InsnList();load(l,Opcodes.ALOAD,0);load(l,Opcodes.ALOAD,1);flag(l,post);call(l,"send","(Ljava/lang/Object;Ljava/lang/Object;Z)V");return l;});edits++;
                     }
