@@ -21,7 +21,7 @@ GONE = "agent reconnecting; rejoin shortly"
 
 class Tap:
     """Follows one host connection's protocol state from a copy of its bytes."""
-    def __init__(self, hub: "Hub", n: int = 0):
+    def __init__(self, hub: "Feed", n: int = 0):
         self.n, self.hub, self.split, self.state, self.dead = n, hub, (Splitter(), Splitter()), ["handshake", "handshake"], False
         self.early = []  # server frames whose copy overtook the client's handshake (the two directions are separate threads)
 
@@ -110,17 +110,19 @@ class Viewer:
             self.w.close()
 
 
-class Hub:
-    def __init__(self, upstream=("127.0.0.1", 25575), stats_path: Path | None = None, capture_path: Path | None = None,
-                 max_viewers: int = 8, viewer_queue: int = 64 << 20, mirror: Mirror | None = None):
-        self.upstream, self.stats_path, self.max_viewers, self.viewer_queue = upstream, stats_path, max_viewers, viewer_queue
+class Feed:
+    """The tap side: follows host sessions from copies of their bytes and keeps their Mirror. Where the viewer frames
+    go is the subclass's business: played() gets each batch, ended() hears a session stop before its state is reset."""
+    def __init__(self, capture_path: Path | None = None, mirror: Mirror | None = None):
         self.mirror = mirror or Mirror()
-        self.session, self.disabled, self.viewers = None, None, set()
+        self.session, self.disabled = None, None
         self.packets = ({}, {}); self.channels = ({}, {}); self.errors = []
         self.capture = open(capture_path, "ab") if capture_path else None
         self.loop, self.taps = None, 0
 
-    # ---- tap side (event loop thread)
+    def played(self, frames: list[bytes]): pass
+    def ended(self, text: str): pass
+
     def count(self, d, state, pid, f, body):
         key = f"{pid:02x}" if state == "play" else f"{state}:{pid:02x}"
         c = self.packets[d].setdefault(key, [0, 0]); c[0] += 1; c[1] += len(f)
@@ -138,19 +140,15 @@ class Hub:
     def end(self, tap):
         if tap is None or tap is not self.session: return
         self.session = None
-        self.kick(GONE)
+        self.ended(GONE)
         self.mirror.reset()
 
     def disable(self, why: str):
         self.disabled = why
         self.errors = (self.errors + [f"{time.strftime('%H:%M:%S')} {why}"])[-20:]
         print(f"mirror: off for this session: {why}", flush=True)
-        self.kick("ModdedBench mirror stopped for this session; the agent is unaffected")
+        self.ended("ModdedBench mirror stopped for this session; the agent is unaffected")
         self.mirror.reset()
-
-    def kick(self, text):
-        for v in list(self.viewers): v.close(text)
-        self.viewers.clear()
 
     def play(self, d, pid, body, f):
         if self.disabled: return
@@ -158,13 +156,122 @@ class Hub:
             out = self.mirror.server(f, pid, body) if d == S else self.mirror.client(pid, body)
         except Exception as e:  # the mirror is best effort; the pipe never sees this
             return self.disable(f"{'CS'[d]} {pid:02x}: {e!r}")
-        if out:
-            for v in self.viewers: v.send(out)
+        self.played(out)
 
     def new_tap(self) -> Tap:
         self.taps += 1
         self.record(2, self.taps, b"")
         return Tap(self, self.taps)
+
+    def tap_stats(self) -> dict:
+        named = lambda t: {k: {"count": n, "bytes": b} for k, (n, b) in sorted(t.items())}
+        return {"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "session": self.session is not None,
+                "disabled": self.disabled, "errors": self.errors, "mirror": self.mirror.stats(),
+                "packets": {"to_server": named(self.packets[C]), "to_client": named(self.packets[S])},
+                "channels": {"to_server": named(self.channels[C]), "to_client": named(self.channels[S])}}
+
+
+class Stage:
+    """The viewer side: greets 1.7.10 clients in offline mode, hands each the frames that catch it up, and ignores
+    everything a viewer sends except the Forge handshake replies that release those frames."""
+    motd = "ModdedBench mirror"
+
+    def __init__(self, max_viewers: int = 8, viewer_queue: int = 64 << 20):
+        self.max_viewers, self.viewer_queue, self.viewers = max_viewers, viewer_queue, set()
+        self.greeting = 0  # connections still in their handshake; capped, as the port may be public
+
+    def refuse(self, name: str) -> str | None:
+        """Why this viewer cannot join now, or None."""
+        return None
+
+    def welcome(self, v: Viewer): pass
+
+    def broadcast(self, frames):
+        if frames:
+            for v in self.viewers: v.send(frames)
+
+    def kick(self, text):
+        for v in list(self.viewers): v.close(text)
+        self.viewers.clear()
+
+    async def viewer(self, r: asyncio.StreamReader, w: asyncio.StreamWriter):
+        if self.greeting >= 4 * self.max_viewers: return w.close()
+        self.greeting += 1
+        try:
+            v = await asyncio.wait_for(self._greet(r, w), 15)
+        except (asyncio.TimeoutError, asyncio.IncompleteReadError, ValueError, ConnectionError, UnicodeDecodeError, struct.error):
+            v = None
+        finally:
+            self.greeting -= 1
+        if v is None: return w.close()
+        drain = asyncio.create_task(self._drain(r, v))
+        await v.pump()
+        self.viewers.discard(v); drain.cancel()
+
+    async def _greet(self, r, w):
+        first = await r.readexactly(1)
+        if first == b"\xfe": return  # pre-1.7 server list ping
+        pid, body = split(await read_frame(r, first))
+        hr = Reader(body); protocol = hr.varint(); hr.string(); hr.u("H"); nxt = hr.varint()
+        if nxt not in (1, 2): return
+        if nxt == 1:
+            await read_frame(r)
+            online = len(self.viewers)
+            w.write(frame(0x00, string(json.dumps({
+                "version": {"name": "1.7.10", "protocol": 5}, "description": {"text": self.motd},
+                "players": {"max": self.max_viewers, "online": online, "sample": []}}))))
+            await w.drain()
+            _, ping = split(await read_frame(r))
+            w.write(frame(0x01, ping)); await w.drain()
+            return
+        _, body = split(await read_frame(r))
+        name = Reader(body).string()[:16]
+        why = ("ModdedBench mirror needs a 1.7.10 client" if protocol != 5 else
+               "ModdedBench mirror is full" if len(self.viewers) >= self.max_viewers else self.refuse(name))
+        if why:
+            w.write(disconnect(why, login=True)); await w.drain()
+            return
+        v = Viewer(w, name, self.viewer_queue)
+        v.send([frame(0x02, string(offline_uuid(name)) + string(name))])
+        self.welcome(v)
+        self.viewers.add(v)
+        print(f"{self.motd}: viewer {name} joined ({len(self.viewers)} watching)", flush=True)
+        return v
+
+    async def _drain(self, r, v):
+        s = Splitter()
+        try:  # a viewer's Forge handshake replies release the snapshot; everything else it sends is ignored
+            while (data := await r.read(65536)) and not v.closing:
+                for f in s.feed(data):
+                    pid, body = split(f)
+                    if pid == 0x17 and Reader(body).string() == "FML|HS": v.handshook()
+        except (ConnectionError, OSError, ValueError):
+            pass
+        v.close(); self.viewers.discard(v)
+
+    async def keepalive(self, every=5.0):
+        while True:
+            await asyncio.sleep(every)
+            f = frame(0x00, pack("i", random.randint(1, 2**31 - 1)))
+            for v in self.viewers: v.send([f])
+
+
+class Hub(Feed, Stage):
+    """The inline mirror: the host's connection runs through this process, and viewers connect to it."""
+    def __init__(self, upstream=("127.0.0.1", 25575), stats_path: Path | None = None, capture_path: Path | None = None,
+                 max_viewers: int = 8, viewer_queue: int = 64 << 20, mirror: Mirror | None = None):
+        Feed.__init__(self, capture_path, mirror); Stage.__init__(self, max_viewers, viewer_queue)
+        self.upstream, self.stats_path = upstream, stats_path
+
+    def played(self, frames): self.broadcast(frames)
+    def ended(self, text): self.kick(text)
+
+    def refuse(self, name):
+        return ("ModdedBench mirror is off for this session" if self.disabled else
+                READY if not self.mirror.ready else
+                "that name is the agent's; pick another" if name.lower() == self.mirror.name.lower() else None)
+
+    def welcome(self, v): v.hold(self.mirror.gated())
 
     # ---- host pipe (threads)
     def serve_host(self, sock: socket.socket):
@@ -213,74 +320,8 @@ class Hub:
     async def _tap(self) -> Tap:
         return self.new_tap()
 
-    # ---- viewers (event loop)
-    async def viewer(self, r: asyncio.StreamReader, w: asyncio.StreamWriter):
-        try:
-            v = await asyncio.wait_for(self._greet(r, w), 15)
-        except (asyncio.TimeoutError, asyncio.IncompleteReadError, ValueError, ConnectionError, UnicodeDecodeError, struct.error):
-            v = None
-        if v is None: return w.close()
-        drain = asyncio.create_task(self._drain(r, v))
-        await v.pump()
-        self.viewers.discard(v); drain.cancel()
-
-    async def _greet(self, r, w):
-        first = await r.readexactly(1)
-        if first == b"\xfe": return  # pre-1.7 server list ping
-        pid, body = split(await read_frame(r, first))
-        hr = Reader(body); protocol = hr.varint(); hr.string(); hr.u("H"); nxt = hr.varint()
-        if nxt not in (1, 2): return
-        if nxt == 1:
-            await read_frame(r)
-            online = len(self.viewers)
-            w.write(frame(0x00, string(json.dumps({
-                "version": {"name": "1.7.10", "protocol": 5}, "description": {"text": "ModdedBench mirror"},
-                "players": {"max": self.max_viewers, "online": online, "sample": []}}))))
-            await w.drain()
-            _, ping = split(await read_frame(r))
-            w.write(frame(0x01, ping)); await w.drain()
-            return
-        _, body = split(await read_frame(r))
-        name = Reader(body).string()[:16]
-        why = ("ModdedBench mirror needs a 1.7.10 client" if protocol != 5 else
-               "ModdedBench mirror is off for this session" if self.disabled else
-               READY if not self.mirror.ready else
-               "ModdedBench mirror is full" if len(self.viewers) >= self.max_viewers else
-               "that name is the agent's; pick another" if name.lower() == self.mirror.name.lower() else None)
-        if why:
-            w.write(disconnect(why, login=True)); await w.drain()
-            return
-        v = Viewer(w, name, self.viewer_queue)
-        v.send([frame(0x02, string(offline_uuid(name)) + string(name))])
-        v.hold(self.mirror.gated())
-        self.viewers.add(v)
-        print(f"mirror: viewer {name} joined ({len(self.viewers)} watching)", flush=True)
-        return v
-
-    async def _drain(self, r, v):
-        s = Splitter()
-        try:  # a viewer's Forge handshake replies release the snapshot; everything else it sends is ignored
-            while (data := await r.read(65536)) and not v.closing:
-                for f in s.feed(data):
-                    pid, body = split(f)
-                    if pid == 0x17 and Reader(body).string() == "FML|HS": v.handshook()
-        except (ConnectionError, OSError, ValueError):
-            pass
-        v.close(); self.viewers.discard(v)
-
-    async def keepalive(self, every=5.0):
-        while True:
-            await asyncio.sleep(every)
-            f = frame(0x00, pack("i", random.randint(1, 2**31 - 1)))
-            for v in self.viewers: v.send([f])
-
     def stats(self) -> dict:
-        named = lambda t: {k: {"count": n, "bytes": b} for k, (n, b) in sorted(t.items())}
-        return {"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "session": self.session is not None,
-                "disabled": self.disabled, "errors": self.errors, "viewers": sorted(v.name for v in self.viewers),
-                "mirror": self.mirror.stats(),
-                "packets": {"to_server": named(self.packets[C]), "to_client": named(self.packets[S])},
-                "channels": {"to_server": named(self.channels[C]), "to_client": named(self.channels[S])}}
+        return {**self.tap_stats(), "viewers": sorted(v.name for v in self.viewers)}
 
     async def write_stats(self, every=10.0):
         while self.stats_path:

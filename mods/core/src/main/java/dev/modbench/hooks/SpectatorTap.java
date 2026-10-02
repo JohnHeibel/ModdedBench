@@ -13,6 +13,8 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -20,7 +22,8 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * A copy of the client's game connections for the spectator forwarder, which runs beside the client. Off unless
- * MB_SPECTATOR_TAP names a loopback port. Each connection gets a handler at the socket end of its pipeline that
+ * the modbench.spectatorTap property, or else the file ~/.moddedbench/spectator-tap, names a loopback port (read
+ * again at each new connection while off, so it can be switched on without a restart). Each connection gets a handler at the socket end of its pipeline that
  * copies the bytes going each way and passes the originals on untouched. The copies go into a bounded queue that
  * one daemon thread writes to the forwarder. Nothing here waits, and nothing here can fail the connection: a full
  * queue, a forwarder that is not there, or any error drops the copy for that connection, and the game carries on.
@@ -47,12 +50,18 @@ public final class SpectatorTap {
     }
 
     private static Sender sender(){
-        Sender s=sender;
-        if(s!=null)return s.sink==null?null:s;
+        if(sender!=null)return sender;
+        InetSocketAddress sink=sink(System.getProperty("modbench.spectatorTap",setting()));
+        if(sink==null)return null;
         synchronized(SpectatorTap.class){
-            if(sender==null){sender=new Sender(sink(System.getenv("MB_SPECTATOR_TAP")));if(sender.sink!=null)sender.start();}
-            return sender.sink==null?null:sender;
+            if(sender==null){Sender s=new Sender(sink);s.start();sender=s;}
+            return sender;
         }
+    }
+
+    private static String setting(){
+        try{return Files.readString(Path.of(System.getProperty("user.home"),".moddedbench","spectator-tap")).trim();}
+        catch(Exception e){return null;}
     }
 
     static InetSocketAddress sink(String spec){

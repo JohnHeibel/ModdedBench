@@ -45,3 +45,38 @@ such as Tailscale, never a public tunnel.
 Tailscale: `python -m harness.mirror --viewers <tailscale-ip>:25580`. Viewers join with Direct Connect (a Prism
 `-s` quick-join breaks the FML handshake). Windows Firewall may need an inbound rule for 25580 scoped to
 `100.64.0.0/10`.
+
+## Public relay
+
+For an audience on the internet, viewers connect to a relay on a cloud machine instead, and nothing on this PC
+listens to the outside. The client connects straight to the server; a handler at the socket end of its
+connection copies the bytes to a forwarder on loopback, which keeps the same mirror state and dials *out* to the
+relay:
+
+```
+agent's client ─────────────────────────────► 127.0.0.1:25575 server
+      │ copy (SpectatorTap, one way)
+      ▼
+forwarder 127.0.0.1:25590 ──TLS, outbound only──► relay :25591   relay :25565 ◄── viewers
+```
+
+```bash
+# on the cloud machine (MB_RELAY_TOKEN: a shared secret, 16+ characters, never in the repo)
+python -m harness.mirror.relay --cert relay.pem --key relay.key    # --viewers 0.0.0.0:25565 --link 0.0.0.0:25591
+# on this PC
+python -m harness.mirror.forwarder --relay <relay-host>:25591 --relay-cert relay.pem
+echo 127.0.0.1:25590 > ~/.moddedbench/spectator-tap    # the client tap; or -Dmodbench.spectatorTap=...
+```
+
+A self-signed certificate is fine: the forwarder pins it (`openssl req -x509 -newkey rsa:2048 -nodes -days 3650
+-subj /CN=relay -keyout relay.key -out relay.pem`).
+
+| | |
+| --- | --- |
+| The tap | Off unless configured; read again at each new connection while off. Copies queue on one low-priority thread; a missing forwarder, a full 64 MiB queue or any error drops the copy for that connection, never the connection. It sees the bytes on the socket, so it needs a server without encryption (offline mode). |
+| The link | The relay sends a nonce, the forwarder answers with an HMAC of it under the token, then only the forwarder sends. It never reads past the nonce, and the tap has no return path, so nothing a viewer or the relay does can reach the game. `MB|` payloads are filtered again before anything is sent. |
+| Late viewers | The relay keeps the forwarder's latest snapshot and the live frames since; the forwarder sends a fresh snapshot whenever the frames since outgrow the last one (4 MiB at least), so the relay holds at most about twice a snapshot. |
+| Agent reconnects | Viewers stay in the frozen world with a chat notice. The forwarder sends the frames that empty it (chunk unloads, entity removals, scoreboard and tab list entries); with the next session the relay sends those and the new world without its login prelude, so viewers stay connected and see no loading screen. A Respawn is used only when the dimension differs. A dropped link is handled the same way. |
+| Restarts | The relay mirrors the feed from its latest snapshot to `--state/feed.bin` and comes back with the last world. A relay with viewers that is handed a new session it cannot empty (the forwarder restarted) asks them to rejoin. |
+
+Not yet: online-mode viewer login, chat between viewers, and the overlay/quest views.
