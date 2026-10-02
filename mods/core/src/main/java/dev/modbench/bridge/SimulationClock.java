@@ -19,6 +19,7 @@ public final class SimulationClock {
     private final java.util.Map<String,Long> knownThreats = new java.util.HashMap<>(); // key -> tick last seen
     private com.google.gson.JsonArray threats = new com.google.gson.JsonArray();
     private Float lastHealth;
+    private final boolean[] inDanger = new boolean[4]; // health, air, burning, food: already reported, not yet recovered
     private String reason = "startup";
     private final ArrayDeque<JsonObject> events = new ArrayDeque<>();
 
@@ -46,14 +47,22 @@ public final class SimulationClock {
     public void observe(float health, int air) {
         observe(health, air, 20, false);
     }
+    /**
+     * Thresholds and burning pause once, as the value crosses into danger, and re-arm only when it has recovered:
+     * a guard that re-paused every tick while air stayed low would leave no ticks to swim out with.
+     */
     public void observe(float health, int air, int food, boolean onFire) {
+        boolean lowHealth=healthBelow>=0 && health<=healthBelow, lowAir=airBelow>=0 && air<=airBelow;
+        boolean lowFood=foodBelow>=0 && food<=foodBelow, fire=burning && onFire;
         if(!paused) {
             if(healthDrop && !fighting() && lastHealth!=null && health<lastHealth) pause("health_dropped");
-            else if(healthBelow>=0 && health<=healthBelow) pause("health_threshold");
-            else if(airBelow>=0 && air<=airBelow) pause("air_threshold");
-            else if(burning && onFire) pause("burning");
-            else if(foodBelow>=0 && food<=foodBelow) pause("food_threshold");
+            else if(lowHealth && !inDanger[0]) pause("health_threshold");
+            else if(lowAir && !inDanger[1]) pause("air_threshold");
+            else if(fire && !inDanger[2]) pause("burning");
+            else if(lowFood && !inDanger[3]) pause("food_threshold");
         }
+        if(paused) { inDanger[0]|=lowHealth; inDanger[1]|=lowAir; inDanger[2]|=fire; inDanger[3]|=lowFood; }
+        inDanger[0]&=lowHealth; inDanger[1]&=lowAir; inDanger[2]&=fire; inDanger[3]&=lowFood;
         lastHealth=health;
     }
     public double threatWithin() { return threatWithin; }
@@ -92,7 +101,7 @@ public final class SimulationClock {
         double tw=Json.number(p,"threatWithin",threatWithin,-1,32);
         healthDrop=hd; actionFailed=af; pauseOnDisconnect=disconnect; healthBelow=hb; airBelow=ab;
         foodBelow=fb; burning=fire; threatWithin=tw; knownThreats.clear();
-        lastHealth=null;
+        lastHealth=null; java.util.Arrays.fill(inDanger,false);
     }
     private void transition(boolean value) {
         if(paused==value) return;

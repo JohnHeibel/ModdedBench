@@ -8,6 +8,12 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-02** Overnight the agent nearly drowned: the air guard re-paused on every
+  resume, so it disabled the guard and swam out by hand. Threshold and burning guards
+  now pause once per crossing; mb_process has a `breathable` goal (cells re-checked live,
+  verified on four clay dives); a latch refusal delivers the interrupt; unsettled pauses
+  are waited out; an accepted inventory swap whose stacks drift replans; deploy accepts a
+  client that joined by itself.
 - **2026-10-02** Scripts saw bare tool functions and rejected `resume`, so a chore
   could not step the world between actions. Script tool calls now take resume=True|N
   through the same kernel routine as direct calls (found by the agent overnight).

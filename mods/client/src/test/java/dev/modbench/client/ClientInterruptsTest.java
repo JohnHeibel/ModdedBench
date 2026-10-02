@@ -16,7 +16,7 @@ public class ClientInterruptsTest {
         receipts.put("a",Json.object("reason","low health","payload",Json.object("modelPrompt","p".repeat(300),"count",2)));
         receipts.put("b",Json.object("reason","furnace done","payload",null));
         String text=ClientInterrupts.refusal(receipts.keySet(),receipts);
-        assertTrue(text,text.startsWith("interrupt_latched: acknowledge [a, b] before starting another action; a: low health | "+"p".repeat(240)+"...; "));
+        assertTrue(text,text.startsWith("interrupt_latched: [a, b] delivered, this action was not started; read them, then act (the latch is released); a: low health | "+"p".repeat(240)+"...; "));
         assertTrue(text,text.endsWith("; b: furnace done"));
     }
     @Test public void latchRefusalIsBounded() {

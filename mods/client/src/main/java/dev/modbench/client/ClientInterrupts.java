@@ -36,12 +36,17 @@ final class ClientInterrupts {
         if(m.equals("act.stop")||m.startsWith("interrupt.")||m.equals("sys.shutdown")||m.equals("sys.disconnect")||m.equals("time.pause")||m.equals("time.configure")) return;
         if(m.startsWith("act.")&&!m.equals("act.status") || m.equals("time.resume") || m.equals("time.step") || m.equals("nei.view") || m.equals("nei.inspect") ||
             m.startsWith("gui.")&&!Set.of("gui.status","gui.hit_test").contains(m) ||
-            m.startsWith("quest.")||m.startsWith("nav."))
-            throw new IllegalArgumentException(refusal(latched,receipts));
+            m.startsWith("quest.")||m.startsWith("nav.")) {
+            // The refusal is the delivery: the caller now knows, so its next action (often the escape) is let through.
+            String text=refusal(latched,receipts);
+            for(String id:latched)receipts.get(id).addProperty("latched",false);
+            latched.clear();
+            throw new IllegalArgumentException(text);
+        }
     }
-    /** Names each latched event's reason and model prompt, so the refused caller knows what to inspect before acknowledging. */
+    /** Names each latched event's reason and model prompt; refusing with it delivers them, so the latch is released. */
     static String refusal(Set<String> latched,Map<String,JsonObject> receipts) {
-        StringBuilder out=new StringBuilder("interrupt_latched: acknowledge "+latched+" before starting another action");int shown=0;
+        StringBuilder out=new StringBuilder("interrupt_latched: "+latched+" delivered, this action was not started; read them, then act (the latch is released)");int shown=0;
         for(String id:latched) {
             if(shown++==8) {out.append("; ...");break;}
             JsonObject receipt=receipts.get(id);JsonElement payload=receipt.get("payload");

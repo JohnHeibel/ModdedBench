@@ -192,8 +192,9 @@ reward.
 Fires are retried with the same event id and the watch is re-armed if the
 bridge cannot be reached; watches survive reconnects, and armed or undelivered
 watches are persisted next to the journal and re-armed after an MCP server
-restart. While a latch is set, the refusal (`interrupt_latched: ...`) names
-each latched event's reason and prompt. `_examples/` holds a
+restart. While a latch is set, the next acting call is refused
+(`interrupt_latched: ...`) with each latched event's reason and prompt; that
+refusal delivers them and releases the latch, so the call after it runs. `_examples/` holds a
 custom-predicate example.
 
 ```json

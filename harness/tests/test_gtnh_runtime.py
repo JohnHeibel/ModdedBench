@@ -310,6 +310,20 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(joined["name"], "ModbenchDev")
         self.assertIn(("sys.connect", {"host": "127.0.0.1", "port": 25575}), kernel.calls)
 
+    def test_client_wait_accepts_a_client_that_joined_by_itself(self):
+        class Kernel:
+            def __init__(self): self.calls = []
+            def call(self, method, **params):
+                self.calls.append(method)
+                if method == "obs.gui": return {"class": None}
+                if method == "obs.world": return {"inWorld": True}
+                if method == "obs.player": return {"name": "ModbenchDev", "uuid": "1234"}
+                return {}
+        kernel = Kernel()
+        with patch.object(runtime, "open_client_kernel", return_value=kernel):
+            self.assertTrue(runtime.wait_for_client_join(1)["joined"])
+        self.assertNotIn("sys.connect", kernel.calls)
+
     def test_client_wait_recognizes_observed_gtnh_custom_main_menu(self):
         class Kernel:
             def call(self, method, **params):

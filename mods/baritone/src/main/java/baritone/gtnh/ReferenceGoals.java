@@ -21,6 +21,7 @@ final class ReferenceGoals {
             case "two_blocks" -> new GoalTwoBlocks(position(s));
             case "xz" -> new GoalXZ(coordinate(s,"x"),coordinate(s,"z"));
             case "y" -> new GoalYLevel(integer(s,"y",64,0,255));
+            case "breathable" -> Breathable.goal(integer(s,"radius",12,1,24));
             case "axis" -> new GoalAxis();
             case "inverted" -> new GoalInverted(parse(child(s,"goal"),depth+1));
             case "composite" -> {

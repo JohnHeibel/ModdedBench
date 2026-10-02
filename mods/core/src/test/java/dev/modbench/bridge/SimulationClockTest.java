@@ -175,6 +175,27 @@ public class SimulationClockTest {
     }
 
     @Test
+    public void aThresholdPausesOnceOnCrossingAndAgainOnlyAfterRecovering() {
+        SimulationClock clock = new SimulationClock(() -> 0L);
+        clock.configure(Json.object("airBelow", 180, "burning", true));
+        clock.observe(20.0F, 180);
+        assertEquals("air_threshold", clock.status().get("reason").getAsString());
+        clock.resume();
+        for (int air = 179; air > 100; air--) clock.observe(20.0F, air); // Swimming out: still low, not news.
+        assertFalse(clock.paused());
+        clock.observe(20.0F, 300); // Surfaced: the guard re-arms.
+        clock.observe(20.0F, 170);
+        assertTrue(clock.paused());
+
+        clock.resume();
+        clock.observe(20.0F, 300, 20, true);
+        assertEquals("burning", clock.status().get("reason").getAsString());
+        clock.resume();
+        clock.observe(20.0F, 300, 20, true);
+        assertFalse(clock.paused());
+    }
+
+    @Test
     public void invalidConfigurationLeavesEveryConditionUntouched() {
         SimulationClock clock = new SimulationClock(() -> 0L);
         JsonObject valid = new JsonObject();
