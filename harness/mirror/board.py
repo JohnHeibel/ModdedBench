@@ -11,7 +11,7 @@ from __future__ import annotations
 import json, re, time
 from .wire import frame, pack, string
 
-OBJECTIVE, TITLE, ROWS = "mb_spectate", "§6§lModdedBench", 8
+OBJECTIVE, TITLE, ROWS = "mb_spectate", "§6§lModdedBench", 7
 CODE = re.compile("§[0-9a-fk-or]")
 
 
@@ -22,7 +22,7 @@ def lines(status: dict, watching: int, now: float | None = None) -> list[str]:
     running = f"{int(now - started) // 3600}h {int(now - started) % 3600 // 60:02d}m" if started else "?"
     rows = [f"§7Model §f{s.get('model') or '?'}", f"§e{s.get('chapter') or ''}", f"§f{s.get('quest') or ''}", "",
             f"§7Quests claimed §a{s.get('claims') or 0}", f"§7Running §f{running}",
-            f"§7Watching §f{watching}", "§8/invsee  /help"]
+            f"§7Watching §f{watching}"]
     return rows[:ROWS] + [""] * (ROWS - len(rows))
 
 

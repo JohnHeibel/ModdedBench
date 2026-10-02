@@ -86,7 +86,8 @@ class Forwarder(Feed):
         respawn = frame(0x07, pack("iBB", start, diff, SPECTATOR) + join[8:])
         snap = [(g, f) for g, f in m.gated() if public(f)]
         self.snap_bytes, self.tail_bytes = sum(len(f) for _, f in snap), 0
-        meta = {"session": self.open, "dim": start, "host": m.name, "prelude": len(m.prelude), "respawn": 1}
+        meta = {"session": self.open, "dim": start, "host": m.name, "prelude": len(m.prelude), "respawn": 1,
+                "eid": m.eid, "pos": m.hpos}  # the agent's entity and where it stands, for /tp
         self.send(message(SNAPSHOT, headed(meta, [(0, respawn), *snap])))
         self.inv_sent = -1; self.share_inventory()
 
