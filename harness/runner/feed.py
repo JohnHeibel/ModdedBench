@@ -116,7 +116,22 @@ def _notes(a, r, me):
     if r.get("title"): return "note", {"title": r["title"], "text": str(r.get("text", ""))[:500], "tags": r.get("tags") or []}
     if "notes" in r: return "note", {"title": "searching its notes", "titles": [n.get("title") for n in r["notes"]][:8]}
 
+SCRIPTS = Path(__file__).resolve().parents[2] / "harness" / "scripts"
+
+def _script(a, r, me):
+    """Shown as a script starts (r is empty then): its name, arguments and the tools it chains; the console asks for a summary of the code."""
+    if r: return None
+    code = a.get("code")
+    if code is None and a.get("name"):
+        try: code = (SCRIPTS / f"{a['name']}.py").read_text(encoding="utf-8")
+        except OSError: code = ""
+    code = str(code or "")
+    calls = list(dict.fromkeys(re.findall(r"\b(mb_\w+|bq_\w+|jei_\w+)\s*\(", code)))
+    shown = {k: (json.dumps(v, default=str) if not isinstance(v, str) else v)[:60] for k, v in list((a.get("args") or {}).items())[:8]}
+    return "script", {"name": a.get("name") or "", "args": shown, "calls": calls[:10], "code": code[:6000]}
+
 POP = {  # tool -> (arguments, result, last known position of the player) -> (kind, data), or None for nothing worth showing
+    "mb_run": _script,
     "mb_view": _view, "mb_obs": _obs, "mb_inventory": _inventory, "mb_recipes": _recipe, "mb_notes": _notes,
     "mb_scan": lambda a, r, me: ("scan", {"what": _name(a.get("blocks") or [{"id": "blocks"}]), "found": r.get("found", len(r.get("matches") or [])),
                                          "matches": [{"pos": m.get("pos"), "name": _name(m)} for m in r.get("matches") or []][:40], "me": me}),
@@ -182,6 +197,9 @@ class Feed:
             stats["tokens"]["estimated"] += self.context
         if kind == "item.started" and what == "mcp_tool_call":
             self.status("waiting" if item.get("tool") == "mb_wait" else "acting", line(item.get("tool", ""), item.get("arguments"), None))
+            if item.get("tool") == "mb_run":  # a script can run for minutes: say what it is while it runs, not after
+                try: self.look("mb_run", item.get("arguments"), {}, [])
+                except Exception: pass
         elif kind == "item.started" and what == "command_execution": self.status("acting", "shell")
         elif kind == "item.completed" and what == "agent_message": self.add("say", str(item.get("text", "")).strip()[:600])
         elif kind == "item.completed" and what == "command_execution":
