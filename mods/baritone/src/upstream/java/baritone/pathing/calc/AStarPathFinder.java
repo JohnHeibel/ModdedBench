@@ -162,6 +162,14 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
                 if (!calcContext.snags.allows(currentNode.x, currentNode.y, currentNode.z, res.x, res.y, res.z)) {
                     continue;
                 }
+                // ModdedBench: a current slows a swim across or against it and speeds one along it
+                double[] flow = flowAround(currentNode.x, currentNode.y, currentNode.z);
+                if (flow != null && (res.x != currentNode.x || res.z != currentNode.z)) {
+                    actionCost *= baritone.pathing.movement.MovementHelper.swimFactor(flow, res.x - currentNode.x, res.z - currentNode.z);
+                    if (actionCost >= ActionCosts.COST_INF) {
+                        continue;
+                    }
+                }
                 // ModdedBench: with the head under water a move costs air as well as time (Settings.submergedPenalty and
                 // breathSafety); no route runs out of air before the head is out of water.
                 boolean submerged = headUnderWater(currentNode, res.x, res.y + 1, res.z);
@@ -172,6 +180,9 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
                 }
                 if (submerged) {
                     actionCost += calcContext.submergedPenalty;
+                }
+                if (currentTowardsHarm(res.x, res.y, res.z)) {
+                    actionCost += calcContext.currentHazardPenalty;
                 }
                 long hashCode = BetterBlockPos.longHash(res.x, res.y, res.z);
                 if (isFavoring) {
@@ -248,6 +259,52 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         to.air = submerged ? airAfter(from, edgeTicks, true) : baritone.compat.CalculationInputs.FULL_AIR;
         to.back = submerged ? from.back + swimBack(from, to, edgeTicks) : 0;
         to.breathed = from.breathed || !submerged;
+    }
+
+    private final it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<double[]> flows = new it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<>();
+    private static final double[] STILL = new double[0];
+
+    /**
+     * ModdedBench: the way the water around a player standing at (x,y,z) pushes them (feet and head cells, as the game sums
+     * the body's cells), a horizontal unit vector, or null. Asked once a cell per search.
+     */
+    private double[] flowAround(int x, int y, int z) {
+        if (!baritone.pathing.movement.MovementHelper.isWater(calcContext.get(x, y, z).getBlock())
+                && !baritone.pathing.movement.MovementHelper.isWater(calcContext.get(x, y + 1, z).getBlock())) {
+            return null;
+        }
+        long key = BetterBlockPos.longHash(x, y, z);
+        double[] flow = flows.get(key);
+        if (flow == null) {
+            double[] feet = baritone.pathing.movement.MovementHelper.flowAt(calcContext.bsi, x, y, z);
+            double[] head = baritone.pathing.movement.MovementHelper.flowAt(calcContext.bsi, x, y + 1, z);
+            double fx = (feet == null ? 0 : feet[0]) + (head == null ? 0 : head[0]), fz = (feet == null ? 0 : feet[1]) + (head == null ? 0 : head[1]);
+            double length = Math.sqrt(fx * fx + fz * fz);
+            flow = length < 1e-6 ? STILL : new double[]{fx / length, fz / length};
+            flows.put(key, flow);
+        }
+        return flow == STILL ? null : flow;
+    }
+
+    /** ModdedBench: whether the current at (x,y,z) pushes towards a harmful cell next to it (Settings.currentHazardPenalty). */
+    private boolean currentTowardsHarm(int x, int y, int z) {
+        double[] flow = flowAround(x, y, z);
+        if (flow == null) {
+            return false;
+        }
+        int sx = Math.abs(flow[0]) > 0.3 ? (int) Math.signum(flow[0]) : 0, sz = Math.abs(flow[1]) > 0.3 ? (int) Math.signum(flow[1]) : 0;
+        return sx != 0 && harmful(x + sx, y, z) || sz != 0 && harmful(x, y, z + sz) || sx != 0 && sz != 0 && harmful(x + sx, y, z + sz);
+    }
+
+    private boolean harmful(int x, int y, int z) {
+        for (int dy = 0; dy <= 1; dy++) {
+            baritone.compat.IBlockState state = calcContext.get(x, y + dy, z);
+            net.minecraft.block.material.Material m = state.getBlock().getMaterial();
+            if (m.isLiquid() && m != net.minecraft.block.material.Material.water || baritone.pathing.movement.MovementHelper.hazard(state)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** ModdedBench: the ticks to swim this edge back: its distance, not the digging that opened it, at most the edge's own. */

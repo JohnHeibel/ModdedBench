@@ -242,6 +242,40 @@ public class ReferencePathingTest {
         var p=path(context(t,false),new BetterBlockPos(0,64,0),new GoalBlock(40,63,0));
         assertTrue("nodes considered "+p.getNumNodesConsidered(),p.getNumNodesConsidered()<20000);
     }
+    @Test public void aSwimmerHeadsIntoACurrentByAsMuchAsItCarriesThemSideways(){
+        // heading +z (yaw 0) with the full push towards +x: turn towards -x (yaw +) by asin(0.014/0.02)
+        assertEquals(Math.toDegrees(Math.asin(0.7)),MovementHelper.headingAcross(0,MovementHelper.CURRENT_PUSH,0),1e-3);
+        assertEquals(0,MovementHelper.headingAcross(0,0,MovementHelper.CURRENT_PUSH),1e-3);
+        assertEquals(-170,MovementHelper.headingAcross(-170,0,0),1e-3);
+        // across a current 1/sqrt(1-0.49) as long, against it 0.02/0.006, along it 0.02/0.034
+        assertEquals(1/Math.sqrt(0.51),MovementHelper.swimFactor(new double[]{1,0},0,1),1e-9);
+        assertEquals(0.02/0.006,MovementHelper.swimFactor(new double[]{1,0},-1,0),1e-9);
+        assertEquals(0.02/0.034,MovementHelper.swimFactor(new double[]{1,0},1,0),1e-9);
+    }
+    /** A river one deep along +x over z -1..1, flowing from x=0 (else still), into lava at x=5 when lava is true; walled off past it. */
+    private static Terrain river(boolean flowing,boolean lava){
+        Terrain t=new Terrain();
+        for(int x=-6;x<=8;x++){t.set(x,64,-6,Blocks.STONE,0);t.set(x,65,-6,Blocks.STONE,0);t.set(x,64,6,Blocks.STONE,0);t.set(x,65,6,Blocks.STONE,0);}
+        for(int x=-6;x<=4;x++) for(int z=-1;z<=1;z++) t.set(x,64,z,flowing&&x>0?Blocks.FLOWING_WATER:Blocks.WATER,flowing&&x>0?x:0);
+        for(int x=5;x<=6;x++) for(int z=-6;z<=6;z++) for(int y=64;y<=66;y++) t.set(x,y,z,Blocks.STONE,0); // no way round downstream
+        for(int z=-1;z<=1;z++) t.set(-7,64,z,Blocks.STONE,0);
+        for(int z=-1;z<=1;z++) t.set(5,64,z,lava?Blocks.LAVA:Blocks.STONE,0);
+        return t;
+    }
+    @Test public void theFlowIsAskedOfTheWater(){
+        var c=context(river(true,false),false);
+        assertArrayEquals(new double[]{1,0},MovementHelper.flowAt(c.bsi,3,64,0),1e-9);
+        assertNull(MovementHelper.flowAt(context(river(false,false),false).bsi,3,64,0));
+        assertNull(MovementHelper.flowAt(c.bsi,3,64,3));
+    }
+    @Test public void aStreamIsCrossedUpstreamOfTheLavaItRunsInto(){
+        Baritone.settings().allowBreak.value=false;Baritone.settings().allowPlace.value=false;
+        BetterBlockPos start=new BetterBlockPos(4,64,-3);Goal goal=new GoalBlock(4,64,3);
+        java.util.function.Predicate<IPath> besideLava=p->p.positions().stream().anyMatch(q->q.x==4&&Math.abs(q.z)<=1);
+        assertTrue("still water: straight across",besideLava.test(path(context(river(false,true),false),start,goal)));
+        assertTrue("no lava: straight across",besideLava.test(path(context(river(true,false),false),start,goal)));
+        assertFalse("pushed towards the lava: upstream",besideLava.test(path(context(river(true,true),false),start,goal)));
+    }
     @Test public void compositeGoalSelectsReachableGroundInsteadOfElevatedTarget(){
         Terrain t=new Terrain();Baritone.settings().allowBreak.value=false;
         var p=path(context(t,false),new BetterBlockPos(0,64,0),new GoalComposite(new GoalBlock(2,70,0),new GoalBlock(9,64,0)));
