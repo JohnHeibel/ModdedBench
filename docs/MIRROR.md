@@ -50,22 +50,22 @@ Tailscale: `python -m harness.mirror --viewers <tailscale-ip>:25580`. Viewers jo
 
 For an audience on the internet, viewers connect to a relay on a cloud machine instead, and nothing on this PC
 listens to the outside. The client connects straight to the server; a handler at the socket end of its
-connection copies the bytes to a forwarder on loopback, which keeps the same mirror state and dials *out* to the
-relay:
+connection appends a copy of the bytes to a file, which a forwarder reads, keeping the same mirror state, and
+dials *out* to the relay:
 
 ```
 agent's client ─────────────────────────────► 127.0.0.1:25575 server
       │ copy (SpectatorTap, one way)
       ▼
-forwarder 127.0.0.1:25590 ──TLS, outbound only──► relay :25591   relay :25565 ◄── viewers
+~/.moddedbench/tap/*.tap ──► forwarder ──TLS, outbound only──► relay :25591   relay :25565 ◄── viewers
 ```
 
 ```bash
 # on the cloud machine (MB_RELAY_TOKEN: a shared secret, 16+ characters, never in the repo)
 python -m harness.mirror.relay --cert relay.pem --key relay.key    # --viewers 0.0.0.0:25565 --link 0.0.0.0:25591
 # on this PC
-python -m harness.mirror.forwarder --relay <relay-host>:25591 --relay-cert relay.pem
-echo 127.0.0.1:25590 > ~/.moddedbench/spectator-tap    # the client tap; or -Dmodbench.spectatorTap=...
+python -m harness.mirror.forwarder --relay <relay-host>:25591 --relay-cert relay.pem   # --tap ~/.moddedbench/tap
+echo ~/.moddedbench/tap > ~/.moddedbench/spectator-tap    # the client tap's directory; or -Dmodbench.spectatorTap=...
 ```
 
 A self-signed certificate is fine: the forwarder pins it (`openssl req -x509 -newkey rsa:2048 -nodes -days 3650
@@ -73,11 +73,12 @@ A self-signed certificate is fine: the forwarder pins it (`openssl req -x509 -ne
 
 | | |
 | --- | --- |
-| The tap | Off unless configured; read again at each new connection while off. Copies queue on one low-priority thread; a missing forwarder, a full 64 MiB queue or any error drops the copy for that connection, never the connection. It sees the bytes on the socket, so it needs a server without encryption (offline mode). |
+| The tap | Off unless configured; read again at each new connection while off. Copies queue on one low-priority thread that appends them to one file per connection (about 2 GiB a day of play; 8 GiB at most, and it leaves 2 GiB of disk free). A full 64 MiB queue, a full disk or any error stops the copy for that connection, never the connection. A new connection deletes the files no running client is writing. It sees the bytes on the socket, so it needs a server without encryption (offline mode). |
+| Forwarder restarts | The forwarder reads the newest file from its first byte (about 18 MiB/s, so under two minutes for a full day) and only then shows the session, so it can restart or start late without the client reconnecting. The relay works out what to empty from the frames it sent, since the old session never ended, and viewers stay connected. |
 | The link | The relay sends a nonce, the forwarder answers with an HMAC of it under the token, then only the forwarder sends. It never reads past the nonce, and the tap has no return path, so nothing a viewer or the relay does can reach the game. `MB|` payloads are filtered again before anything is sent. |
 | Late viewers | The relay keeps the forwarder's latest snapshot and the live frames since; the forwarder sends a fresh snapshot whenever the frames since outgrow the last one (4 MiB at least), so the relay holds at most about twice a snapshot. |
 | Agent reconnects | Viewers stay in the frozen world with a chat notice. The forwarder sends the frames that empty it (chunk unloads, entity removals, scoreboard and tab list entries); with the next session the relay sends those and the new world without its login prelude, so viewers stay connected and see no loading screen. A Respawn is used only when the dimension differs. A dropped link is handled the same way. |
-| Restarts | The relay mirrors the feed from its latest snapshot to `--state/feed.bin` and comes back with the last world. A relay with viewers that is handed a new session it cannot empty (the forwarder restarted) asks them to rejoin. |
+| Relay restarts | The relay mirrors the feed from its latest snapshot to `--state/feed.bin` and comes back with the last world. |
 | Viewers | Chat goes to the other viewers only (one line per 1.5 s, 100 characters, formatting codes removed). `/invsee` (or `/inv`) opens the agent's inventory as a read-only chest that updates live: main inventory, hotbar, then armor. Clicks are undone. No other inventory can be opened. `/help` lists the commands, and tab completion offers them. Nothing a viewer sends goes past the relay. |
 
 Not yet: online-mode viewer login, and the overlay/quest views.
