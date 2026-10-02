@@ -184,6 +184,15 @@ class Snapshot(unittest.TestCase):
         self.assertIn("gtnh-config", chans)
         self.assertEqual(m.stats()["payloads"]["dropped"]["entries"], 4)
 
+    def test_gregtech_machines_and_ores_live_with_their_chunk(self):
+        gt = lambda kind, x, y, z, tag: s3f("GregTech", bytes([kind]) + pack("ihi", x, y, z) + tag + bytes(200))
+        m = state.Mirror(payload_cap=100); hub = proxy.Hub(mirror=m)
+        feed(hub, frames_s=SERVER + [gt(0, 5, 64, 5, b"old"), gt(0, 5, 64, 5, b"new"), gt(3, 50, 20, 5, b"ore"),
+                                     gt(0, 20, 64, 5, b"gone")] + [s3f("other", bytes(60)) for _ in range(5)])
+        gts = [wire.payload(split(f)[1]) for f in m.snapshot() if split(f)[0] == 0x3F]
+        self.assertEqual([d[11:14] for ch, d in gts if ch == "GregTech"], [b"new", b"ore"])  # past the cap, latest per block,
+                                                                                              # none in an unloaded chunk
+
 
 class Handshake(unittest.TestCase):
     def test_snapshot_waits_for_the_viewers_forge_replies(self):

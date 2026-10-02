@@ -31,7 +31,7 @@ serves viewers from such a capture without a host.
 | Viewers | Offline login, adventure mode, invulnerable and flying, at the agent's position on join and after dimension changes. Everything they send is discarded. Keepalives every 5 s. Slow viewers (64 MiB queued) are dropped; at most `--max-viewers` (8). |
 | Hidden from viewers | Keepalives, health, XP, held-item, windows, sign editor, stats, abilities, tab completion, gamemode/credits game states, FML `OpenGui`, every `MB|` payload. |
 | The agent | An ordinary player entity (the agent's name and id) driven from the client's movement, swing and inventory packets. |
-| Late viewers | Login prelude (FML handshake through JoinGame), then chunks and block updates for chunks loaded now, entities at their current positions, latest time, weather, player list, scoreboard, other mod payloads in order (8 MiB cap, oldest dropped first, login-time ones kept), the last 20 chat lines. |
+| Late viewers | Login prelude (FML handshake through JoinGame), then chunks and block updates for chunks loaded now, entities at their current positions, latest time, weather, player list, scoreboard, other mod payloads in order (8 MiB cap, oldest dropped first, login-time ones kept; GregTech's machine and ore packets are kept with their chunk instead, latest per block, and BetterQuesting's in its own store), the last 20 chat lines. |
 
 Chunk and block packets are relayed as received, never re-encoded (NotEnoughIDs changes their payloads). Payloads
 that refer to blocks (GregTech ore materials) cannot be tied to a chunk, so they share the capped log.

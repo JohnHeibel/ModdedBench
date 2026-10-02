@@ -212,9 +212,11 @@ class Stage:
         finally:
             self.greeting -= 1
         if v is None: return w.close()
-        drain = asyncio.create_task(self._drain(v.r, v))
+        drain, start = asyncio.create_task(self._drain(v.r, v)), time.monotonic()
         await v.pump()
         self.viewers.discard(v); drain.cancel()
+        print(f"{self.motd}: viewer {v.name} left after {time.monotonic() - start:.0f} s "
+              f"({v.hs} handshake replies, {len(v.held)} frames still waiting on them)", flush=True)
 
     async def _greet(self, r, w):
         first = await r.readexactly(1)
