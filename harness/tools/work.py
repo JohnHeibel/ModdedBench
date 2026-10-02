@@ -488,7 +488,10 @@ def mb_build_preview(cells: list[dict] | None = None, selection: dict | None = N
     mb_view returns: layers bottom first, rows north to south, one character per block west to
     east, legend {char: {id, meta?}}; '.', ' ' and '+' are left alone. It is for bulk: floors, walls,
     roofs, rows of plain blocks. Place what faces, connects or is configured with the precise tools.
-    Preview does not load chunks, reserve inventory, prove reachability or mutate the world.
+    Dictionary layers with y use that absolute world height, including subsets or gaps;
+    plain row lists use consecutive heights starting at origin. Survey layers without
+    numeric heights cannot be built. Preview does not load chunks, reserve inventory,
+    prove reachability or mutate the world.
     Builder mode defaults to settings.restricted=true, confining edits to plan cells;
     explicit false permits outside access excavation/scaffolding with terrain permissions.
     """

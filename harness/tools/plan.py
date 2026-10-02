@@ -22,7 +22,16 @@ def cells(drawing: dict) -> list[dict]:
     """The drawing's blocks as mb_build cells, relative to its origin. '.', ' ' and '+' are left alone."""
     legend = {c: ({"id": v} if isinstance(v, str) else v) for c, v in (drawing.get("legend") or {}).items()}
     out = []
-    for dy, layer in enumerate(drawing["layers"]):
+    heights = set()
+    for index, layer in enumerate(drawing["layers"]):
+        dy = index
+        if isinstance(layer, dict):
+            y = layer.get("y", drawing["origin"][1] + index)
+            if type(y) is not int: raise ValueError("drawing layer y must be an integer world height")
+            dy = y - drawing["origin"][1]
+            layer = layer["rows"]
+        if dy in heights: raise ValueError("drawing layers must have distinct heights")
+        heights.add(dy)
         for dz, row in enumerate(layer):
             for dx, c in enumerate(row):
                 if c in (AIR, SKIP, PLANNED, PLAYER): continue
@@ -143,5 +152,4 @@ def mb_view(bounds: dict | None = None, radius: int = 10, below: int = 2, above:
 def from_drawing(drawing: dict) -> tuple[list[dict], list[int]]:
     """(cells, origin) for the build tools; accepts layers as lists of rows or as mb_view's {y, rows}."""
     if not isinstance(drawing, dict) or "layers" not in drawing or "origin" not in drawing: raise ValueError("a drawing needs origin, layers and legend")
-    layers = [layer["rows"] if isinstance(layer, dict) else layer for layer in drawing["layers"]]
-    return cells({**drawing, "layers": layers}), list(drawing["origin"])
+    return cells(drawing), list(drawing["origin"])

@@ -8,6 +8,9 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-02** Building a subset of a drawing ignored its listed heights and
+  placed walls at the floor. Drawing conversion now preserves absolute layer
+  heights and rejects nonnumeric survey heights and overlapping layers.
 - **2026-10-02** Resuming mining reread the original forced-tool slot after
   crafting had rearranged it. The journal now retains the chosen tool kind
   across resumes and client restarts; missing tools cannot become other items.
