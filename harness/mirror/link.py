@@ -12,6 +12,7 @@ Message: u8 kind, u32 length, payload.
   LIVE       viewer frames, concatenated
   END        header {session, dim, world} then entries: the frames that empty a viewer's world (the first `world`
              of them are world-scoped, which a dimension change does anyway), then the tab list's
+  INVENTORY  header {title} then the agent's inventory as 45 wire item slots, laid out as a 5-row chest
 Header: u32 length, JSON. Entry: varint gate (FML|HS replies the viewer must have sent first), then a frame.
 """
 from __future__ import annotations
@@ -20,7 +21,7 @@ from .wire import Reader, varint
 
 MAGIC = b"MBRELAY1\n"
 NONCE = 32
-HEARTBEAT, SNAPSHOT, LIVE, END = 0, 1, 2, 3
+HEARTBEAT, SNAPSHOT, LIVE, END, INVENTORY = 0, 1, 2, 3, 4
 HEAD = struct.Struct(">BI")
 MAX = 256 << 20  # bytes in one message
 
@@ -44,9 +45,14 @@ def headed(meta: dict, entries: list[tuple[int, bytes]]) -> bytes:
     return struct.pack(">I", len(j)) + j + b"".join(varint(g) + f for g, f in entries)
 
 
-def unheaded(payload: bytes) -> tuple[dict, list[tuple[int, bytes]]]:
+def header(payload: bytes) -> tuple[dict, int]:
     n = struct.unpack_from(">I", payload)[0]
-    meta, r, out = json.loads(payload[4:4 + n]), Reader(payload, 4 + n), []
+    return json.loads(payload[4:4 + n]), 4 + n
+
+
+def unheaded(payload: bytes) -> tuple[dict, list[tuple[int, bytes]]]:
+    meta, at = header(payload)
+    r, out = Reader(payload, at), []
     while r.pos < len(payload):
         gate = r.varint(); start = r.pos
         r.take(r.varint())

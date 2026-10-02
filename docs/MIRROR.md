@@ -78,5 +78,6 @@ A self-signed certificate is fine: the forwarder pins it (`openssl req -x509 -ne
 | Late viewers | The relay keeps the forwarder's latest snapshot and the live frames since; the forwarder sends a fresh snapshot whenever the frames since outgrow the last one (4 MiB at least), so the relay holds at most about twice a snapshot. |
 | Agent reconnects | Viewers stay in the frozen world with a chat notice. The forwarder sends the frames that empty it (chunk unloads, entity removals, scoreboard and tab list entries); with the next session the relay sends those and the new world without its login prelude, so viewers stay connected and see no loading screen. A Respawn is used only when the dimension differs. A dropped link is handled the same way. |
 | Restarts | The relay mirrors the feed from its latest snapshot to `--state/feed.bin` and comes back with the last world. A relay with viewers that is handed a new session it cannot empty (the forwarder restarted) asks them to rejoin. |
+| Viewers | Chat goes to the other viewers only (one line per 1.5 s, 100 characters, formatting codes removed). `/invsee` (or `/inv`) opens the agent's inventory as a read-only chest that updates live: main inventory, hotbar, then armor. Clicks are undone. No other inventory can be opened. `/help` lists the commands, and tab completion offers them. Nothing a viewer sends goes past the relay. |
 
-Not yet: online-mode viewer login, chat between viewers, and the overlay/quest views.
+Not yet: online-mode viewer login, and the overlay/quest views.

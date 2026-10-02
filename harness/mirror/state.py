@@ -52,6 +52,7 @@ class Entity:
 class Mirror:
     def __init__(self, payload_cap: int = 8 << 20, chat_keep: int = 20, score_keep: int = 2000):
         self.payload_cap, self.chat_keep, self.score_keep = payload_cap, chat_keep, score_keep
+        self.inv_version = 0  # bumped on every change to the host's inventory or held slot; never reset
         self.reset()
 
     def reset(self, uuid: str = "", name: str = ""):
@@ -143,6 +144,7 @@ class Mirror:
 
     def _equipment(self) -> list[bytes]:
         """S04s for host equipment that changed; kept in the host record so snapshots have them."""
+        self.inv_version += 1
         out, host = [], self._ent(self.eid, True)
         for eq, slot in [(0, 36 + self.held), *((e, s) for s, e in ARMOR.items())]:
             f = frame(0x04, pack("ih", self.eid, eq) + self._item(slot))

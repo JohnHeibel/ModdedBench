@@ -9,19 +9,27 @@ world with a notice, and the next session's world replaces it in place, without 
 unless the dimension differs. The feed is mirrored to disk so a restarted relay comes back with the last world.
 """
 from __future__ import annotations
-import argparse, asyncio, hmac, json, os, secrets, ssl, struct
+import argparse, asyncio, hmac, json, os, secrets, ssl, struct, time
 from pathlib import Path
-from .link import END, HEAD, HEARTBEAT, LIVE, MAGIC, MAX, SNAPSHOT, proof, token, unheaded
+from .link import END, HEAD, HEARTBEAT, INVENTORY, LIVE, MAGIC, MAX, SNAPSHOT, header, proof, token, unheaded
 from .proxy import Stage
-from .wire import frame, string
+from .wire import Reader, frame, pack, string, varint
 
 FROZEN = "the agent is reconnecting; this view is frozen until it returns"
 DROPPED = "the feed from the agent's PC dropped; this view is frozen until it is back"
 BACK = "the agent is back"
+WINDOW = 1          # the only window a viewer is ever shown: the agent's inventory
+COMMANDS = {"/invsee": "the agent's inventory, live", "/help": "this list"}
+CHAT_GAP = 1.5      # seconds between one viewer's chat lines
 
 
 def notice(text: str) -> bytes:
     return frame(0x02, string(json.dumps({"text": f"[spectators] {text}", "color": "gray"})))
+
+
+def said(name: str, text: str) -> bytes:
+    return frame(0x02, string(json.dumps({"text": "", "extra": [
+        {"text": "[spectator] ", "color": "dark_aqua"}, {"text": name, "color": "aqua"}, {"text": f": {text}", "color": "white"}]})))
 
 
 class World:
@@ -50,6 +58,7 @@ class Relay(Stage):
         super().__init__(max_viewers, viewer_queue)
         self.secret, self.state, self.tail_cap = secret, state, tail_cap
         self.world, self.link, self.log = None, None, None
+        self.inventory = None  # (window title, the agent's inventory as 45 wire slots)
 
     # ---- viewers
     def refuse(self, name):
@@ -57,9 +66,44 @@ class Relay(Stage):
         if name.lower() == self.world.host.lower(): return "that name is the agent's; pick another"
 
     def welcome(self, v):
+        v.invsee, v.spoke = False, 0.0
         v.hold(self.world.catch_up())
+        v.send([notice(f"you are watching {self.world.host}. Chat here reaches other spectators only; /invsee shows its inventory")])
         if self.world.clear is not None: v.send([notice(FROZEN)])
         elif self.link is None: v.send([notice(DROPPED)])
+
+    def heard(self, v, pid, body):
+        """Viewers talk to each other and to the relay, never to the game: nothing here goes anywhere but viewers."""
+        r = Reader(body)
+        if pid == 0x01: self.chat(v, r.string()[:100])
+        elif pid == 0x14:
+            typed = r.string()[:100].lower()
+            matches = [c for c in COMMANDS if typed.startswith("/") and c.startswith(typed)]
+            v.send([frame(0x3A, varint(len(matches)) + b"".join(map(string, matches)))])
+        elif pid == 0x0E and r.u("b") == WINDOW and v.invsee:  # a click: undo whatever the client predicted
+            v.send([frame(0x2F, pack("bh", -1, -1) + pack("h", -1)), self.window_items()])
+        elif pid == 0x0D and r.u("b") == WINDOW: v.invsee = False
+
+    def chat(self, v, text):
+        text = text.replace("\u00a7", "").strip()
+        if not text: return
+        if text.startswith("/"):
+            command = text.split()[0].lower()
+            if command in ("/invsee", "/inv"): return self.invsee(v)
+            if command == "/help": return v.send([notice(f"{c}: {what}") for c, what in COMMANDS.items()])
+            return v.send([notice(f"no command {command} here; try /help")])
+        now = time.monotonic()
+        if now - v.spoke < CHAT_GAP: return v.send([notice("a little slower, please")])
+        v.spoke = now
+        self.broadcast([said(v.name, text)])
+
+    def invsee(self, v):
+        if self.inventory is None: return v.send([notice("the agent's inventory has not arrived yet")])
+        v.invsee = True
+        v.send([frame(0x2D, pack("BB", WINDOW, 0) + string(self.inventory[0]) + pack("B?", 45, True)), self.window_items()])
+
+    def window_items(self) -> bytes:
+        return frame(0x30, pack("Bh", WINDOW, 45) + self.inventory[1])
 
     # ---- the feed
     def handle(self, kind: int, payload: bytes):
@@ -80,6 +124,12 @@ class Relay(Stage):
             self.broadcast([payload])
             if w.tail_bytes > self.tail_cap:
                 self.kick("the spectator feed overflowed; rejoin shortly"); self.world = None
+        elif kind == INVENTORY:
+            meta, at = header(payload)
+            self.inventory = (meta["title"][:32], payload[at:])
+            f = self.window_items()
+            for v in self.viewers:
+                if getattr(v, "invsee", False): v.send([f])
         elif kind == END and w and w.clear is None:
             meta, entries = unheaded(payload)
             if meta["session"] != w.session: return

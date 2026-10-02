@@ -8,7 +8,7 @@ relay back towards the game: the forwarder reads the relay's nonce and nothing a
 """
 from __future__ import annotations
 import argparse, asyncio, secrets, ssl, struct, zlib
-from .link import END, HEARTBEAT, LIVE, MAGIC, NONCE, SNAPSHOT, headed, message, proof, token
+from .link import END, HEARTBEAT, INVENTORY, LIVE, MAGIC, NONCE, SNAPSHOT, headed, message, proof, token
 from .proxy import Feed
 from .state import SPECTATOR, Mirror
 from .wire import Reader, frame, pack, payload, split, string
@@ -45,6 +45,16 @@ def clearing(m: Mirror) -> tuple[list[bytes], list[bytes]]:
     return world, [frame(0x38, string(n) + pack("?h", False, 0)) for n in m.players]
 
 
+def inventory(m: Mirror) -> bytes:
+    """The host's inventory as 45 wire slots for a 5-row chest: main inventory, hotbar, then armor and, after a gap,
+    any slots a mod adds past the player container's 45 (window 0: 0-4 crafting, 5-8 armor, 9-35 main, 36-44 hotbar)."""
+    order = [*range(9, 45), *range(5, 9), None, *sorted(s for s in m.inv if s >= 45)[:4]]
+    return b"".join(m.inv.get(s, EMPTY) if s is not None else EMPTY for s in order + [None] * (45 - len(order)))
+
+
+EMPTY = pack("h", -1)
+
+
 class Forwarder(Feed):
     def __init__(self, relay: tuple[str, int], secret: bytes, tls: ssl.SSLContext | None, mirror: Mirror | None = None,
                  refresh_min: int = 4 << 20, backlog: int = 64 << 20):
@@ -55,6 +65,7 @@ class Forwarder(Feed):
         self.open = None     # the session id the relay is showing
         self.pending = None  # END for a session the relay has not heard close
         self.snap_bytes = self.tail_bytes = 0
+        self.inv_sent = -1
 
     # ---- what goes to the relay
     def send(self, msg: bytes) -> bool:
@@ -74,6 +85,13 @@ class Forwarder(Feed):
         self.snap_bytes, self.tail_bytes = sum(len(f) for _, f in snap), 0
         meta = {"session": self.open, "dim": start, "host": m.name, "prelude": len(m.prelude), "respawn": 1}
         self.send(message(SNAPSHOT, headed(meta, [(0, respawn), *snap])))
+        self.inv_sent = -1; self.share_inventory()
+
+    def share_inventory(self):
+        m = self.mirror
+        if m.inv_version == self.inv_sent or not m.inv: return
+        self.inv_sent = m.inv_version
+        self.send(message(INVENTORY, headed({"title": f"{m.name[:16]}'s inventory"}, []) + inventory(m)))
 
     def opening(self):
         if self.link is None or self.open is not None or self.disabled or not self.mirror.ready: return
@@ -92,6 +110,7 @@ class Forwarder(Feed):
     # ---- Feed hooks
     def played(self, frames):
         if self.open is None: return self.opening()  # a snapshot taken now already holds these frames
+        self.share_inventory()
         live = b"".join(f for f in frames if public(f))
         if not live: return
         self.send(message(LIVE, live)); self.tail_bytes += len(live)

@@ -186,6 +186,9 @@ class Stage:
 
     def welcome(self, v: Viewer): pass
 
+    def heard(self, v: Viewer, pid: int, body: bytes):
+        """A play packet from a viewer, other than its Forge handshake replies."""
+
     def broadcast(self, frames):
         if frames:
             for v in self.viewers: v.send(frames)
@@ -240,12 +243,13 @@ class Stage:
 
     async def _drain(self, r, v):
         s = Splitter()
-        try:  # a viewer's Forge handshake replies release the snapshot; everything else it sends is ignored
+        try:  # a viewer's Forge handshake replies release the snapshot; the rest goes to heard()
             while (data := await r.read(65536)) and not v.closing:
                 for f in s.feed(data):
                     pid, body = split(f)
                     if pid == 0x17 and Reader(body).string() == "FML|HS": v.handshook()
-        except (ConnectionError, OSError, ValueError):
+                    else: self.heard(v, pid, body)
+        except (ConnectionError, OSError, ValueError, UnicodeDecodeError, struct.error):
             pass
         v.close(); self.viewers.discard(v)
 
