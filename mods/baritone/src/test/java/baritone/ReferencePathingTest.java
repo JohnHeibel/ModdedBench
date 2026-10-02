@@ -119,6 +119,31 @@ public class ReferencePathingTest {
         var p=path(context(t,true),new BetterBlockPos(0,64,0),new GoalBlock(3,64,0));
         assertTrue(p.movements().get(0) instanceof MovementParkour);
     }
+    /** A 1x1 water shaft four deep at x=1 into a 2-high flooded tunnel along x=1..5, in solid stone. */
+    private static Terrain floodedU(){
+        Terrain t=new Terrain();
+        for(int y=60;y<64;y++) t.set(1,y,0,Blocks.WATER,0);
+        for(int x=1;x<=5;x++) for(int y=60;y<62;y++) t.set(x,y,0,Blocks.WATER,0);
+        for(int y=60;y<64;y++) t.set(5,y,0,Blocks.WATER,0);
+        return t;
+    }
+    @Test public void swimsDownAShaftAndAlongAFloodedTunnel(){
+        Baritone.settings().allowBreak.value=false;
+        var p=path(context(floodedU(),false),new BetterBlockPos(0,64,0),new GoalBlock(3,60,0));
+        assertEquals(new BetterBlockPos(3,60,0),p.getDest());
+    }
+    @Test public void swimsBackUpAndOutOfTheFloodedTunnel(){
+        Baritone.settings().allowBreak.value=false;
+        var p=path(context(floodedU(),false),new BetterBlockPos(3,60,0),new GoalBlock(6,64,0));
+        assertEquals(new BetterBlockPos(6,64,0),p.getDest());
+    }
+    @Test public void aRouteAtTheSurfaceIsPreferredToOneUnderWater(){
+        Terrain t=new Terrain();Baritone.settings().allowBreak.value=false;
+        for(int x=1;x<=6;x++) for(int z=-3;z<=3;z++) for(int y=58;y<64;y++) t.set(x,y,z,Blocks.WATER,0);
+        var p=path(context(t,false),new BetterBlockPos(0,64,0),new GoalBlock(7,64,0));
+        assertEquals(new BetterBlockPos(7,64,0),p.getDest());
+        for(BetterBlockPos q:p.positions()) assertNotEquals("head under water at "+q,Blocks.WATER,t.getBlock(q.x,q.y+1,q.z));
+    }
     @Test public void compositeGoalSelectsReachableGroundInsteadOfElevatedTarget(){
         Terrain t=new Terrain();Baritone.settings().allowBreak.value=false;
         var p=path(context(t,false),new BetterBlockPos(0,64,0),new GoalComposite(new GoalBlock(2,70,0),new GoalBlock(9,64,0)));
