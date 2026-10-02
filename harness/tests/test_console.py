@@ -26,7 +26,7 @@ class ConsoleTests(unittest.TestCase):
         server = ThreadingHTTPServer(("127.0.0.1", 0), console.Handler); threading.Thread(target=server.serve_forever, daemon=True).start()
         def post(headers):
             req = urllib.request.Request(f"http://127.0.0.1:{server.server_port}/api/action", data=b'{"name":"server.stop"}', headers=headers)
-            try: return urllib.request.urlopen(req, timeout=5).status
+            try: return urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=5).status  # never through an environment proxy
             except urllib.error.HTTPError as e: return e.code
         try:
             self.assertEqual(post({}), 403)

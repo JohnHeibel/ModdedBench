@@ -198,6 +198,7 @@ class GTNHProfileTests(unittest.TestCase):
             first_module, probe = sys.modules["mbtools_gtnh.a"], mbtool.state["probe"]
             self.assertEqual(sys.modules["mbtools_gtnh.nested.b"].mb_b(), 10)
             a.write_text(a.read_text().replace("VERSION = 1", "VERSION = 2"))
+            os.utime(a, ns=(a.stat().st_atime_ns, a.stat().st_mtime_ns + 10**9))  # an edit seen as an edit: Linux stamps writes at a coarse tick, so one this quick can keep its mtime
             self.assertEqual(srv.check_reload(), ["loaded 2 modules: 2 tools"])
             self.assertIsNot(sys.modules["mbtools_gtnh.a"], first_module)
             self.assertEqual(sys.modules["mbtools_gtnh.nested.b"].mb_b(), 20)  # sibling re-imported against the new module
