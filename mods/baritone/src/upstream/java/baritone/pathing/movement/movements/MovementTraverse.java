@@ -185,6 +185,15 @@ public class MovementTraverse extends Movement {
         }
     }
 
+    /** ModdedBench: the bridge's aim has settled and the crosshair is not on the face to place against; see clearInSight. */
+    private MovementState clearSight(MovementState state) {
+        if (clearInSight(state) || !sightBlocked()) {
+            return state;
+        }
+        logDebug("Sight to the bridge face is blocked by " + ctx.getSelectedBlock().orElse(null));
+        return state.setStatus(MovementStatus.UNREACHABLE);
+    }
+
     @Override
     public MovementState updateState(MovementState state) {
         super.updateState(state);
@@ -258,10 +267,13 @@ public class MovementTraverse extends Movement {
         BlockPos feet = ctx.playerFeet();
         if (feet.getY() != dest.getY() && !ladder) {
             logDebug("Wrong Y coordinate");
-            if (feet.getY() < dest.getY()) {
-                return state.setInput(Input.JUMP, true);
+            // ModdedBench: upstream held jump when low and did nothing when high, until the movement timed out. Swimming
+            // up and landing are worth waiting for; standing on ground at another height (slipped into the hole a bridge
+            // was to fill, or up onto something) this traverse cannot finish from: end it and re-plan from here.
+            if (MovementHelper.isLiquid(ctx, feet) || !ctx.player().onGround) {
+                return feet.getY() < dest.getY() ? state.setInput(Input.JUMP, true) : state;
             }
-            return state;
+            return state.setStatus(MovementStatus.UNREACHABLE);
         }
 
         if (isTheBridgeBlockThere) {
@@ -327,9 +339,9 @@ public class MovementTraverse extends Movement {
                             // but only if our attempted place is straight ahead
                             return state.setInput(Input.MOVE_FORWARD, true);
                         }
-                    } else if (ctx.playerRotations().isReallyCloseTo(state.getTarget().rotation)) {
+                    } else if (ctx.isAimSettled(state.getTarget().rotation)) {
                         // well i guess theres something in the way
-                        return state.setInput(Input.CLICK_LEFT, true);
+                        return clearSight(state);
                     }
                     return state;
                 }
@@ -359,8 +371,8 @@ public class MovementTraverse extends Movement {
                     return state.setInput(Input.CLICK_RIGHT, true); // wait to right click until we are able to place
                 }
                 // Out.log("Trying to look at " + goalLook + ", actually looking at" + Baritone.whatAreYouLookingAt());
-                if (ctx.playerRotations().isReallyCloseTo(state.getTarget().rotation)) {
-                    state.setInput(Input.CLICK_LEFT, true);
+                if (ctx.isAimSettled(state.getTarget().rotation)) {
+                    return clearSight(state);
                 }
                 return state;
             }

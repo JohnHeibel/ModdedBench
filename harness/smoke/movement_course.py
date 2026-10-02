@@ -76,6 +76,11 @@ CASES: dict[str, dict] = {
     "water_stream_down": dict(expect="succeed", bound=80, max_dev=1.0, settle=60),
     "water_hole_climb_wet": dict(expect="succeed", bound=60),
     "water_hole_climb_dry": dict(expect="succeed", bound=60),
+    # the agent's movement snags of 2026-10-01 (pathfix_replay.py group S), rebuilt
+    "bridge_plant": dict(expect="succeed", bound=60, max_dev=1.0, allow=(False, True)),
+    "overhang_plant": dict(expect="succeed", bound=30, allow=(False, True)),
+    "head_plant_leaves": dict(expect="succeed", bound=60, max_dev=1.0, allow=(True, False)),
+    "bridge_drop": dict(expect="succeed", bound=60, allow=(False, True), change_at_u=6, change="bridge_drop_fall"),
     # script: the obsidian cases (movement_obsidian.py); fixture: the fixture case to build when it differs.
     "obsidian": dict(expect="script", script="simple"),
     "obsidian_natural": dict(expect="script", script="natural"),

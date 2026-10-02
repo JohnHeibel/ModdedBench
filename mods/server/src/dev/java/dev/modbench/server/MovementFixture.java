@@ -45,7 +45,7 @@ import net.minecraftforge.fluids.IFluidBlock;
  */
 public final class MovementFixture {
     /** Plots run west to east four per row; plot 16 opens a fifth row, so the volume is 64 x 80. */
-    static final int PLOTS=18, SIZE=64, SIZE_Z=16*((PLOTS+3)/4), FLOOR=199, TOP=218, B=200;
+    static final int PLOTS=20, SIZE=64, SIZE_Z=16*((PLOTS+3)/4), FLOOR=199, TOP=218, B=200;
     private int sizeZ=SIZE_Z;
     /** Every item that entered the course volume since the last position, with how it left (picked, burned, gone). */
     private final List<Tracked> items=new ArrayList<>();
@@ -432,6 +432,27 @@ public final class MovementFixture {
         // source; wet: a sheet of water sources lies over the shelf around it (the obsidian lake), dry: the shelf is bare.
         add(new Case("water_hole_climb_wet",17,()->waterHole(true))).start(5.5,B,7.5,-90).goal(9,B+1,7).note("Sol round 2: MovementAscend stalled 99 ticks");
         add(new Case("water_hole_climb_dry",17,()->waterHole(false))).start(5.5,B,7.5,-90).goal(9,B+1,7).note("a player in a flooded 1-deep hole");
+        // Plot 18: the agent's snags of 2026-10-01. A stone ridge one high whose u=8 cell is a double tall grass on grass:
+        // the goal is the plant's top cell, so the ridge must be bridged into the plant's bottom cell, and the plant hides
+        // the face to place against. Lane v=13: the player starts overhanging that cell from the ridge (feet in the goal,
+        // held up by the cell beside it). Lane v=9: the player stands inside a tall plant (eyes in its top half) with
+        // leaves at head height in the next cell of a walled lane.
+        add(new Case("bridge_plant",18,()->plantRidge(3))).start(2.5,B+1,3.5,-90).goal(8,B+1,3).route(2.5,3.5,8.5,3.5).note("s_trav_49_65_64 / 63_66_19");
+        add(new Case("overhang_plant",18,()->plantRidge(13))).start(8.2,B+1,13.5,-90).goal(8,B+1,13).note("feet in the goal, pathStart beside it");
+        add(new Case("head_plant_leaves",18,()->{
+            box(18,2,B,8,8,B+2,8,Blocks.stone);box(18,2,B,10,8,B+2,10,Blocks.stone);box(18,1,B,9,1,B+2,9,Blocks.stone);
+            set(18,3,B-1,9,Blocks.grass);set(18,3,B,9,Blocks.double_plant,2,2);set(18,3,B+1,9,Blocks.double_plant,8,2);
+            set(18,4,B+1,9,Blocks.leaves,4,2);
+        })).start(3.7,B,9.5,-90).goal(7,B,9).route(3.7,9.5,7.5,9.5).note("s_trav_49_64_62: pressed against the leaves, eyes inside the plant top");
+        // Plot 19: a stone ridge two high with a two-deep gap at u=8, bridged on the way to u=12. The change drops the player
+        // into the gap, too deep to jump out of, while a traverse along the ridge is running (s_trav_64_65_55).
+        add(new Case("bridge_drop",19,()->{
+            box(19,0,B,7,15,B+1,7,Blocks.stone);box(19,8,B,7,8,B+1,7,Blocks.air);
+        })).start(2.5,B+2,7.5,-90).goal(12,B+2,7).route(2.5,7.5,12.5,7.5).note("change bridge_drop_fall at u>=6");
+    }
+    private void plantRidge(int v) {
+        box(18,0,B,v,15,B,v,Blocks.stone);
+        set(18,8,B-1,v,Blocks.grass);set(18,8,B,v,Blocks.double_plant,2,2);set(18,8,B+1,v,Blocks.double_plant,8,2);
     }
     private void waterHole(boolean wet) {
         box(17,1,B,3,13,B,11,Blocks.stone);box(17,1,B+1,3,13,B+3,11,Blocks.air);
@@ -564,7 +585,9 @@ public final class MovementFixture {
             case "lava_approach_close" -> set(11,10,B,4,Blocks.stone,0,3);
             case "natural_flow_on" -> set(16,NU,B+7,NV,Blocks.water,0,3);
             case "natural_flow_off" -> set(16,NU,B+7,NV,Blocks.glowstone,0,3);
-            default -> throw new IllegalArgumentException("unknown movement change: lava_approach_open|lava_approach_close|natural_flow_on|natural_flow_off");
+            case "bridge_drop_fall" -> {EntityPlayerMP p=livePlayer();double[] a=abs(19,8.5,B,7.5);
+                p.playerNetServerHandler.setPlayerLocation(a[0],a[1],a[2],p.rotationYaw,p.rotationPitch);}
+            default -> throw new IllegalArgumentException("unknown movement change: lava_approach_open|lava_approach_close|natural_flow_on|natural_flow_off|bridge_drop_fall");
         }
         return Json.object("changed",name);
     }

@@ -92,7 +92,9 @@ public final class BaritoneNavigation implements Navigation {
     @Override public Map<String,Object> status() {
         var out=new LinkedHashMap<String,Object>(apiSession.active()?apiSession.status():active==null?Map.of("state","idle","available",true,"movement",MOVEMENT,"mining",true,"automaticTools",true,"excavation",true,"placement",true):active.status());
         out.put("nativeEvents",baritone.compat.NativeEvents.diagnostics());out.put("javaApi",apiSession.status());
-        out.put("lastCalculation",reference.getPathingBehavior().lastCalculation());return out;
+        out.put("lastCalculation",reference.getPathingBehavior().lastCalculation());
+        if(baritone.gtnh.pathing.MovementTrace.on())out.put("trace",baritone.gtnh.pathing.MovementTrace.recent(600));
+        return out;
     }
     @Override public void cancel(String reason){if(active!=null&&!active.done())active.cancel(reason);apiSession.stop(reason);}
     void stop(){cancel("cancelled");}

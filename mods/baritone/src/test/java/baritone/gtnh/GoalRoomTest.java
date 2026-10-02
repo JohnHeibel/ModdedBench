@@ -16,7 +16,7 @@ public class GoalRoomTest {
     private static final class World implements GoalRoom.Terrain {
         final Map<List<Integer>,List<double[]>> shapes=new HashMap<>();
         final Map<List<Integer>,String> names=new HashMap<>();
-        final Set<List<Integer>> clears=new HashSet<>(),holds=new HashSet<>();
+        final Set<List<Integer>> clears=new HashSet<>(),holds=new HashSet<>(),kept=new HashSet<>();
         int asked;
         World set(int x,int y,int z,String name,double[]... boxes){
             var k=List.of(x,y,z);names.put(k,name);
@@ -32,6 +32,7 @@ public class GoalRoomTest {
         }
         @Override public boolean clears(int x,int y,int z){return clears.contains(List.of(x,y,z));}
         @Override public boolean holds(int x,int y,int z){return holds.contains(List.of(x,y,z));}
+        @Override public boolean enters(int x,int y,int z){return !kept.contains(List.of(x,y,z));}
         @Override public Map<String,Object> block(int x,int y,int z){return Map.of("block",names.getOrDefault(List.of(x,y,z),y==63?"minecraft:stone":"minecraft:air"));}
     }
     private static final double[] CUBE={0,0,0,1,1,1};
@@ -50,6 +51,20 @@ public class GoalRoomTest {
         assertTrue("a few dozen shapes, not a search: "+world.asked,world.asked<=36);assertTrue(ns<50_000_000L);
         // A goal whose head is in the wall: the body is 1.8 high.
         assertNotNull(GoalRoom.refusal(at(0,63,0),new World().set(0,63,0,"minecraft:air").cube(0,64,0,"minecraft:cobblestone"),false));
+    }
+
+    @Test public void aBoxlessCellTheModelKeepsTheBodyOutOfIsRefused(){
+        // Flowing oil (2026-10-01, the base pond): no collision box, but the movement model never puts the body in it, so a
+        // goal there flooded 340k nodes from one block away. The fluid is named, marked unpathable.
+        var oil=new World().set(0,64,0,"BuildCraft|Energy:blockOil");oil.holds.add(List.of(0,64,0));oil.kept.add(List.of(0,64,0));
+        var refused=GoalRoom.refusal(at(0,64,0),oil,true);
+        assertNotNull(refused);assertEquals("no_room_for_the_body",refused.get("why"));
+        assertEquals(List.of(0,64,0),obstructions(refused).get(0).get("pos"));assertEquals(false,obstructions(refused).get(0).get("pathable"));
+        // In the head cell as well; and a box-less cell the model does enter (air, still water) is room.
+        var head=new World();head.kept.add(List.of(0,65,0));assertNotNull(GoalRoom.refusal(at(0,64,0),head,false));
+        var water=new World().set(0,64,0,"minecraft:water");water.holds.add(List.of(0,64,0));assertNull(GoalRoom.refusal(at(0,64,0),water,false));
+        // One cell of a near goal the model keeps out of does not refuse the goal.
+        var near=new World();near.kept.add(List.of(0,64,0));assertNull(GoalRoom.refusal(new GoalComposite(at(0,64,0),at(2,64,0)),near,false));
     }
 
     @Test public void aCauldronIsRoomUnlessSomethingSitsOnIt(){

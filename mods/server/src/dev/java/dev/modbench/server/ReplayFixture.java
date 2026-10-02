@@ -11,7 +11,11 @@ import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.world.WorldServer;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /** Replays in a clone of a played world: no course is built and nothing in the world is changed. The only player is
  *  moved to a start, and the world is read back (the player, and named cells) as the server sees it. */
@@ -40,7 +44,7 @@ final class ReplayFixture {
         pl.playerNetServerHandler.setPlayerLocation(x,y,z,(float)Json.number(p,"yaw",0,-360,360),(float)Json.number(p,"pitch",0,-90,90));
         return status(p);
     }
-    /** The player as the server sees it, and {cells:[[x,y,z],...]} (at most 64): block id and meta. */
+    /** The player as the server sees it, and {cells:[[x,y,z],...]} (at most 64): block id, meta and collision boxes (cell-relative). */
     Object status(JsonObject p){
         EntityPlayerMP pl=player();
         JsonArray inv=new JsonArray();
@@ -55,11 +59,16 @@ final class ReplayFixture {
                 if(n++>=64)break;
                 JsonArray c=e.getAsJsonArray();int x=c.get(0).getAsInt(),y=c.get(1).getAsInt(),z=c.get(2).getAsInt();
                 Block b=world().getBlock(x,y,z);
+                List<AxisAlignedBB> list=new ArrayList<>();
+                try{b.addCollisionBoxesToList(world(),x,y,z,AxisAlignedBB.getBoundingBox(x-1,y-1,z-1,x+2,y+3,z+2),list,pl);}catch(RuntimeException|LinkageError ignored){}
+                JsonArray boxes=new JsonArray();
+                for(AxisAlignedBB a:list)boxes.add(Json.array(r(a.minX-x),r(a.minY-y),r(a.minZ-z),r(a.maxX-x),r(a.maxY-y),r(a.maxZ-z)));
                 cells.add(Json.object("pos",Json.array(x,y,z),"block",String.valueOf(Block.blockRegistry.getNameForObject(b)),"meta",world().getBlockMetadata(x,y,z),
-                    "loaded",world().getChunkProvider().chunkExists(x>>4,z>>4)));
+                    "boxes",boxes,"loaded",world().getChunkProvider().chunkExists(x>>4,z>>4)));
             }
         }
         out.add("cells",cells);
         return out;
     }
+    private static double r(double v){return Math.round(v*1000)/1000.0;}
 }
