@@ -7,7 +7,7 @@ broadcast to viewers and can produce a snapshot for a viewer joining now. It nev
 packets (NotEnoughIDs changes their payloads); it reads only their leading coordinates.
 """
 from __future__ import annotations
-import heapq, json, math
+import heapq, json, math, struct
 from collections import deque
 from . import bq
 from .wire import Reader, frame, pack, payload, string, varint
@@ -18,6 +18,9 @@ EYE = 1.62  # S08 carries the eye height; C04/C06 and entity positions carry the
 # Server packets about the host or its screens, never shown to viewers.
 DROP = {0x00, 0x06, 0x09, 0x1F, 0x2D, 0x2E, 0x2F, 0x30, 0x31, 0x32, 0x36, 0x37, 0x39, 0x3A, 0x01}
 SPAWNS = {0x0C, 0x0E, 0x0F, 0x10, 0x11}
+# GregTech payloads that say what a block at (int x, short y, int z) is: a machine's tile (0) and an ore's (3). Without
+# them a machine or ore renders as a missing texture, so they live with their chunk, like block updates.
+GT_BLOCKS = (b"\x00", b"\x03")
 ARMOR = {5: 4, 6: 3, 7: 2, 8: 1}  # player container slot -> equipment slot
 
 
@@ -239,6 +242,9 @@ class Mirror:
             channel, data = payload(body)
             if channel.startswith("MB|"): return []
             if channel == bq.CHANNEL: self.book.feed(self.seq, f, data); return [f]
+            if channel == "GregTech" and data[:1] in GT_BLOCKS and len(data) >= 11:
+                x, y, z = struct.unpack_from(">ihi", data, 1)
+                self._store(f, [(x >> 4, z >> 4)], ("gt", data[0], x, y, z)); return [f]
             if channel == "FML" and data:
                 if data[0] == 1: return []  # OpenGui: the host's screen
                 if self._fml(f, data): return [f]
