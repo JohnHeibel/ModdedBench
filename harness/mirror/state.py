@@ -63,7 +63,7 @@ class Mirror:
         self.dim = None; self.respawn = None  # (seq, frame) of the last dimension change, replayed in order
         self.time = self.spawnpos = None
         self.players, self.scores, self.chat = {}, deque(maxlen=self.score_keep), deque(maxlen=self.chat_keep)
-        self.payloads, self.pinned, self.payload_bytes, self.dropped = {}, set(), 0, [0, 0]
+        self.payloads, self.pinned, self.payload_bytes, self.dropped = {}, {}, 0, [0, 0]  # seq -> frame; pinned ones are never dropped
         self.inv, self.held = {}, 0
         self.hpos, self.avatar, self.place = None, False, False  # hpos: [x, feet y, z, yaw, pitch]
         self.chunked = False  # any chunk seen: payloads before it are pinned (login-time config sync)
@@ -239,8 +239,7 @@ class Mirror:
             if channel == "FML" and data:
                 if data[0] == 1: return []  # OpenGui: the host's screen
                 if self._fml(f, data): return [f]
-            self.payloads[self.seq] = f; self.payload_bytes += len(f)
-            if not self.chunked: self.pinned.add(self.seq)
+            (self.payloads if self.chunked else self.pinned)[self.seq] = f; self.payload_bytes += len(f)
             self._cap_payloads()
             return [f]
         if pid == 0x2B:
@@ -308,10 +307,8 @@ class Mirror:
 
     def _cap_payloads(self):
         if self.payload_bytes <= self.payload_cap: return
-        for s in list(self.payloads):
-            if self.payload_bytes <= self.payload_cap: break
-            if s in self.pinned: continue
-            n = len(self.payloads.pop(s)); self.payload_bytes -= n
+        while self.payload_bytes > self.payload_cap and self.payloads:  # oldest first
+            n = len(self.payloads.pop(next(iter(self.payloads)))); self.payload_bytes -= n
             self.dropped[0] += 1; self.dropped[1] += n
 
     # ---- late join
@@ -325,7 +322,7 @@ class Mirror:
         """Frames that bring a freshly logged-in viewer to the host's present, after LoginSuccess."""
         out = [*self.prelude, abilities()]
         out += [f for f in (self.spawnpos, self.time) if f] + [*self.weather.values(), *self.players.values(), *self.scores]
-        ordered = [((s, e[0]) for s, e in self.log.items()), iter(self.payloads.items())]
+        ordered = [((s, e[0]) for s, e in self.log.items()), iter(self.pinned.items()), iter(self.payloads.items())]
         if self.respawn: ordered.append(iter([self.respawn]))
         out += [f for _, f in heapq.merge(*ordered, key=lambda t: t[0])]
         if self.unload:  # a bulk packet still held for one chunk also reloads its unloaded neighbours
@@ -347,7 +344,7 @@ class Mirror:
         return {"host": self.name, "joined": self.join is not None, "dimension": self.dim, "chunks": len(self.chunks),
                 "chunk_log": {"entries": len(self.log), "bytes": sum(len(e[0]) for e in self.log.values())},
                 "entities": sum(e.spawn is not None for e in self.ents.values()),
-                "payloads": {"entries": len(self.payloads), "bytes": self.payload_bytes, "cap": self.payload_cap,
-                             "pinned": len(self.pinned & self.payloads.keys()),
+                "payloads": {"entries": len(self.payloads) + len(self.pinned), "bytes": self.payload_bytes, "cap": self.payload_cap,
+                             "pinned": len(self.pinned),
                              "dropped": {"entries": self.dropped[0], "bytes": self.dropped[1]}},
                 "prelude_bytes": sum(map(len, self.prelude)), "avatar": self.avatar}

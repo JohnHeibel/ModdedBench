@@ -12,8 +12,10 @@ from __future__ import annotations
 import argparse, asyncio, hmac, json, os, secrets, ssl, struct, time
 from pathlib import Path
 from .link import END, HEAD, HEARTBEAT, INVENTORY, LIVE, MAGIC, MAX, SNAPSHOT, header, proof, token, unheaded
+from .forwarder import clearing
 from .proxy import Stage
-from .wire import Reader, frame, pack, string, varint
+from .state import Mirror
+from .wire import Reader, Splitter, frame, pack, split, string, varint
 
 FROZEN = "the agent is reconnecting; this view is frozen until it returns"
 DROPPED = "the feed from the agent's PC dropped; this view is frozen until it is back"
@@ -43,6 +45,16 @@ class World:
 
     def catch_up(self) -> list[tuple[int, bytes]]:
         return self.snap + [(0, f) for f in self.tail]
+
+    def settle(self):
+        """Works out what empties a viewer's copy of this world from the frames the relay sent, for a session whose
+        own clearing frames never came (the forwarder restarted without ending it)."""
+        m = Mirror(); m.login("", self.host)
+        for _, data in self.catch_up():
+            for f in Splitter().feed(data):
+                try: m.server(f, *split(f))
+                except Exception: pass  # best effort: what it cannot follow it leaves on screen
+        self.clear, self.end_dim = clearing(m), m.dim
 
     def into(self, old: "World") -> list[bytes]:
         """What moves a viewer who watched old (now cleared) into this world without a new login."""
@@ -115,9 +127,9 @@ class Relay(Stage):
                 w.tail, w.tail_bytes = [], 0
             else:
                 new = World(meta, entries)
-                if self.viewers:
-                    if w is None or w.clear is None: self.kick("the spectator feed restarted; rejoin to catch up")
-                    else: self.broadcast(new.into(w) + [notice(BACK)])
+                if self.viewers and w:
+                    if w.clear is None: w.settle()
+                    self.broadcast(new.into(w) + [notice(BACK)])
                 self.world = new
         elif kind == LIVE and w and w.clear is None:
             w.tail.append(payload); w.tail_bytes += len(payload)

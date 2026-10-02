@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 # Copyright (c) 2026 ModdedBench contributors
-"""Spectator forwarder and relay, end to end over loopback: a client tap's records in, a viewer's frames out."""
+"""Spectator forwarder and relay, end to end over loopback: a client tap's files in, a viewer's frames out."""
 import asyncio
 import struct
 import sys
@@ -34,6 +34,21 @@ async def until(cond, timeout=5.0):
         if cond(): return
         await asyncio.sleep(0.02)
     raise AssertionError("timed out")
+
+
+class FileTap:
+    """What SpectatorTap.java writes: a file per connection, named so that a later connection sorts later."""
+    def __init__(self, d: Path): self.dir = d
+
+    def write(self, data: bytes):
+        conn = struct.unpack_from(">I", data, 1)[0]
+        path = self.dir / f"{1000 + conn}-1-{conn}.tap"
+        head = b"" if path.exists() else forwarder.TAP_MAGIC
+        with open(path, "ab") as f: f.write(head + data)
+
+    async def drain(self): pass
+
+    def close(self): pass
 
 
 class Watcher:
@@ -80,22 +95,27 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
         self.links = await asyncio.start_server(spy, "127.0.0.1", 0)
         self.views = await asyncio.start_server(self.relay.viewer, "127.0.0.1", 0)
         self.vport = self.views.sockets[0].getsockname()[1]
-        self.fw = forwarder.Forwarder(("127.0.0.1", self.links.sockets[0].getsockname()[1]), SECRET, None)
-        self.taps = await asyncio.start_server(self.fw.tapped, "127.0.0.1", 0)
-        self.dial = asyncio.create_task(self.fw.dial())
+        self.tap = FileTap(Path(self.dir.name) / "tap"); self.tap.dir.mkdir()
+        self.tasks = []
+        self.fw = self.forwarder()
         await until(lambda: self.relay.link is not None)
-        _, self.tap = await asyncio.open_connection("127.0.0.1", self.taps.sockets[0].getsockname()[1])
-        self.tap.write(forwarder.TAP_MAGIC)
+
+    def forwarder(self):
+        fw = forwarder.Forwarder(("127.0.0.1", self.links.sockets[0].getsockname()[1]), SECRET, None)
+        self.tasks += [asyncio.create_task(fw.dial()), asyncio.create_task(fw.follow(self.tap.dir, poll=0.02))]
+        return fw
 
     async def asyncTearDown(self):
-        self.dial.cancel(); self.tap.close()
-        for s in (self.links, self.views, self.taps): s.close()
+        for t in self.tasks: t.cancel()
+        await asyncio.gather(*self.tasks, return_exceptions=True)
+        for s in (self.links, self.views): s.close()
         if self.relay.log: self.relay.log.close()
         self.dir.cleanup()
 
     async def play(self, conn, server=SERVER):
+        before = self.fw.sessions
         self.tap.write(session(conn, server)); await self.tap.drain()
-        await until(lambda: self.relay.world is not None and self.relay.world.session == self.fw.open and self.fw.open)
+        await until(lambda: self.fw.sessions > before and self.relay.world is not None and self.relay.world.session == self.fw.open)
 
     async def test_late_viewer_sees_the_world_and_never_our_channels(self):
         await self.play(1)
@@ -134,7 +154,7 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(0x01, pids)                           # no JoinGame: the same login carries on
         self.assertNotIn(0x07, pids)                           # same dimension: no loading screen
         unloads = {Reader(b).u("ii") for p, b in fresh if p == 0x21 and Reader(b).u("ii?H")[2:] == (True, 0)}
-        self.assertTrue({(0, 0), (1, 0), (3, 0)} <= unloads)
+        self.assertTrue({(0, 0), (3, 0)} <= unloads)                # the chunks the viewer still had
         self.assertIn(0x13, pids)                               # the old entities go
         self.assertIn((0x38, string("Agent") + pack("?h", False, 0)), fresh)
         self.assertLess(pids.index(0x13), pids.index(0x08))     # emptied before the new world arrives
@@ -183,7 +203,7 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
         await self.play(1)
         dirt, stone = pack("hbhh", 3, 5, 0, -1) + varint(5), pack("hbhh", 1, 64, 0, -1) + varint(64)
         await self.inventory(36, dirt)                          # the first hotbar slot
-        await until(lambda: self.relay.inventory is not None)
+        await until(lambda: self.relay.inventory is not None and dirt in self.relay.inventory[1])
         v = await Watcher().join(self.vport)
         await v.until(lambda g: any(p == 0x08 for p, _ in g))
         v.say(frame(0x01, string("/invsee")))
@@ -218,6 +238,31 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
         a.say(frame(0x14, string("/in")))
         got = await a.until(lambda g: any(p == 0x3A for p, _ in g))
         r = Reader(next(x for p, x in got if p == 0x3A)); self.assertEqual((r.varint(), r.string()), (1, "/invsee"))
+
+    async def test_a_restarted_forwarder_reads_the_connection_again_and_viewers_stay(self):
+        await self.play(1)
+        v = await Watcher().join(self.vport)
+        await v.until(lambda g: any(p == 0x08 for p, _ in g))
+        first = self.fw.open
+        for t in self.tasks: t.cancel()                         # the forwarder dies without a word to the relay
+        await asyncio.gather(*self.tasks, return_exceptions=True)
+        self.fw.link.transport.abort()
+        await v.until(lambda g: any(relay.DROPPED in t for t in v.notices()))
+        self.tap.write(rec(1, 1, block(7, 64, 7, 3)))           # the game goes on meanwhile
+        n = len(v.got)
+        self.fw = self.forwarder()
+        got = (await v.until(lambda g: relay.BACK in "".join(v.notices()[-1:])))[n:]
+        self.assertNotEqual(self.fw.open, first)
+        self.assertEqual(self.relay.world.tail, [])            # caught up before showing: nothing replayed as live
+        pids = [p for p, _ in got]
+        self.assertIn(0x13, pids)                               # the relay emptied the old world itself
+        self.assertIn((0x23, pack("iBi", 7, 64, 7) + bytes([0, 3, 0])), got)
+        self.assertEqual(len(self.relay.viewers), 1)
+
+    async def test_the_newest_connection_wins(self):
+        await self.play(1)
+        await self.play(2)                                      # a new file without a CLOSED in the old one
+        self.assertTrue(self.fw.open.endswith("-2"))
 
     async def test_a_wrong_token_is_refused(self):
         bad = forwarder.Forwarder(self.fw.relay, b"not the secret, wrong one", None)

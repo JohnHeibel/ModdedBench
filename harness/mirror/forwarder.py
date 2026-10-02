@@ -2,12 +2,14 @@
 # Copyright (c) 2026 ModdedBench contributors
 """Spectator forwarder: python -m harness.mirror.forwarder (see docs/MIRROR.md).
 
-Runs beside the agent's client. The client's tap (MB_SPECTATOR_TAP) copies its game connection here over
-loopback; this keeps the Mirror and dials out to the relay with viewer frames only. Nothing ever travels from the
-relay back towards the game: the forwarder reads the relay's nonce and nothing after it, and the tap is one way.
+Runs beside the agent's client. The client's tap (SpectatorTap.java) appends each game connection to a file; this
+reads the newest from its first byte, keeps the Mirror, and dials out to the relay with viewer frames only. Reading
+from the start means this can restart, or start late, without the client reconnecting. Nothing ever travels from
+the relay back towards the game: the forwarder reads the relay's nonce and nothing after it, and the tap is one way.
 """
 from __future__ import annotations
 import argparse, asyncio, secrets, ssl, struct, zlib
+from pathlib import Path
 from .link import END, HEARTBEAT, INVENTORY, LIVE, MAGIC, NONCE, SNAPSHOT, headed, message, proof, token
 from .proxy import Feed
 from .state import SPECTATOR, Mirror
@@ -66,6 +68,7 @@ class Forwarder(Feed):
         self.pending = None  # END for a session the relay has not heard close
         self.snap_bytes = self.tail_bytes = 0
         self.inv_sent = -1
+        self.current = False  # read up to the end of the tap file: before that, frames only rebuild the mirror
 
     # ---- what goes to the relay
     def send(self, msg: bytes) -> bool:
@@ -94,7 +97,7 @@ class Forwarder(Feed):
         self.send(message(INVENTORY, headed({"title": f"{m.name[:16]}'s inventory"}, []) + inventory(m)))
 
     def opening(self):
-        if self.link is None or self.open is not None or self.disabled or not self.mirror.ready: return
+        if self.link is None or self.open is not None or self.disabled or not self.mirror.ready or not self.current: return
         self.sessions += 1; self.open = f"{self.boot}-{self.sessions}"
         print(f"forwarder: showing session {self.open} ({self.mirror.name})", flush=True)
         self.snapshot()
@@ -109,6 +112,7 @@ class Forwarder(Feed):
 
     # ---- Feed hooks
     def played(self, frames):
+        if not self.current: return
         if self.open is None: return self.opening()  # a snapshot taken now already holds these frames
         self.share_inventory()
         live = b"".join(f for f in frames if public(f))
@@ -154,31 +158,61 @@ class Forwarder(Feed):
             await asyncio.sleep(delay); delay = min(delay * 2, 60)
 
     # ---- the tap
-    async def tapped(self, r: asyncio.StreamReader, w: asyncio.StreamWriter):
-        """One client's copy of its connections, as SpectatorTap records."""
-        taps = {}
+    async def follow(self, tap_dir: Path, poll: float = 0.5, chunk: int = 1 << 20):
+        """Reads the newest connection file the client's tap has written, from its first byte, and keeps up with it.
+        A newer file is a newer connection, and the older one is over."""
+        path, f, taps, buf, magic = None, None, {}, b"", False
         try:
-            if await r.readexactly(len(TAP_MAGIC)) != TAP_MAGIC: return
             while True:
-                kind, conn, n = TAP.unpack(await r.readexactly(TAP.size))
-                if n > TAP_RECORD: return
-                data = await r.readexactly(n)
-                if kind == OPENED: taps[conn] = self.new_tap()
-                elif (tap := taps.get(conn)) is None: continue
-                elif kind == CLOSED: del taps[conn]; tap.dead = True; self.end(tap)
-                else: tap.feed(kind, data)
-        except (asyncio.IncompleteReadError, ConnectionError, OSError):
-            pass
+                newest = max(tap_dir.glob("*.tap"), key=_started, default=None)
+                if newest is not None and newest != path:
+                    if f: f.close()
+                    self._finish(taps)
+                    path, f, taps, buf, magic, self.current = newest, open(newest, "rb"), {}, b"", False, False
+                    print(f"forwarder: reading {newest.name}", flush=True)
+                data = f.read(chunk) if f else b""
+                buf += data
+                if not magic and len(buf) >= len(TAP_MAGIC):
+                    if buf[:len(TAP_MAGIC)] == TAP_MAGIC: buf, magic = buf[len(TAP_MAGIC):], True
+                    else: f.close(); f, buf = None, b""  # not a tap file: wait for the next
+                pos = 0
+                while magic and len(buf) - pos >= TAP.size:
+                    kind, conn, n = TAP.unpack_from(buf, pos)
+                    if n > TAP_RECORD:
+                        print(f"forwarder: {path.name} is damaged; waiting for the next connection", flush=True)
+                        f.close(); f, buf, magic, pos = None, b"", False, 0; self._finish(taps)
+                        break
+                    if len(buf) - pos - TAP.size < n: break
+                    self._record(taps, kind, conn, buf[pos + TAP.size:pos + TAP.size + n]); pos += TAP.size + n
+                buf = buf[pos:]
+                if len(data) == chunk: await asyncio.sleep(0); continue  # catching up
+                if f and not self.current:
+                    self.current = True
+                    print(f"forwarder: caught up with {path.name} ({f.tell() >> 20} MiB)", flush=True)
+                    self.opening()
+                await asyncio.sleep(poll)
         finally:
-            for tap in taps.values(): tap.dead = True; self.end(tap)
-            w.close()
+            if f: f.close()
 
-    async def run(self, listen):
+    def _record(self, taps, kind, conn, data):
+        if kind == OPENED: taps[conn] = self.new_tap()
+        elif (tap := taps.get(conn)) is None: return
+        elif kind == CLOSED: del taps[conn]; tap.dead = True; self.end(tap)
+        else: tap.feed(kind, data)
+
+    def _finish(self, taps):
+        for tap in taps.values(): tap.dead = True; self.end(tap)
+        taps.clear()
+
+    async def run(self, tap_dir: Path):
         self.loop = asyncio.get_running_loop()
-        if not _loopback(listen[0]): raise SystemExit("the tap listener stays on loopback")
-        srv = await asyncio.start_server(self.tapped, *listen)
-        print(f"forwarder: tap on {listen[0]}:{srv.sockets[0].getsockname()[1]}", flush=True)
-        await asyncio.gather(srv.serve_forever(), self.dial())
+        print(f"forwarder: following the tap in {tap_dir}", flush=True)
+        await asyncio.gather(self.follow(tap_dir), self.dial())
+
+
+def _started(p: Path) -> int:
+    try: return int(p.name.split("-")[0])
+    except ValueError: return -1
 
 
 def _loopback(host: str) -> bool:
@@ -190,7 +224,8 @@ def _loopback(host: str) -> bool:
 def main():
     from .__main__ import address
     p = argparse.ArgumentParser(prog="python -m harness.mirror.forwarder", description=__doc__)
-    p.add_argument("--tap", type=address, default=("127.0.0.1", 25590), help="where the client's tap connects (loopback only)")
+    p.add_argument("--tap", type=Path, default=Path.home() / ".moddedbench" / "tap",
+                   help="the directory the client's tap writes (the path in ~/.moddedbench/spectator-tap)")
     p.add_argument("--relay", type=address, required=True, help="the relay's link port")
     p.add_argument("--relay-cert", help="the relay's self-signed certificate, pinned; default: the system's CAs")
     p.add_argument("--plain", action="store_true", help="no TLS (a relay on loopback, for tests)")
