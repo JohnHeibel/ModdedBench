@@ -83,7 +83,9 @@ public class MovementPillar extends Movement {
             return COST_INF;
         }
         Block srcUp = null;
-        if (MovementHelper.isWater(toBreakBlock) && MovementHelper.isWater(from)) { // TODO should this also be allowed if toBreakBlock is air?
+        // ModdedBench: also the last stroke up, out of the column into air at the surface (upstream's TODO); a submerged
+        // player could swim down but never planned the way back up.
+        if (MovementHelper.isWater(from) && (MovementHelper.isWater(toBreakBlock) || MovementHelper.canWalkThrough(context, x, y + 2, z, toBreak))) {
             srcUp = context.get(x, y + 1, z).getBlock();
             if (MovementHelper.isWater(srcUp)) {
                 return LADDER_UP_ONE_COST; // allow ascending pillars of water, but only if we're already in one

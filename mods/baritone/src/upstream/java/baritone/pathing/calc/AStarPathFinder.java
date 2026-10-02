@@ -142,6 +142,9 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
                 if (!calcContext.snags.allows(currentNode.x, currentNode.y, currentNode.z, res.x, res.y, res.z)) {
                     continue;
                 }
+                if (calcContext.submergedPenalty > 0 && baritone.pathing.movement.MovementHelper.isWater(calcContext.get(res.x, res.y + 1, res.z).getBlock())) {
+                    actionCost += calcContext.submergedPenalty; // ModdedBench: see Settings.submergedPenalty
+                }
                 long hashCode = BetterBlockPos.longHash(res.x, res.y, res.z);
                 if (isFavoring) {
                     // see issue #18

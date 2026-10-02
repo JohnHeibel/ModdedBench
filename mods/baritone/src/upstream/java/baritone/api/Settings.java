@@ -134,6 +134,12 @@ public final class Settings {
     public final Setting<Double> walkOnWaterOnePenalty = new Setting<>(3D);
 
     /**
+     * ModdedBench: added to every move that ends with the head under water, so the search swims at the surface where it
+     * can, keeps dives short (air runs out) and does not flood the whole volume of a lake with nodes.
+     */
+    public final Setting<Double> submergedPenalty = new Setting<>(4D);
+
+    /**
      * Don't allow breaking blocks next to liquids.
      * <p>
      * Enable if you have mods adding custom fluid physics.
@@ -368,7 +374,7 @@ public final class Settings {
      * <p>
      * It also overshoots the landing pretty much always (making contact with the next block over), so be careful
      */
-    public final Setting<Boolean> allowParkour = new Setting<>(false);
+    public final Setting<Boolean> allowParkour = new Setting<>(true); // ModdedBench: a player jumps gaps; upstream default false
 
     /**
      * Actually pretty reliable.
