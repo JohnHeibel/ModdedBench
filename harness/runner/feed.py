@@ -130,8 +130,36 @@ def _script(a, r, me):
     shown = {k: (json.dumps(v, default=str) if not isinstance(v, str) else v)[:60] for k, v in list((a.get("args") or {}).items())[:8]}
     return "script", {"name": a.get("name") or "", "args": shown, "calls": calls[:10], "code": code[:6000]}
 
+_planned = {"key": None, "ts": 0.0}
+
+def _plan(a, r, me):
+    """A build as the cells it names (cells, or a drawing's layers): a preview marks the cells already right; a build shows as it starts."""
+    if r and "differences" not in r: return None  # a build's receipt: its start showed the plan
+    cells = [(c["pos"], c.get("id")) for c in a.get("cells") or [] if isinstance(c, dict) and isinstance(c.get("pos"), list) and len(c["pos"]) == 3]
+    d = a.get("drawing") if isinstance(a.get("drawing"), dict) else {}
+    if d.get("layers") and isinstance(d.get("origin"), list):
+        (ox, oy, oz), legend = d["origin"], d.get("legend") or {}
+        for n, layer in enumerate(d["layers"]):
+            rows, y = (layer.get("rows"), layer.get("y")) if isinstance(layer, dict) else (layer, None)
+            for z, row in enumerate(rows or []):
+                for x, ch in enumerate(str(row)):
+                    if ch in legend: cells.append(([ox + x, oy + n if y is None else y, oz + z], (legend[ch] if isinstance(legend[ch], dict) else {"id": legend[ch]}).get("id")))
+    cells = [(p, i) for p, i in cells if i and not str(i).endswith(":air")][:800]
+    key = hash(json.dumps(cells))
+    if not cells or not r and _planned["key"] == key and time.time() - _planned["ts"] < 300: return None  # just previewed: the same picture again says nothing
+    _planned.update(key=key, ts=time.time())
+    todo = {tuple(x["pos"]) for x in r.get("differences") or [] if isinstance(x, dict) and isinstance(x.get("pos"), list)}
+    known = "differences" in r and not r.get("differencesTruncated") and bool(r.get("total"))
+    base = [min(p[k] for p, _ in cells) for k in range(3)]
+    ids = list(dict.fromkeys(i for _, i in cells)); at = {i: n for n, i in enumerate(ids)}
+    mats = [{"name": _name(m.get("selector") or {}), "id": (m.get("selector") or {}).get("id"), "needed": m.get("needed"), "missing": m.get("missing")} for m in r.get("materials") or [] if isinstance(m, dict)]
+    if not mats: mats = [{"name": _name({"id": i}), "id": i, "needed": sum(1 for _, j in cells if j == i)} for i in ids]
+    return "plan", {"building": not r, "origin": base, "ids": ids, "names": [_name({"id": i}) for i in ids], "materials": mats[:7],
+                    "cells": [[p[0] - base[0], p[1] - base[1], p[2] - base[2], at[i], int(tuple(p) in todo or not known)] for p, i in cells],
+                    "total": r.get("total") or len(cells), "correct": r.get("correct") if known else None}
+
 POP = {  # tool -> (arguments, result, last known position of the player) -> (kind, data), or None for nothing worth showing
-    "mb_run": _script,
+    "mb_run": _script, "mb_build_preview": _plan, "mb_build": _plan,
     "mb_view": _view, "mb_obs": _obs, "mb_inventory": _inventory, "mb_recipes": _recipe, "mb_notes": _notes,
     "mb_scan": lambda a, r, me: ("scan", {"what": _name(a.get("blocks") or [{"id": "blocks"}]), "found": r.get("found", len(r.get("matches") or [])),
                                          "matches": [{"pos": m.get("pos"), "name": _name(m)} for m in r.get("matches") or []][:40], "me": me}),
@@ -197,11 +225,16 @@ class Feed:
             stats["tokens"]["estimated"] += self.context
         if kind == "item.started" and what == "mcp_tool_call":
             self.status("waiting" if item.get("tool") == "mb_wait" else "acting", line(item.get("tool", ""), item.get("arguments"), None))
-            if item.get("tool") == "mb_run":  # a script can run for minutes: say what it is while it runs, not after
-                try: self.look("mb_run", item.get("arguments"), {}, [])
+            if item.get("tool") in ("mb_run", "mb_build"):  # a script or a build can run for minutes: say what it is while it runs, not after
+                try: self.look(item["tool"], item.get("arguments"), {}, [])
                 except Exception: pass
         elif kind == "item.started" and what == "command_execution": self.status("acting", "shell")
         elif kind == "item.completed" and what == "agent_message": self.add("say", str(item.get("text", "")).strip()[:600])
+        elif kind == "item.completed" and what == "reasoning" and str(item.get("text") or "").strip():
+            # Codex's summary of the model's reasoning (model_reasoning_summary), written for people: "**Title**\n\nbody", maybe several
+            text = str(item["text"]).strip(); title = (re.findall(r"\*\*(.+?)\*\*", text) or [""])[0]
+            body = re.sub(r"\s+", " ", re.sub(r"\*\*(.+?)\*\*", "", text)).strip()
+            self.add("think", body[:700] or title, title=title); self.status("thinking", title)
         elif kind == "item.completed" and what == "command_execution":
             cmd = str(item.get("command", ""))
             if "deploy.py request" in cmd: self.add("mark", "asked for a deploy of its own Java changes")

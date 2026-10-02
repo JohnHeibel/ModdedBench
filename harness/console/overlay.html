@@ -27,13 +27,17 @@
   #title b{font-size:32px;font-weight:700} #title span{font-size:32px;font-variant-numeric:tabular-nums}
   #who{padding:0 4px;margin-top:-12px;color:var(--ink2);display:flex;justify-content:space-between}
   #log{flex:1;min-height:0;display:flex;flex-direction:column}
-  #run{flex:none;padding-bottom:14px;margin-bottom:10px;border-bottom:2px solid color-mix(in srgb,var(--dim) 35%,transparent)}
-  #run .state{color:var(--key)} #run.stopped .state{color:var(--bad)} #run.idle .state{color:var(--dim)}
-  #run .what{font-size:24px;line-height:1.25;margin:2px 0 12px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:30px}
-  #run.quiet .what{display:none} #run.quiet{display:flex;justify-content:space-between;align-items:baseline} #run.quiet .bar i{display:none}
-  #run .bar{display:flex;gap:4px;align-items:center;color:var(--dim)} #run .bar em{margin-left:auto;font-style:normal}
+  /* the mind box, level with the bottom row: what it is doing now, and its latest reasoning summary typed out */
+  #mind{flex:none;height:228px;box-sizing:border-box;display:flex;flex-direction:column;gap:8px;overflow:hidden}
+  #run{flex:none;display:flex;gap:10px;align-items:baseline;padding-bottom:8px;border-bottom:2px solid color-mix(in srgb,var(--dim) 35%,transparent)}
+  #run .state{flex:none;color:var(--key)} #run.stopped .state{color:var(--bad)} #run.idle .state{color:var(--dim)}
+  #run .what{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink2)}
+  #run .bar{flex:none;display:flex;gap:4px;align-items:center;color:var(--dim)} #run .bar em{margin-left:6px;font-style:normal}
   #run .bar i{width:12px;height:12px;background:color-mix(in srgb,var(--dim) 30%,transparent)}
   #run.busy .bar i{animation:chase 1.6s steps(1) infinite} @keyframes chase{0%,24%{background:var(--key)}25%,100%{background:color-mix(in srgb,var(--dim) 30%,transparent)}}
+  #thought{flex:1;min-height:0;overflow:hidden;line-height:1.45;color:var(--txt);-webkit-mask-image:linear-gradient(transparent,#000 14px)}
+  #thought.none{color:var(--dim)} #idea{flex:none;color:var(--key);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:-4px}
+  #thought .caret{display:inline-block;width:9px;height:15px;margin-left:3px;vertical-align:-2px;background:var(--key);animation:caret 1s steps(1) infinite} @keyframes caret{50%{opacity:0}}
   #feed{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;gap:4px}
   #feed p{margin:0;flex:none;display:grid;grid-template-columns:1fr auto;gap:0 8px;color:var(--dim)}
   #feed p>span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis} #feed em{font-style:normal;opacity:.8}
@@ -100,8 +104,6 @@
     <div id="title"><b>ModdedBench</b><span id="clock">07:42:15</span></div>
     <div id="who"><span id="model">gpt-6-astra, low effort</span><span id="turn">1h 48m left</span></div>
     <div id="log" class="screen">
-      <div id="run" class="busy"><div class="state">Running</div><div class="what">mining 32 × Copper Ore</div>
-        <div class="bar"><i></i><i style="animation-delay:.2s"></i><i style="animation-delay:.4s"></i><i style="animation-delay:.6s"></i><i style="animation-delay:.8s"></i><i style="animation-delay:1s"></i><i style="animation-delay:1.2s"></i><i style="animation-delay:1.4s"></i><em>1m 12s</em></div></div>
       <div id="feed">
         <p><span>recipe lookup: Bronze Plate</span></p><p><span>checking inventory</span></p><p><span>going to 212 64 -140</span></p><p><span>crafted 6 × Bronze Plate</span></p>
         <p class="fail"><span>machine: loaded Bronze Ingot (output full)</span></p><p><span>note: bronze plate: forge hammer by the north door</span></p>
@@ -110,6 +112,12 @@
         <p class="mark">quest claimed: Bronze Age</p>
         <p><span>reading the quest book</span></p><p><span>recipe lookup: Small Coal Boiler</span><em>x3</em></p><p><span>script feed_smelters</span></p><p><span>looking for oreCopper</span><em>x4</em></p><p><span>mining 32 × Copper Ore</span></p>
       </div>
+    </div>
+    <div id="mind" class="screen">
+      <div id="run" class="busy"><span class="state">Running</span><span class="what">mining 32 × Copper Ore</span>
+        <span class="bar"><i></i><i style="animation-delay:.4s"></i><i style="animation-delay:.8s"></i><i style="animation-delay:1.2s"></i><em>1m 12s</em></span></div>
+      <div id="idea">Weighing a second smelter</div>
+      <div id="thought"><div>Every plate waits on the one alloy smelter, so I'm considering a second beside it that shares the fuel chest; copper is the only thing short.<i class="caret"></i></div></div>
     </div>
   </div>
   <div id="bottom">
@@ -142,7 +150,10 @@ function draw(d){
   const b=d.budget||{},left=b.minutes&&b.startedAt?b.minutes*60-(d.now-b.startedAt):null; $("turn").textContent=left==null?"":left>0?span(left)+" left":"budget spent";
   $("model").textContent=[run.model,run.effort&&run.effort+" effort"].filter(Boolean).join(", ");
   const [label,cls]=STATES[st.state]||[st.state||"Idle","idle"];
-  $("run").className=cls+(st.text?"":" quiet"); $("run").querySelector(".state").textContent=label; $("run").querySelector(".what").textContent=st.text||""; $("run").querySelector("em").textContent=st.since?span(d.now-st.since):"";
+  $("run").className=cls; $("run").querySelector(".state").textContent=label; $("run").querySelector(".what").textContent=st.state==="thinking"?"":st.text||""; $("run").querySelector("em").textContent=st.since?span(d.now-st.since):"";
+  const th=[...(d.feed||[])].reverse().find(e=>e.kind==="think");  // the box types the newest summary out; one already old when the page loads shows whole
+  if(th&&th.ts!==thought.ts)Object.assign(thought,{ts:th.ts,title:th.title||"",text:th.text===th.title?"":th.text,since:d.now-th.ts>30?-1e9:performance.now()});
+  if(!th&&thought.ts!==0){thought.ts=0;thought.drawn=null;$("idea").textContent="";$("thought").className="none";$("thought").textContent="No reasoning summary yet"}
   const sub=g.short||g.subgoal||g.quest||"No goal set yet",serves=g.serves?"for "+g.serves.replace(/^for:?\s*/i,""):"";
   const ch=(d.chapters||[]).find(c=>g.chapter&&(g.chapter.includes(c.name)||c.name.includes(g.chapter)))||[...(d.chapters||[])].reverse().find(c=>c.completed>0);
   $("goal").innerHTML=`<h2 class="${sub.length>84?"long":""}">${esc(sub)}</h2><div class="serves ${serves.length>56?"long":""}">${esc(serves)}</div>`+
@@ -151,13 +162,19 @@ function draw(d){
   for(const e of d.feed||[]){const last=rows[rows.length-1];
     if(last&&e.kind==="tool"&&last.kind==="tool"&&last.tool===e.tool){last.text=e.text;last.n++}else rows.push({...e,n:1})}
   const name=(run.model||"model").split("-").pop();
-  const html=rows.slice(-40).map(e=>e.kind==="say"?`<p class="say"><b>&lt;${esc(name)}${e.short?", in short":""}&gt;</b> ${esc((e.short||e.text).replace(/[*#`|]/g,"").replace(/\s+/g," "))}</p>`:
+  const html=rows.filter(e=>e.kind!=="think").slice(-40).map(e=>e.kind==="say"?`<p class="say"><b>&lt;${esc(name)}${e.short?", in short":""}&gt;</b> ${esc((e.short||e.text).replace(/[*#`|]/g,"").replace(/\s+/g," "))}</p>`:
     e.kind==="mark"?`<p class="mark">${esc(e.text)}</p>`:`<p class="${e.kind==="fail"?"fail":""}"><span>${esc(e.text)}</span>${e.n>1?`<em>x${e.n}</em>`:""}</p>`).join("");
   if($("feed").dataset.html!==html){$("feed").dataset.html=html;$("feed").innerHTML=html}
   window.Pops&&Pops.draw(d);
   $("readout").innerHTML=`<dt>target</dt><dd class="key">${esc(d.target||"")}</dd><dt>quests done</dt><dd>${big(d.chapters&&d.chapters.length?d.chapters.reduce((n,c)=>n+c.completed,0):s.claims)}</dd><dt>actions</dt><dd>${big(s.calls)}</dd>`+
     `<dt>failed</dt><dd class="bad">${big(s.failed)}</dd><dt>scripts</dt><dd>${big(s.scripts)}</dd><dt>tokens</dt><dd>${(t.estimated||t.uncounted)?"~":""}${big((t.input||0)+(t.uncounted||0)+(t.estimated||0)+(t.output||0))}</dd>`;
 }
+const thought={ts:null,title:"",text:"",since:0,drawn:null};
+setInterval(()=>{  // the summary arrives whole when the step ends; typing it out at reading pace is what makes it read as a stream
+  if(!thought.ts)return; const shown=Math.min(thought.text.length,Math.floor((performance.now()-thought.since)*.06));  // 60 characters a second, by the clock: timers in a hidden page are slowed
+  const key=thought.ts+":"+shown; if(thought.drawn===key)return; thought.drawn=key;
+  $("thought").className=""; $("idea").textContent=thought.title; $("thought").innerHTML=`<div>${esc(thought.text.slice(0,shown))}<i class="caret"></i></div>`; $("thought").scrollTop=1e9;  // past the box's height the newest lines stay in view
+},50);
 async function tick(){try{draw(await (await fetch("/overlay/data",{cache:"no-store"})).json())}catch(e){}setTimeout(tick,1000)}
 if(!opts.has("sample"))tick();else if(opts.get("tier"))canvas.dataset.tier=opts.get("tier");
 </script>
