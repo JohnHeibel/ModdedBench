@@ -2,14 +2,16 @@
 # Copyright (c) 2026 ModdedBench contributors
 """Spectator forwarder and relay, end to end over loopback: a client tap's files in, a viewer's frames out."""
 import asyncio
+import json
 import struct
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from harness.mirror import forwarder, link, relay, state  # noqa: E402
+from harness.mirror import board, forwarder, link, relay, state  # noqa: E402
 from harness.mirror.wire import Reader, Splitter, frame, pack, split, string, varint  # noqa: E402
 from harness.tests.test_mirror import CLIENT, SERVER, block, chunk, handshake, parsed, s3f  # noqa: E402
 
@@ -136,7 +138,7 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
         v = await Watcher().join(self.vport)
         want = parsed([f for f in self.fw.mirror.snapshot() if forwarder.public(f)])
         got = await v.until(lambda g: len(g) > len(want) + 1)
-        self.assertEqual([f for f in got[1:] if b"[spectators]" not in f[1]], want)
+        self.assertEqual(got[1:1 + len(want)], want)                # then the relay's own: notices, sidebar
 
     async def test_a_new_session_replaces_the_world_in_place(self):
         await self.play(1)
@@ -173,6 +175,19 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(Reader(fresh[0][1]).u("iBB"), (-1, 1, state.SPECTATOR))
         pids = [p for p, _ in fresh]
         self.assertEqual(set(pids[1:pids.index(0x39)]), {0x38})  # only the tab list: a new world is empty, scoreboard and all
+        got = (await v.until(lambda g: 0x3D in [p for p, _ in g[n:]]))[n:]
+        self.assertEqual([p for p, b in got if p == 0x3B], [0x3B])  # so the sidebar is made again, once
+
+    async def test_the_sidebar_is_made_once_when_the_world_stays(self):
+        await self.play(1)
+        v = await Watcher().join(self.vport)
+        await v.until(lambda g: any(p == 0x3D for p, _ in g))
+        self.tap.write(rec(forwarder.CLOSED, 1)); await self.tap.drain()
+        await v.until(lambda g: any(relay.FROZEN in t for t in v.notices()))
+        await self.play(2)
+        await v.until(lambda g: relay.BACK in "".join(v.notices()))
+        self.relay.draw_all(); await asyncio.sleep(0.2)
+        self.assertEqual([p for p, _ in v.got].count(0x3B), 1)  # the client kept it: a second would drop the viewer
 
     async def test_a_dropped_link_resyncs_viewers_without_a_reconnect(self):
         await self.play(1)
@@ -268,6 +283,38 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
         await until(lambda: any(block(7, 64, 7, 3) in t for t in self.relay.world.tail))
         self.assertEqual(self.fw.open, first)
 
+    async def test_the_sidebar_and_the_agents_lines(self):
+        overlay = Path(self.dir.name) / "overlay"; overlay.mkdir()
+        live = lambda quest: (overlay / "live.json").write_text(json.dumps({
+            "goal": {"chapter": "Tier 0.5 - Steam", "quest": quest}, "run": {"model": "gpt-6.1-sol"},
+            "stats": {"claims": 28}, "budget": {"startedAt": time.time() - 3725}}))
+        live("Ooo, Shiny! (Not Platinum!)"); (overlay / "feed.jsonl").write_text('{"kind": "say", "text": "old news"}\n')
+        self.tasks.append(asyncio.create_task(self.fw.narrate(overlay, poll=0.02)))
+        await self.play(1)
+        await until(lambda: self.relay.status.get("quest"))
+        v = await Watcher().join(self.vport)
+        await v.until(lambda g: any(p == 0x3D for p, _ in g))
+        made = lambda g: [b for p, b in g if p == 0x3B and Reader(b).string() == board.OBJECTIVE]
+        self.assertEqual(len(made(v.got)), 1)
+        rows = sidebar(v.got)
+        self.assertIn("Ooo, Shiny! (Not Platinum!)", rows)
+        self.assertIn("Running 1h 02m", rows)
+        live("Steam Power")                                       # a change updates the row, never re-creates
+        await v.until(lambda g: "Steam Power" in sidebar(g))
+        with open(overlay / "feed.jsonl", "a") as f:
+            f.write('{"kind": "say", "text": "Smelting bronze."}\n{"kind": "mark", "text": "quest claimed: Steam Power"}\n')
+        got = await v.until(lambda g: any(b"Steam Power" in b and p == 0x02 for p, b in g))
+        lines = [Reader(b).string() for p, b in got if p == 0x02]
+        self.assertTrue(any("Smelting bronze." in t and '"Agent"' in t for t in lines))
+        self.assertFalse(any("old news" in t for t in lines))      # the story starts when the forwarder does
+        n = len(v.got)
+        nether = frame(0x07, pack("iBB", -1, 1, 0) + string("default"))
+        self.tap.write(rec(1, 1, nether))                           # another dimension: a new client world
+        got = (await v.until(lambda g: made(g[n:])))[n:]
+        pids = [p for p, _ in got]
+        self.assertLess(pids.index(0x07), pids.index(0x3B))
+        self.assertEqual(len(made(v.got)), 2)
+
     async def test_a_wrong_token_is_refused(self):
         bad = forwarder.Forwarder(self.fw.relay, b"not the secret, wrong one", None)
         task = asyncio.create_task(bad.dial())
@@ -297,6 +344,33 @@ class Tls(unittest.IsolatedAsyncioTestCase):
                 else: await asyncio.sleep(0.5); self.assertIsNone(r.link)
             finally:
                 task.cancel()
+
+
+def sidebar(got) -> list[str]:
+    """The sidebar rows as a 1.7.10 client would draw them, from the team packets in got."""
+    rows = {}
+    for p, b in got:
+        if p != 0x3E: continue
+        r = Reader(b); name, mode = r.string(), r.u("b")
+        if mode in (0, 2):
+            r.string(); pre, suf = r.string(), r.string()
+            assert len(pre) <= 16 and len(suf) <= 16, (pre, suf)
+            rows[name] = board.CODE.sub("", pre + suf)          # what shows: the colours go, the text joins up
+    return [rows[board.team(i)] for i in range(board.ROWS) if board.team(i) in rows]
+
+
+class Board(unittest.TestCase):
+    def test_a_long_line_splits_and_keeps_its_colour(self):
+        pre, suf = board.halves("§7Quests claimed §a28")
+        self.assertEqual((pre, suf), ("§7Quests claimed", "§7 §a28"))
+        pre, suf = board.halves("§fA quest with a rather long name indeed")
+        self.assertEqual(len(pre), 16); self.assertEqual(len(suf), 16); self.assertTrue(suf.startswith("§f"))
+        self.assertFalse(board.halves("x" * 15 + "§a" + "y")[0].endswith("§"))
+
+    def test_rows_are_unique_and_fixed(self):
+        self.assertEqual(len({board.entry(i) for i in range(board.ROWS)}), board.ROWS)
+        self.assertEqual(len(board.lines({}, 0)), board.ROWS)
+        self.assertEqual(board.updated(board.lines({}, 1), board.lines({}, 1)), [])
 
 
 class Clearing(unittest.TestCase):

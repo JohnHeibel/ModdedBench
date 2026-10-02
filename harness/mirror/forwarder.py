@@ -8,9 +8,9 @@ from the start means this can restart, or start late, without the client reconne
 the relay back towards the game: the forwarder reads the relay's nonce and nothing after it, and the tap is one way.
 """
 from __future__ import annotations
-import argparse, asyncio, secrets, ssl, struct, zlib
+import argparse, asyncio, json, secrets, ssl, struct, zlib
 from pathlib import Path
-from .link import END, HEARTBEAT, INVENTORY, LIVE, MAGIC, NONCE, SNAPSHOT, headed, message, proof, token
+from .link import END, HEARTBEAT, INVENTORY, LIVE, MAGIC, NEWS, NONCE, SNAPSHOT, STATUS, headed, message, proof, token
 from .proxy import Feed
 from .state import SPECTATOR, Mirror
 from .wire import Reader, frame, pack, payload, split, string
@@ -181,10 +181,39 @@ class Forwarder(Feed):
         finally:
             for t in files.values(): t.close()
 
-    async def run(self, tap_dir: Path):
+    # ---- the overlay
+    async def narrate(self, overlay: Path, poll: float = 2.0):
+        """The stream overlay's public story (overlay/live.json and feed.jsonl, written by the console) for the relay's
+        sidebar and chat: what the agent is after, what it says, and the quests it claims. Only what the stream shows."""
+        feed, sent, link = overlay / "feed.jsonl", None, None
+        pos = feed.stat().st_size if feed.exists() else 0
+        while True:
+            if self.link is not link: sent, link = None, self.link  # a new link hears the status again
+            try:
+                status = status_of(json.loads((overlay / "live.json").read_text(encoding="utf-8")))
+                if status != sent and self.send(message(STATUS, json.dumps(status).encode())): sent = status
+            except (OSError, ValueError): pass
+            try:
+                if feed.stat().st_size < pos: pos = 0  # started over
+                with open(feed, "rb") as f: f.seek(pos); data = f.read()
+                cut = data.rfind(b"\n") + 1; pos += cut
+                for line in data[:cut].splitlines():
+                    e = json.loads(line)
+                    if e.get("kind") in ("say", "mark") and e.get("text"):
+                        self.send(message(NEWS, json.dumps({"kind": e["kind"], "text": e["text"][:600]}).encode()))
+            except (OSError, ValueError): pass
+            await asyncio.sleep(poll)
+
+    async def run(self, tap_dir: Path, overlay: Path | None = None):
         self.loop = asyncio.get_running_loop()
-        print(f"forwarder: following the tap in {tap_dir}", flush=True)
-        await asyncio.gather(self.follow(tap_dir), self.dial())
+        print(f"forwarder: following the tap in {tap_dir}" + (f" and the overlay in {overlay}" if overlay else ""), flush=True)
+        await asyncio.gather(self.follow(tap_dir), self.dial(), *([self.narrate(overlay)] if overlay else []))
+
+
+def status_of(live: dict) -> dict:
+    g, run = live.get("goal") or {}, live.get("run") or {}
+    return {"model": run.get("model"), "chapter": g.get("chapter"), "quest": g.get("quest"),
+            "claims": (live.get("stats") or {}).get("claims"), "started": (live.get("budget") or {}).get("startedAt")}
 
 
 class TapFile:
@@ -240,6 +269,7 @@ def main():
     p.add_argument("--relay", type=address, required=True, help="the relay's link port")
     p.add_argument("--relay-cert", help="the relay's self-signed certificate, pinned; default: the system's CAs")
     p.add_argument("--plain", action="store_true", help="no TLS (a relay on loopback, for tests)")
+    p.add_argument("--overlay", type=Path, help="the stream overlay's directory (.runtime/outbox/overlay): sidebar and agent chat")
     p.add_argument("--payload-cap", type=int, default=8 << 20)
     a = p.parse_args()
     if a.plain and not _loopback(a.relay[0]): raise SystemExit("--plain is for a relay on loopback only")
@@ -248,7 +278,7 @@ def main():
         tls = ssl.create_default_context(cafile=a.relay_cert)
         if a.relay_cert: tls.check_hostname = False  # the pinned certificate is the identity
     fw = Forwarder(a.relay, token(), tls, Mirror(payload_cap=a.payload_cap))
-    try: asyncio.run(fw.run(a.tap))
+    try: asyncio.run(fw.run(a.tap, a.overlay))
     except KeyboardInterrupt: pass
 
 
