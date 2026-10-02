@@ -71,7 +71,7 @@ public class MovementDownward extends Movement {
             return LADDER_DOWN_ONE_COST;
         } else {
             // we're standing on it, while it might be block falling, it'll be air by the time we get here in the movement
-            return FALL_N_BLOCKS_COST[1] + MovementHelper.getMiningDurationTicks(context, x, y - 1, z, down, false);
+            return FALL_N_BLOCKS_COST[1] + MovementHelper.getMiningDurationTicksFrom(context, x, y, z, x, y - 1, z, down, false);
         }
     }
 

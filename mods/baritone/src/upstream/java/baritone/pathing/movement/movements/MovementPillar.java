@@ -112,7 +112,7 @@ public class MovementPillar extends Movement {
             // to ascend here we'd have to break the block we are standing on
             return COST_INF;
         }
-        double hardness = MovementHelper.getMiningDurationTicks(context, x, y + 2, z, toBreak, true);
+        double hardness = MovementHelper.getMiningDurationTicksFrom(context, x, y, z, x, y + 2, z, toBreak, true);
         if (hardness >= COST_INF) {
             return COST_INF;
         }

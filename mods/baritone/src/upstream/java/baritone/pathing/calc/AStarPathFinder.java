@@ -52,13 +52,27 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
 
     @Override
     protected Optional<IPath> calculate0(long primaryTimeout, long failureTimeout) {
+        plannedUnderWater = baritone.pathing.movement.MovementHelper.PLANNED_UNDER_WATER.get(); // this search's thread
+        try {
+            return search(primaryTimeout, failureTimeout);
+        } finally {
+            plannedUnderWater[0] = false;
+        }
+    }
+
+    private boolean[] plannedUnderWater;
+
+    private Optional<IPath> search(long primaryTimeout, long failureTimeout) {
         startNode = getNodeAtPosition(startX, startY, startZ, BetterBlockPos.longHash(startX, startY, startZ));
         startNode.cost = 0;
         startNode.combinedCost = startNode.estimatedCostToGoal;
         // ModdedBench: breath (see breathe). A player starting under water has used 300 - air ticks of it getting here.
         startNode.submerged = baritone.pathing.movement.MovementHelper.isWater(calcContext.get(startX, startY + 1, startZ).getBlock());
         startNode.air = startNode.submerged ? calcContext.air : baritone.compat.CalculationInputs.FULL_AIR;
-        startNode.back = startNode.submerged ? baritone.compat.CalculationInputs.FULL_AIR - calcContext.air : 0;
+        // the way back out: the time under water so far, or straight up where the water above opens to air
+        double up = startNode.submerged ? baritone.pathing.movement.MovementHelper.swimUpTicks(calcContext.bsi, startX, startY, startZ) : -1;
+        startNode.back = !startNode.submerged ? 0 : up >= 0 ? Math.min(up, baritone.compat.CalculationInputs.FULL_AIR - calcContext.air)
+                : baritone.compat.CalculationInputs.FULL_AIR - calcContext.air;
         startNode.breathed = !startNode.submerged;
         BinaryHeapOpenSet openSet = new BinaryHeapOpenSet();
         openSet.insert(startNode);
@@ -104,6 +118,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
                 logDebug("Took " + (System.currentTimeMillis() - startTime) + "ms, " + numMovementsConsidered + " movements considered");
                 return Optional.of(new Path(startNode, loopFreeEnd(currentNode), numNodes, goal, calcContext));
             }
+            plannedUnderWater[0] = currentNode.submerged; // ModdedBench: see MovementHelper.PLANNED_UNDER_WATER
             for (Moves moves : allMoves) {
                 int newX = currentNode.x + moves.xOffset;
                 int newZ = currentNode.z + moves.zOffset;
@@ -149,7 +164,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
                 }
                 // ModdedBench: with the head under water a move costs air as well as time (Settings.submergedPenalty and
                 // breathSafety); no route runs out of air before the head is out of water.
-                boolean submerged = baritone.pathing.movement.MovementHelper.isWater(calcContext.get(res.x, res.y + 1, res.z).getBlock());
+                boolean submerged = headUnderWater(currentNode, res.x, res.y + 1, res.z);
                 double edgeTicks = actionCost, airLeft = airAfter(currentNode, edgeTicks, submerged);
                 if (airLeft < 0) {
                     breathPruned = true;
@@ -228,8 +243,33 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         to.edgeTicks = edgeTicks;
         to.submerged = submerged;
         to.air = submerged ? airAfter(from, edgeTicks, true) : baritone.compat.CalculationInputs.FULL_AIR;
-        to.back = submerged ? from.back + edgeTicks : 0;
+        to.back = submerged ? from.back + swimBack(from, to, edgeTicks) : 0;
         to.breathed = from.breathed || !submerged;
+    }
+
+    /** ModdedBench: the ticks to swim this edge back: its distance, not the digging that opened it, at most the edge's own. */
+    private static double swimBack(PathNode from, PathNode to, double edgeTicks) {
+        int dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
+        return Math.min(edgeTicks, ActionCosts.WALK_ONE_IN_WATER_COST * Math.sqrt(dx * dx + dy * dy + dz * dz));
+    }
+
+    /**
+     * ModdedBench: whether a move from from ends with the head in (x,y,z) under water. A head cell the move digs out is
+     * no breath: water above or beside it flows in, and digging from under water it is the same water.
+     */
+    private boolean headUnderWater(PathNode from, int x, int y, int z) {
+        baritone.compat.IBlockState head = calcContext.get(x, y, z);
+        if (baritone.pathing.movement.MovementHelper.isWater(head.getBlock())) {
+            return true;
+        }
+        if (baritone.pathing.movement.MovementHelper.canWalkThrough(calcContext, x, y, z, head)) {
+            return false;
+        }
+        return from.submerged || wet(x, y + 1, z) || wet(x + 1, y, z) || wet(x - 1, y, z) || wet(x, y, z + 1) || wet(x, y, z - 1);
+    }
+
+    private boolean wet(int x, int y, int z) {
+        return baritone.pathing.movement.MovementHelper.isWater(calcContext.get(x, y, z).getBlock());
     }
 
     /** ModdedBench: a route that ends under water keeps the air to get back out the way it came. */

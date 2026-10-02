@@ -491,6 +491,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private static String skipReason(CalculationContext ctx, BlockPos pos, BlockOptionalMetaLookup filter, List<BlockPos> blacklist, List<BlockPos> dropped) {
         // remove any that are within loaded chunks that aren't actually what we want
         if (ctx.bsi.worldContainsLoadedChunk(pos.getX(), pos.getZ()) && !filter.has(ctx.get(pos.getX(), pos.getY(), pos.getZ())) && !dropped.contains(pos)) return "";
+        // ModdedBench: a drop is picked up, not broken: where it lies (the water that filled a dug cell, say) says nothing
+        if (dropped.contains(pos) && !filter.has(ctx.get(pos.getX(), pos.getY(), pos.getZ()))) return blacklist.contains(pos) ? "unreachable" : null;
         // remove any that are implausible to mine (encased in bedrock, or touching lava)
         String implausible = implausible(ctx, pos);
         if (implausible != null) return implausible;

@@ -146,15 +146,15 @@ public class MovementAscend extends Movement {
         double totalCost = walk + additionalPlacementCost;
         // start with srcUp2 since we already have its state
         // includeFalling isn't needed because of the falling check above -- if srcUp3 is falling we will have already exited with COST_INF if we'd actually have to break it
-        totalCost += MovementHelper.getMiningDurationTicks(context, x, y + 2, z, srcUp2, false);
+        totalCost += MovementHelper.getMiningDurationTicksFrom(context, x, y, z, x, y + 2, z, srcUp2, false);
         if (totalCost >= COST_INF) {
             return COST_INF;
         }
-        totalCost += MovementHelper.getMiningDurationTicks(context, destX, y + 1, destZ, false);
+        totalCost += MovementHelper.getMiningDurationTicksFrom(context, x, y, z, destX, y + 1, destZ, false);
         if (totalCost >= COST_INF) {
             return COST_INF;
         }
-        totalCost += MovementHelper.getMiningDurationTicks(context, destX, y + 2, destZ, true);
+        totalCost += MovementHelper.getMiningDurationTicksFrom(context, x, y, z, destX, y + 2, destZ, true);
         return totalCost;
     }
 
@@ -172,6 +172,10 @@ public class MovementAscend extends Movement {
         }
 
         if (ctx.playerFeet().equals(dest) || ctx.playerFeet().equals(dest.add(getDirection().down()))) {
+            return state.setStatus(MovementStatus.SUCCESS);
+        }
+        // ModdedBench: swimming up, the water lifts the player past dest (it cannot stand there); over it is there
+        if (ctx.playerFeet().equals(dest.up()) && MovementHelper.isWater(ctx, dest)) {
             return state.setStatus(MovementStatus.SUCCESS);
         }
 

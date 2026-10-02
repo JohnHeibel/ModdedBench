@@ -301,7 +301,15 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
         if(breaking!=null&&!world.getBlock(breaking.getX(),breaking.getY(),breaking.getZ()).getMaterial().blocksMovement())return;
         var over=mc.objectMouseOver;breaking=null;
         if(!engine.getInputOverrideHandler().isInputForcedDown(baritone.api.utils.input.Input.CLICK_LEFT)||over==null||over.typeOfHit!=net.minecraft.util.MovingObjectPosition.MovingObjectType.BLOCK)return;
-        var p=new BlockPos(over.blockX,over.blockY,over.blockZ);if(wet(p))breaking=p;
+        var p=new BlockPos(over.blockX,over.blockY,over.blockZ);if(wet(p)&&(harmful(p)||!passage(p)))breaking=p;
+    }
+    /** A cell the path digs out to move through: water coming in only wets it, and a plug there blocks the path's own way. */
+    private boolean passage(BlockPos p){
+        var current=engine.getPathingBehavior().getCurrent();if(current==null)return false;
+        var moves=current.getPath().movements();
+        for(int i=Math.max(0,current.getPosition());i<moves.size();i++)
+            for(var b:((baritone.pathing.movement.Movement)moves.get(i)).toBreakAll())if(b.getX()==p.getX()&&b.getY()==p.getY()&&b.getZ()==p.getZ())return true;
+        return false;
     }
     /** The tick after a block beside fluid breaks, before the fluid has moved: put a throwaway block where it was. */
     private boolean plug(){
