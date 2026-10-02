@@ -105,6 +105,10 @@ public class PathExecutor implements IPathExecutor, Helper {
      * not sneaking out over lava), false otherwise
      */
     public boolean onTick() {
+        // ModdedBench: the path's end waits for the doors it opened to be closed behind it
+        if (pathPosition >= path.length() - 1 && pathPosition < path.length() && closeDoorsBehind()) {
+            return false;
+        }
         if (pathPosition == path.length() - 1) {
             pathPosition++;
         }
@@ -257,6 +261,9 @@ public class PathExecutor implements IPathExecutor, Helper {
         if (backup >= 0) {
             return backUp(movement, moved);
         }
+        if (movement.safeToCancel() && closeDoorsBehind()) {
+            return true;
+        }
         MovementStatus movementStatus = movement.update();
         if (movementStatus == UNREACHABLE || movementStatus == FAILED) {
             logDebug("Movement returns status " + movementStatus);
@@ -297,6 +304,16 @@ public class PathExecutor implements IPathExecutor, Helper {
             }
         }
         return canCancel; // movement is in progress, but if it reports cancellable, PathingBehavior is good to cut onto the next path
+    }
+
+    /** ModdedBench: a tick spent closing a door this path opened (see DoorsBehind), standing on dry ground only. */
+    private boolean closeDoorsBehind() {
+        Baritone engine = behavior.baritone;
+        if (!engine.doorsBehind.pending() || !Baritone.settings().closeDoorsBehind.value || !ctx.player().onGround || MovementHelper.isLiquid(ctx, ctx.playerFeet())) {
+            return false;
+        }
+        List<BetterBlockPos> positions = path.positions();
+        return engine.doorsBehind.tick(engine, ctx, new ArrayList<>(positions.subList(Math.min(pathPosition, positions.size()), positions.size())));
     }
 
     private void carryBackup(PathExecutor from) { // ModdedBench: a splice keeps a back-up in progress
