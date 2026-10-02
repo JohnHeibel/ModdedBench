@@ -676,6 +676,96 @@ public interface MovementHelper extends ActionCosts, Helper {
         }
     }
 
+    /**
+     * ModdedBench, currents. 1.7.10: each tick in water a player gets OWN_SWIM of their own push along their heading
+     * (EntityLivingBase#moveEntityWithHeading, moveFlying 0.02) and CURRENT_PUSH along the water's flow
+     * (World#handleMaterialAcceleration, the flow summed over the body's water cells, normalized, times 0.014); both are
+     * damped by the same x0.8, so the push is 70% of the player's own speed.
+     */
+    double OWN_SWIM = 0.02, CURRENT_PUSH = 0.014;
+
+    /**
+     * ModdedBench: the push a current gives the player this tick, x and z, worked out as the game does it
+     * (Entity#handleWaterMovement): every water cell the body's box reaches adds its own block's velocityToAddToEntity,
+     * so a modded fluid pushes as the game has it push. Null when nothing pushes sideways.
+     */
+    static double[] currentPush(IPlayerContext ctx) {
+        net.minecraft.entity.player.EntityPlayer player = ctx.player();
+        if (!player.isPushedByWater()) {
+            return null;
+        }
+        net.minecraft.util.AxisAlignedBB box = player.boundingBox.expand(0.0D, -0.4000000059604645D, 0.0D).contract(0.001D, 0.001D, 0.001D);
+        int x0 = net.minecraft.util.MathHelper.floor_double(box.minX), x1 = net.minecraft.util.MathHelper.floor_double(box.maxX + 1.0D);
+        int y0 = net.minecraft.util.MathHelper.floor_double(box.minY), y1 = net.minecraft.util.MathHelper.floor_double(box.maxY + 1.0D);
+        int z0 = net.minecraft.util.MathHelper.floor_double(box.minZ), z1 = net.minecraft.util.MathHelper.floor_double(box.maxZ + 1.0D);
+        net.minecraft.world.World world = player.worldObj;
+        net.minecraft.util.Vec3 sum = net.minecraft.util.Vec3.createVectorHelper(0, 0, 0);
+        for (int x = x0; x < x1; x++) {
+            for (int y = y0; y < y1; y++) {
+                for (int z = z0; z < z1; z++) {
+                    Block block = world.getBlock(x, y, z);
+                    if (block.getMaterial() == net.minecraft.block.material.Material.water
+                            && y1 >= y + 1 - BlockLiquid.getLiquidHeightPercent(world.getBlockMetadata(x, y, z))) {
+                        block.velocityToAddToEntity(world, x, y, z, player, sum);
+                    }
+                }
+            }
+        }
+        double length = sum.lengthVector();
+        if (length == 0 || sum.xCoord == 0 && sum.zCoord == 0) {
+            return null;
+        }
+        return new double[]{sum.xCoord / length * CURRENT_PUSH, sum.zCoord / length * CURRENT_PUSH};
+    }
+
+    /**
+     * ModdedBench: the yaw to swim on so the push (px, pz) and the player's own swimming add up along yaw: turned into the
+     * current by as much as it carries the player sideways, the way a player crosses a stream. Yaw as the game has it:
+     * heading (-sin, cos).
+     */
+    static float headingAcross(float yaw, double px, double pz) {
+        double r = Math.toRadians(yaw), dx = -Math.sin(r), dz = Math.cos(r);
+        double along = px * dx + pz * dz;
+        double hx = -(px - along * dx) / OWN_SWIM, hz = -(pz - along * dz) / OWN_SWIM, side = hx * hx + hz * hz;
+        if (side >= 1) { // more push sideways than the player has: all of it against the push
+            hx /= Math.sqrt(side);
+            hz /= Math.sqrt(side);
+        } else {
+            hx += Math.sqrt(1 - side) * dx;
+            hz += Math.sqrt(1 - side) * dz;
+        }
+        double turn = Math.toDegrees(Math.atan2(-hx, hz)) - yaw;
+        turn -= 360 * Math.floor((turn + 180) / 360);
+        return (float) (yaw + turn);
+    }
+
+    /**
+     * ModdedBench: the way the water in (x,y,z) pushes, a horizontal unit vector, or null when it does not (not water, or
+     * still). The fluid answers for itself (BlockLiquid / Forge BlockFluidBase getFlowDirection); only water pushes.
+     */
+    static double[] flowAt(BlockStateInterface bsi, int x, int y, int z) {
+        Block block = bsi.get0(x, y, z).getBlock();
+        if (block.getMaterial() != net.minecraft.block.material.Material.water) {
+            return null;
+        }
+        double angle = block instanceof BlockLiquid ? BlockLiquid.getFlowDirection(bsi.access, x, y, z, block.getMaterial())
+                : block instanceof net.minecraftforge.fluids.BlockFluidBase ? net.minecraftforge.fluids.BlockFluidBase.getFlowDirection(bsi.access, x, y, z)
+                : -1000;
+        return angle < -999 ? null : new double[]{-Math.sin(angle), Math.cos(angle)};
+    }
+
+    /**
+     * ModdedBench: how many times as long a swim along (dx, dz) takes in a current flowing along flow (a unit vector) as
+     * in still water: heading into it to hold the line (headingAcross), what is left of the player's own speed plus the
+     * push along the way.
+     */
+    static double swimFactor(double[] flow, int dx, int dz) {
+        double length = Math.sqrt(dx * dx + dz * dz), ux = dx / length, uz = dz / length;
+        double along = (flow[0] * ux + flow[1] * uz) * CURRENT_PUSH, side = (flow[0] * uz - flow[1] * ux) * CURRENT_PUSH / OWN_SWIM;
+        double speed = side * side >= 1 ? along : OWN_SWIM * Math.sqrt(1 - side * side) + along;
+        return speed <= 0 ? ActionCosts.COST_INF : OWN_SWIM / speed;
+    }
+
     static void moveTowards(IPlayerContext ctx, MovementState state, BlockPos pos) {
         // ModdedBench: straight above or below the target (a swimmer the water lifted past it) the yaw towards its centre
         // swings with every hundredth of a block; keep the one the player has

@@ -146,6 +146,7 @@ public abstract class Movement implements IMovement, MovementHelper {
                 currentState.setInput(Input.JUMP, true);
             }
         }
+        steerAcrossCurrent();
         if (ctx.player().isEntityInsideOpaqueBlock()) {
             ctx.getSelectedBlock().ifPresent(pos -> MovementHelper.switchToBestToolFor(ctx, BlockStateInterface.get(ctx, pos)));
             currentState.setInput(Input.CLICK_LEFT, true);
@@ -171,6 +172,29 @@ public abstract class Movement implements IMovement, MovementHelper {
         }
 
         return currentState.getStatus();
+    }
+
+    /**
+     * ModdedBench: aimed straight at its target, a swimmer in a current is carried sideways and only turns once off course,
+     * which beside lava is too late. Swimming forward with nothing to click, head into the current so the push and the
+     * player's own swimming add up along the target's yaw (MovementHelper.headingAcross).
+     */
+    private void steerAcrossCurrent() {
+        Map<Input, Boolean> inputs = currentState.getInputStates();
+        Optional<Rotation> want = currentState.getTarget().getRotation();
+        if (!Boolean.TRUE.equals(inputs.get(Input.MOVE_FORWARD)) || !want.isPresent()) {
+            return;
+        }
+        for (Input other : new Input[]{Input.MOVE_BACK, Input.MOVE_LEFT, Input.MOVE_RIGHT, Input.CLICK_LEFT, Input.CLICK_RIGHT, Input.SNEAK}) {
+            if (Boolean.TRUE.equals(inputs.get(other))) {
+                return;
+            }
+        }
+        double[] push = MovementHelper.currentPush(ctx);
+        if (push != null) {
+            float yaw = MovementHelper.headingAcross(want.get().getYaw(), push[0], push[1]);
+            currentState.setTarget(new MovementState.MovementTarget(new Rotation(yaw, want.get().getPitch()), currentState.getTarget().hasToForceRotations()));
+        }
     }
 
     /** ModdedBench: settled ticks running the crosshair has been on something this movement may not clear; see clearInSight. */
