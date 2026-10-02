@@ -254,6 +254,45 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
         got = await a.until(lambda g: any(p == 0x3A for p, _ in g))
         r = Reader(next(x for p, x in got if p == 0x3A)); self.assertEqual((r.varint(), r.string()), (1, "/invsee"))
 
+    async def test_spectator_toggles_tp_finds_the_agent_and_night_vision_lasts(self):
+        await self.play(1)
+        v = await Watcher().join(self.vport)
+        got = await v.until(lambda g: any(p == 0x08 for p, _ in g))
+        modes = lambda g: [Reader(b).u("Bf")[1] for p, b in g if p == 0x2B and b[0] == 3]
+        self.assertEqual(modes(got), [2.0])                        # adventure, flying
+        self.assertIn((0x39, pack("Bff", 7, 0.1, 0.1)), got)
+        v.say(frame(0x01, string("/spectator")))
+        await v.until(lambda g: modes(g) == [2.0, state.SPECTATOR])
+        v.say(frame(0x01, string("/spec")))
+        await v.until(lambda g: modes(g) == [2.0, state.SPECTATOR, 2.0])
+        place = lambda g: [Reader(b).u("dddff") for p, b in g if p == 0x08]
+        n = len(v.got)
+        v.say(frame(0x01, string("/tp")))
+        await v.until(lambda g: place(g[n:]))
+        x, y, z, yaw, _ = place(v.got[n:])[0]
+        self.assertEqual((x, y, z, yaw), (101.0, 64.0 + state.EYE, -20.0, 45.0))  # where the agent last moved to
+        self.tap.write(rec(0, 1, frame(0x04, pack("dddd?", 110.0, 70.0, 71.62, -5.0, True)))); await self.tap.drain()
+        await until(lambda: self.relay.agent and self.relay.agent[0] == 110.0)
+        n = len(v.got)
+        v.say(frame(0x01, string("/tp")))
+        await v.until(lambda g: place(g[n:]))
+        self.assertEqual(place(v.got[n:])[0][:3], (110.0, 70.0 + state.EYE, -5.0))
+        v.say(frame(0x01, string("/nightvision")))
+        await v.until(lambda g: any(p == 0x1D for p, _ in g))
+        effect = next(b for p, b in v.got if p == 0x1D)
+        self.assertEqual(Reader(effect).u("iBBh"), (state.VIEWER_EID, relay.NIGHT_VISION, 0, 32767))
+        n = len(v.got)
+        nether = frame(0x07, pack("iBB", -1, 1, 0) + string("default"))
+        self.tap.write(rec(1, 1, nether)); await self.tap.drain()   # a Respawn: a new player, so both come back
+        got = (await v.until(lambda g: any(p == 0x1D for p, _ in g[n:])))[n:]
+        pids = [p for p, _ in got]
+        self.assertLess(pids.index(0x07), pids.index(0x1D))
+        self.assertEqual(modes(got), [2.0])
+        self.assertIsNone(self.relay.agent)                       # not known in the new dimension until it shows
+        v.say(frame(0x01, string("/nv")))
+        await v.until(lambda g: any(p == 0x1E for p, _ in g))
+        self.assertNotIn(b"/tp", bytes(self.wire))
+
     async def test_a_restarted_forwarder_reads_the_connection_again_and_viewers_stay(self):
         await self.play(1)
         v = await Watcher().join(self.vport)

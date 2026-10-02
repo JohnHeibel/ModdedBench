@@ -15,19 +15,34 @@ from . import board
 from .link import END, HEAD, HEARTBEAT, INVENTORY, LIVE, MAGIC, MAX, NEWS, SNAPSHOT, STATUS, header, proof, token, unheaded
 from .forwarder import clearing
 from .proxy import Stage
-from .state import Mirror
+from .state import EYE, SPECTATOR, VIEWER_EID, Mirror, abilities
 from .wire import Reader, Splitter, frame, pack, split, string, varint
 
 FROZEN = "the agent is reconnecting; this view is frozen until it returns"
 DROPPED = "the feed from the agent's PC dropped; this view is frozen until it is back"
 BACK = "the agent is back"
 WINDOW = 1          # the only window a viewer is ever shown: the agent's inventory
-COMMANDS = {"/invsee": "the agent's inventory, live", "/help": "this list"}
+COMMANDS = {"/tp": "takes you to the agent", "/invsee": "the agent's inventory, live",
+            "/spectator": "fly through blocks, or be solid again",
+            "/nightvision": "night vision on or off", "/help": "this list"}
+ALIASES = {"/inv": "/invsee", "/spec": "/spectator", "/nv": "/nightvision", "/agent": "/tp"}
+ADVENTURE = 2   # how a viewer starts: solid, flying, and unable to touch anything
+NIGHT_VISION, RENEW = 16, 600.0  # the effect's id; seconds between renewals of its longest duration (32767 ticks, 27 min)
 CHAT_GAP = 1.5      # seconds between one viewer's chat lines
 
 
 def notice(text: str) -> bytes:
     return frame(0x02, string(json.dumps({"text": f"[spectators] {text}", "color": "gray"})))
+
+
+def night_vision(on: bool) -> bytes:
+    if on: return frame(0x1D, pack("iBBh", VIEWER_EID, NIGHT_VISION, 0, 32767))
+    return frame(0x1E, pack("iB", VIEWER_EID, NIGHT_VISION))
+
+
+def located(x: int, y: int, z: int, yaw: int, pitch: int) -> list[float]:
+    """An entity's position on the wire (fixed point, angle bytes) as [x, feet y, z, yaw, pitch]."""
+    return [x / 32, y / 32, z / 32, yaw * 360 / 256, (pitch - 256 if pitch > 127 else pitch) * 360 / 256]
 
 
 def said(name: str, text: str) -> bytes:
@@ -74,6 +89,7 @@ class Relay(Stage):
         self.inventory = None  # (window title, the agent's inventory as 45 wire slots)
         self.status, self.news = {}, collections.deque(maxlen=3)  # the sidebar's status; the agent's latest lines
         self.dim = None  # the dimension the viewers' clients are in, to know when they start a new client world
+        self.eid, self.agent = None, None  # the agent's entity id; where it stands as [x, feet y, z, yaw, pitch]
 
     # ---- viewers
     def refuse(self, name):
@@ -81,9 +97,10 @@ class Relay(Stage):
         if name.lower() == self.world.host.lower(): return "that name is the agent's; pick another"
 
     def welcome(self, v):
-        v.invsee, v.spoke, v.board = False, 0.0, None
+        v.invsee, v.spoke, v.board, v.spectating, v.night, v.night_at = False, 0.0, None, False, False, 0.0
         v.hold(self.world.catch_up())
-        v.send(list(self.news) + [notice(f"you are watching {self.world.host}. Chat here reaches other spectators only; /invsee shows its inventory")])
+        v.send(self.fit(v) + list(self.news) + [notice(
+            f"you are watching {self.world.host}. Chat here reaches other spectators only; /tp takes you to it, /help lists the rest")])
         self.draw(v, len(self.viewers) + 1)
         if self.world.clear is not None: v.send([notice(FROZEN)])
         elif self.link is None: v.send([notice(DROPPED)])
@@ -105,7 +122,16 @@ class Relay(Stage):
         if not text: return
         if text.startswith("/"):
             command = text.split()[0].lower()
-            if command in ("/invsee", "/inv"): return self.invsee(v)
+            command = ALIASES.get(command, command)
+            if command == "/invsee": return self.invsee(v)
+            if command == "/tp": return self.tp(v)
+            if command == "/spectator":
+                v.spectating = not v.spectating
+                return v.send(self.fit(v)[:2] + [notice("spectator mode: you fly through blocks" if v.spectating else
+                                                        "spectator mode off: solid again, still flying")])
+            if command == "/nightvision":
+                v.night, v.night_at = not v.night, time.monotonic()
+                return v.send([night_vision(v.night), notice(f"night vision {'on' if v.night else 'off'}")])
             if command == "/help": return v.send([notice(f"{c}: {what}") for c, what in COMMANDS.items()])
             return v.send([notice(f"no command {command} here; try /help")])
         now = time.monotonic()
@@ -118,6 +144,25 @@ class Relay(Stage):
         v.invsee = True
         v.send([frame(0x2D, pack("BB", WINDOW, 0) + string(self.inventory[0]) + pack("B?", 45, True)), self.window_items()])
 
+    def tp(self, v):
+        if self.agent is None: return v.send([notice("where the agent is is not known yet; try again in a moment")])
+        x, y, z, yaw, pitch = self.agent
+        v.send([frame(0x08, pack("dddff?", x, y + EYE, z, yaw, pitch, False))])
+
+    def fit(self, v) -> list[bytes]:
+        """v's own game mode (with flight), then night vision if v turned it on."""
+        out = [frame(0x2B, pack("Bf", 3, SPECTATOR if v.spectating else ADVENTURE)), abilities()]
+        if v.night: out.append(night_vision(True)); v.night_at = time.monotonic()
+        return out
+
+    def reset(self, new_world: bool):
+        """After frames that reset the viewers' players (a Respawn, or a world replaced in place): each viewer's mode
+        and night vision again and, in a new client world, the sidebar made again."""
+        for v in self.viewers:
+            v.send(self.fit(v))
+            if new_world: v.board = None
+            self.draw(v)
+
     def draw(self, v, watching: int | None = None):
         """Brings v's sidebar up to date: created once per client world (v.board None), then only changed rows."""
         rows = board.lines(self.status, len(self.viewers) if watching is None else watching)
@@ -126,27 +171,38 @@ class Relay(Stage):
         if out: v.send(out)
 
     def moved(self, frames: list[bytes]) -> bool:
-        """Follows the viewers' dimension through frames about to reach them; True if their clients start a new world
-        (a Respawn to another dimension), which forgets the sidebar."""
+        """Follows frames about to reach the viewers for their dimension and where the agent is; True if their clients
+        start a new world (a Respawn to another dimension), which resets the player and forgets the sidebar."""
         new = False
         for data in frames:
             for f in Splitter().feed(data):
                 pid, body = split(f)
-                if pid == 0x01: self.dim = Reader(body).u("iBb")[2]
+                if pid not in (0x01, 0x07, 0x08, 0x0C, 0x18): continue
+                r = Reader(body)
+                if pid == 0x01: self.dim = r.u("iBb")[2]
                 elif pid == 0x07:
-                    dim = Reader(body).u("i")
-                    new |= dim != self.dim; self.dim = dim
+                    dim = r.u("i")
+                    new |= dim != self.dim; self.dim = dim; self.agent = None
+                elif pid == 0x08:  # viewers are placed where the agent is
+                    x, y, z, yaw, pitch = r.u("dddff"); self.agent = [x, y - EYE, z, yaw, pitch]
+                elif pid == 0x18:
+                    if r.u("i") == self.eid: self.agent = located(*r.u("iiiBB"))
+                elif r.varint() == self.eid:  # the agent's avatar appears
+                    r.string(); r.string()
+                    for _ in range(3 * r.varint()): r.string()
+                    self.agent = located(*r.u("iiiBB"))
         return new
 
-    def draw_all(self, new_world: bool = False):
-        for v in self.viewers:
-            if new_world: v.board = None
-            self.draw(v)
+    def draw_all(self):
+        for v in self.viewers: self.draw(v)
 
     async def ticker(self, every: float = 15.0):
         while True:
             await asyncio.sleep(every)
             self.draw_all()
+            now = time.monotonic()
+            for v in self.viewers:
+                if v.night and now - v.night_at > RENEW: v.night_at = now; v.send([night_vision(True)])
 
     def window_items(self) -> bytes:
         return frame(0x30, pack("Bh", WINDOW, 45) + self.inventory[1])
@@ -156,6 +212,7 @@ class Relay(Stage):
         w = self.world
         if kind == SNAPSHOT:
             meta, entries = unheaded(payload)
+            self.eid, self.agent = meta.get("eid"), meta.get("pos")
             if w and w.session == meta["session"] and w.clear is None:  # a refresh: viewers already have all this
                 w.snap, w.respawn = entries[meta["respawn"]:], [f for _, f in entries[:meta["respawn"]]]
                 w.tail, w.tail_bytes = [], 0
@@ -165,13 +222,13 @@ class Relay(Stage):
                     if w.clear is None: w.settle()
                     moved = new.into(w)
                     self.broadcast(moved + [notice(BACK)])
-                    if self.moved(moved): self.draw_all(new_world=True)
+                    self.reset(self.moved(moved))
                 else: self.moved([f for _, f in new.snap])  # where a viewer joining now will be
                 self.world = new
         elif kind == LIVE and w and w.clear is None:
             w.tail.append(payload); w.tail_bytes += len(payload)
             self.broadcast([payload])
-            if self.moved([payload]): self.draw_all(new_world=True)
+            if self.moved([payload]): self.reset(new_world=True)
             if w.tail_bytes > self.tail_cap:
                 self.kick("the spectator feed overflowed; rejoin shortly"); self.world = None
         elif kind == INVENTORY:
