@@ -178,8 +178,11 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
                     // see issue #18
                     actionCost *= favoring.calculate(hashCode);
                 }
-                PathNode neighbor = submerged ? underwaterNode(res.x, res.y, res.z, hashCode, airLeft) : getNodeAtPosition(res.x, res.y, res.z, hashCode);
                 double tentativeCost = currentNode.cost + actionCost;
+                if (submerged && dominated(hashCode, airLeft, currentNode.back + swimBack(currentNode, res.x, res.y, res.z, edgeTicks), tentativeCost)) {
+                    continue;
+                }
+                PathNode neighbor = submerged ? underwaterNode(res.x, res.y, res.z, hashCode, airLeft) : getNodeAtPosition(res.x, res.y, res.z, hashCode);
                 if (neighbor.cost - tentativeCost > minimumImprovement) {
                     breathe(neighbor, currentNode, edgeTicks, submerged);
                     neighbor.previous = currentNode;
@@ -249,8 +252,27 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
 
     /** ModdedBench: the ticks to swim this edge back: its distance, not the digging that opened it, at most the edge's own. */
     private static double swimBack(PathNode from, PathNode to, double edgeTicks) {
-        int dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
+        return swimBack(from, to.x, to.y, to.z, edgeTicks);
+    }
+
+    private static double swimBack(PathNode from, int x, int y, int z, double edgeTicks) {
+        int dx = x - from.x, dy = y - from.y, dz = z - from.z;
         return Math.min(edgeTicks, ActionCosts.WALK_ONE_IN_WATER_COST * Math.sqrt(dx * dx + dy * dy + dz * dz));
+    }
+
+    /**
+     * ModdedBench: whether this cell was already reached under water with no less air, no further to swim back and no
+     * more cost: such a state does everything this one could, so this one is not searched. Without it every cell of a
+     * lake was searched once per air band.
+     */
+    private boolean dominated(long hashCode, double air, double back, double cost) {
+        for (it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<PathNode> band : underwater) {
+            PathNode n = band == null ? null : band.get(hashCode);
+            if (n != null && n.air >= air && n.back <= back && n.cost <= cost) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
