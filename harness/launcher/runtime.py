@@ -19,7 +19,7 @@ import subprocess
 import sys
 import time
 import zipfile
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 REPO = Path(__file__).resolve().parents[2]
@@ -196,7 +196,7 @@ def write_instance_config(path: Path, java: str, memory: int, window: str = "") 
         "OverrideJavaLocation": "true",
         # Qt INI treats backslashes as escapes, so launcher paths must use
         # forward slashes even on Windows.
-        "JavaPath": Path(java).as_posix(),
+        "JavaPath": PureWindowsPath(java).as_posix(),
         "OverrideMemory": "true",
         "MinMemAlloc": str(max(1024, memory // 2)),
         "MaxMemAlloc": str(memory),

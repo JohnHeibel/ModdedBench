@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 # Copyright (c) 2026 ModdedBench contributors
 """resume=True: an action a paused world refuses resumes the world and runs, once per tool call."""
-import asyncio, concurrent.futures, inspect, os, sys
+import asyncio, concurrent.futures, inspect, os, sys, unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "mcp"))
-import pytest
+try: import pytest
+except ImportError: raise unittest.SkipTest("needs pytest")
 import server
 from kernel import BridgeError, Kernel, Reply, resume_once
 

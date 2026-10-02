@@ -2,6 +2,7 @@
 # Copyright (c) 2026 ModdedBench contributors
 """Offline safety tests for the GTNH runtime supervisor."""
 from __future__ import annotations
+import os
 import sys
 import tempfile
 import unittest
@@ -305,10 +306,10 @@ class RuntimeTests(unittest.TestCase):
                 if method == "obs.player": return {"name": "ModbenchDev", "uuid": "1234"}
                 return {"connecting": True}
         kernel = Kernel()
-        with patch.object(runtime, "open_client_kernel", return_value=kernel):
+        with patch.object(runtime, "open_client_kernel", return_value=kernel), patch.object(runtime, "game_server_ready", return_value=True):
             joined = runtime.wait_for_client_join(1)
         self.assertEqual(joined["name"], "ModbenchDev")
-        self.assertIn(("sys.connect", {"host": "127.0.0.1", "port": 25575}), kernel.calls)
+        self.assertIn(("sys.connect", {"host": "127.0.0.1", "port": runtime.GAME_PORT}), kernel.calls)
 
     def test_client_wait_accepts_a_client_that_joined_by_itself(self):
         class Kernel:
@@ -331,9 +332,10 @@ class RuntimeTests(unittest.TestCase):
                 if method == "obs.world": return {"inWorld": True}
                 if method == "obs.player": return {"name": "ModbenchDev", "uuid": "1234"}
                 return {"connecting": True}
-        with patch.object(runtime, "open_client_kernel", return_value=Kernel()):
+        with patch.object(runtime, "open_client_kernel", return_value=Kernel()), patch.object(runtime, "game_server_ready", return_value=True):
             self.assertTrue(runtime.wait_for_client_join(1)["joined"])
 
+    @unittest.skipUnless(os.name == "nt", "the client process inspector looks for Windows processes")
     def test_client_process_inspector_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             result = Namespace(returncode=1, stdout="false")
