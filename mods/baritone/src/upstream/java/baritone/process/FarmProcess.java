@@ -208,6 +208,11 @@ public final class FarmProcess extends BaritoneProcessHelper implements IFarmPro
             // +0.1 because of farmland's 0.9375 dummy height lol
             goalz.add(new GoalBlock(new BlockPos(entity.posX, entity.boundingBox.minY + 0.1, entity.posZ)));
         }
+        // ModdedBench: nothing ready yet is waiting, not a failure; an empty goal made the search fail and dropped the job.
+        // The job's own duration and stall limits still end it.
+        if (goalz.isEmpty()) {
+            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+        }
         return new PathingCommand(new GoalComposite(goalz.toArray(new Goal[0])), PathingCommandType.SET_GOAL_AND_PATH);
     }
 
