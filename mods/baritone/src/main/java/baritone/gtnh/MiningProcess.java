@@ -10,7 +10,7 @@ import static baritone.gtnh.pathing.WorkSpec.*;
 import java.util.*;
 
 /** Journal, native selectors and action ownership around the actual upstream MineProcess. */
-final class MiningProcess extends BulkJob {
+final class MiningProcess extends BulkJob implements PlansWhilePaused {
     private final List<Map<String,Object>> items;
     // With no items named, any gain counts: the inventory at this session's start, per identity (MiningProcess.identity).
     private final Map<String,Integer> start;
@@ -20,6 +20,9 @@ final class MiningProcess extends BulkJob {
     private final MiningObservation observation;
     private final Map<baritone.api.Settings.Setting<?>,Object> scopedSettings=new LinkedHashMap<>();
     private boolean started;
+    // The first scan of the bounds reads the loaded world and stands still: a paused world can do it. The search that
+    // follows cannot move there, as the mine process chooses its targets in a tick that may also break and swing.
+    private boolean scannedWhilePaused;
     private Integer finalCount;
     private String finalGoal;
     private int inactiveTicks,pathlessTicks,rejectedSeen,rejections,haveAtReject=-1;
@@ -110,6 +113,10 @@ final class MiningProcess extends BulkJob {
     // and so is holding a swing the game promised to finish (its own limit ends a useless one): a slow block is no stall.
     @Override long activity(){return progress()+(long)broken+(observation.passes==0?observation.cursor:0)+(swing==null?0:ticks-swing.start());}
     @Override String phase(){return "reference_mine";}
+    @Override public boolean planningWhilePaused(){return !done()&&ticks==0&&!started&&observation.passes==0;}
+    @Override public void planWhilePaused(){
+        if(mc.theWorld==world&&mc.thePlayer==player&&lease!=null&&lease.isActive()){observation.tick();scannedWhilePaused=observation.passes>0;}
+    }
     @Override void step(){
         if(gained()>=quantity){finish("succeeded","requested_inventory_gain_observed");return;}
         if(!WorkAccess.room(items)){finish("failed","inventory_full");return;}
@@ -222,7 +229,7 @@ final class MiningProcess extends BulkJob {
         out.put("quantity",quantity);out.put("gainedBefore",gainedBefore);
         Integer count=done()?finalCount:mc.thePlayer==player?have():null;out.put("items",start==null?items:"any");
         out.put("currentCount",count);out.put("gained",count==null?null:Math.max(0,count-baseline));
-        out.put("scanPasses",observation==null?0:observation.passes);out.put("scanCursor",observation==null?0:observation.cursor);
+        out.put("scanPasses",observation==null?0:observation.passes);out.put("scannedWhilePaused",scannedWhilePaused);out.put("scanCursor",observation==null?0:observation.cursor);
         out.put("scanVolume",bounds==null?0:bounds.volume());out.put("targets",lastKnown);out.put("bounds",journal.spec.get("bounds"));
         out.put("initialTargetDiagnostics",diagnostics);
         out.put("reachableAttackTicks",reachableAttackTicks);

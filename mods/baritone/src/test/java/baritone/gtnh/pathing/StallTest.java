@@ -74,4 +74,34 @@ public class StallTest {
         assertFalse(stall.tick(0,30000000,1,-30000000));
         assertEquals(4,stall.status().get("groundCells"));
     }
+
+    @Test public void aLongSearchInFlightIsNotAStall() {
+        // 18:53:13: a 15 s plan-ahead search, standing still, under a 200-tick window. Its 300 ticks are excused; the
+        // watch runs on once it is over.
+        Stall stall=new Stall(200);
+        for(int t=0;t<50;t++)assertFalse(stall.tick(0,120,35,-223));
+        for(int t=0;t<300;t++)assertFalse(stall.tick(0,120,35,-223,300));
+        assertEquals(300,stall.status().get("searchTicksExcused"));
+        assertEquals(150,run(stall,400,t->new int[]{120,35,-223},t->0));
+    }
+
+    @Test public void searchesBackToBackOnTheSameGroundStillStallAtMostOneBudgetLate() {
+        // A re-plan loop: a search is in flight on nearly every tick, the player never reaches new ground.
+        int plain=run(new Stall(200),2000,t->new int[]{58,t%3==0?19:17,-159},t->0);
+        assertEquals(201,plain);
+        assertEquals(plain+100,runSearching(new Stall(200),2000,t->new int[]{58,t%3==0?19:17,-159},t->100));
+    }
+
+    @Test public void newGroundAfterASearchStartsTheExcuseAgain() {
+        Stall stall=new Stall(50);
+        for(int t=0;t<100;t++)assertFalse(stall.tick(0,0,64,0,100));
+        assertFalse(stall.tick(0,1,64,0,100));                     // the path it found moved the player
+        for(int t=0;t<100;t++)assertFalse(stall.tick(0,1,64,0,100));
+        assertEquals(49,run(stall,100,t->new int[]{1,64,0},t->0));
+    }
+
+    private static int runSearching(Stall stall,int ticks,java.util.function.IntFunction<int[]> at,java.util.function.IntUnaryOperator budget) {
+        for(int t=0;t<ticks;t++){int[] p=at.apply(t);if(stall.tick(0,p[0],p[1],p[2],budget.applyAsInt(t)))return t;}
+        return -1;
+    }
 }

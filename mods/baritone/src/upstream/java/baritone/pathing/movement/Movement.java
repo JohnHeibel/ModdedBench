@@ -27,6 +27,7 @@ import baritone.api.pathing.movement.MovementStatus;
 import baritone.api.utils.*;
 import baritone.api.utils.input.Input;
 import baritone.behavior.PathingBehavior;
+import baritone.gtnh.pathing.MovementTrace;
 import baritone.utils.BlockStateInterface;
 import net.minecraft.block.BlockLiquid;
 import net.minecraft.entity.item.EntityFallingBlock;
@@ -127,6 +128,7 @@ public abstract class Movement implements IMovement, MovementHelper {
     @Override
     public MovementStatus update() {
         ctx.player().capabilities.isFlying = false;
+        updates++;
         currentState = updateState(currentState);
         if (MovementHelper.isLiquid(ctx, ctx.playerFeet())) {
             // ModdedBench: a bobbing player is off the ground, and the game breaks blocks five times slower then. In water
@@ -152,6 +154,9 @@ public abstract class Movement implements IMovement, MovementHelper {
         currentState.getInputStates().forEach((input, forced) -> {
             baritone.getInputOverrideHandler().setInputForceState(input, forced);
         });
+        if (MovementTrace.on()) {
+            trace();
+        }
         currentState.getInputStates().clear();
 
         // If the current status indicates a completed movement
@@ -160,6 +165,51 @@ public abstract class Movement implements IMovement, MovementHelper {
         }
 
         return currentState.getStatus();
+    }
+
+    /** ModdedBench: settled ticks running the crosshair has been on something this movement may not clear; see clearInSight. */
+    private int blockedSight, updates, lastBlocked = -2;
+
+    /**
+     * ModdedBench: the aim has settled on what this movement wants (a block to break, a face to place against) and the
+     * crosshair is on something else. Upstream left-clicked whatever that was, and only once the look was within 0.01
+     * degrees, which mouse-step aiming almost never is; so a tall plant in the player's own head cell (a ray from inside a
+     * block hits that block) or over a bridge cell held the movement until it timed out. Clear what is in the way when
+     * it is in this movement's own cells and either planned to be broken or takes no time to break (measured hardness 0).
+     * Anything else, ten settled ticks in a row, is a blocked sight: the caller ends the movement so the executor re-plans.
+     * True when it clicked.
+     */
+    protected boolean clearInSight(MovementState state) {
+        Optional<BlockPos> hit = ctx.getSelectedBlock();
+        if (hit.isPresent()) {
+            BlockPos p = hit.get();
+            boolean planned = false;
+            for (BetterBlockPos b : positionsToBreak) {
+                planned |= b.equals(p);
+            }
+            boolean own = planned || src.equals(p) || src.up().equals(p) || dest.equals(p) || dest.up().equals(p) || dest.down().equals(p);
+            if (own) {
+                float hardness;
+                try {
+                    hardness = BlockStateInterface.get(ctx, p).getBlock().getBlockHardness(ctx.minecraft().theWorld, p.getX(), p.getY(), p.getZ());
+                } catch (RuntimeException e) {
+                    hardness = -1;
+                }
+                if (hardness == 0 || planned && hardness > 0) {
+                    MovementHelper.switchToBestToolFor(ctx, BlockStateInterface.get(ctx, p));
+                    state.setInput(Input.CLICK_LEFT, true);
+                    return true;
+                }
+            }
+        }
+        blockedSight = lastBlocked == updates - 1 ? blockedSight + 1 : 1;
+        lastBlocked = updates;
+        return false;
+    }
+
+    /** ModdedBench: whether clearInSight has met something it may not clear for long enough to give up. */
+    protected boolean sightBlocked() {
+        return blockedSight >= 10 && lastBlocked == updates;
     }
 
     protected boolean prepared(MovementState state) {
@@ -178,8 +228,10 @@ public abstract class Movement implements IMovement, MovementHelper {
                 if (reachable.isPresent()) {
                     Rotation rotTowardsBlock = reachable.get();
                     state.setTarget(new MovementState.MovementTarget(rotTowardsBlock, true));
-                    if (ctx.isLookingAt(blockPos) || ctx.playerRotations().isReallyCloseTo(rotTowardsBlock)) {
+                    if (ctx.isLookingAt(blockPos)) {
                         state.setInput(Input.CLICK_LEFT, true);
+                    } else if (ctx.isAimSettled(rotTowardsBlock)) {
+                        clearInSight(state);
                     }
                     return false;
                 }
@@ -236,6 +288,10 @@ public abstract class Movement implements IMovement, MovementHelper {
      */
     public MovementState updateState(MovementState state) {
         if (!prepared(state)) {
+            if (sightBlocked()) {
+                logDebug("Sight to the block to break is blocked by " + ctx.getSelectedBlock().orElse(null));
+                return state.setStatus(MovementStatus.UNREACHABLE);
+            }
             return state.setStatus(MovementStatus.PREPPING);
         } else if (state.getStatus() == MovementStatus.PREPPING) {
             state.setStatus(MovementStatus.WAITING);
@@ -304,5 +360,27 @@ public abstract class Movement implements IMovement, MovementHelper {
 
     public BlockPos[] toBreakAll() {
         return positionsToBreak;
+    }
+
+    /** ModdedBench: one movement tick for MovementTrace: what was asked (inputs, aim) and where the player is. */
+    private void trace() {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("mv", getClass().getSimpleName().replace("Movement", ""));
+        row.put("src", List.of(src.x, src.y, src.z));
+        row.put("dest", List.of(dest.x, dest.y, dest.z));
+        row.put("status", currentState.getStatus().name());
+        row.put("pos", List.of(MovementTrace.r(ctx.player().posX), MovementTrace.r(ctx.player().boundingBox.minY), MovementTrace.r(ctx.player().posZ)));
+        BetterBlockPos feet = ctx.playerFeet();
+        row.put("feet", List.of(feet.x, feet.y, feet.z));
+        row.put("ground", ctx.player().onGround);
+        if (ctx.player().isCollidedHorizontally) row.put("collided", true);
+        if (ctx.player().isSneaking()) row.put("sneaking", true);
+        List<String> in = new ArrayList<>();
+        currentState.getInputStates().forEach((input, forced) -> { if (forced) in.add(input.name()); });
+        row.put("in", in);
+        currentState.getTarget().getRotation().ifPresent(rot -> row.put("aim", List.of(MovementTrace.r(rot.getYaw()), MovementTrace.r(rot.getPitch()))));
+        row.put("look", List.of(MovementTrace.r(ctx.player().rotationYaw), MovementTrace.r(ctx.player().rotationPitch)));
+        ctx.getSelectedBlock().ifPresent(b -> row.put("hit", List.of(b.getX(), b.getY(), b.getZ())));
+        MovementTrace.add(row);
     }
 }

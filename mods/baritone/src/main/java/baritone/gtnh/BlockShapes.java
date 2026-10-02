@@ -113,7 +113,7 @@ public final class BlockShapes {
     static int ringX(int r,int k){if(r==0)return 0;int side=k/(2*r),off=k%(2*r);return side==0?off-r:side==1?r:side==2?r-off:-r;}
     static int ringZ(int r,int k){if(r==0)return 0;int side=k/(2*r),off=k%(2*r);return side==0?-r:side==1?off-r:side==2?r:r-off;}
     private static void warmStep(){
-        World world=Minecraft.getMinecraft().theWorld;
+        Minecraft mc=Minecraft.getMinecraft();World world=mc==null?null:mc.theWorld;
         if(warmDone||world==null)return;
         while(System.nanoTime()<budgetEnd){
             int x=warmX+ringX(warmRing,warmK),z=warmZ+ringZ(warmRing,warmK),y=warmY+warmDy;

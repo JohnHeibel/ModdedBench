@@ -34,13 +34,14 @@ public final class ClientClock implements ClockHooks.Driver {
     private int resumeTicks, creditRan;
     private Session agent;
     final PausedFrame presentation=new PausedFrame(this);
+    private final PlanHold planHold=new PlanHold();
 
     public ClientClock(ClientRuntime runtime) { this.runtime=runtime; }
     public boolean isPaused() { return paused; }
     String pauseReason() {return Json.string(state,"reason","requested_pause");}
     public JsonObject status() {
         JsonObject out=Json.object("available",supported,"state",state,"clientPaused",paused,
-            "clientSimulationTicks",runtime.tick(),"agentAttached",agent!=null && agent.connected,"presentation",presentation.status());
+            "clientSimulationTicks",runtime.tick(),"agentAttached",agent!=null && agent.connected,"presentation",presentation.status(),"planWhilePaused",planHold.status());
         return out;
     }
     public Object command(Request r) {
@@ -162,7 +163,7 @@ public final class ClientClock implements ClockHooks.Driver {
                     if(state.has("worldId")) dev.modbench.api.ControlRegistry.memory().bind(state.get("worldId").getAsString());
                     paused=state.get("paused").getAsBoolean();
                     int credit=0;
-                    if(!paused) { if(resuming) credit=creditRan;resuming=creditTick=false;creditRan=0; }
+                    if(!paused) { if(resuming) credit=creditRan;resuming=creditTick=false;creditRan=0;planHold.reset(); }
                     JsonObject step=state.has("step")?state.getAsJsonObject("step"):null;
                     if(step==null) stepBudget=-1;
                     else if(step.get("id").getAsLong()!=stepId) { // the credit tick was this step's first
@@ -193,7 +194,7 @@ public final class ClientClock implements ClockHooks.Driver {
         if(current!=connection) {
             for(Request r:pending.values()) r.fail("disconnected","clock connection changed");
             dev.modbench.api.ControlRegistry.memory().disconnected();
-            pending.clear();observationFrames.clear();incoming.clear();connection=current;supported=false;paused=false;resuming=creditTick=false;creditRan=0;
+            pending.clear();observationFrames.clear();incoming.clear();connection=current;supported=false;paused=false;resuming=creditTick=false;creditRan=0;planHold.reset();
             state=Json.object("mode","unavailable","paused",false);
             if(connection!=null) send(Json.object("type","hello"));
         }
@@ -215,9 +216,17 @@ public final class ClientClock implements ClockHooks.Driver {
         });
         observationFrames.keySet().removeIf(id->!pending.containsKey(id));
         runtime.service(runtime.identity());
-        if(creditTick && paused) { creditTick=false;creditRan=1;runningTick=true;runtime.simulationTick();return true; }
+        if(creditTick && paused) {
+            // Plan-while-paused: the action's job plans with the world still paused, and its first tick follows the plan.
+            if(planHold.hold(runtime::planningWhilePaused,runtime::whilePaused,System.nanoTime())) {
+                if(mc.theWorld!=null) mc.entityRenderer.getMouseOver(1.0F);
+                return false;
+            }
+            creditTick=false;creditRan=1;runningTick=true;runtime.simulationTick();return true;
+        }
         if(paused || stepBudget==0) { // a spent step allowance waits for the server's pause like a pause does
             // GUI calls are serviced above; renderGameLoop remains running. No physical input polling here.
+            planHold.gated(runtime::whilePaused);
             if(mc.theWorld!=null) mc.entityRenderer.getMouseOver(1.0F);
             return false;
         }
