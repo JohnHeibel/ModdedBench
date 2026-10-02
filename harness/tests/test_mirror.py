@@ -197,7 +197,7 @@ class Handshake(unittest.TestCase):
         join = frame(0x01, pack("iBb", 7, 0, 0) + b"rest")
         m.server(join, *split(join))
         self.assertEqual([g for g, _ in m.gated()][:3], [0, 2, 3])
-        v = proxy.Viewer(None, "Watcher", 1 << 20)
+        v = proxy.Viewer(None, None, "Watcher", "", 1 << 20)
         v.hold(m.gated()); v.send([frame(0x03, b"live")])
         self.assertEqual(len(v.q), 1)                 # only ServerHello, and the live frame waits behind the snapshot
         v.handshook(); v.handshook(); self.assertEqual(len(v.q), 2)

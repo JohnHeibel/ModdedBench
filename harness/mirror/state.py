@@ -9,6 +9,7 @@ packets (NotEnoughIDs changes their payloads); it reads only their leading coord
 from __future__ import annotations
 import heapq, json, math
 from collections import deque
+from . import bq
 from .wire import Reader, frame, pack, payload, string, varint
 
 VIEWER_EID = 0x7FFFFFFF
@@ -67,6 +68,7 @@ class Mirror:
         self.inv, self.held = {}, 0
         self.hpos, self.avatar, self.place = None, False, False  # hpos: [x, feet y, z, yaw, pitch]
         self.chunked = False  # any chunk seen: payloads before it are pinned (login-time config sync)
+        self.book = bq.Book()  # the quest book's sync, kept apart from the capped payloads
         self._world()
 
     def _world(self):
@@ -236,6 +238,7 @@ class Mirror:
         if pid == 0x3F:
             channel, data = payload(body)
             if channel.startswith("MB|"): return []
+            if channel == bq.CHANNEL: self.book.feed(self.seq, f, data); return [f]
             if channel == "FML" and data:
                 if data[0] == 1: return []  # OpenGui: the host's screen
                 if self._fml(f, data): return [f]
@@ -322,7 +325,8 @@ class Mirror:
         """Frames that bring a freshly logged-in viewer to the host's present, after LoginSuccess."""
         out = [*self.prelude, abilities()]
         out += [f for f in (self.spawnpos, self.time) if f] + [*self.weather.values(), *self.players.values(), *self.scores]
-        ordered = [((s, e[0]) for s, e in self.log.items()), iter(self.pinned.items()), iter(self.payloads.items())]
+        ordered = [((s, e[0]) for s, e in self.log.items()), iter(self.pinned.items()), iter(self.payloads.items()),
+                   iter(self.book.entries())]
         if self.respawn: ordered.append(iter([self.respawn]))
         out += [f for _, f in heapq.merge(*ordered, key=lambda t: t[0])]
         if self.unload:  # a bulk packet still held for one chunk also reloads its unloaded neighbours
@@ -347,4 +351,4 @@ class Mirror:
                 "payloads": {"entries": len(self.payloads) + len(self.pinned), "bytes": self.payload_bytes, "cap": self.payload_cap,
                              "pinned": len(self.pinned),
                              "dropped": {"entries": self.dropped[0], "bytes": self.dropped[1]}},
-                "prelude_bytes": sum(map(len, self.prelude)), "avatar": self.avatar}
+                "prelude_bytes": sum(map(len, self.prelude)), "avatar": self.avatar, "quest_book": self.book.stats()}

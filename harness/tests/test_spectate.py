@@ -3,6 +3,7 @@
 """Spectator forwarder and relay, end to end over loopback: a client tap's files in, a viewer's frames out."""
 import asyncio
 import json
+import os
 import struct
 import sys
 import tempfile
@@ -11,9 +12,9 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from harness.mirror import board, forwarder, link, relay, state  # noqa: E402
-from harness.mirror.wire import Reader, Splitter, frame, pack, split, string, varint  # noqa: E402
-from harness.tests.test_mirror import CLIENT, SERVER, block, chunk, handshake, parsed, s3f  # noqa: E402
+from harness.mirror import board, bq, forwarder, link, relay, state  # noqa: E402
+from harness.mirror.wire import Reader, Splitter, frame, pack, payload, split, string, varint  # noqa: E402
+from harness.tests.test_mirror import CLIENT, SERVER, UUID, block, chunk, handshake, parsed, s3f  # noqa: E402
 
 SECRET = b"a test secret of enough length"
 
@@ -72,6 +73,26 @@ class Watcher:
     def notices(self): return [Reader(b).string() for p, b in self.got if p == 0x02 and b"[spectators]" in b]
 
     def say(self, f): self.w.write(f)
+
+
+def quests(*ids, merge=True):
+    """A BQ quest_sync: the full database (merge False) or progress for the quests named."""
+    return {"ID": "betterquesting:quest_sync", "merge": merge, "resetCompletion": True, "data": [
+        {"questIDHigh": 0, "questIDLow": i, "progress": {"completed": [{"uuid": UUID, "claimed": True}], "tasks": []}} for i in ids]}
+
+
+def names(name): return {"ID": "betterquesting:name_sync", "merge": True, "data": [{"uuid": UUID, "name": name, "isOP": True}]}
+def message(mid, **kw): return {"ID": f"betterquesting:{mid}", **kw}
+
+
+def book(frames):
+    """The BQ messages in a stream of (pid, body), joined and decoded, in order."""
+    j, out = bq.Joiner(), []
+    for p, b in frames:
+        if p != 0x3F: continue
+        channel, data = payload(b)
+        if channel == bq.CHANNEL and (whole := j.feed(data)): out.append(bq.read(whole))
+    return out
 
 
 def slots(got):
@@ -293,6 +314,27 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
         await v.until(lambda g: any(p == 0x1E for p, _ in g))
         self.assertNotIn(b"/tp", bytes(self.wire))
 
+    async def test_a_late_viewer_reads_the_agents_quest_book_as_its_own(self):
+        await self.play(1)
+        sync = [message("main_sync", reset=True, respond=True), quests(1, 2, 3, merge=False), names("Agent"),
+                quests(2), message("notification", mainText="done")]
+        self.tap.write(b"".join(rec(1, 1, f) for m in sync for f in bq.frames(m))); await self.tap.drain()
+        self.fw.mirror.payload_cap = 100                          # other mods' chatter cannot push the book out
+        self.tap.write(b"".join(rec(1, 1, s3f("GalacticraftCore", bytes(200))) for _ in range(20))); await self.tap.drain()
+        await until(lambda: self.fw.mirror.stats()["payloads"]["dropped"]["entries"] > 0)
+        self.fw.snapshot()                                        # a refreshed snapshot, as for a late viewer
+        await until(lambda: any(b"BQ_NET_CHAN" in f for _, f in self.relay.world.snap))
+        v = await Watcher().join(self.vport)
+        got = await v.until(lambda g: any(m["ID"].endswith("name_sync") and m["data"][0]["name"] == "Watcher" for m in book(g)))
+        ids = [m["ID"].split(":")[1] for m in book(got)]
+        self.assertEqual(ids, ["main_sync", "quest_sync", "name_sync", "quest_sync", "name_sync"])
+        self.assertEqual(book(got)[-1]["data"], [{"uuid": UUID, "name": "Watcher", "isOP": 0}])
+        n = len(v.got)
+        for f in bq.frames(names("Agent")): self.tap.write(rec(1, 1, f))  # the agent's own names come back live
+        await self.tap.drain()
+        got = (await v.until(lambda g: len(book(g[n:])) >= 2))[n:]
+        self.assertEqual([m["data"][0]["name"] for m in book(got)], ["Agent", "Watcher"])
+
     async def test_a_restarted_forwarder_reads_the_connection_again_and_viewers_stay(self):
         await self.play(1)
         v = await Watcher().join(self.vport)
@@ -385,6 +427,59 @@ class Tls(unittest.IsolatedAsyncioTestCase):
                 task.cancel()
 
 
+class OnlineLogin(unittest.IsolatedAsyncioTestCase):
+    """A viewer's login the way a 1.7.10 client does it against an online-mode server, Mojang stood in for."""
+    async def asyncSetUp(self):
+        from harness.mirror import proxy
+        self.asked = []
+        def verify(name, digest):
+            self.asked.append((name, digest))
+            return ("069a79f4-44e9-4726-a5be-fca90e38aaf5", "Notch") if name.lower() == "notch" else None
+        self.stage = proxy.Stage(online=True); self.stage.auth.verify = verify
+        self.server = await asyncio.start_server(self.stage.viewer, "127.0.0.1", 0)
+        self.port = self.server.sockets[0].getsockname()[1]
+
+    async def asyncTearDown(self): self.server.close()
+
+    async def login(self, name):
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import padding
+        from harness.mirror import auth, proxy
+        r, w = await asyncio.open_connection("127.0.0.1", self.port)
+        w.write(handshake() + frame(0, string(name)))
+        pid, body = split(await proxy.read_frame(r))
+        self.assertEqual(pid, 0x01)
+        q = Reader(body); server_id = q.string(); der = q.take(q.u("h")); token = q.take(q.u("h"))
+        key, secret = serialization.load_der_public_key(der), os.urandom(16)
+        sealed = [key.encrypt(b, padding.PKCS1v15()) for b in (secret, token)]
+        w.write(frame(0x01, b"".join(pack("h", len(b)) + b for b in sealed)))
+        self.digest = auth.server_hash(server_id, secret, der)
+        return split(await proxy.read_frame(auth.Sealed(r, w, secret))), w
+
+    async def test_the_confirmed_account_is_who_joins(self):
+        (pid, body), w = await self.login("notch")
+        self.assertEqual(pid, 0x02)
+        r = Reader(body); self.assertEqual((r.string(), r.string()), ("069a79f4-44e9-4726-a5be-fca90e38aaf5", "Notch"))
+        self.assertEqual(self.asked, [("notch", self.digest)])
+        await until(lambda: len(self.stage.viewers) == 1)
+        self.assertEqual(next(iter(self.stage.viewers)).uuid, "069a79f4-44e9-4726-a5be-fca90e38aaf5")
+        w.close()
+
+    async def test_an_unconfirmed_account_is_turned_away(self):
+        (pid, body), w = await self.login("Herobrine")
+        self.assertEqual(pid, 0x00)
+        self.assertIn("Mojang", Reader(body).string())
+        self.assertEqual(self.stage.viewers, set())
+        w.close()
+
+    def test_the_digest_is_minecrafts(self):
+        from harness.mirror import auth
+        import hashlib
+        # Minecraft's documented examples: sha1("Notch") and sha1("jeb_") as signed hex
+        for text, want in (("Notch", "4ed1f46bbe04bc756bcb17c0c7ce3e4632f06a48"), ("jeb_", "-7c9d5b0044c130109a5d7b5fb5c317c02b4e28c1")):
+            self.assertEqual(auth.server_hash(text, b"", b""), want)
+
+
 def sidebar(got) -> list[str]:
     """The sidebar rows as a 1.7.10 client would draw them, from the team packets in got."""
     rows = {}
@@ -396,6 +491,32 @@ def sidebar(got) -> list[str]:
             assert len(pre) <= 16 and len(suf) <= 16, (pre, suf)
             rows[name] = board.CODE.sub("", pre + suf)          # what shows: the colours go, the text joins up
     return [rows[board.team(i)] for i in range(board.ROWS) if board.team(i) in rows]
+
+
+class QuestBook(unittest.TestCase):
+    def test_a_message_survives_its_parts(self):
+        msg = message("quest_sync", merge=False, blob=os.urandom(50000), data=[{"uuid": UUID, "n": 3}])
+        fs = bq.frames(msg)
+        self.assertEqual(len(fs), 3)                              # 20480-byte parts, as BQ splits them
+        self.assertEqual(book(parsed(fs)), [msg])
+
+    def test_the_book_keeps_what_a_late_viewer_needs(self):
+        b, seq = bq.Book(), 0
+        def feed(m):
+            nonlocal seq
+            for f in bq.frames(m):
+                seq += 1; b.feed(seq, f, payload(split(f)[1])[1])
+        for m in [message("main_sync", reset=True), quests(1), message("main_sync", reset=True),  # a reset forgets the past
+                  message("setting_sync", data={}), quests(1, 2, merge=False), names("Agent"), message("cache_sync", data={}),
+                  quests(1), quests(2), quests(1), message("notification"), message("cache_sync", data={"x": 1})]:
+            feed(m)
+        kept = book(parsed(f for _, f in b.entries()))
+        self.assertEqual([(m["ID"].split(":")[1], [q["questIDLow"] for q in m.get("data", []) if "questIDLow" in q]) for m in kept],
+                         [("main_sync", []), ("setting_sync", []), ("quest_sync", [1, 2]), ("name_sync", []),
+                          ("quest_sync", [2]), ("quest_sync", [1]), ("cache_sync", [])])
+        self.assertEqual(kept[-1]["data"], {"x": 1})
+        feed(quests(1, 2))                                        # covers both: the older two go
+        self.assertEqual(sum(m["ID"].endswith("quest_sync") for m in book(parsed(f for _, f in b.entries()))), 2)
 
 
 class Board(unittest.TestCase):
