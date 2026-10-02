@@ -27,6 +27,7 @@ public final class GuiInputTransformer implements IClassTransformer {
     private static final byte[] NEEDLE="org/lwjgl/input/".getBytes(StandardCharsets.US_ASCII);
     private static final byte[] MODERN="org/lwjglx/input/".getBytes(StandardCharsets.US_ASCII);
     private static int logged;
+    static final java.util.Set<String> KEY_QUEUE = java.util.Set.of("keyNext", "eventKey", "eventChar", "eventKeyState", "repeatEvent");
     private static int asmApi() {
         try {return Opcodes.class.getField("ASM9").getInt(null);}catch(ReflectiveOperationException legacy) {return Opcodes.ASM5;}
     }
@@ -42,6 +43,11 @@ public final class GuiInputTransformer implements IClassTransformer {
             ClassReader reader = new ClassReader(bytes);
             ClassWriter writer = new ClassWriter(0);
             final int[] sites = {0};
+            // lwjgl3ify's MixinMinecraftKeyBinding no-ops every KeyBinding update in runTick after its
+            // first Keyboard.next() (it feeds key bindings from GLFW itself). Rewritten first, that anchor
+            // is gone and the no-op swallows the mouse loop's too: physical clicks never reach attack/use.
+            // Minecraft's keyboard queue stays native; synthetic keys enter through GUI screens.
+            final boolean nativeKeyQueue = "net.minecraft.client.Minecraft".equals(transformedName);
             reader.accept(new ClassVisitor(asmApi(), writer) {
                 @Override
                 public MethodVisitor visitMethod(int access, String mname, String desc, String signature, String[] exceptions) {
@@ -59,7 +65,7 @@ public final class GuiInputTransformer implements IClassTransformer {
                             }
                             if (opcode == Opcodes.INVOKESTATIC) {
                                 String target = map(owner, n, d);
-                                if (target != null) {
+                                if (target != null && !(nativeKeyQueue && KEY_QUEUE.contains(target))) {
                                     sites[0]++;
                                     super.visitMethodInsn(Opcodes.INVOKESTATIC, HOOKS, target, d, false);
                                     return;
