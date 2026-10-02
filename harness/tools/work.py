@@ -428,7 +428,8 @@ def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, q
     beside_fluid (default: on whenever allow_place is) breaks blocks that have water or oil
     beside or above them and, on the next tick, before the fluid moves, puts a throwaway
     block (cobblestone, dirt: keep a stack in the hotbar) where the broken one was; plugged
-    lists them. Lava is never mined beside. Without it such targets are skipped as
+    lists them. A block dug out of your own way through is not plugged beside water, which
+    only wets you there. Lava is never mined beside. Without it such targets are skipped as
     will_not_break_here, with the fluid beside each.
     tool_slot (0..35) forces the tool in that slot for this job (the kind, so a swap to the hotbar
     keeps it); the receipt shows forcedTool, and a tool measured breaking nothing is still reported.

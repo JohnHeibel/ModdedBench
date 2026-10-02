@@ -203,8 +203,8 @@ public class MovementDiagonal extends Movement {
             res.y = y + 1;
             return;
         }
-        double optionA = MovementHelper.getMiningDurationTicks(context, x, y, destZ, pb0, false);
-        double optionB = MovementHelper.getMiningDurationTicks(context, destX, y, z, pb2, false);
+        double optionA = MovementHelper.getMiningDurationTicksFrom(context, x, y, z, x, y, destZ, pb0, false);
+        double optionB = MovementHelper.getMiningDurationTicksFrom(context, x, y, z, destX, y, z, pb2, false);
         // ModdedBench: a box rising out of a side's floor cell (a fence, a wall) blocks that side as one in it would
         if (MovementHelper.risesIntoCellAbove(cuttingOver1)) {
             optionA += 1;
@@ -218,7 +218,7 @@ public class MovementDiagonal extends Movement {
             return;
         }
         IBlockState pb1 = context.get(x, y + 1, destZ);
-        optionA += MovementHelper.getMiningDurationTicks(context, x, y + 1, destZ, pb1, true);
+        optionA += MovementHelper.getMiningDurationTicksFrom(context, x, y, z, x, y + 1, destZ, pb1, true);
         if (optionA != 0 && optionB != 0) {
             // same deal, if pb1 makes optionA nonzero and option B already was nonzero, pb3 can't affect the result
             return;
@@ -228,7 +228,7 @@ public class MovementDiagonal extends Movement {
             // at this point we're done calculating optionA, so we can check if it's actually possible to edge around in that direction
             return;
         }
-        optionB += MovementHelper.getMiningDurationTicks(context, destX, y + 1, z, pb3, true);
+        optionB += MovementHelper.getMiningDurationTicksFrom(context, x, y, z, destX, y + 1, z, pb3, true);
         if (optionA != 0 && optionB != 0) {
             // and finally, if the cost is nonzero for both ways to approach this diagonal, it's not possible
             return;

@@ -114,7 +114,9 @@ public class PathExecutor implements IPathExecutor, Helper {
         Movement movement = (Movement) path.movements().get(pathPosition);
         BetterBlockPos whereAmI = ctx.playerFeet();
         if (!movement.getValidPositions().contains(whereAmI)) {
-            for (int i = 0; i < pathPosition && i < path.length(); i++) {//this happens for example when you lag out and get teleported back a couple blocks
+            // ModdedBench: a swimmer drifts a block off the cells it was planned through (buoyancy, a current); that is
+            // the movement's to steer back from, not a lag back to an earlier one, whose positions it may well cross
+            for (int i = drifting(movement, whereAmI) ? pathPosition : 0; i < pathPosition && i < path.length(); i++) {//this happens for example when you lag out and get teleported back a couple blocks
                 if (((Movement) path.movements().get(i)).getValidPositions().contains(whereAmI)) {
                     int previousPos = pathPosition;
                     pathPosition = i;
@@ -151,6 +153,11 @@ public class PathExecutor implements IPathExecutor, Helper {
             }
         } else {
             ticksAway = 0;
+        }
+        if (outOfBreath()) {
+            logDebug("Not enough air left for the rest of this swim, replanning");
+            cancel();
+            return false;
         }
         if (possiblyOffPath(status, MAX_MAX_DIST_FROM_PATH)) { // ok, stop right away, we're way too far.
             logDebug("too far from path");
@@ -428,6 +435,12 @@ public class PathExecutor implements IPathExecutor, Helper {
                 return false; // so don't
             }
         }
+        // ModdedBench: a path that starts at a breath (head out of water) was planned with the air refilled there, so the
+        // player takes that breath first, standing in that cell, rather than jumping onto the path where it passes back
+        // below. Not the client's own "head in water": it measures from a higher eye than the server, which keeps the air.
+        if (!ctx.playerFeet().equals(path.getSrc()) && MovementHelper.isWater(ctx, path.getSrc()) && !MovementHelper.isWater(ctx, path.getSrc().up())) {
+            return false;
+        }
         int index = path.positions().indexOf(ctx.playerFeet());
         if (index == -1) {
             return false;
@@ -679,6 +692,48 @@ public class PathExecutor implements IPathExecutor, Helper {
     private void clearKeys() {
         // i'm just sick and tired of this snippet being everywhere lol
         behavior.baritone.getInputOverrideHandler().clearAllKeys();
+    }
+
+    /** A head cell to breathe in: neither water nor a block to dig out, which water beside it would fill. */
+    private boolean breathable(BetterBlockPos head) {
+        return !MovementHelper.isWater(ctx, head) && MovementHelper.canWalkThrough(ctx, head);
+    }
+
+    /** A swimmer within a block of the movement's source: drifted there, not lagged back. */
+    private boolean drifting(Movement movement, BetterBlockPos feet) {
+        BetterBlockPos src = movement.getSrc();
+        return Math.max(Math.abs(feet.x - src.x), Math.max(Math.abs(feet.y - src.y), Math.abs(feet.z - src.z))) <= 1
+                && (MovementHelper.isWater(ctx, feet) || MovementHelper.isWater(ctx, feet.up()));
+    }
+
+    /**
+     * ModdedBench: whether the air left no longer covers this path's swim: the estimated ticks to its next breath (head out
+     * of water), or for a path that ends under water, to its end and back out (the time under water so far, or the swim
+     * straight up where the water above opens to air). The search planned it with air to spare; a stall, a current or a
+     * slow break under water can use that up, and a replan from here is planned from the air the player has now. Only
+     * reads the world with the head in water.
+     */
+    private boolean outOfBreath() {
+        // the server's eye (feet + 1.62) decides drowning; the client's own check measures from higher up
+        if (!MovementHelper.isWater(ctx, new BetterBlockPos(ctx.player().posX, ctx.player().boundingBox.minY + 1.62, ctx.player().posZ))) {
+            return false;
+        }
+        int air = ctx.player().getAir();
+        double ticks = 0;
+        for (int i = pathPosition; i < path.movements().size(); i++) {
+            Movement m = (Movement) path.movements().get(i);
+            try {
+                ticks += m.getCost();
+            } catch (NullPointerException unknown) {
+                return false;
+            }
+            if (breathable(m.getDest().up())) {
+                return air < ticks;
+            }
+        }
+        BetterBlockPos feet = ctx.playerFeet();
+        double up = MovementHelper.swimUpTicks(new BlockStateInterface(ctx), feet.x, feet.y, feet.z), soFar = baritone.compat.CalculationInputs.FULL_AIR - air;
+        return air < ticks + (up >= 0 ? Math.min(up, soFar) : soFar);
     }
 
     private void cancel() {

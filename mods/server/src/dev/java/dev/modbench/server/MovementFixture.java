@@ -45,7 +45,7 @@ import net.minecraftforge.fluids.IFluidBlock;
  */
 public final class MovementFixture {
     /** Plots run west to east four per row; plot 16 opens a fifth row, so the volume is 64 x 80. */
-    static final int PLOTS=27, SIZE=64, SIZE_Z=16*((PLOTS+3)/4), FLOOR=199, TOP=218, B=200;
+    static final int PLOTS=37, SIZE=64, SIZE_Z=16*((PLOTS+3)/4), FLOOR=199, TOP=218, B=200;
     private int sizeZ=SIZE_Z;
     /** Every item that entered the course volume since the last position, with how it left (picked, burned, gone). */
     private final List<Tracked> items=new ArrayList<>();
@@ -489,6 +489,114 @@ public final class MovementFixture {
             roofed(26);box(26,1,B,1,14,B+1,14,Blocks.air);
             set(26,7,B,7,Blocks.flowing_lava,0,3);set(26,10,B,5,Blocks.flowing_lava,0,3);set(26,5,B,10,Blocks.flowing_lava,0,3);
         })).start(2.5,B,2.5,-135).goal(12,B,12).note("settled flowing lava wall across the diagonal");
+        hardLiquidCases();
+    }
+    /** Plots 27-36: deliberately adversarial water and lava, each a different attack a real world makes. Every one is
+     *  passable by a careful human with only the case's kit; the notes say how. Flowing sources go last (flags 3). */
+    private void hardLiquidCases() {
+        // Plot 27: the 6-deep clay pit with a walled channel (v=6..8, walls one high at v=5,9 and u=2) across its mouth at
+        // B+7, fed by three sources at u=3: the mouth carries an eastward current (levels 3..5) off the pit.
+        add(new Case("dive_clay_current",27,()->{
+            clayPit(27,6);box(27,2,B+7,5,13,B+7,5,Blocks.stone);box(27,2,B+7,9,13,B+7,9,Blocks.stone);box(27,2,B+7,6,2,B+7,8,Blocks.stone);
+            for(int v=6;v<=8;v++) set(27,3,B+7,v,Blocks.flowing_water,0,3);
+        })).start(4.5,B+7,11.5,180).goal(4,B+7,11).mine("minecraft:clay",6,B,6,8,B+7,8)
+            .note("current across a 6-deep pit mouth; human: hop the wall upstream, dive, dig, surface at the west edge, climb out against the flow");
+        // Plot 28: a 1x1 hole 4 deep in a stone bank (top B+4), clay at its floor, and a source collared in stone under a
+        // beam at B+7 pouring a waterfall into it: the hole is falling water that pushes down and drowns a head.
+        add(new Case("dive_clay_falls",28,()->{
+            box(28,2,B,2,13,B+4,13,Blocks.stone);box(28,7,B+1,7,7,B+4,7,Blocks.air);set(28,7,B,7,Blocks.clay);
+            box(28,7,B+8,3,7,B+8,7,Blocks.stone);box(28,6,B+7,6,8,B+7,8,Blocks.stone);
+            set(28,7,B+7,7,Blocks.flowing_water,0,3);
+        })).start(3.5,B+5,7.5,-90).goal(3,B+5,7).mine("minecraft:clay",6,B,6,8,B+7,8)
+            .note("clay under a waterfall in a 1x1 hole; human: drop in, dig the clay underfoot, hold jump up the falls, step out");
+        // Plot 29: the 6-deep clay pit with the clay buried under a 3-high gravel column (each dig drops the next through
+        // the water) and a gravel lid over the mouth's east row, set raw so it hangs over water until something disturbs it.
+        add(new Case("dive_clay_gravel",29,()->{
+            clayPit(29,6);box(29,7,B+1,7,7,B+3,7,Blocks.gravel);
+            for(int v=6;v<=8;v++) raw(29,8,B+6,v,Blocks.gravel);
+        })).start(3.5,B+7,7.5,-90).goal(3,B+7,7).mine("minecraft:clay",6,B,6,8,B+7,8)
+            .note("clay under 3 gravel in a 6-deep pit, hanging gravel lid; human: dive at the west row, dig the gravel top-down, dig clay");
+        // Plot 30: a stone mass (top B+6) with a still pond (u 6..8, v 5..7, B+4..B+6) in it. The clay at (7,B+3,6) is the
+        // pond's floor and the ceiling of a dry 3-high sump (B..B+2), reached by a 1-wide stair down from v=13 and a
+        // 2-high stub at v=7. Mining the clay opens the pond: a waterfall fills the sump where the drops land.
+        add(new Case("dive_clay_flooding",30,()->{
+            box(30,0,B,0,15,B+6,15,Blocks.stone);box(30,6,B+4,5,8,B+6,7,Blocks.water);set(30,7,B+3,6,Blocks.clay);
+            box(30,7,B,6,7,B+2,6,Blocks.air);box(30,7,B+1,7,7,B+2,7,Blocks.air);
+            for(int k=0;k<=5;k++) box(30,7,B+1+k,8+k,7,B+3+k,8+k,Blocks.air);  // stair: feet at B+1 (v=8) .. B+6 (v=13)
+        })).start(7.5,B+7,14.5,180).goal(7,B+7,14).mine("minecraft:clay",6,B,5,8,B+3,8)
+            .note("clay is a pond's floor over a dry sump; human: dig it from the v=7 stub (stay out of the falls), duck into the sump for the drops, step out, climb the stair");
+        // Plot 31: a walled floor (feet B+1). Lane C1 (v=4..5, curbs one high at v=3,6) runs a current east from two
+        // sources at u=1, wet to u=8. Wall W (v=9, 4 high) has a dry door at u=2 (3 high: a 2-high one leaves no headroom to jump the curb behind it) and a waterfall curtain door at u=13
+        // (source in a collared lintel at B+3, a drain under the door). Lane C2 (v=11..12, curbs v=10,13) runs west from
+        // sources at u=14, wet to u=7. Dry route: v=1 east to u>=9, over C1, v=7 west, door u=2, over C2's dry end, v=14 east.
+        add(new Case("water_maze",31,()->{
+            box(31,0,B,0,15,B,15,Blocks.stone);
+            box(31,0,B+1,0,15,B+3,0,Blocks.stone);box(31,0,B+1,15,15,B+3,15,Blocks.stone);
+            box(31,0,B+1,0,0,B+3,15,Blocks.stone);box(31,15,B+1,0,15,B+3,15,Blocks.stone);
+            for(int v:new int[]{3,6,10,13}) box(31,1,B+1,v,14,B+1,v,Blocks.stone);
+            box(31,1,B+1,9,14,B+4,9,Blocks.stone);box(31,2,B+1,9,2,B+3,9,Blocks.air);
+            box(31,13,B,9,13,B+2,9,Blocks.air);set(31,13,B+3,8,Blocks.stone);set(31,13,B+3,10,Blocks.stone);
+            for(int v=4;v<=5;v++) set(31,1,B+1,v,Blocks.flowing_water,0,3);
+            for(int v=11;v<=12;v++) set(31,14,B+1,v,Blocks.flowing_water,0,3);
+            set(31,13,B+3,9,Blocks.flowing_water,0,3);
+        })).start(1.5,B+1,1.5,-90).goal(14,B+1,14)
+            .note("currents and a curtain across a walled floor; human: take the dry weave (C1 at u>=9, door u=2, C2 at u<=6) or wade the currents");
+        // Plot 32: stone mass top B+5; the goal sits in a walled courtyard (u>=10, v>=9, walls 3 high). The only way in is
+        // down a water shaft at (2,2), a 2-high flooded serpentine (v=2, u=13, v=7, u=2, v=12: ~45 cells) and up a shaft
+        // at (13,12): ~53 blocks underwater, lethal in one breath. Three single-cell air pockets in the tunnel ceiling
+        // (B+3) split it into legs of 13-14 blocks.
+        add(new Case("swim_pocket",32,()->{
+            box(32,0,B,0,15,B+5,15,Blocks.stone);
+            box(32,10,B+6,9,15,B+8,9,Blocks.stone);box(32,10,B+6,9,10,B+8,15,Blocks.stone);
+            box(32,2,B+1,2,2,B+5,2,Blocks.water);box(32,13,B+1,12,13,B+5,12,Blocks.water);
+            box(32,2,B+1,2,13,B+2,2,Blocks.water);box(32,13,B+1,2,13,B+2,7,Blocks.water);box(32,2,B+1,7,13,B+2,7,Blocks.water);
+            box(32,2,B+1,7,2,B+2,12,Blocks.water);box(32,2,B+1,12,13,B+2,12,Blocks.water);
+            set(32,10,B+3,2,Blocks.air);set(32,8,B+3,7,Blocks.air);set(32,4,B+3,12,Blocks.air);
+        })).start(1.5,B+6,2.5,-90).goal(13,B+6,14)
+            .note("53-block flooded serpentine with ceiling air pockets at (10,2),(8,7),(4,12); human: swim leg to leg, rise into each pocket for a breath");
+        // Plot 33: stone mass top B+7 under a parapet; on top, 1-wide lanes at odd v joined by gaps at alternate ends of
+        // the walls between them: a ~97-block dry walk. Underneath, a pocketless flooded shortcut: a 7-deep shaft at (14,1),
+        // a 2-high tunnel west along v=1 and south along u=1, a 7-deep shaft up at (1,13): ~39 blocks underwater, past one
+        // breath. By path cost the swim is the cheaper route; minY marks any dive.
+        add(new Case("swim_long_dry_detour",33,()->{
+            box(33,0,B,0,15,B+7,15,Blocks.stone);
+            box(33,0,B+8,0,15,B+10,0,Blocks.stone);box(33,0,B+8,15,15,B+10,15,Blocks.stone);
+            box(33,0,B+8,0,0,B+10,15,Blocks.stone);box(33,15,B+8,0,15,B+10,15,Blocks.stone);
+            for(int k=1;k<=6;k++) {box(33,1,B+8,2*k,14,B+10,2*k,Blocks.stone);int g=k%2==1?1:14;box(33,g,B+8,2*k,g,B+10,2*k,Blocks.air);}
+            box(33,14,B+1,1,14,B+7,1,Blocks.water);box(33,1,B+1,13,1,B+7,13,Blocks.water);
+            box(33,1,B+1,1,14,B+2,1,Blocks.water);box(33,1,B+1,1,1,B+2,13,Blocks.water);
+        })).start(13.5,B+8,1.5,90).goal(2,B+8,13).minY(B+7.5)
+            .note("39-block pocketless flooded shortcut beside a 97-block dry lane walk; human: walk the lanes");
+        // Plot 34: a roofed corridor (u 1..14, v 4..8) with lava sources at (3,8),(7,8),(10,8) and a water source at (14,8)
+        // behind a divider (u 12..14, v=6). Water reaches (10,8) first (obsidian), meets (7,8)'s flow (cobble seams) and
+        // leaves weak lava beside it; lava reaches v=5 at u=3 and u=7. Settled, v=4 is a dry strip past two lava pockets,
+        // a shallow wet stretch at u=10..11, then dry behind the divider.
+        add(new Case("lava_water_mix",34,()->{
+            roofed(34);box(34,1,B,4,14,B+1,8,Blocks.air);box(34,12,B,6,14,B+1,6,Blocks.stone);
+            for(int u:new int[]{3,7,10}) set(34,u,B,8,Blocks.flowing_lava,0,3);
+            set(34,14,B,8,Blocks.flowing_water,0,3);
+        })).start(1.5,B,4.5,-90).goal(14,B,4)
+            .note("settled lava/water mix (obsidian, cobble, weak lava beside water); human: hug the north wall (v=4), past the lava edges at u=3,7, through the shallow water");
+        // Plot 35: a 6-high cliff (v>=8, top B+5) across the plot. The only way up: a 2-high doorway at (7,v=8) into a
+        // 1x1 still water column (7,B..B+5,9). On top, a channel (walls one high at u=6,8, end wall v=14) carries a
+        // current north from a source at (7,13) over the column's mouth and off the lip as a waterfall in front of the
+        // doorway, which spreads over the low ground.
+        add(new Case("waterfall_climb",35,()->{
+            box(35,0,B,8,15,B+5,15,Blocks.stone);box(35,7,B,8,7,B+1,8,Blocks.air);box(35,7,B,9,7,B+5,9,Blocks.water);
+            box(35,6,B+6,8,6,B+6,13,Blocks.stone);box(35,8,B+6,8,8,B+6,13,Blocks.stone);box(35,6,B+6,14,8,B+6,14,Blocks.stone);
+            set(35,7,B+6,13,Blocks.flowing_water,0,3);
+        })).start(1.5,B,0.5,0).goal(11,B+6,12)
+            .note("swim up a 6-high 1x1 water column behind a waterfall, exit into a current that pushes back off the lip; human: hold jump, then forward (south) and over the channel wall");
+        // Plot 36: a stepped stone slope (v 2..13) falling east one block every two u, top B+6 at u=0..1 to B at u>=12,
+        // with a flat bank (v 11..13, top B+6). A channel (v 6..8, walls one high at v=5,9, end walls u=0,15) carries a
+        // stream down it from three sources at u=1. The clay is the streambed at (8,B+2,7): its drops wash downstream.
+        add(new Case("dive_clay_stream",36,()->{
+            for(int u=0;u<16;u++) {int t=Math.max(0,6-u/2);box(36,u,B,2,u,B+t,13,Blocks.stone);set(36,u,B+t+1,5,Blocks.stone);set(36,u,B+t+1,9,Blocks.stone);}
+            box(36,0,B,11,15,B+6,13,Blocks.stone);box(36,0,B+7,6,0,B+7,8,Blocks.stone);box(36,15,B+1,6,15,B+1,8,Blocks.stone);
+            set(36,8,B+2,7,Blocks.clay);
+            for(int v=6;v<=8;v++) set(36,1,B+7,v,Blocks.flowing_water,0,3);
+        })).start(1.5,B+7,12.5,0).goal(1,B+7,12).mine("minecraft:clay",7,B+1,6,9,B+3,8)
+            .note("clay as the bed of a stepped stream; human: walk down the v=10 steps, hop in, dig, chase the drops to the u=14 end, climb the steps back");
     }
     private void clayPit(int p,int h) {
         box(p,2,B,2,13,B+h,13,Blocks.stone);box(p,6,B+1,6,8,B+h,8,Blocks.water);set(p,7,B,7,Blocks.clay);

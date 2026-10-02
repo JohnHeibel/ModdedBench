@@ -205,10 +205,12 @@ public interface MovementHelper extends ActionCosts, Helper {
             if (isWater(block) && !isStillLiquid(bsi.get0(x, y + 1, z)) && canWalkOn(bsi, x, y - 1, z)) {
                 return true;
             }
-            if (isFlowing(x, y, z, state, bsi)) {
+            // ModdedBench: flowing water is swum like still water. Most water a swimmer meets is "flowing" to the game: a
+            // falling column inside a pool, the water filling a cell just dug, a pool's edge. Refusing it walled the player
+            // off from drops in a flooded hole and from every breach it dug. Currents only push; the executor steers.
+            if (!isWater(block) && isFlowing(x, y, z, state, bsi)) {
                 return false;
             }
-            // Everything after this point has to be a special case as it relies on the water not being flowing, which means a special case is needed.
             if (Baritone.settings().assumeWalkOnWater.value) {
                 return false;
             }
@@ -618,6 +620,42 @@ public interface MovementHelper extends ActionCosts, Helper {
         return 0; // we won't actually mine it, so don't check fallings above
     }
 
+    /**
+     * ModdedBench: getMiningDurationTicks for a block broken by a player standing at (sx,sy,sz). With the head under
+     * water the game breaks at a fifth of the speed unless the player has Aqua Affinity (EntityPlayer#getBreakSpeed).
+     */
+    static double getMiningDurationTicksFrom(CalculationContext context, int sx, int sy, int sz, int x, int y, int z, boolean includeFalling) {
+        return getMiningDurationTicksFrom(context, sx, sy, sz, x, y, z, context.get(x, y, z), includeFalling);
+    }
+
+    static double getMiningDurationTicksFrom(CalculationContext context, int sx, int sy, int sz, int x, int y, int z, IBlockState state, boolean includeFalling) {
+        double ticks = getMiningDurationTicks(context, x, y, z, state, includeFalling);
+        return ticks > 0 && ticks < COST_INF && !context.toolSet.aquaAffinity()
+                && (PLANNED_UNDER_WATER.get()[0] || isWater(context.get(sx, sy + 1, sz).getBlock())) ? ticks * 5 : ticks;
+    }
+
+    /**
+     * ModdedBench: set by a search on its own thread while it costs moves from a node whose head the plan has under water
+     * though the world does not yet (a cell the plan dug out beside water, which fills). Per thread: a search and the
+     * executor share a context.
+     */
+    ThreadLocal<boolean[]> PLANNED_UNDER_WATER = ThreadLocal.withInitial(() -> new boolean[1]);
+
+    /**
+     * ModdedBench: the ticks to swim straight up from feet at (x,y,z) until the head is out of water, or -1 when the water
+     * above does not open into a cell to breathe in within 32 blocks.
+     */
+    static double swimUpTicks(BlockStateInterface bsi, int x, int y, int z) {
+        for (int h = y + 1; h <= y + 32; h++) {
+            IBlockState state = bsi.get0(x, h, z);
+            if (isWater(state.getBlock())) {
+                continue;
+            }
+            return canWalkThrough(bsi, x, h, z, state) ? (h - y - 1) * ActionCosts.WALK_ONE_IN_WATER_COST : -1;
+        }
+        return -1;
+    }
+
     static boolean isBottomSlab(IBlockState state) {
         return state.getBlock() instanceof BlockSlab
                 && !state.isDoubleSlab()
@@ -639,12 +677,12 @@ public interface MovementHelper extends ActionCosts, Helper {
     }
 
     static void moveTowards(IPlayerContext ctx, MovementState state, BlockPos pos) {
-        state.setTarget(new MovementTarget(
-                RotationUtils.calcRotationFromVec3d(ctx.playerHead(),
-                        VecUtils.getBlockPosCenter(pos),
-                        ctx.playerRotations()).withPitch(ctx.playerRotations().getPitch()),
-                false
-        )).setInput(Input.MOVE_FORWARD, true);
+        // ModdedBench: straight above or below the target (a swimmer the water lifted past it) the yaw towards its centre
+        // swings with every hundredth of a block; keep the one the player has
+        double dx = pos.getX() + 0.5 - ctx.player().posX, dz = pos.getZ() + 0.5 - ctx.player().posZ;
+        Rotation toward = dx * dx + dz * dz < 0.25 * 0.25 ? ctx.playerRotations()
+                : RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.getBlockPosCenter(pos), ctx.playerRotations());
+        state.setTarget(new MovementTarget(toward.withPitch(ctx.playerRotations().getPitch()), false)).setInput(Input.MOVE_FORWARD, true);
     }
 
     /**

@@ -103,7 +103,14 @@ class Path extends PathBase {
         }
         for (int i = 0; i < path.size() - 1; i++) {
             double cost = nodes.get(i + 1).cost - nodes.get(i).cost;
-            Movement move = runBackwards(path.get(i), path.get(i + 1), cost);
+            boolean[] plannedUnderWater = baritone.pathing.movement.MovementHelper.PLANNED_UNDER_WATER.get();
+            plannedUnderWater[0] = nodes.get(i).submerged; // costed as the search costed it
+            Movement move;
+            try {
+                move = runBackwards(path.get(i), path.get(i + 1), cost);
+            } finally {
+                plannedUnderWater[0] = false;
+            }
             if (move == null) {
                 return true;
             } else {

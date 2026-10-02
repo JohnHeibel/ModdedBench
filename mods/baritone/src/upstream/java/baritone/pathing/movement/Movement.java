@@ -136,9 +136,12 @@ public abstract class Movement implements IMovement, MovementHelper {
             boolean standToBreak = Boolean.TRUE.equals(currentState.getInputStates().get(Input.CLICK_LEFT))
                     && !MovementHelper.isLiquid(ctx, ctx.playerFeet().up())
                     && MovementHelper.canWalkOn(ctx, ctx.playerFeet().down());
-            // Holding jump floats the player to the surface; a movement that ends under water (head in water at dest)
-            // lets the player sink until the feet are at the destination's level, and swims up only below it.
-            boolean sink = MovementHelper.isLiquid(ctx, dest.up()) && ctx.player().boundingBox.minY > dest.getY() - 0.05; // posY is eye height on this client
+            // Holding jump floats the player to the surface. With the head under water the player holds a level instead:
+            // the source while the movement is still breaking its way (a bobbing player changes cell, and the executor
+            // would restart the movement and the break), else the destination; it sinks above that level, swims up below.
+            boolean breaking = Boolean.TRUE.equals(currentState.getInputStates().get(Input.CLICK_LEFT));
+            BetterBlockPos level = breaking && MovementHelper.isLiquid(ctx, src.up()) ? src : dest;
+            boolean sink = MovementHelper.isLiquid(ctx, level.up()) && ctx.player().boundingBox.minY > level.getY() - 0.05; // posY is eye height on this client
             if (!standToBreak && !sink) {
                 currentState.setInput(Input.JUMP, true);
             }

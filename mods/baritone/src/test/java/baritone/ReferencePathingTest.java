@@ -203,6 +203,38 @@ public class ReferencePathingTest {
         var r=search(context(t,40),new BetterBlockPos(2,60,0),new GoalBlock(4,60,0)).getPath().orElseThrow();
         assertTrue("never breathed: "+r.positions(),r.positions().stream().anyMatch(q->!headUnderWater(t,q)));
     }
+    @Test public void breakingWithTheHeadUnderWaterTakesFiveTimesAsLong(){
+        Terrain t=new Terrain();var dry=context(t,false);
+        double ticks=MovementHelper.getMiningDurationTicksFrom(dry,0,64,0,1,64,0,false);
+        assertEquals(ticks,MovementHelper.getMiningDurationTicks(dry,1,64,0,false),1e-9);
+        t.set(0,65,0,Blocks.WATER,0);
+        assertEquals(5*ticks,MovementHelper.getMiningDurationTicksFrom(context(t,false),0,64,0,1,64,0,false),1e-9);
+    }
+    @Test public void aCellDugOutBesideWaterIsNoBreath(){
+        Baritone.settings().allowBreak.value=true;Baritone.settings().allowPlace.value=false;
+        Terrain t=new Terrain();for(int y=60;y<64;y++) t.set(0,y,0,Blocks.WATER,0);
+        for(int x=-4;x<=8;x++) for(int z=-4;z<=4;z++) t.set(x,64,z,net.minecraft.init.Blocks.bedrock,0);
+        // Under water in a shaft under bedrock, digging sideways into the stone: water fills what is dug, so the dig is swum,
+        // and spends air, however long it takes.
+        Baritone.besideFluid=true; // a mining job's: blocks beside water may be broken
+        try {
+            assertEquals(PathCalculationResult.Type.SUCCESS_TO_GOAL,search(context(t,300),new BetterBlockPos(0,60,0),new GoalBlock(1,60,0)).getType());
+            assertNotEquals(PathCalculationResult.Type.SUCCESS_TO_GOAL,search(context(t,40),new BetterBlockPos(0,60,0),new GoalBlock(1,60,0)).getType());
+            // Three cells in, the digging alone is most of a breath and the way back the rest: not a breath at each cell.
+            assertNotEquals(PathCalculationResult.Type.SUCCESS_TO_GOAL,search(context(t,300),new BetterBlockPos(0,60,0),new GoalBlock(3,60,0)).getType());
+        } finally {Baritone.besideFluid=false;}
+    }
+    @Test public void deepInAnOpenShaftTheWayOutIsStraightUp(){
+        Baritone.settings().allowBreak.value=false;Baritone.settings().allowPlace.value=false;
+        Terrain t=new Terrain();for(int y=56;y<64;y++) for(int x=0;x<=1;x++) t.set(x,y,0,Blocks.WATER,0);
+        // Eight deep after a long dig (most of the air gone): one block across is still in reach, as the shaft above
+        // is the way out, not the time spent getting here.
+        assertEquals(PathCalculationResult.Type.SUCCESS_TO_GOAL,search(context(t,150),new BetterBlockPos(0,56,0),new GoalBlock(1,56,0)).getType());
+        // Capped, the time under water is all the search knows of the way out.
+        for(int x=0;x<=1;x++) t.set(x,64,0,net.minecraft.init.Blocks.bedrock,0);
+        for(int x=0;x<=1;x++) t.set(x,63,0,Blocks.STONE,0);
+        assertNotEquals(PathCalculationResult.Type.SUCCESS_TO_GOAL,search(context(t,150),new BetterBlockPos(0,56,0),new GoalBlock(1,56,0)).getType());
+    }
     @Test public void compositeGoalSelectsReachableGroundInsteadOfElevatedTarget(){
         Terrain t=new Terrain();Baritone.settings().allowBreak.value=false;
         var p=path(context(t,false),new BetterBlockPos(0,64,0),new GoalComposite(new GoalBlock(2,70,0),new GoalBlock(9,64,0)));

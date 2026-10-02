@@ -96,6 +96,18 @@ CASES: dict[str, dict] = {
     "swim_u": dict(expect="succeed", bound=200),
     "lava_corner": dict(expect="succeed", bound=120, settle=200),
     "lava_wall": dict(expect="succeed", bound=120, settle=200),
+    # deliberately adversarial liquids (plots 27-36): currents, waterfalls, falling gravel, flooding, breath, lava/water;
+    # each passable by a careful human with the case's kit (see the fixture notes). settle covers the flows.
+    "dive_clay_current": dict(expect="succeed", bound=400, mine=True, surface=True, settle=80),
+    "dive_clay_falls": dict(expect="succeed", bound=300, mine=True, surface=True, settle=60),
+    "dive_clay_gravel": dict(expect="succeed", bound=450, mine=True, surface=True),
+    "dive_clay_flooding": dict(expect="succeed", bound=350, mine=True, surface=True),
+    "water_maze": dict(expect="succeed", bound=260, settle=80),
+    "swim_pocket": dict(expect="succeed", bound=600),
+    "swim_long_dry_detour": dict(expect="succeed", bound=520),  # minY in the fixture: a dive is a fail
+    "lava_water_mix": dict(expect="succeed", bound=120, settle=200),
+    "waterfall_climb": dict(expect="succeed", bound=250, settle=80),
+    "dive_clay_stream": dict(expect="succeed", bound=450, mine=True, surface=True, settle=120),
     # script: the obsidian cases (movement_obsidian.py); fixture: the fixture case to build when it differs.
     "obsidian": dict(expect="script", script="simple"),
     "obsidian_natural": dict(expect="script", script="natural"),
@@ -325,7 +337,7 @@ class Course:
     def run_job(self, name: str, info: dict) -> tuple[str, dict, float]:
         spec = CASES[name]
         brk, plc = spec.get("allow", (False, False))
-        duration = self.args.duration
+        duration = max(self.args.duration, math.ceil(1.5 * spec.get("bound", 0)))  # room for the case's whole pass window
         timeout_s = duration / 20 + 30
         t = time.monotonic()
         try:
