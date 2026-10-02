@@ -235,6 +235,13 @@ public class ReferencePathingTest {
         for(int x=0;x<=1;x++) t.set(x,63,0,Blocks.STONE,0);
         assertNotEquals(PathCalculationResult.Type.SUCCESS_TO_GOAL,search(context(t,150),new BetterBlockPos(0,56,0),new GoalBlock(1,56,0)).getType());
     }
+    @Test public void aLakeIsSearchedOnceACellNotOncePerAirBand(){
+        Baritone.settings().allowPlace.value=false;
+        Terrain t=new Terrain();for(int x=-60;x<=60;x++) for(int z=-60;z<=60;z++) for(int y=50;y<64;y++) t.set(x,y,z,Blocks.WATER,0);
+        // 40 blocks across a lake 14 deep: about 15k nodes; each cell searched once per air band was over 32k
+        var p=path(context(t,false),new BetterBlockPos(0,64,0),new GoalBlock(40,63,0));
+        assertTrue("nodes considered "+p.getNumNodesConsidered(),p.getNumNodesConsidered()<20000);
+    }
     @Test public void compositeGoalSelectsReachableGroundInsteadOfElevatedTarget(){
         Terrain t=new Terrain();Baritone.settings().allowBreak.value=false;
         var p=path(context(t,false),new BetterBlockPos(0,64,0),new GoalComposite(new GoalBlock(2,70,0),new GoalBlock(9,64,0)));
