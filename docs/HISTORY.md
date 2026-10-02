@@ -8,6 +8,12 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-02** Scripts saw bare tool functions and rejected `resume`, so a chore
+  could not step the world between actions. Script tool calls now take resume=True|N
+  through the same kernel routine as direct calls (found by the agent overnight).
+- **2026-10-02** A farm with nothing ready searched for an empty goal, failed and
+  dropped the job. FarmProcess now waits instead; the job's own limits still end it
+  (found by the agent overnight).
 - **2026-10-02** Building a subset of a drawing ignored its listed heights and
   placed walls at the floor. Drawing conversion now preserves absolute layer
   heights and rejects nonnumeric survey heights and overlapping layers.
