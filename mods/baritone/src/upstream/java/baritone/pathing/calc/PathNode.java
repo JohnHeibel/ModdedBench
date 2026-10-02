@@ -63,6 +63,14 @@ public final class PathNode {
      */
     public int heapPosition;
 
+    /**
+     * ModdedBench: breath along the route through previous (see AStarPathFinder#breathe): the edge's estimated ticks
+     * before penalties and whether it ends with the head under water; the air estimated to be left here and the ticks
+     * estimated to get back to air the way the route came; whether the route has breathed since the start.
+     */
+    public double edgeTicks, air, back;
+    public boolean submerged, breathed;
+
     public PathNode(int x, int y, int z, Goal goal) {
         this.previous = null;
         this.cost = ActionCosts.COST_INF;

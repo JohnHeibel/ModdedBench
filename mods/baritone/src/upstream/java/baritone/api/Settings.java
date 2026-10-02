@@ -140,6 +140,15 @@ public final class Settings {
     public final Setting<Double> submergedPenalty = new Setting<>(4D);
 
     /**
+     * ModdedBench: how little the search trusts its own swim estimates when it spends air. A move with the head under
+     * water costs its estimated ticks times this in air, from the air the player has now, refilled on surfacing as in
+     * 1.7.10; no planned route runs out before the head is out of water. A route that ends under water keeps this times
+     * the ticks back to air the way it came (for a player already under water, also the time spent getting there). A
+     * player already under water is charged the plain estimate until the first breath: getting out is the point.
+     */
+    public final Setting<Double> breathSafety = new Setting<>(1.5D);
+
+    /**
      * Don't allow breaking blocks next to liquids.
      * <p>
      * Enable if you have mods adding custom fluid physics.

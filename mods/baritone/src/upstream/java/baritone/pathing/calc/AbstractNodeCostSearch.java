@@ -187,12 +187,22 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
 
     @Override
     public Optional<IPath> pathToMostRecentNodeConsidered() {
-        return Optional.ofNullable(mostRecentConsidered).map(node -> new Path(startNode, node, 0, goal, context));
+        return Optional.ofNullable(mostRecentConsidered).map(node -> new Path(startNode, loopFreeEnd(node), 0, goal, context));
     }
 
     @Override
     public Optional<IPath> bestPathSoFar() {
         return bestSoFar(false, 0);
+    }
+
+    /** ModdedBench: where a path along the route to end must stop to visit no cell twice (AStarPathFinder: at a breath). */
+    protected PathNode loopFreeEnd(PathNode end) {
+        return end;
+    }
+
+    /** ModdedBench: whether the route to this node may be returned (AStarPathFinder: the player can breathe along it). */
+    protected boolean acceptable(PathNode end) {
+        return true;
     }
 
     protected Optional<IPath> bestSoFar(boolean logInfo, int numNodes) {
@@ -201,7 +211,7 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
         }
         double bestDist = 0;
         for (int i = 0; i < COEFFICIENTS.length; i++) {
-            if (bestSoFar[i] == null) {
+            if (bestSoFar[i] == null || !acceptable(bestSoFar[i])) {
                 continue;
             }
             double dist = getDistFromStartSq(bestSoFar[i]);
@@ -213,7 +223,7 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
                     // ModdedBench: debug only (chatDebug); upstream printed these to stdout on every search
                     logDebug("Path goes for " + Math.sqrt(dist) + " blocks, A* cost coefficient " + COEFFICIENTS[i]);
                 }
-                return Optional.of(new Path(startNode, bestSoFar[i], numNodes, goal, context));
+                return Optional.of(new Path(startNode, loopFreeEnd(bestSoFar[i]), numNodes, goal, context));
             }
         }
         // instead of returning bestSoFar[0], be less misleading

@@ -80,6 +80,9 @@ public class CalculationContext {
     public double backtrackCostFavoringCoefficient;
     public double jumpPenalty;
     public final double submergedPenalty;
+    /** ModdedBench: the player's air when this search was captured (see Settings.breathSafety). */
+    public final int air;
+    public final double breathSafety;
     public final double walkOnWaterOnePenalty;
     public final BetterWorldBorder worldBorder;
 
@@ -106,6 +109,8 @@ public class CalculationContext {
         this.overrideProtection = captured.overrideProtection();
         this.positionAllowed = captured.positionAllowed();
         this.snags = captured.snags();
+        this.air = captured.air();
+        this.breathSafety = Math.max(1, Baritone.settings().breathSafety.value);
         this.explicitMiningTargets = captured.explicitMiningTargets();
         this.world = captured.world();
         this.bsi = captured.blocks();

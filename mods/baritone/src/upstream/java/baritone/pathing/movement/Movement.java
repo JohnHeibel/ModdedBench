@@ -138,7 +138,7 @@ public abstract class Movement implements IMovement, MovementHelper {
                     && MovementHelper.canWalkOn(ctx, ctx.playerFeet().down());
             // Holding jump floats the player to the surface; a movement that ends under water (head in water at dest)
             // lets the player sink until the feet are at the destination's level, and swims up only below it.
-            boolean sink = MovementHelper.isLiquid(ctx, dest.up()) && ctx.player().posY > dest.getY() - 0.05;
+            boolean sink = MovementHelper.isLiquid(ctx, dest.up()) && ctx.player().boundingBox.minY > dest.getY() - 0.05; // posY is eye height on this client
             if (!standToBreak && !sink) {
                 currentState.setInput(Input.JUMP, true);
             }

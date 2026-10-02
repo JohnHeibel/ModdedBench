@@ -16,7 +16,14 @@ import java.util.function.Predicate;
 public record CalculationInputs(World world,BlockStateInterface blocks,ToolSet tools,
         boolean throwaway,boolean waterPlacement,boolean sprint,int frostWalker,int depthStrider,
         WorldMemory.Snapshot protection,boolean overrideProtection,Predicate<BlockPos> positionAllowed,
-        Predicate<IBlockState> explicitMiningTargets,baritone.gtnh.pathing.Snags snags) {
+        Predicate<IBlockState> explicitMiningTargets,baritone.gtnh.pathing.Snags snags,int air) {
+    /** A player's full air supply in ticks (EntityPlayer#getAir with the head out of water). */
+    public static final int FULL_AIR=300;
+    public CalculationInputs(World world,BlockStateInterface blocks,ToolSet tools,boolean throwaway,boolean waterPlacement,
+            boolean sprint,int frostWalker,int depthStrider,WorldMemory.Snapshot protection,boolean overrideProtection,Predicate<BlockPos> positionAllowed,
+            Predicate<IBlockState> explicitMiningTargets,baritone.gtnh.pathing.Snags snags){
+        this(world,blocks,tools,throwaway,waterPlacement,sprint,frostWalker,depthStrider,protection,overrideProtection,positionAllowed,explicitMiningTargets,snags,FULL_AIR);
+    }
     public CalculationInputs(World world,BlockStateInterface blocks,ToolSet tools,boolean throwaway,boolean waterPlacement,
             boolean sprint,int frostWalker,int depthStrider,WorldMemory.Snapshot protection,boolean overrideProtection,Predicate<BlockPos> positionAllowed){
         this(world,blocks,tools,throwaway,waterPlacement,sprint,frostWalker,depthStrider,protection,overrideProtection,positionAllowed,s->false);
@@ -36,6 +43,7 @@ public record CalculationInputs(World world,BlockStateInterface blocks,ToolSet t
         var tools=new ToolSet(player);tools.warm(x,y,z);
         return new CalculationInputs(world,new BlockStateInterface(ctx,threaded),tools,
             engine.getInventoryBehavior().hasGenericThrowaway(),FallProtection.available()&&!world.provider.isHellWorld,
-            player.getFoodStats().getFoodLevel()>6,0,0,ControlRegistry.memory().memory().snapshot(),engine.overrideProtection,engine.positionAllowed,engine.explicitMiningTargets.get(),engine.snags);
+            player.getFoodStats().getFoodLevel()>6,0,0,ControlRegistry.memory().memory().snapshot(),engine.overrideProtection,engine.positionAllowed,engine.explicitMiningTargets.get(),engine.snags,
+            player.getAir()); // the air bar the player sees
     }
 }
