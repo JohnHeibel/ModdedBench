@@ -34,6 +34,7 @@ import functools
 import importlib.abc
 import importlib.machinery
 import importlib.util
+import inspect
 import os
 import sys
 import threading
@@ -99,6 +100,11 @@ def tool(rung: int = 3, coverage: list[str] | None = None, name: str | None = No
         return fn
 
     return deco
+
+
+def resumable(fn: Callable) -> bool:
+    """Whether calls to this tool take resume=True|N (kernel.call_resuming): every acting tool without its own resume."""
+    return fn._mb_tool["effect"] != "read" and "resume" not in inspect.signature(fn).parameters  # noqa: SLF001
 
 
 # ---- the mbtools_gtnh package: source is exec'd directly so a same-second edit never hits a stale .pyc ----

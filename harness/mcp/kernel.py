@@ -28,6 +28,34 @@ reply_trace = contextvars.ContextVar("bridge_reply_trace", default=None)
 resume_once = contextvars.ContextVar("bridge_resume_once", default=None)
 
 
+def resume_arg(value: Any) -> bool | int:
+    """resume=True resumes a paused world for the call's first action; resume=N steps it N ticks instead."""
+    if isinstance(value, bool) or value is None:
+        return bool(value)
+    ticks = int(value)
+    if not 0 <= ticks <= 72000:
+        raise ValueError("resume takes true or a tick count 1..72000")
+    return ticks or False
+
+
+def call_resuming(fn: Callable, resume: bool | int, /, *args, **kwargs) -> Any:
+    """fn(*args, **kwargs) under its own one-shot resume directive; the caller's directive is back afterwards.
+    Shared by direct tool calls and the tool calls inside scripts."""
+    if not resume:
+        return fn(*args, **kwargs)
+    record = {} if resume is True else {"ticks": resume}
+    token = resume_once.set(record)
+    try:
+        result = fn(*args, **kwargs)
+    except Exception as e:
+        if record.get("resumed"): e.resumed_world = record
+        raise
+    finally:
+        resume_once.reset(token)
+    if record.get("resumed") and isinstance(result, dict): result = {**result, "resumedWorld": record}
+    return result
+
+
 def bridge_url(side: str = "client") -> str:
     """The one place the bridge endpoint is defined: MB_BRIDGE_URL (default client port 47223).
 

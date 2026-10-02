@@ -42,17 +42,8 @@ from mcp.types import TextContent, CallToolResult, ToolAnnotations  # noqa: E402
 from mcp.server.fastmcp.tools import Tool  # noqa: E402
 
 import mbtool  # noqa: E402
-from kernel import BridgeError, Kernel, bridge_url, reply_trace, CancellationScope, cancel_scope, resume_once  # noqa: E402
-
-
-def _resume_arg(value: Any) -> bool | int:
-    """resume=True resumes a paused world for the call's first action; resume=N steps it N ticks instead."""
-    if isinstance(value, bool) or value is None:
-        return bool(value)
-    ticks = int(value)
-    if not 0 <= ticks <= 72000:
-        raise ValueError("resume takes true or a tick count 1..72000")
-    return ticks or False
+from kernel import BridgeError, Kernel, bridge_url, reply_trace, CancellationScope, cancel_scope, call_resuming  # noqa: E402
+from kernel import resume_arg as _resume_arg  # noqa: E402
 
 
 def log(msg: str) -> None:
@@ -173,20 +164,10 @@ class Server(FastMCP):
         sig = inspect.signature(fn)
         # Every tool that acts takes resume=True: decide while the world is paused, then resume and act in one call,
         # the action starting on the first resumed tick. resume=N steps N ticks instead, then the world pauses again.
-        resumable = fn._mb_tool["effect"] != "read" and "resume" not in sig.parameters  # noqa: SLF001
+        resumable = mbtool.resumable(fn)
 
         def run(resume, kwargs):
-            if not resume:
-                return fn(**kwargs)
-            record = {} if resume is True else {"ticks": resume}
-            resume_once.set(record)
-            try:
-                result = fn(**kwargs)
-            except Exception as e:
-                if record.get("resumed"): e.resumed_world = record
-                raise
-            if record.get("resumed") and isinstance(result, dict): result = {**result, "resumedWorld": record}
-            return result
+            return call_resuming(fn, resume, **kwargs)
 
         @functools.wraps(fn)
         async def call(**kwargs):

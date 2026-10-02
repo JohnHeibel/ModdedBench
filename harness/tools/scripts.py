@@ -4,13 +4,15 @@
 
 from __future__ import annotations
 
+import functools
 import importlib
 import re
 import traceback
 from pathlib import Path
 from typing import Any
 
-from mbtool import PACKAGE, tool
+from kernel import call_resuming, resume_arg
+from mbtool import PACKAGE, resumable, tool
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 
@@ -19,8 +21,19 @@ def _tools() -> dict:
     found = {}
     for path in Path(__file__).parent.glob("*.py"):
         if not path.stem.startswith("_"):
-            found.update({n: f for n, f in vars(importlib.import_module(f"{PACKAGE}.{path.stem}")).items() if hasattr(f, "_mb_tool")})
+            found.update({n: _resuming(f) for n, f in vars(importlib.import_module(f"{PACKAGE}.{path.stem}")).items() if hasattr(f, "_mb_tool")})
     return found
+
+
+def _resuming(fn):
+    """A tool as a script sees it: acting tools take resume=True|N, each call its own directive, as a direct call does."""
+    if not resumable(fn):
+        return fn
+
+    @functools.wraps(fn)
+    def call(*args, resume=False, **kwargs):
+        return call_resuming(fn, resume_arg(resume), *args, **kwargs)
+    return call
 
 
 @tool(effect="privileged", coverage=["meta"])
@@ -30,7 +43,8 @@ def mb_run(code: str | None = None, args: dict | None = None, name: str | None =
     code is Python defining main(**args); every mb_* tool is already in scope as a function
     with the parameters you know (mb_craft(pattern=..., at=...)), plus log(text). "Go to the
     table, craft the casings, go to the furnace, load it, fetch the plates from the chest" is
-    one script. By default it runs once and is gone. Pass name as well to keep it as
+    one script. Acting calls take resume=True or resume=N here too, each call its own directive,
+    as they do when called directly. By default it runs once and is gone. Pass name as well to keep it as
     harness/scripts/<name>.py, and name alone (with new args) to run a kept one again; keep one
     only if you expect to use it again soon. Scripts are disposable: most are obsolete within
     the hour, when the base changes or a machine takes the job over. Do not collect or polish
