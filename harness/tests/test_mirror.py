@@ -193,6 +193,16 @@ class Snapshot(unittest.TestCase):
         self.assertEqual([d[11:14] for ch, d in gts if ch == "GregTech"], [b"new", b"ore"])  # past the cap, latest per block,
                                                                                               # none in an unloaded chunk
 
+    def test_what_a_block_holds_comes_after_the_block(self):
+        m = state.Mirror(); hub = proxy.Hub(mirror=m)
+        place = frame(0x23, pack("iBi", 5, 64, 5) + b"\x85\x15\x00")
+        sign = frame(0x33, pack("ihi", 6, 64, 5) + b"text")
+        machine = s3f("GregTech", b"\x00" + pack("ihi", 5, 64, 5) + bytes(20))
+        feed(hub, frames_s=SERVER + [place, machine, sign, place])  # the server re-sends the block after its data
+        snap = m.snapshot()
+        self.assertLess(snap.index(place), snap.index(machine))
+        self.assertLess(snap.index(place), snap.index(sign))
+
 
 class Handshake(unittest.TestCase):
     def test_snapshot_waits_for_the_viewers_forge_replies(self):
