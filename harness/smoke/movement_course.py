@@ -81,6 +81,21 @@ CASES: dict[str, dict] = {
     "overhang_plant": dict(expect="succeed", bound=30, allow=(False, True)),
     "head_plant_leaves": dict(expect="succeed", bound=60, max_dev=1.0, allow=(True, False)),
     "bridge_drop": dict(expect="succeed", bound=60, allow=(False, True), change_at_u=6, change="bridge_drop_fall"),
+    # parkour: gaps a player jumps; with break and place off nothing else crosses them
+    "gap1": dict(expect="succeed", bound=60, max_dev=1.0),
+    "gap2": dict(expect="succeed", bound=60, max_dev=1.0),
+    "gap3": dict(expect="succeed", bound=60, max_dev=1.0),
+    "gap1_up": dict(expect="succeed", bound=60, max_dev=1.0),
+    "gap2_place": dict(expect="succeed", bound=60, max_dev=1.0, allow=(False, True)),
+    "gap2_lava": dict(expect="succeed", bound=60, max_dev=1.0),
+    "gap2_turn": dict(expect="succeed", bound=60, max_dev=1.0),
+    # liquids the agent meets all the time: diving for clay (mine, then swim back to the bank), a flooded passage, and
+    # flowing lava that has finished spreading before the start (settle), so the edge has to be walked around
+    "dive_clay5": dict(expect="succeed", bound=300, mine=True, surface=True),
+    "dive_clay10": dict(expect="succeed", bound=450, mine=True, surface=True),
+    "swim_u": dict(expect="succeed", bound=200),
+    "lava_corner": dict(expect="succeed", bound=120, settle=200),
+    "lava_wall": dict(expect="succeed", bound=120, settle=200),
     # script: the obsidian cases (movement_obsidian.py); fixture: the fixture case to build when it differs.
     "obsidian": dict(expect="script", script="simple"),
     "obsidian_natural": dict(expect="script", script="natural"),
@@ -316,8 +331,13 @@ class Course:
         try:
             if spec.get("mine"):
                 m = info["mine"]
-                r = work.mb_mine(blocks=[{"id": m["id"]}], quantity=1, bounds=m["bounds"], allow_break=True, allow_place=True,
+                items = [{"id": i} for i in dict.fromkeys(m.get("drops") or [])] if spec.get("surface") else None  # only the block's own drops count
+                r = work.mb_mine(blocks=[{"id": m["id"]}], items=items, quantity=1, bounds=m["bounds"], allow_break=True, allow_place=True,
                                  timeout_ticks=duration, timeout_s=timeout_s)
+                if spec.get("surface") and (r.get("state") or "succeeded") == "succeeded":  # then back to the bank
+                    back = work.mb_process("goal", goal={"type": "block", "pos": info["goal"]}, duration_ticks=duration,
+                                           allow_break=brk, allow_place=plc, timeout_s=timeout_s)
+                    r = {**back, "ticks": (r.get("ticks") or 0) + (back.get("ticks") or 0), "mine": r}
             else:
                 r = work.mb_process("goal", goal={"type": "block", "pos": info["goal"]}, duration_ticks=duration,
                                     allow_break=brk, allow_place=plc, timeout_s=timeout_s)

@@ -45,7 +45,7 @@ import net.minecraftforge.fluids.IFluidBlock;
  */
 public final class MovementFixture {
     /** Plots run west to east four per row; plot 16 opens a fifth row, so the volume is 64 x 80. */
-    static final int PLOTS=20, SIZE=64, SIZE_Z=16*((PLOTS+3)/4), FLOOR=199, TOP=218, B=200;
+    static final int PLOTS=27, SIZE=64, SIZE_Z=16*((PLOTS+3)/4), FLOOR=199, TOP=218, B=200;
     private int sizeZ=SIZE_Z;
     /** Every item that entered the course volume since the last position, with how it left (picked, burned, gone). */
     private final List<Tracked> items=new ArrayList<>();
@@ -293,7 +293,9 @@ public final class MovementFixture {
                 "plotMin",Json.array(x0+(plot%4)*16,FLOOR,z0+(plot/4)*16),"plotMax",Json.array(x0+(plot%4)*16+15,TOP,z0+(plot/4)*16+15),"note",note);
             if(!Double.isNaN(minY)) o.addProperty("minY",minY);
             if(bounds!=null) {int[] a=absBlock(plot,bounds[0][0],bounds[0][1],bounds[0][2]),b=absBlock(plot,bounds[1][0],bounds[1][1],bounds[1][2]);
-                o.add("mine",(JsonObject)Json.object("id",mineId,"bounds",Json.object("min",Json.array(a[0],a[1],a[2]),"max",Json.array(b[0],b[1],b[2]))));}
+                JsonArray drops=new JsonArray();Block mined=block(mineId);  // what the game says the block drops, for counting
+                if(mined!=null) for(ItemStack d:mined.getDrops(world(),a[0],a[1],a[2],0,0)) if(d!=null) drops.add(new com.google.gson.JsonPrimitive(Item.itemRegistry.getNameForObject(d.getItem())));
+                o.add("mine",(JsonObject)Json.object("id",mineId,"drops",drops,"bounds",Json.object("min",Json.array(a[0],a[1],a[2]),"max",Json.array(b[0],b[1],b[2]))));}
             return o;
         }
     }
@@ -449,6 +451,55 @@ public final class MovementFixture {
         add(new Case("bridge_drop",19,()->{
             box(19,0,B,7,15,B+1,7,Blocks.stone);box(19,8,B,7,8,B+1,7,Blocks.air);
         })).start(2.5,B+2,7.5,-90).goal(12,B+2,7).route(2.5,7.5,12.5,7.5).note("change bridge_drop_fall at u>=6");
+        // Plots 20-21: gaps across a 1-wide stone ridge three high (top at B+2). A fall into a gap lands three below with no
+        // way back up without placing, so with break and place off a jump is the only way across.
+        add(new Case("gap1",20,()->gapRidge(20,1,7,7,0))).start(1.5,B+3,1.5,-90).goal(14,B+3,1).route(1.5,1.5,14.5,1.5).note("1-wide gap");
+        add(new Case("gap2",20,()->gapRidge(20,4,7,8,0))).start(1.5,B+3,4.5,-90).goal(14,B+3,4).route(1.5,4.5,14.5,4.5).note("2-wide gap");
+        add(new Case("gap3",20,()->gapRidge(20,7,7,9,0))).start(1.5,B+3,7.5,-90).goal(14,B+3,7).route(1.5,7.5,14.5,7.5).note("3-wide gap: a sprint jump");
+        add(new Case("gap1_up",20,()->gapRidge(20,10,7,7,1))).start(1.5,B+3,10.5,-90).goal(14,B+4,10).route(1.5,10.5,14.5,10.5).note("1-wide gap to a ridge one higher");
+        add(new Case("gap2_place",20,()->gapRidge(20,13,7,8,0))).start(1.5,B+3,13.5,-90).goal(14,B+3,13).route(1.5,13.5,14.5,13.5).note("2-wide gap, placing allowed: jump or bridge");
+        add(new Case("gap2_lava",21,()->{
+            gapRidge(21,3,7,8,0);box(21,7,B,2,8,B,4,Blocks.stone);for(int u=7;u<=8;u++) set(21,u,B,3,Blocks.lava);
+        })).start(1.5,B+3,3.5,-90).goal(14,B+3,3).route(1.5,3.5,14.5,3.5).note("2-wide gap over still lava two below the takeoff");
+        liquidCases();
+        add(new Case("gap2_turn",21,()->{
+            box(21,0,B,9,8,B+2,9,Blocks.stone);box(21,8,B,9,8,B+2,15,Blocks.stone);box(21,8,B,11,8,B+2,12,Blocks.air);
+        })).start(1.5,B+3,9.5,-90).goal(8,B+3,14).route(1.5,9.5,8.5,9.5,8.5,14.5).note("a corner then a 2-wide gap");
+    }
+    private void liquidCases() {
+        // Plots 22-23: dive for clay. A still 3x3 water pit h deep in a stone mass (bank top at B+h); its floor centre is
+        // clay. The job mines it, then swims back to the bank (the case goal): a drowning shows as lost health.
+        add(new Case("dive_clay5",22,()->clayPit(22,5))).start(3.5,B+6,7.5,-90).goal(3,B+6,7).mine("minecraft:clay",6,B,6,8,B+5,8).note("5-deep pit");
+        add(new Case("dive_clay10",23,()->clayPit(23,10))).start(3.5,B+11,7.5,-90).goal(3,B+11,7).mine("minecraft:clay",6,B,6,8,B+10,8).note("10-deep pit");
+        // Plot 24: a flooded U. Stone mass top at B+5 over the whole plot, a wall on top at u=7..8; the only way across is
+        // down a 1x1 water shaft at u=3, along a 2-high flooded tunnel, and up the shaft at u=12.
+        add(new Case("swim_u",24,()->{
+            box(24,0,B,0,15,B+5,15,Blocks.stone);box(24,7,B+6,0,8,B+8,15,Blocks.stone);
+            box(24,3,B+1,7,3,B+5,7,Blocks.water);box(24,3,B+1,7,12,B+2,7,Blocks.water);box(24,12,B+1,7,12,B+5,7,Blocks.water);
+        })).start(1.5,B+6,7.5,-90).goal(14,B+6,7).note("down a water shaft, a 9-long flooded tunnel, up a shaft");
+        // Plot 25: an L of roofed corridors (4 wide east, 5 wide north) with three lava sources against the inside wall of
+        // the north leg, flowed out before the start: the dry way is a 1-2 wide strip around the lava's stepped edge.
+        add(new Case("lava_corner",25,()->{
+            roofed(25);box(25,1,B,1,12,B+1,4,Blocks.air);box(25,8,B,1,12,B+1,14,Blocks.air);
+            for(int v=5;v<=9;v+=2) set(25,8,B,v,Blocks.flowing_lava,0,3); // still lava would not spread until a neighbour changed
+        })).start(1.5,B,2.5,-90).goal(11,B,13).note("settled flowing lava; dry strip at v=1 past u=8, then u=11..12");
+        // Plot 26: a roofed room with three lava sources on the anti-diagonal, flowed out into one stepped wall; the dry
+        // ways round are 1-wide strips along the room's walls.
+        add(new Case("lava_wall",26,()->{
+            roofed(26);box(26,1,B,1,14,B+1,14,Blocks.air);
+            set(26,7,B,7,Blocks.flowing_lava,0,3);set(26,10,B,5,Blocks.flowing_lava,0,3);set(26,5,B,10,Blocks.flowing_lava,0,3);
+        })).start(2.5,B,2.5,-135).goal(12,B,12).note("settled flowing lava wall across the diagonal");
+    }
+    private void clayPit(int p,int h) {
+        box(p,2,B,2,13,B+h,13,Blocks.stone);box(p,6,B+1,6,8,B+h,8,Blocks.water);set(p,7,B,7,Blocks.clay);
+    }
+    /** Plot p: solid stone two high under a glowstone roof; cases carve their rooms out of it. */
+    private void roofed(int p) {
+        box(p,0,B,0,15,B+1,15,Blocks.stone);box(p,0,B+2,0,15,B+2,15,Blocks.glowstone);
+    }
+    /** Plot p, lane v: a ridge u=0..15 (top at B+2, or B+2+up past the gap) with air at u=g0..g1. */
+    private void gapRidge(int p,int v,int g0,int g1,int up) {
+        box(p,0,B,v,g0-1,B+2,v,Blocks.stone);box(p,g1+1,B,v,15,B+2+up,v,Blocks.stone);
     }
     private void plantRidge(int v) {
         box(18,0,B,v,15,B,v,Blocks.stone);
@@ -540,6 +591,7 @@ public final class MovementFixture {
         p.inventory.mainInventory[1]=new ItemStack(Blocks.cobblestone,64);
         if(name.startsWith("obsidian")) p.inventory.mainInventory[2]=new ItemStack(Items.water_bucket);
         if(name.startsWith("obsidian_natural")) p.inventory.mainInventory[3]=new ItemStack(Items.bucket);
+        if(name.startsWith("dive_")) p.inventory.mainInventory[2]=FluidFixture.buildTool("shovelHead",FluidFixture.toolMaterial("Cobalt"),"Movement course shovel",false);
         p.inventory.currentItem=0;
         p.playerNetServerHandler.sendPacket(new S09PacketHeldItemChange(0));
         p.inventoryContainer.detectAndSendChanges();p.sendContainerAndContentsToPlayer(p.inventoryContainer,p.inventoryContainer.getInventory());
