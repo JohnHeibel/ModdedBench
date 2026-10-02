@@ -337,8 +337,9 @@ function pops(list, now) {
 /* the banner: why the world stands still, in words, with the specifics */
 const PLAIN = {requested_pause: null, step: ["STEPPING", "step", "letting the world run a few ticks at a time"],
   threat: null, health_dropped: null, health_threshold: null, air_threshold: ["LOW AIR", "bad", "its air ran low"], burning: ["BURNING", "bad", "it caught fire"],
-  food_threshold: ["HUNGRY", "warn", "its food ran low"], agent_disconnected: ["RECONNECTING", "dim", "the agent's connection dropped"],
-  client_disconnected: ["RECONNECTING", "dim", "the game client dropped"], client_unresponsive: ["RECONNECTING", "dim", "the game client stopped answering"],
+  // The clock is read through the client, so a disconnect reason seen here is one already over: the world waits for the agent to resume it.
+  food_threshold: ["HUNGRY", "warn", "its food ran low"], agent_disconnected: ["PAUSED", "dim", "still paused from a dropped agent connection; it resumes when ready"],
+  client_disconnected: ["PAUSED", "dim", "still paused from the game restart; the agent resumes when ready"], client_unresponsive: ["PAUSED", "dim", "still paused from a game stall; the agent resumes when ready"],
   action_failed: ["ACTION FAILED", "warn", "an action failed, so the world stopped"], operator_hold: ["OPERATOR HOLD", "dim", "paused by the operator"]};
 const mob = t => pretty(t).replace(/^(entity|SpecialMobs|mob) /i, "").replace(/([a-z])([A-Z])/g, "$1 $2");
 function banner(d) {
@@ -346,7 +347,8 @@ function banner(d) {
   let chip = null;
   const last = [...(d.feed || [])].reverse().find(e => (e.kind === "tool" || e.kind === "fail") && e.tool !== "mb_time");  // not the pause itself
   const hp = c && c.player && c.player.health != null ? ` · ${Math.round(c.player.health)} of 20 health` : "";
-  if (!c || st.state === "ended" || st.state === "game_down") chip = null;
+  if (st.state === "game_down") chip = ["RECONNECTING", "dim", "the game client is restarting"];
+  else if (!c || st.state === "ended") chip = null;
   else if (c.held) chip = PLAIN.operator_hold;
   else if (["between_turns", "backing_off"].includes(st.state)) chip = ["RECONNECTING", "dim", st.state === "backing_off" ? "the last turn failed; it starts again shortly" : "between turns; the agent picks up where it left off"];
   else if (!c.paused) chip = null;  // nothing to cover: the game draws its strip only while paused
