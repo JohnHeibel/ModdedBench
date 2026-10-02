@@ -15,6 +15,8 @@ import java.util.Map;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockLiquid;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityLiving;
+import net.minecraft.entity.monster.EntityZombie;
 import net.minecraft.entity.item.EntityFallingBlock;
 import net.minecraft.entity.item.EntityItem;
 import net.minecraft.entity.item.EntityXPOrb;
@@ -45,7 +47,7 @@ import net.minecraftforge.fluids.IFluidBlock;
  */
 public final class MovementFixture {
     /** Plots run west to east four per row; plot 16 opens a fifth row, so the volume is 64 x 80. */
-    static final int PLOTS=37, SIZE=64, SIZE_Z=16*((PLOTS+3)/4), FLOOR=199, TOP=218, B=200;
+    static final int PLOTS=40, SIZE=64, SIZE_Z=16*((PLOTS+3)/4), FLOOR=199, TOP=218, B=200;
     private int sizeZ=SIZE_Z;
     /** Every item that entered the course volume since the last position, with how it left (picked, burned, gone). */
     private final List<Tracked> items=new ArrayList<>();
@@ -93,6 +95,41 @@ public final class MovementFixture {
         synchronized(items) {for(Tracked t:items) if(!t.e.isDead) {
             t.lava|=t.e.handleLavaMovement();t.fire=Math.max(t.fire,fireTicks(t.e));t.pos=new double[]{t.e.posX,t.e.posY,t.e.posZ};
             if(t.e.getEntityItem()!=null) t.count=t.e.getEntityItem().stackSize;}}
+        Case c=armed;
+        if(c!=null) try {
+            EntityPlayerMP p=player();int[] t=c.mobTrigger;
+            double u=p.posX-(x0+(c.plot%4)*16),v=p.posZ-(z0+(c.plot/4)*16);
+            if(u>=t[0]&&u<t[2]+1&&v>=t[1]&&v<t[3]+1&&p.posY>=t[4]) {armed=null;mobReleased=server.getTickCounter();releaseMob(c);}
+        } catch(Exception ignored) {}
+    }
+    /** Every hit the player took in the course since the last position: cause, amount, where. */
+    private final List<JsonObject> hurts=new ArrayList<>();
+    @cpw.mods.fml.common.eventhandler.SubscribeEvent public void hurt(net.minecraftforge.event.entity.living.LivingHurtEvent event) {
+        if(!(event.entityLiving instanceof EntityPlayerMP p)||p.worldObj.isRemote||!inside(p.posX,p.posZ)||!p.getCommandSenderName().equals("ModbenchDev")) return;
+        synchronized(items) {if(hurts.size()<200) hurts.add((JsonObject)Json.object("type",event.source==null?"":event.source.getDamageType(),"amount",event.ammount,
+            "tick",server.getTickCounter(),"health",p.getHealth(),"pos",Json.array(Shape.r(p.posX),Shape.r(p.posY),Shape.r(p.posZ))));}
+    }
+    /** A case with a mob runs at normal difficulty (peaceful removes hostiles and zeroes their damage); every other
+     *  case puts back what the world had. Set on the world object only, so a restart is peaceful again. */
+    private net.minecraft.world.EnumDifficulty difficultyBefore;
+    private volatile Case armed;private int mobReleased=-1;
+    private void hostile(boolean on) {
+        WorldServer w=world();
+        if(on) {if(difficultyBefore==null) difficultyBefore=w.difficultySetting;w.difficultySetting=net.minecraft.world.EnumDifficulty.NORMAL;}
+        else if(difficultyBefore!=null) {w.difficultySetting=difficultyBefore;difficultyBefore=null;}
+    }
+    /** A plain adult zombie, added the way spawnEntityInWorld adds one minus EntityJoinWorldEvent: Infernal Mobs and
+     *  Special Mobs re-roll mobs there (modifiers, subtype), which would make every trial a different fight. */
+    private void releaseMob(Case c) throws Exception {
+        double[] a=abs(c.plot,c.mob[0],c.mob[1],c.mob[2]);
+        EntityZombie z=new EntityZombie(world());z.setPosition(a[0],a[1],a[2]);z.func_110163_bv();
+        z.rotationYaw=z.rotationYawHead=90;
+        world().getChunkFromBlockCoords((int)Math.floor(a[0]),(int)Math.floor(a[2])).addEntity(z);
+        world().loadedEntityList.add(z);
+        java.lang.reflect.Method added=null;
+        for(String n:new String[]{"func_72923_a","onEntityAdded"}) try {added=net.minecraft.world.World.class.getDeclaredMethod(n,Entity.class);break;} catch(NoSuchMethodException ignored) {}
+        if(added==null) throw new IllegalStateException("World.onEntityAdded not found");
+        added.setAccessible(true);added.invoke(world(),z);
     }
     private Object itemFates() {
         JsonArray a=new JsonArray();
@@ -279,7 +316,12 @@ public final class MovementFixture {
     final class Case {
         final String name;final int plot;double su,sy,sv;float yaw;int gu,gy,gv;final Runnable build;
         double[][] route;double minY=Double.NaN;int[][] bounds;String note="";String mineId;
+        /** Plots the case covers eastward from its own (u runs 0..16*span-1); a mob it releases and the cells that release it. */
+        int span=1;double[] mob;int[] mobTrigger;
         Case(String name,int plot,Runnable build) {this.name=name;this.plot=plot;this.build=build;}
+        Case span(int n) {span=n;return this;}
+        /** A zombie at (u,y,v), released when the player stands in u0..u1 x v0..v1 at or above y0 (plot-relative). */
+        Case mob(double u,double y,double v,int u0,int v0,int u1,int v1,int y0) {mob=new double[]{u,y,v};mobTrigger=new int[]{u0,v0,u1,v1,y0};return this;}
         Case start(double u,double y,double v,float yaw) {su=u;sy=y;sv=v;this.yaw=yaw;return this;}
         Case goal(int u,int y,int v) {gu=u;gy=y;gv=v;return this;}
         Case route(double... uv) {route=new double[uv.length/2][];for(int i=0;i<uv.length;i+=2) route[i/2]=new double[]{uv[i],uv[i+1]};return this;}
@@ -290,7 +332,7 @@ public final class MovementFixture {
             JsonArray r=new JsonArray();if(route!=null) for(double[] p:route){double[] a=abs(plot,p[0],0,p[1]);r.add(Json.array(a[0],a[2]));}
             double[] s=abs(plot,su,sy,sv);int[] g=absBlock(plot,gu,gy,gv);
             JsonObject o=(JsonObject)Json.object("name",name,"plot",plot,"start",Json.array(s[0],s[1],s[2]),"yaw",yaw,"goal",Json.array(g[0],g[1],g[2]),"route",r,
-                "plotMin",Json.array(x0+(plot%4)*16,FLOOR,z0+(plot/4)*16),"plotMax",Json.array(x0+(plot%4)*16+15,TOP,z0+(plot/4)*16+15),"note",note);
+                "plotMin",Json.array(x0+(plot%4)*16,FLOOR,z0+(plot/4)*16),"plotMax",Json.array(x0+(plot%4)*16+16*span-1,TOP,z0+(plot/4)*16+15),"note",note);
             if(!Double.isNaN(minY)) o.addProperty("minY",minY);
             if(bounds!=null) {int[] a=absBlock(plot,bounds[0][0],bounds[0][1],bounds[0][2]),b=absBlock(plot,bounds[1][0],bounds[1][1],bounds[1][2]);
                 JsonArray drops=new JsonArray();Block mined=block(mineId);  // what the game says the block drops, for counting
@@ -490,6 +532,17 @@ public final class MovementFixture {
             set(26,7,B,7,Blocks.flowing_lava,0,3);set(26,10,B,5,Blocks.flowing_lava,0,3);set(26,5,B,10,Blocks.flowing_lava,0,3);
         })).start(2.5,B,2.5,-135).goal(12,B,12).note("settled flowing lava wall across the diagonal");
         hardLiquidCases();
+        Runnable gauntlet=this::gauntlet;
+        add(new Case("liquid_gauntlet",GP,gauntlet)).span(3).start(1.5,B+5,3.5,-90).goal(3,B+13,10)
+            .mob(31.5,B+12,11.5,30,8,41,10,B+11)
+            .note("plots 37-39: lava ledge + gap, current into a lava curtain, 28-block flooded tunnel with one air pocket, lava-moat jump,"
+                +" waterfall climb, 2-high wet corridor with a pothole, zombie hall round a lava pool, gravel-into-water dam, five jumps over a pool;"
+                +" human route in the gauntlet() comment");
+        // Stage starts on the same build, for probing one stage at a time (not in the course's case table).
+        double[][] at={{12.5,B+5,3.5,-90},{28.5,B+1,4.5,-90},{45.5,B+6,3.5,0},{45.5,B+6,7.5,0},{43.5,B+12,10.5,90},{28.5,B+12,13.5,90},{16.5,B+12,13.5,90}};
+        String[] st={"s2","s3","s4","s5","s6","s8","s9"};
+        for(int i=0;i<st.length;i++) add(new Case("liquid_gauntlet@"+st[i],GP,gauntlet)).span(3).start(at[i][0],at[i][1],at[i][2],(float)at[i][3])
+            .goal(3,B+13,10).mob(31.5,B+12,11.5,30,8,41,10,B+11).note("stage start of liquid_gauntlet");
     }
     /** Plots 27-36: deliberately adversarial water and lava, each a different attack a real world makes. Every one is
      *  passable by a careful human with only the case's kit; the notes say how. Flowing sources go last (flags 3). */
@@ -598,6 +651,82 @@ public final class MovementFixture {
         })).start(1.5,B+7,12.5,0).goal(1,B+7,12).mine("minecraft:clay",7,B+1,6,9,B+3,8)
             .note("clay as the bed of a stepped stream; human: walk down the v=10 steps, hop in, dig, chase the drops to the u=14 end, climb the steps back");
     }
+    /** The liquid gauntlet's first plot; it spans plots 37..39, so u runs 0..47 (east) and v 0..15 (south). */
+    static final int GP=37;
+    private void g(int u,int y,int v,Block b,int meta,int flags) {set(GP,u,y,v,b,meta,flags);}
+    private void gbox(int u0,int y0,int v0,int u1,int y1,int v1,Block b) {box(GP,u0,y0,v0,u1,y1,v1,b);}
+    private void gfall(int u,int y0,int y1,int v,Block flowing) {for(int y=y0;y<=y1;y++) g(u,y,v,flowing,8,2);}  // a pre-filled fall
+    /**
+     * One long adversarial course in a bedrock block (u 0..47, v 0..15, FLOOR..B+17). Bedrock wherever digging must not
+     * route round a hazard; the only breakable blocks are the dam (stone + gravel) and a few glowstone lamps in walls
+     * that open onto nothing. Kit: pickaxe and cobblestone; the case allows break, not place. Y below is B+k, feet levels.
+     * Lane N runs east (v 1..6), lane S runs west (v 8..14).
+     *  S1 lava ledge, feet Y5: a 1-wide ledge (v=3, u 3..12) between a lava trench fed by two lava falls (v=2, falls at
+     *     u=6,11, 0.5 from the walking line) and a lava pit (v=4, lava 3 below). A 2-gap (u 8..9) opens into the pit.
+     *     Human: walk the centre line, walk-jump 7 -> 10 (4 high, so a full jump).
+     *  S2 current into lava, feet Y1 after three 1-block steps down (u 13..15): a 12x3 room of shallow water flowing
+     *     south from sources along v=2 into a solid lava curtain (falling lava, v=5); the way out is a 1-wide door at
+     *     (28, v=4), beside the curtain. The push is 0.014/tick against 0.02/tick of swim thrust. Human: hold the north
+     *     wall with forward+left, cut into the door from the north-west.
+     *  S3 flooded tunnel, 2 high, from the door: 8 blocks (v=4 to u=34, south 2) to a one-cell ceiling air pocket at
+     *     (34,Y3,6), then 20 more (east along v=6 to u=40, north to v=1, east to u=44, up the 1x1 shaft at u=45 to Y5):
+     *     ~205-230 ticks at 0.1 b/t against 300 ticks of air. Human: rise into the pocket, then swim without stopping.
+     *  S4 lava moat: out of the shaft onto a 1-wide runway (u=45, v 2..4, feet Y6), a 2-gap (v 5..6) over lava with a
+     *     lava fall at (46, v=5) 0.5 from the jump line, landing on a 1x2 ledge (45, v 7..8; v=8 is the overshoot cell).
+     *  S5 waterfall: step into a 1x1 falling-water column (45, v=9), swim up 7 to the source at Y12; the exit south is a
+     *     2-high corridor (feet Y12, ceiling Y14), so the feet must be in Y12.0..12.2 to slide out (the ceiling caps it).
+     *  S6 2-high wet corridor (v=10, u 45 -> 39): the source's current runs west into a water-filled pothole at u=42;
+     *     dropping in means climbing out under the 2-high ceiling (the hole's own column is 3 high, so it can be done).
+     *  S7 zombie hall (u 30..38, v 8..14, feet Y12, 3 high): a 3x3 lava pool in the floor; a plain zombie appears at
+     *     (31.5, 11.5) beside the exit door (29, v=13) when the player is in the corridor west of u=42. Normal
+     *     difficulty: 3 per hit. Human: draw it round the pool and outpace it to the door (zombie ~2.3 b/s, player 4.3),
+     *     or kill it with the pickaxe.
+     *  S8 dam (u=26, v=13): a stone at head height over a 2-deep still water hole, two gravel above the stone. Breaking
+     *     the stone drops both gravel through the water: one fills the hole's bottom, one stands at feet level, a 1-step
+     *     under a 2-high ceiling, so it must be dug too (gravel with a pickaxe: 18 ticks dry). The zombie, if left
+     *     alive, catches up here. Then a 2-high corridor to u=16.
+     *  S9 pool room, open sky: from a 1x1 notch (16, v=13, feet Y12) five jumps over a 2-deep pool on 1x1 pillars:
+     *     2-gap W to (13,13), 2-gap N to (13,10), 1-gap W and 1 up to (11,10), 2-gap W to (8,10), 2-gap W onto the
+     *     1-wide goal strip (2..5, v=10, feet Y13). A miss is not death: the pool's walls are 2 above the water, so swim
+     *     through (16, v=12) to the 1x1 shaft at (17, v=12), climb back into the corridor and try again.
+     */
+    private void gauntlet() {
+        final int Y=B;
+        gbox(0,FLOOR,0,47,Y+17,15,Blocks.bedrock);
+        // S1
+        gbox(1,Y+5,2,2,Y+8,4,Blocks.air);gbox(3,Y+5,3,12,Y+8,3,Blocks.air);
+        gbox(3,Y+4,2,12,Y+8,2,Blocks.air);gbox(3,Y+2,4,12,Y+8,4,Blocks.air);gbox(3,Y+1,4,12,Y+1,4,Blocks.lava);
+        gbox(8,Y+2,3,9,Y+4,3,Blocks.air);gbox(8,Y+1,3,9,Y+1,3,Blocks.lava);
+        gbox(13,Y+4,3,13,Y+7,3,Blocks.air);gbox(14,Y+3,3,14,Y+6,3,Blocks.air);gbox(15,Y+2,3,15,Y+5,3,Blocks.air);
+        // S2 room and S3 tunnel (still water: nothing moves until something beside it changes)
+        gbox(16,Y+1,2,27,Y+4,4,Blocks.air);gbox(28,Y+1,4,28,Y+2,4,Blocks.air);
+        gbox(29,Y+1,4,34,Y+2,4,Blocks.water);gbox(34,Y+1,5,34,Y+2,6,Blocks.water);g(34,Y+3,6,Blocks.air,0,2);
+        gbox(35,Y+1,6,40,Y+2,6,Blocks.water);gbox(40,Y+1,1,40,Y+2,5,Blocks.water);gbox(41,Y+1,1,44,Y+2,1,Blocks.water);
+        gbox(45,Y+1,1,45,Y+5,1,Blocks.water);
+        // S4 runway, moat, landing; S5 column top
+        gbox(45,Y+6,1,45,Y+9,4,Blocks.air);gbox(45,Y+3,5,46,Y+9,6,Blocks.air);gbox(45,Y+2,5,46,Y+2,6,Blocks.lava);
+        gbox(45,Y+6,7,45,Y+9,8,Blocks.air);g(45,Y+13,9,Blocks.air,0,2);
+        // S6 corridor and pothole, S7 hall and its pool
+        gbox(39,Y+12,10,45,Y+13,10,Blocks.air);g(42,Y+11,10,Blocks.air,0,2);
+        gbox(30,Y+12,8,38,Y+14,14,Blocks.air);gbox(33,Y+11,10,35,Y+11,12,Blocks.lava);
+        // S8 dam and the corridor beyond
+        gbox(27,Y+12,13,29,Y+13,13,Blocks.air);gbox(26,Y+11,13,26,Y+12,13,Blocks.water);g(26,Y+13,13,Blocks.stone,0,2);
+        gbox(26,Y+14,13,26,Y+15,13,Blocks.gravel);gbox(17,Y+12,13,25,Y+13,13,Blocks.air);
+        // S9 notch, pool room, pillars, way back
+        gbox(16,Y+12,13,16,Y+17,13,Blocks.air);
+        gbox(2,Y+10,9,15,Y+17,14,Blocks.air);gbox(2,Y+8,9,15,Y+9,14,Blocks.water);
+        gbox(13,Y+8,13,13,Y+11,13,Blocks.bedrock);gbox(13,Y+8,10,13,Y+11,10,Blocks.bedrock);
+        gbox(11,Y+8,10,11,Y+12,10,Blocks.bedrock);gbox(8,Y+8,10,8,Y+12,10,Blocks.bedrock);gbox(2,Y+8,10,5,Y+12,10,Blocks.bedrock);
+        gbox(16,Y+8,12,16,Y+9,12,Blocks.water);gbox(17,Y+8,12,17,Y+11,12,Blocks.water);gbox(17,Y+12,12,17,Y+13,12,Blocks.air);
+        // lamps in walls that open onto nothing
+        for(int[] l:new int[][]{{32,Y+2,5},{38,Y+2,5},{42,Y+2,2},{46,Y+8,3},{44,Y+9,8},{44,Y+13,11},{21,Y+13,14}}) g(l[0],l[1],l[2],Blocks.glowstone,0,2);
+        // moving liquids last: falls pre-filled (falling meta 8) so nothing else can take their cells first
+        for(int u:new int[]{6,11}) {gfall(u,Y+4,Y+8,2,Blocks.flowing_lava);g(u,Y+9,2,Blocks.flowing_lava,0,3);}
+        for(int u=16;u<=27;u++) {gfall(u,Y,Y+4,5,Blocks.flowing_lava);g(u,Y+5,5,Blocks.flowing_lava,0,3);}
+        gfall(46,Y+3,Y+9,5,Blocks.flowing_lava);g(46,Y+10,5,Blocks.flowing_lava,0,3);
+        gfall(45,Y+5,Y+11,9,Blocks.flowing_water);g(45,Y+12,9,Blocks.flowing_water,0,3);
+        for(int u=16;u<=27;u++) g(u,Y+1,2,Blocks.flowing_water,0,3);
+    }
     private void clayPit(int p,int h) {
         box(p,2,B,2,13,B+h,13,Blocks.stone);box(p,6,B+1,6,8,B+h,8,Blocks.water);set(p,7,B,7,Blocks.clay);
     }
@@ -668,20 +797,27 @@ public final class MovementFixture {
     private List<String> nbtIds(String key) {List<String> out=new ArrayList<>();NBTTagList l=saved.getTagList(key,10);for(int i=0;i<l.tagCount();i++) out.add(l.getCompoundTagAt(i).getString("id")+(l.getCompoundTagAt(i).hasKey("feature")?" ("+l.getCompoundTagAt(i).getString("feature")+")":""));return out;}
     /** Clears one plot (fluids first, no neighbour updates), relays the catch floor and builds every case on it. */
     private void rebuild(int plot) {
-        clearEntities(plot);
-        for(int y=TOP;y>FLOOR;y--) for(int u=0;u<16;u++) for(int v=0;v<16;v++) set(plot,u,y,v,Blocks.air);
-        for(int u=0;u<16;u++) for(int v=0;v<16;v++) set(plot,u,FLOOR,v,Blocks.glowstone);
+        for(Case c:cases.values()) if(c.plot<plot&&plot<c.plot+c.span) return;  // built (and cleared) by the case spanning it
+        int span=1;for(Case c:cases.values()) if(c.plot==plot) span=Math.max(span,c.span);
+        for(int p=plot;p<plot+span;p++) {
+            clearEntities(p);
+            for(int y=TOP;y>FLOOR;y--) for(int u=0;u<16;u++) for(int v=0;v<16;v++) set(p,u,y,v,Blocks.air);
+            for(int u=0;u<16;u++) for(int v=0;v<16;v++) set(p,u,FLOOR,v,Blocks.glowstone);
+        }
         List<Runnable> done=new ArrayList<>();
         for(Case c:cases.values()) if(c.plot==plot&&!done.contains(c.build)) {c.build.run();done.add(c.build);}
-        clearEntities(plot);
+        for(int p=plot;p<plot+span;p++) clearEntities(p);
     }
-    private AxisAlignedBB plotBox(int plot) {
-        int wx=x0+(plot%4)*16,wz=z0+(plot/4)*16;return AxisAlignedBB.getBoundingBox(wx,FLOOR-2,wz,wx+16,TOP+2,wz+16);
+    private AxisAlignedBB plotBox(int plot) {return plotBox(plot,1);}
+    private AxisAlignedBB plotBox(int plot,int span) {
+        int wx=x0+(plot%4)*16,wz=z0+(plot/4)*16;return AxisAlignedBB.getBoundingBox(wx,FLOOR-2,wz,wx+16*span,TOP+2,wz+16);
     }
+    /** Items, falling blocks, xp and any mob a case released. */
     private int clearEntities(int plot) {
         int n=0;
         for(Object o:world().getEntitiesWithinAABB(Entity.class,plotBox(plot))) {
-            Entity e=(Entity)o;if(e instanceof EntityItem||e instanceof EntityFallingBlock||e instanceof EntityXPOrb) {e.setDead();n++;}
+            Entity e=(Entity)o;
+            if(e instanceof EntityItem||e instanceof EntityFallingBlock||e instanceof EntityXPOrb||e instanceof EntityLiving) {e.setDead();n++;}
         }
         return n;
     }
@@ -710,9 +846,11 @@ public final class MovementFixture {
         require();Case c=cases.get(name);if(c==null) throw new IllegalArgumentException("unknown movement case; see status.cases");
         EntityPlayerMP p=livePlayer();
         if(!p.getUniqueID().toString().equals(saved.getString("uuid"))) throw new IllegalArgumentException("fixture player mismatch");
-        fatal=0;fatalCause="";
+        fatal=0;fatalCause="";armed=null;mobReleased=-1;
         rebuild(c.plot);if(name.equals("obsidian_natural")) change("natural_flow_on");
-        resetPlayer(p,name);synchronized(items) {items.clear();broken.clear();dropped.clear();}
+        hostile(c.mob!=null);
+        resetPlayer(p,name);synchronized(items) {items.clear();broken.clear();dropped.clear();hurts.clear();}
+        armed=c.mob!=null?c:null;
         float yaw=params.has("yaw")?(float)Json.number(params,"yaw",c.yaw,-360,360):c.yaw;
         double[] s=abs(c.plot,c.su,c.sy,c.sv);
         p.playerNetServerHandler.setPlayerLocation(s[0],s[1],s[2],yaw,params.has("pitch")?(float)Json.number(params,"pitch",0,-90,90):0);
@@ -759,21 +897,23 @@ public final class MovementFixture {
             if(s!=null) inv.add(Json.GSON.toJsonTree(Json.object("slot",i,"id",Item.itemRegistry.getNameForObject(s.getItem()),"meta",s.getItemDamage(),"count",s.stackSize)));}
         JsonObject out=(JsonObject)Json.object("origin",Json.array(x0,FLOOR,z0),"pos",Json.array(p.posX,p.posY,p.posZ),"health",p.getHealth(),"burning",p.isBurning(),
             "fireTicks",fireTicks(p),"air",p.getAir(),"inWater",p.isInWater(),"inLava",p.handleLavaMovement(),"onGround",p.onGround,"dead",p.isDead||p.getHealth()<=0,"fatal",fatal,"fatalCause",fatalCause,"inventory",inv,
-            "serverTick",server.getTickCounter());
+            "serverTick",server.getTickCounter(),"difficulty",world().difficultySetting.name(),"mobReleasedTick",mobReleased);
+        synchronized(items) {JsonArray h=new JsonArray();for(JsonObject j:hurts) h.add(j);out.add("hurts",h);}
         String name=Json.string(params,"name","");
         if(name.isEmpty()) {out.add("cases",Json.GSON.toJsonTree(caseList()));out.add("picks",Json.GSON.toJsonTree(picks()));return out;}
         Case c=cases.get(name);if(c==null) throw new IllegalArgumentException("unknown movement case");
         JsonArray entities=new JsonArray();
-        for(Object o:world().getEntitiesWithinAABB(Entity.class,plotBox(c.plot))) {
+        for(Object o:world().getEntitiesWithinAABB(Entity.class,plotBox(c.plot,c.span))) {
             Entity e=(Entity)o;if(e instanceof EntityPlayerMP) continue;
             JsonObject j=(JsonObject)Json.object("type",net.minecraft.entity.EntityList.getEntityString(e),"pos",Json.array(e.posX,e.posY,e.posZ),"burning",e.isBurning(),"dead",e.isDead,"age",e.ticksExisted);
             if(e instanceof EntityItem item&&item.getEntityItem()!=null) {j.addProperty("item",Item.itemRegistry.getNameForObject(item.getEntityItem().getItem()));j.addProperty("count",item.getEntityItem().stackSize);}
             entities.add(j);
         }
         JsonArray fluids=new JsonArray();
-        for(int u=0;u<16;u++) for(int v=0;v<16;v++) for(int y=FLOOR+1;y<=B+8;y++) {
+        for(int u=0;u<16*c.span;u++) for(int v=0;v<16;v++) for(int y=FLOOR+1;y<=(c.span>1?TOP:B+8);y++) {
             int[] a=absBlock(c.plot,u,y,v);Block b=world().getBlock(a[0],a[1],a[2]);
-            if(b instanceof BlockLiquid||b==Blocks.obsidian||(b==Blocks.cobblestone||b==Blocks.stone&&c.plot==16&&y<=B+2&&u>=6&&u<=10&&v>=6&&v<=10)&&c.plot>=15||b==Blocks.gravel)
+            if(b instanceof BlockLiquid||b==Blocks.obsidian||(b==Blocks.cobblestone||b==Blocks.stone&&c.plot==16&&y<=B+2&&u>=6&&u<=10&&v>=6&&v<=10)&&c.plot>=15||b==Blocks.gravel
+                ||c.span>1&&b==Blocks.stone)
                 fluids.add(Json.array(a[0],a[1],a[2],Block.blockRegistry.getNameForObject(b),world().getBlockMetadata(a[0],a[1],a[2])));
         }
         out.add("entities",entities);out.add("blocks",fluids);out.add("items",Json.GSON.toJsonTree(itemFates()));
@@ -796,6 +936,7 @@ public final class MovementFixture {
     }
     Object restore() throws Exception {
         if(saved==null) return Json.object("restored",false);
+        armed=null;hostile(false);
         EntityPlayerMP p=livePlayer();
         if(!p.getUniqueID().toString().equals(saved.getString("uuid"))) throw new IllegalArgumentException("fixture player mismatch");
         p.closeScreen();p.inventory.setItemStack(null);
