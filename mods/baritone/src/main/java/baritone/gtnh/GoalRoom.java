@@ -19,7 +19,8 @@ import net.minecraft.world.World;
  * give, or an obstruction the job may break leaves the goal to the search. The body is the player's 0.6 x 1.8 box at each
  * feet height the cell offers: its floor, or the top of whatever stands in it or up to half a block below (a slab, soul
  * sand, a cauldron's bottom). It needs something under it, unless the job may place a floor or the column holds a fluid
- * or something climbable, as the game says.
+ * or something climbable, as the game says. A cell with no box counts against the body when the movement model keeps
+ * the body out of it (a flowing or unswimmable fluid) and cannot break it.
  */
 final class GoalRoom {
     private GoalRoom(){}
@@ -34,6 +35,9 @@ final class GoalRoom {
         boolean clears(int x,int y,int z);
         /** A body can be held here without a floor: a fluid, or a block the game calls climbable. */
         boolean holds(int x,int y,int z);
+        /** A cell with no collision box the movement model still keeps the body out of (a flowing or unswimmable fluid, a
+         *  hazard) and the job cannot break: no path ends with the body in it. */
+        default boolean enters(int x,int y,int z){return true;}
         Map<String,Object> block(int x,int y,int z);
     }
     /** Cells judged at most: a near goal of radius 3 is 123. */
@@ -82,6 +86,8 @@ final class GoalRoom {
         out.put("why","no_room_for_the_body");
         // What the body standing on the cell's floor runs into: the cell and the one above first, as the model names them.
         List<Map<String,Object>> obstructions=new ArrayList<>();
+        for(int dy=0;dy<=1;dy++){var s=seen.get(key(x,y+dy,z));
+            if(s!=null&&s.boxes().isEmpty()&&!terrain.enters(x,y+dy,z)){Map<String,Object> row=new LinkedHashMap<>();row.put("pos",List.of(x,y+dy,z));row.putAll(terrain.block(x,y+dy,z));row.put("pathable",false);obstructions.add(row);}}
         for(int dy:new int[]{0,1,-1,2})obstruction(x,y+dy,z,x,y,z,seen,terrain,obstructions);
         for(int bx=x-1;bx<=x+1;bx++)for(int by=y-1;by<=y+2;by++)for(int bz=z-1;bz<=z+1;bz++)
             if(bx!=x||bz!=z)obstruction(bx,by,bz,x,y,z,seen,terrain,obstructions);
@@ -114,6 +120,8 @@ final class GoalRoom {
             all.addAll(s.boxes());if(!s.clears())solid.addAll(s.boxes());
             if(bx==x&&bz==z&&by<=y+1&&s.holds())held=true;
         }
+        // The model's own word on the body's cells that have no box: one it keeps the body out of ends every path short.
+        for(int by=y;by<=y+1;by++)if(seen.get(key(x,by,z)).boxes().isEmpty()&&!terrain.enters(x,by,z))return Room.BLOCKED;
         List<Double> feet=new ArrayList<>();feet.add((double)y);
         for(double[] b:all)if(b[4]>=y-.5&&b[4]<y+1&&b[4]!=y&&b[0]<x+1&&b[3]>x&&b[2]<z+1&&b[5]>z)feet.add(b[4]);
         boolean fits=false;
@@ -169,6 +177,16 @@ final class GoalRoom {
                 if(!allowBreak)return false;
                 if(tools==null||!MiningTools.onGameThread())return true;
                 var s=new IBlockState(world.getBlock(x,y,z),world.getBlockMetadata(x,y,z),world,x,y,z);
+                return !BlockRules.neverBreak(s)&&tools.getStrVsBlock(s)>0;
+            }
+            @Override public boolean enters(int x,int y,int z){
+                if(y<0||y>255)return true;
+                try{if(baritone.pathing.movement.MovementHelper.canWalkThrough(bsi,x,y,z))return true;}catch(RuntimeException|LinkageError unknown){return true;}
+                Block b=world.getBlock(x,y,z);
+                if(b instanceof net.minecraft.block.BlockLiquid||ForgeFluids.fluid(b))return false; // a fluid is not broken
+                if(!allowBreak)return false;
+                if(tools==null||!MiningTools.onGameThread())return true;
+                var s=new IBlockState(b,world.getBlockMetadata(x,y,z),world,x,y,z);
                 return !BlockRules.neverBreak(s)&&tools.getStrVsBlock(s)>0;
             }
             @Override public boolean holds(int x,int y,int z){

@@ -20,6 +20,7 @@
 
 package baritone.pathing.path;
 
+import baritone.gtnh.pathing.MovementTrace;
 import baritone.Baritone;
 import baritone.api.pathing.calc.IPath;
 import baritone.api.pathing.movement.ActionCosts;
@@ -142,9 +143,9 @@ public class PathExecutor implements IPathExecutor, Helper {
         Tuple<Double, BlockPos> status = closestPathPos(path);
         if (possiblyOffPath(status, MAX_DIST_FROM_PATH)) {
             ticksAway++;
-            System.out.println("FAR AWAY FROM PATH FOR " + ticksAway + " TICKS. Current distance: " + status.getFirst() + ". Threshold: " + MAX_DIST_FROM_PATH);
+            // ModdedBench: one debug line when it gives up, not a stdout line every tick it is away
             if (ticksAway > MAX_TICKS_AWAY) {
-                logDebug("Too far away from path for too long, cancelling path");
+                logDebug("Too far away from path for too long (" + status.getFirst() + " > " + MAX_DIST_FROM_PATH + "), cancelling path");
                 cancel();
                 return false;
             }
@@ -312,6 +313,7 @@ public class PathExecutor implements IPathExecutor, Helper {
         detail.put("touching", baritone.gtnh.BlockShapes.touching(ctx.player()));
         detail.putAll(extra);
         BetterBlockPos src = movement.getSrc(), dest = movement.getDest();
+        MovementTrace.event(kind, detail);
         return snags().failed(new Snags.Edge(src.x, src.y, src.z, dest.x, dest.y, dest.z), retries, detail);
     }
 

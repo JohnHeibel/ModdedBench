@@ -276,7 +276,10 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
         if (goal == null) {
             return false;
         }
-        if (goal.isInGoal(ctx.playerFeet()) || goal.isInGoal(expectedSegmentStart)) {
+        // ModdedBench: only the path start in the goal means there is nothing to search. Upstream also stopped when the
+        // feet were in it, while CustomGoalProcess keeps asking until both are: a player overhanging the goal cell from
+        // the block that holds it up got no search and no arrival, and stood still until the job stalled.
+        if (goal.isInGoal(expectedSegmentStart)) {
             return false;
         }
         synchronized (pathPlanLock) {

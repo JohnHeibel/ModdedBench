@@ -684,6 +684,12 @@ public final class Settings {
     public final Setting<Boolean> chatDebug = new Setting<>(false);
 
     /**
+     * ModdedBench: record every movement tick (inputs, aim, position, crosshair) in a ring that nav.status returns.
+     * A diagnostic for replays; off in play.
+     */
+    public final Setting<Boolean> movementTrace = new Setting<>(false);
+
+    /**
      * Allow chat based control of Baritone. Most likely should be disabled when Baritone is imported for use in
      * something else
      */

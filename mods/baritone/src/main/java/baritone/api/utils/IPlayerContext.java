@@ -31,4 +31,16 @@ public interface IPlayerContext {
     static double eyeHeight(boolean sneak){return sneak?1.54:1.62;}
     default Optional<BlockPos> getSelectedBlock(){RayTraceResult r=objectMouseOver();return r!=null&&r.typeOfHit==RayTraceResult.Type.BLOCK?Optional.of(r.getBlockPos()):Optional.empty();}
     default boolean isLookingAt(BlockPos pos){return getSelectedBlock().equals(Optional.of(pos));}
+    /**
+     * ModdedBench: whether the look has come to `target` as nearly as it can. The look moves in mouse steps (0.15 degrees
+     * at the default sensitivity) plus the randomLooking jitter, so upstream's 0.01-degree test (isReallyCloseTo) mostly
+     * never passed, and whatever waited on it waited forever.
+     */
+    default boolean isAimSettled(Rotation target){
+        float f=minecraft().gameSettings.mouseSensitivity*0.6f+0.2f;
+        double tolerance=f*f*f*8.0f*0.15f+baritone.Baritone.settings().randomLooking.value+1e-3;
+        Rotation look=playerRotations();
+        double yaw=Math.abs(Rotation.normalizeYaw(look.getYaw())-Rotation.normalizeYaw(target.getYaw()));
+        return Math.min(yaw,360-yaw)<=tolerance&&Math.abs(look.getPitch()-target.getPitch())<=tolerance;
+    }
 }
