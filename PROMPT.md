@@ -891,6 +891,7 @@ shipped: once you start editing tools, `mb_tools_status` (what is loaded) and
 | Make something you will need again | the item's notes (they come back with `mb_recipes` and `mb_inventory`): is a line already making it? | if not, build or extend the line, note it on the item, take your share from its output |
 | Do a known chore of many steps by hand | `mb_run` with a script that chains the tools | give it a `name` only if you will run it again soon; discard it when the base changes |
 | Store, fetch or throw away items | `mb_move_items`: one call opens the block, shift-clicks whole stacks in and out, closes; selectors match id, meta, nbt_hash, nbt or name | barrels and drawers have no GUI: `mb_act` use_block with the stack in hand |
+| Hold an item (to place, use, eat, wield or throw it) | `mb_hold`: selects it on your hotbar, or swaps it there from your inventory | mining picks its own tool |
 | Use a GUI neither `mb_craft` nor `mb_move_items` can drive | `mb_act` (use_block) to open it, `mb_inventory(container=True)` | `mb_transfer`, `mb_click_slot`, `mb_gui`; if no tool can drive it, that is a missing primitive: write one |
 | Complete a quest | `mb_quest_detect` | `mb_quest_select_choice`, `mb_quest_claim`, then observe the quest and your inventory |
 | Wait for something | `mb_interrupt` (add a watch with a deadline) | `mb_wait`; `mb_interrupt_events` to replay what you missed |
@@ -955,6 +956,7 @@ and list what is loaded, with load errors.
 | `mb_transfer` | Move up to count (1..64) items through native clicks to explicit ordinary slots |
 | `mb_click_slot` | Click an observed slot with explicit stale-stack/cursor guards |
 | `mb_move_items` | Store, fetch and discard in ONE call, at anything with a GUI: it opens the block, shift-clicks whole stacks, and closes |
+| `mb_hold` | Put an item in your hand in ONE call: selects it on your hotbar, or swaps it there from your inventory and selects it |
 | `mb_craft` | Make something in ONE call, at any station with a GUI: it opens the station, moves the items, takes the result and closes |
 
 **`harness/tools/notes.py`**: Durable world notes (SQLite, one file per server world) and their surfacing as a side effect of play.
