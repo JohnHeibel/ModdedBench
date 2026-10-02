@@ -34,6 +34,7 @@ public final class ClientClock implements ClockHooks.Driver {
     private int resumeTicks, creditRan;
     private Session agent;
     final PausedFrame presentation=new PausedFrame(this);
+    private final SmoothView view=new SmoothView();
     private final PlanHold planHold=new PlanHold();
 
     public ClientClock(ClientRuntime runtime) { this.runtime=runtime; }
@@ -141,7 +142,7 @@ public final class ClientClock implements ClockHooks.Driver {
             Json.GSON.toJson(data).getBytes(StandardCharsets.UTF_8)));
     }
     @Override public void outgoing(Object packet) {runtime.ui.outgoing(packet);}
-    @Override public void frameRendered() {presentation.rendered();}
+    @Override public void frameRendered() {view.rendered();presentation.rendered();}
     @Override public boolean packet(Object packet,Object handler) {
         runtime.ui.incoming(packet);
         if(packet instanceof net.minecraft.network.play.server.S19PacketEntityStatus status
@@ -216,6 +217,7 @@ public final class ClientClock implements ClockHooks.Driver {
         });
         observationFrames.keySet().removeIf(id->!pending.containsKey(id));
         runtime.service(runtime.identity());
+        if(paused || stepBudget==0) view.settle();
         if(creditTick && paused) {
             // Plan-while-paused: the action's job plans with the world still paused, and its first tick follows the plan.
             if(planHold.hold(runtime::planningWhilePaused,runtime::whilePaused,System.nanoTime())) {
@@ -239,6 +241,7 @@ public final class ClientClock implements ClockHooks.Driver {
     @Override public void after() {
         if(!runningTick) return;
         runtime.endTick();
+        view.ticked();
         dev.modbench.api.ControlRegistry.memory().endTick();
         runningTick=false;
         if(resuming && !creditTick && !resumeSent) sendResume(); // after the tick's own packets, on the same connection
