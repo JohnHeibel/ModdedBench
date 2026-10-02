@@ -108,6 +108,11 @@ CASES: dict[str, dict] = {
     "lava_water_mix": dict(expect="succeed", bound=120, settle=200),
     "waterfall_climb": dict(expect="succeed", bound=250, settle=80),
     "dive_clay_stream": dict(expect="succeed", bound=450, mine=True, surface=True, settle=120),
+    # the long one (plots 37-39): every liquid hazard above in sequence, plus a zombie. Break (the dam) but no place;
+    # zombie hits are allowed down to hp_floor, any other damage (drowning, lava, fire, falls, suffocation) fails it.
+    # max_plans: a ~150-block course plans in many segments.
+    "liquid_gauntlet": dict(expect="succeed", bound=1400, settle=200, allow=(True, False),
+                            allow_damage=("mob",), hp_floor=6, max_plans=40),
     # script: the obsidian cases (movement_obsidian.py); fixture: the fixture case to build when it differs.
     "obsidian": dict(expect="script", script="simple"),
     "obsidian_natural": dict(expect="script", script="natural"),
@@ -288,7 +293,12 @@ class Course:
         created = self.s.call(FIX + ".create", timeout=300) if status is None else status
         self.evidence["origin"], self.evidence["picks"] = created["origin"], created.get("picks")
         self.cases = {c["name"]: c for c in created["cases"]}
-        try: self.evidence["settings"] = work.mb_settings("get", "allowSprint")
+        # Baritone saves settings changed at run time (nav.settings) in the client instance, and they persist across runs
+        # and into this course: every non-default is recorded and printed (a saved strictLiquidCheck once blocked a dam).
+        try:
+            rows = self.c.call("nav.settings", operation="get")["settings"]
+            self.evidence["settings"] = {r["name"]: r["value"] for r in rows if r.get("value") != r.get("default")}
+            print("non-default settings:", self.evidence["settings"] or "none", flush=True)
         except Exception as e: self.evidence["settings"] = str(e)
 
     def teardown(self):
@@ -385,6 +395,7 @@ class Course:
         after = self.s.call(FIX + ".status")
         samples = sampler.samples
         health_min = min([s["health"] for s in samples] + [after["health"]])
+        airs = [s["air"] for s in samples if isinstance(s.get("air"), (int, float))]
         result = {
             "trial": index, "yaw": yaw, "startActual": info.get("startActual"),
             "state": receipt.get("state") or ("succeeded" if kind == "ok" else "failed"),
@@ -392,6 +403,8 @@ class Course:
             "healthBefore": before["health"], "healthAfter": after["health"], "healthMin": health_min,
             "burned": any(s.get("burning") for s in samples) or after["burning"], "dead": after["dead"] or after.get("fatal", 0) > 0,
             "fatal": after.get("fatal"), "fatalCause": after.get("fatalCause") or None,
+            "airMin": min(airs) if airs else None, "hurts": after.get("hurts") or None,
+            "mobReleasedTick": after.get("mobReleasedTick") if (after.get("mobReleasedTick") or -1) >= 0 else None,
             "final": [round(v, 3) for v in after["pos"]], "maxDeviation": deviation(samples, info.get("route")),
             "minY": round(min([s["pos"][1] for s in samples] + [after["pos"][1]]), 3),
             "movementTypes": receipt.get("movementTypes"), "stall": receipt.get("stall"),
@@ -407,7 +420,11 @@ class Course:
     def judge(self, name: str, info: dict, r: dict) -> list[str]:
         spec, f = CASES[name], []
         succeeded = r["state"] == "succeeded"
-        if r["healthMin"] < r["healthBefore"] - 1e-6: f.append(f"health {r['healthBefore']}->{r['healthMin']}")
+        allowed = spec.get("allow_damage")
+        if r["healthMin"] < r["healthBefore"] - 1e-6:
+            causes = sorted({str(h.get("type")) for h in (r.get("hurts") or [])})
+            if not allowed or not causes or any(c not in allowed for c in causes) or r["healthMin"] < spec.get("hp_floor", 0):
+                f.append(f"health {r['healthBefore']}->{r['healthMin']}" + (f" ({', '.join(causes)})" if causes else ""))
         if r["burned"]: f.append("burned")
         if r["dead"]: f.append("died")
         refused_well = (not succeeded and (r["ticks"] or 1e9) <= REFUSE_TICKS and r["wallS"] <= REFUSE_WALL_S
@@ -422,7 +439,8 @@ class Course:
         if "minY" in info and r["minY"] < info["minY"]: f.append(f"fell to y={r['minY']} (floor {info['minY']})")
         if spec.get("max_dev") is not None and r["maxDeviation"] is not None and r["maxDeviation"] > spec["max_dev"]:
             f.append(f"deviation {r['maxDeviation']} > {spec['max_dev']}")
-        if r["log"] and r["log"]["spam"]: f.append(f"log spam: {r['log']['unreachable']} UNREACHABLE, {r['log']['plans']} plans")
+        lg = r["log"]
+        if lg and (lg["unreachable"] >= spec.get("max_unreachable", 3) or lg["plans"] >= spec.get("max_plans", 8)): f.append(f"log spam: {r['log']['unreachable']} UNREACHABLE, {r['log']['plans']} plans")
         idle, p = self.evidence.get("idle") or {}, r["perf"]
         if idle.get("clientTps") and p.get("clientTps") is not None and p["clientTps"] < PERF_MIN_TPS_RATIO * idle["clientTps"]:
             f.append(f"client tps {p['clientTps']} < 90% of idle {idle['clientTps']}")
