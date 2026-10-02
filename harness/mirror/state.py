@@ -21,6 +21,10 @@ SPAWNS = {0x0C, 0x0E, 0x0F, 0x10, 0x11}
 # GregTech payloads that say what a block at (int x, short y, int z) is: a machine's tile (0) and an ore's (3). Without
 # them a machine or ore renders as a missing texture, so they live with their chunk, like block updates.
 GT_BLOCKS = (b"\x00", b"\x03")
+# What a block holds rather than what it is: a tile entity's data, a sign's text, a GregTech machine or ore. A client
+# drops it unless the block already stands, and the log keeps only a block's newest change (servers re-send unchanged
+# blocks), so a late viewer gets all of it after every frame that places blocks.
+BLOCK_DATA = {"t", "s", "gt"}
 ARMOR = {5: 4, 6: 3, 7: 2, 8: 1}  # player container slot -> equipment slot
 
 
@@ -331,10 +335,12 @@ class Mirror:
         """Frames that bring a freshly logged-in viewer to the host's present, after LoginSuccess."""
         out = [*self.prelude, abilities()]
         out += [f for f in (self.spawnpos, self.time) if f] + [*self.weather.values(), *self.players.values(), *self.scores]
-        ordered = [((s, e[0]) for s, e in self.log.items()), iter(self.pinned.items()), iter(self.payloads.items()),
-                   iter(self.book.entries())]
+        held = lambda e: e[2] is not None and e[2][0] in BLOCK_DATA
+        ordered = [((s, e[0]) for s, e in self.log.items() if not held(e)), iter(self.pinned.items()),
+                   iter(self.payloads.items()), iter(self.book.entries())]
         if self.respawn: ordered.append(iter([self.respawn]))
         out += [f for _, f in heapq.merge(*ordered, key=lambda t: t[0])]
+        out += [e[0] for e in self.log.values() if held(e)]
         if self.unload:  # a bulk packet still held for one chunk also reloads its unloaded neighbours
             stale = {c for e in self.log.values() for c, _ in e[1] if c not in self.chunks}
             out += [frame(0x21, pack("ii", *c) + self.unload) for c in sorted(stale)]
