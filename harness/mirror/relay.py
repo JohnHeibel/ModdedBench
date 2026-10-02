@@ -9,9 +9,10 @@ world with a notice, and the next session's world replaces it in place, without 
 unless the dimension differs. The feed is mirrored to disk so a restarted relay comes back with the last world.
 """
 from __future__ import annotations
-import argparse, asyncio, hmac, json, os, secrets, ssl, struct, time
+import argparse, asyncio, collections, hmac, json, os, secrets, ssl, struct, time
 from pathlib import Path
-from .link import END, HEAD, HEARTBEAT, INVENTORY, LIVE, MAGIC, MAX, SNAPSHOT, header, proof, token, unheaded
+from . import board
+from .link import END, HEAD, HEARTBEAT, INVENTORY, LIVE, MAGIC, MAX, NEWS, SNAPSHOT, STATUS, header, proof, token, unheaded
 from .forwarder import clearing
 from .proxy import Stage
 from .state import Mirror
@@ -71,6 +72,8 @@ class Relay(Stage):
         self.secret, self.state, self.tail_cap = secret, state, tail_cap
         self.world, self.link, self.log = None, None, None
         self.inventory = None  # (window title, the agent's inventory as 45 wire slots)
+        self.status, self.news = {}, collections.deque(maxlen=3)  # the sidebar's status; the agent's latest lines
+        self.dim = None  # the dimension the viewers' clients are in, to know when they start a new client world
 
     # ---- viewers
     def refuse(self, name):
@@ -78,9 +81,10 @@ class Relay(Stage):
         if name.lower() == self.world.host.lower(): return "that name is the agent's; pick another"
 
     def welcome(self, v):
-        v.invsee, v.spoke = False, 0.0
+        v.invsee, v.spoke, v.board = False, 0.0, None
         v.hold(self.world.catch_up())
-        v.send([notice(f"you are watching {self.world.host}. Chat here reaches other spectators only; /invsee shows its inventory")])
+        v.send(list(self.news) + [notice(f"you are watching {self.world.host}. Chat here reaches other spectators only; /invsee shows its inventory")])
+        self.draw(v, len(self.viewers) + 1)
         if self.world.clear is not None: v.send([notice(FROZEN)])
         elif self.link is None: v.send([notice(DROPPED)])
 
@@ -114,6 +118,36 @@ class Relay(Stage):
         v.invsee = True
         v.send([frame(0x2D, pack("BB", WINDOW, 0) + string(self.inventory[0]) + pack("B?", 45, True)), self.window_items()])
 
+    def draw(self, v, watching: int | None = None):
+        """Brings v's sidebar up to date: created once per client world (v.board None), then only changed rows."""
+        rows = board.lines(self.status, len(self.viewers) if watching is None else watching)
+        out = board.created(rows) if v.board is None else board.updated(v.board, rows)
+        v.board = rows
+        if out: v.send(out)
+
+    def moved(self, frames: list[bytes]) -> bool:
+        """Follows the viewers' dimension through frames about to reach them; True if their clients start a new world
+        (a Respawn to another dimension), which forgets the sidebar."""
+        new = False
+        for data in frames:
+            for f in Splitter().feed(data):
+                pid, body = split(f)
+                if pid == 0x01: self.dim = Reader(body).u("iBb")[2]
+                elif pid == 0x07:
+                    dim = Reader(body).u("i")
+                    new |= dim != self.dim; self.dim = dim
+        return new
+
+    def draw_all(self, new_world: bool = False):
+        for v in self.viewers:
+            if new_world: v.board = None
+            self.draw(v)
+
+    async def ticker(self, every: float = 15.0):
+        while True:
+            await asyncio.sleep(every)
+            self.draw_all()
+
     def window_items(self) -> bytes:
         return frame(0x30, pack("Bh", WINDOW, 45) + self.inventory[1])
 
@@ -129,11 +163,15 @@ class Relay(Stage):
                 new = World(meta, entries)
                 if self.viewers and w:
                     if w.clear is None: w.settle()
-                    self.broadcast(new.into(w) + [notice(BACK)])
+                    moved = new.into(w)
+                    self.broadcast(moved + [notice(BACK)])
+                    if self.moved(moved): self.draw_all(new_world=True)
+                else: self.moved([f for _, f in new.snap])  # where a viewer joining now will be
                 self.world = new
         elif kind == LIVE and w and w.clear is None:
             w.tail.append(payload); w.tail_bytes += len(payload)
             self.broadcast([payload])
+            if self.moved([payload]): self.draw_all(new_world=True)
             if w.tail_bytes > self.tail_cap:
                 self.kick("the spectator feed overflowed; rejoin shortly"); self.world = None
         elif kind == INVENTORY:
@@ -142,6 +180,11 @@ class Relay(Stage):
             f = self.window_items()
             for v in self.viewers:
                 if getattr(v, "invsee", False): v.send([f])
+        elif kind == STATUS:
+            self.status = json.loads(payload); self.draw_all()
+        elif kind == NEWS:
+            line = board.news(w.host if w else "the agent", json.loads(payload))
+            self.news.append(line); self.broadcast([line])
         elif kind == END and w and w.clear is None:
             meta, entries = unheaded(payload)
             if meta["session"] != w.session: return
@@ -206,7 +249,7 @@ class Relay(Stage):
         vs = await asyncio.start_server(self.viewer, *viewers)
         print(f"relay: viewers on {viewers[0]}:{vs.sockets[0].getsockname()[1]}, "
               f"link on {link[0]}:{ls.sockets[0].getsockname()[1]}{'' if tls else ' (plain)'}", flush=True)
-        await asyncio.gather(vs.serve_forever(), ls.serve_forever(), self.keepalive())
+        await asyncio.gather(vs.serve_forever(), ls.serve_forever(), self.keepalive(), self.ticker())
 
 
 def main():

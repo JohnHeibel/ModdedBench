@@ -13,6 +13,8 @@ Message: u8 kind, u32 length, payload.
   END        header {session, dim, world} then entries: the frames that empty a viewer's world (the first `world`
              of them are world-scoped, which a dimension change does anyway), then the tab list's
   INVENTORY  header {title} then the agent's inventory as 45 wire item slots, laid out as a 5-row chest
+  STATUS     JSON: the overlay's public status for the sidebar {model, chapter, quest, claims, started}
+  NEWS       JSON: one line of the agent's own story {kind: say|mark, text}
 Header: u32 length, JSON. Entry: varint gate (FML|HS replies the viewer must have sent first), then a frame.
 """
 from __future__ import annotations
@@ -21,7 +23,7 @@ from .wire import Reader, varint
 
 MAGIC = b"MBRELAY1\n"
 NONCE = 32
-HEARTBEAT, SNAPSHOT, LIVE, END, INVENTORY = 0, 1, 2, 3, 4
+HEARTBEAT, SNAPSHOT, LIVE, END, INVENTORY, STATUS, NEWS = 0, 1, 2, 3, 4, 5, 6
 HEAD = struct.Struct(">BI")
 MAX = 256 << 20  # bytes in one message
 
