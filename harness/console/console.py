@@ -51,7 +51,8 @@ class Shortener:
     """
     ASK = {"goal": (70, "This is an AI agent's current goal in a modded Minecraft factory run. Rewrite it as one short imperative goal of at most 9 words. Keep the specific item or machine. Add nothing that is not there. Answer with the goal only."),
            "say": (220, "This is a remark by an AI agent playing a modded Minecraft factory game, shown to stream viewers. Rewrite it in the first person in at most two short plain sentences, 30 words in all. Keep concrete items, numbers and the reason for what it does. Drop tables, lists and formatting. Add nothing that is not there. Answer with the rewrite only."),
-           "note": (140, "This is a note an AI agent keeps in its journal while playing a modded Minecraft factory game; its first line is the title. Say for stream viewers what the note records, in at most two short plain sentences, 30 words in all. Keep the key items, machines and numbers; drop coordinates, slot numbers and abbreviations. Add nothing that is not there. Answer with the summary only.")}
+           "note": (140, "This is a note an AI agent keeps in its journal while playing a modded Minecraft factory game; its first line is the title. Say for stream viewers what the note records, in at most four short plain sentences, 70 words in all. Keep the key items, machines and numbers; drop coordinates, slot numbers and abbreviations. Add nothing that is not there. Answer with the summary only."),
+           "script": (1, "This is a Python script an AI agent wrote to chain its game tools (mb_craft, mb_move_items, mb_process and so on) in a modded Minecraft factory game, with the arguments it was started with. Say for stream viewers what this run of it does, in at most three short plain sentences, 50 words in all: whether it crafts, moves items, mines, travels, smelts or tends machines, which items, recipes and machines it handles, and the quantities the arguments set. Drop coordinates and slot numbers. Add nothing that is not there. Answer with the summary only.")}
 
     def __init__(self, path):
         self.path, self.lock, self.pending, self.slots = path, threading.Lock(), set(), threading.Semaphore(2)
@@ -60,7 +61,7 @@ class Shortener:
         except (OSError, ValueError): self.cache = {}
 
     def get(self, kind, text):
-        text = str(text or ""); key = kind + hashlib.sha1(text.encode()).hexdigest()[:16]
+        text = str(text or ""); key = kind + hashlib.sha1((self.ASK[kind][1] + "\n" + text).encode()).hexdigest()[:16]  # a new instruction asks again
         if len(text) <= self.ASK[kind][0] or not os.environ.get("OPENROUTER_API_KEY"): return None
         with self.lock:
             if key in self.cache or key in self.pending: return self.cache.get(key)
@@ -70,7 +71,7 @@ class Shortener:
     def fetch(self, kind, text, key):
         try:
             with self.slots:
-                body = {"model": self.model, "max_tokens": 120, "temperature": 0.2, "reasoning": {"enabled": False},  # a hybrid model would spend the 120 tokens thinking
+                body = {"model": self.model, "max_tokens": 240, "temperature": 0.2, "reasoning": {"enabled": False},  # a hybrid model would spend the tokens thinking
                         "messages": [{"role": "system", "content": self.ASK[kind][1]}, {"role": "user", "content": text[:4000]}]}
                 request = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions", json.dumps(body).encode(),
                                                  {"Authorization": "Bearer " + os.environ["OPENROUTER_API_KEY"], "Content-Type": "application/json"})
@@ -160,6 +161,9 @@ class Console:
         except (OSError, ValueError): pops = []
         for p in pops:  # a journal page as the agent writes it is dense shorthand; the card shows a plain summary once it arrives
             if p.get("kind") == "note" and (p.get("data") or {}).get("text"): p["data"]["short"] = self.shorten.get("note", f'{p["data"].get("title") or ""}\n{p["data"]["text"]}')
+            if p.get("kind") == "script":  # the code goes to the summary, not to the page
+                d = p.get("data") or {}; code = d.pop("code", "")
+                if code: d["short"] = self.shorten.get("script", f'script {d.get("name") or "(one-off)"}, arguments {json.dumps(d.get("args") or {})}\n{code}')
         goal = dict(live.get("goal") or {}); goal["short"] = self.shorten.get("goal", goal.get("subgoal"))
         for entry in [e for e in feed if e.get("kind") == "say"][-12:]: entry["short"] = self.shorten.get("say", entry.get("text"))
         try: target = re.search(r'^TARGET_QUEST\s*=\s*"([^"<]+)"', (BRIEF / "PROMPT.md").read_text(encoding="utf-8"), re.M).group(1)

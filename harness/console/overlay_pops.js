@@ -241,16 +241,27 @@ function block(p) {
   return el;
 }
 function note(p) {
-  const d = p.data, el = document.createElement("div"); el.className = "pop small";
+  const d = p.data, el = document.createElement("div"); el.className = "pop small note";
   el.innerHTML = `<div class="head"><i class="eye"></i>${d.wrote ? "Writing in its journal" : "Reading its journal"}<span class="tool">${esc(p.tool)}</span></div>` +
     `<div class="paper"><b>${esc(d.title)}</b>${d.titles ? d.titles.map(t => `<div>· ${esc(t)}</div>`).join("") : `<p>${esc(d.short || d.text)}</p>`}</div><div class="timer"></div>`;
   return el;
 }
 
-const MAKE = {view, down, radar, map, shot, scan, inventory, recipe, block, note}, SMALL = new Set(["block", "note"]);
-const LIFE = {big: 12000, small: 6000}, DWELL = 4500, QUIET = 7500;  // a small card never cuts into the first QUIET ms of a big one
+/* a script it started: what it does in words (arrives a poll or two later), the arguments it was given, the tools it chains */
+function script(p) {
+  const d = p.data, el = document.createElement("div"); el.className = "pop small note";
+  const args = Object.entries(d.args || {}), calls = (d.calls || []).map(c => c.replace(/^(mb|bq|jei)_/, "").replace(/_/g, " "));
+  el.innerHTML = `<div class="head"><i class="eye"></i>Running a script<span class="tool">${esc(d.name || "one-off")}</span></div>` +
+    `<div class="paper"><b>${esc(d.name ? d.name.replace(/_/g, " ") : "a one-off script")}</b><p>${esc(d.short || "…")}</p>` +
+    (args.length ? `<div class="args">${args.map(([k, v]) => `<div><em>${esc(k)}</em> ${esc(v)}</div>`).join("")}</div>` : "") +
+    (calls.length ? `<div class="uses">uses: ${esc(calls.join(", "))}</div>` : "") + `</div><div class="timer"></div>`;
+  return el;
+}
+
+const MAKE = {view, down, radar, map, shot, scan, inventory, recipe, block, note, script}, SMALL = new Set(["block", "note", "script"]);
+const LIFE = {big: 12000, small: 6000}, DWELL = 9000, QUIET = 12000;  // a card stays DWELL ms before the next replaces it; a small one never cuts into the first QUIET ms of a big one
 let shown = null, pending = null, seen = null;
-function life(k) { return SMALL.has(k) ? LIFE.small : LIFE.big; }
+function life(k) { return k === "block" ? LIFE.small : LIFE.big; }  // a journal page or a script is a paragraph: read time of a big card
 function swap(p) {
   if (shown) { const old = shown.el; old.dead = true; old.classList.add("out"); setTimeout(() => old.remove(), 360); }
   shown = null; if (!p) return;
@@ -278,7 +289,7 @@ function pops(list, now) {
   for (const p of list) if (p.seq > seen) { seen = p.seq; offer(p); }
   // a journal summary arrives a poll or two after its card: swap it into the card already up or waiting
   for (const p of list) {
-    if (p.kind !== "note" || !p.data.short) continue;
+    if ((p.kind !== "note" && p.kind !== "script") || !p.data.short) continue;
     if (pending && pending.seq === p.seq) pending = p;
     if (shown && shown.p.seq === p.seq && !shown.p.data.short) { shown.p = p; const t = shown.el.querySelector(".paper p"); if (t) t.textContent = p.data.short; }
   }
