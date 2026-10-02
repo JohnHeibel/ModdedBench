@@ -11,12 +11,12 @@ unless the dimension differs. The feed is mirrored to disk so a restarted relay 
 from __future__ import annotations
 import argparse, asyncio, collections, hmac, json, os, secrets, ssl, struct, time
 from pathlib import Path
-from . import board
+from . import board, bq
 from .link import END, HEAD, HEARTBEAT, INVENTORY, LIVE, MAGIC, MAX, NEWS, SNAPSHOT, STATUS, header, proof, token, unheaded
 from .forwarder import clearing
 from .proxy import Stage
 from .state import EYE, SPECTATOR, VIEWER_EID, Mirror, abilities
-from .wire import Reader, Splitter, frame, pack, split, string, varint
+from .wire import Reader, Splitter, frame, pack, payload, split, string, varint
 
 FROZEN = "the agent is reconnecting; this view is frozen until it returns"
 DROPPED = "the feed from the agent's PC dropped; this view is frozen until it is back"
@@ -82,14 +82,15 @@ class Relay(Stage):
     motd = "ModdedBench spectators"
 
     def __init__(self, secret: bytes, state: Path | None = None, max_viewers: int = 50, viewer_queue: int = 64 << 20,
-                 tail_cap: int = 512 << 20):
-        super().__init__(max_viewers, viewer_queue)
+                 tail_cap: int = 512 << 20, online: bool = False):
+        super().__init__(max_viewers, viewer_queue, online)
         self.secret, self.state, self.tail_cap = secret, state, tail_cap
         self.world, self.link, self.log = None, None, None
         self.inventory = None  # (window title, the agent's inventory as 45 wire slots)
         self.status, self.news = {}, collections.deque(maxlen=3)  # the sidebar's status; the agent's latest lines
         self.dim = None  # the dimension the viewers' clients are in, to know when they start a new client world
         self.eid, self.agent = None, None  # the agent's entity id; where it stands as [x, feet y, z, yaw, pitch]
+        self.uuid, self.joiner = None, bq.Joiner()  # the agent's account, whose quest book viewers read; BQ messages live
 
     # ---- viewers
     def refuse(self, name):
@@ -150,10 +151,10 @@ class Relay(Stage):
         v.send([frame(0x08, pack("dddff?", x, y + EYE, z, yaw, pitch, False))])
 
     def fit(self, v) -> list[bytes]:
-        """v's own game mode (with flight), then night vision if v turned it on."""
+        """v's own game mode (with flight), then night vision if v turned it on, then the agent's quest book as v's."""
         out = [frame(0x2B, pack("Bf", 3, SPECTATOR if v.spectating else ADVENTURE)), abilities()]
         if v.night: out.append(night_vision(True)); v.night_at = time.monotonic()
-        return out
+        return out + (bq.named(self.uuid, v.name) if self.uuid else [])
 
     def reset(self, new_world: bool):
         """After frames that reset the viewers' players (a Respawn, or a world replaced in place): each viewer's mode
@@ -170,19 +171,27 @@ class Relay(Stage):
         v.board = rows
         if out: v.send(out)
 
-    def moved(self, frames: list[bytes]) -> bool:
-        """Follows frames about to reach the viewers for their dimension and where the agent is; True if their clients
-        start a new world (a Respawn to another dimension), which resets the player and forgets the sidebar."""
-        new = False
+    def watch(self, frames: list[bytes]) -> set[str]:
+        """Follows frames about to reach the viewers for their dimension, where the agent is, and the quest book's
+        names. Says "world" if their clients start a new world (a Respawn to another dimension), which resets the
+        player and forgets the sidebar, and "names" if the agent's name_sync took the book back from the viewers."""
+        seen = set()
         for data in frames:
             for f in Splitter().feed(data):
                 pid, body = split(f)
-                if pid not in (0x01, 0x07, 0x08, 0x0C, 0x18): continue
+                if pid not in (0x01, 0x07, 0x08, 0x0C, 0x18, 0x3F): continue
                 r = Reader(body)
-                if pid == 0x01: self.dim = r.u("iBb")[2]
+                if pid == 0x3F:
+                    channel, part = payload(body)
+                    if channel != bq.CHANNEL: continue
+                    try: whole = self.joiner.feed(part)
+                    except Exception: self.joiner = bq.Joiner(); continue  # noqa: BLE001 - the client skips it too
+                    if whole and bq.NAMES in whole: seen.add("names")
+                elif pid == 0x01: self.dim = r.u("iBb")[2]
                 elif pid == 0x07:
                     dim = r.u("i")
-                    new |= dim != self.dim; self.dim = dim; self.agent = None
+                    if dim != self.dim: seen.add("world")
+                    self.dim, self.agent = dim, None
                 elif pid == 0x08:  # viewers are placed where the agent is
                     x, y, z, yaw, pitch = r.u("dddff"); self.agent = [x, y - EYE, z, yaw, pitch]
                 elif pid == 0x18:
@@ -191,7 +200,7 @@ class Relay(Stage):
                     r.string(); r.string()
                     for _ in range(3 * r.varint()): r.string()
                     self.agent = located(*r.u("iiiBB"))
-        return new
+        return seen
 
     def draw_all(self):
         for v in self.viewers: self.draw(v)
@@ -212,7 +221,7 @@ class Relay(Stage):
         w = self.world
         if kind == SNAPSHOT:
             meta, entries = unheaded(payload)
-            self.eid, self.agent = meta.get("eid"), meta.get("pos")
+            self.eid, self.agent, self.uuid = meta.get("eid"), meta.get("pos"), meta.get("uuid")
             if w and w.session == meta["session"] and w.clear is None:  # a refresh: viewers already have all this
                 w.snap, w.respawn = entries[meta["respawn"]:], [f for _, f in entries[:meta["respawn"]]]
                 w.tail, w.tail_bytes = [], 0
@@ -222,13 +231,16 @@ class Relay(Stage):
                     if w.clear is None: w.settle()
                     moved = new.into(w)
                     self.broadcast(moved + [notice(BACK)])
-                    self.reset(self.moved(moved))
-                else: self.moved([f for _, f in new.snap])  # where a viewer joining now will be
+                    self.reset("world" in self.watch(moved))
+                else: self.watch([f for _, f in new.snap])  # where a viewer joining now will be
                 self.world = new
         elif kind == LIVE and w and w.clear is None:
             w.tail.append(payload); w.tail_bytes += len(payload)
             self.broadcast([payload])
-            if self.moved([payload]): self.reset(new_world=True)
+            seen = self.watch([payload])
+            if "world" in seen: self.reset(new_world=True)
+            elif "names" in seen and self.uuid:
+                for v in self.viewers: v.send(bq.named(self.uuid, v.name))
             if w.tail_bytes > self.tail_cap:
                 self.kick("the spectator feed overflowed; rejoin shortly"); self.world = None
         elif kind == INVENTORY:
@@ -313,18 +325,19 @@ def main():
     from .__main__ import address
     from .forwarder import _loopback
     p = argparse.ArgumentParser(prog="python -m harness.mirror.relay", description=__doc__)
-    p.add_argument("--viewers", type=address, default=("0.0.0.0", 25565), help="where viewers connect (offline mode)")
+    p.add_argument("--viewers", type=address, default=("0.0.0.0", 25565), help="where viewers connect")
     p.add_argument("--link", type=address, default=("0.0.0.0", 25591), help="where the forwarder links in")
     p.add_argument("--cert", help="TLS certificate for the link"); p.add_argument("--key", help="its private key")
     p.add_argument("--state", type=Path, default=Path("relay-state"), help="where the last world is kept across restarts")
     p.add_argument("--max-viewers", type=int, default=50)
+    p.add_argument("--offline", action="store_true", help="no Mojang account check (tests on a LAN); viewers' quest books stay empty")
     a = p.parse_args()
     tls = None
     if a.cert:
         tls = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH); tls.load_cert_chain(a.cert, a.key)
     elif not _loopback(a.link[0]):
         raise SystemExit("a link off loopback needs --cert and --key")
-    relay = Relay(token(), a.state, a.max_viewers)
+    relay = Relay(token(), a.state, a.max_viewers, online=not a.offline)
     try: asyncio.run(relay.run(a.viewers, a.link, tls))
     except KeyboardInterrupt: pass
 

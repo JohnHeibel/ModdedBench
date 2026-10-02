@@ -65,8 +65,8 @@ class Tap:
 
 
 class Viewer:
-    def __init__(self, writer: asyncio.StreamWriter, name: str, cap: int):
-        self.w, self.name, self.cap = writer, name, cap
+    def __init__(self, reader, writer, name: str, uuid: str, cap: int):
+        self.r, self.w, self.name, self.uuid, self.cap = reader, writer, name, uuid, cap  # uuid: dashed
         self.q, self.size, self.closing, self.ev = [], 0, False, asyncio.Event()
         self.held, self.hs = [], 0  # (gate, frame) waiting on this viewer's FML handshake replies
 
@@ -172,13 +172,17 @@ class Feed:
 
 
 class Stage:
-    """The viewer side: greets 1.7.10 clients in offline mode, hands each the frames that catch it up, and ignores
-    everything a viewer sends except the Forge handshake replies that release those frames."""
+    """The viewer side: greets 1.7.10 clients, in online mode (auth.py) when asked, hands each the frames that catch
+    it up, and ignores everything a viewer sends except the Forge handshake replies that release those frames."""
     motd = "ModdedBench mirror"
 
-    def __init__(self, max_viewers: int = 8, viewer_queue: int = 64 << 20):
+    def __init__(self, max_viewers: int = 8, viewer_queue: int = 64 << 20, online: bool = False):
         self.max_viewers, self.viewer_queue, self.viewers = max_viewers, viewer_queue, set()
         self.greeting = 0  # connections still in their handshake; capped, as the port may be public
+        self.auth = None
+        if online:
+            from . import auth
+            self.auth = auth.Online()
 
     def refuse(self, name: str) -> str | None:
         """Why this viewer cannot join now, or None."""
@@ -201,13 +205,14 @@ class Stage:
         if self.greeting >= 4 * self.max_viewers: return w.close()
         self.greeting += 1
         try:
-            v = await asyncio.wait_for(self._greet(r, w), 15)
-        except (asyncio.TimeoutError, asyncio.IncompleteReadError, ValueError, ConnectionError, UnicodeDecodeError, struct.error):
+            v = await asyncio.wait_for(self._greet(r, w), 25)
+        except (asyncio.TimeoutError, asyncio.IncompleteReadError, ValueError, KeyError, OSError, UnicodeDecodeError, struct.error) as e:
+            if self.auth and not isinstance(e, (asyncio.IncompleteReadError, ConnectionError)): print(f"{self.motd}: a login failed: {e!r}", flush=True)
             v = None
         finally:
             self.greeting -= 1
         if v is None: return w.close()
-        drain = asyncio.create_task(self._drain(r, v))
+        drain = asyncio.create_task(self._drain(v.r, v))
         await v.pump()
         self.viewers.discard(v); drain.cancel()
 
@@ -234,8 +239,13 @@ class Stage:
         if why:
             w.write(disconnect(why, login=True)); await w.drain()
             return
-        v = Viewer(w, name, self.viewer_queue)
-        v.send([frame(0x02, string(offline_uuid(name)) + string(name))])
+        uuid = offline_uuid(name)
+        if self.auth:
+            r, w, uuid, name = await self.auth.login(r, w, name)
+            if uuid is None: return
+            for old in [o for o in self.viewers if o.uuid == uuid]: old.close("you joined again from somewhere else")
+        v = Viewer(r, w, name, uuid, self.viewer_queue)
+        v.send([frame(0x02, string(uuid) + string(name))])
         self.welcome(v)
         self.viewers.add(v)
         print(f"{self.motd}: viewer {name} joined ({len(self.viewers)} watching)", flush=True)
