@@ -8,6 +8,9 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-02** Farming rejected empty selector lists, preventing pickup-only jobs.
+  Explicit empty lists now disable individual farm phases; omitted fields retain
+  their defaults, and nonempty selectors keep their normal validation.
 - **2026-10-01** Container clicks aimed at an obstructed block centre could miss
   its exposed rim. Crafting and item moves now accept optional native face and
   hit coordinates; verified opening a buffered input hopper from ground level.

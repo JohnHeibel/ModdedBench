@@ -279,6 +279,9 @@ def mb_process(process: str, duration_ticks: int = 1200, goal: dict | None = Non
     defaults it used (vanilla crops, farmland and soul sand, bone meal, any item on the ground; seed:
     any plantable the soil accepts) and farmSeen what it could not work (openSoilWithoutSeed,
     cropSelectorsMatchingNothing). A crop selector with meta names its ripe state.
+    Explicit empty selector lists disable their phases; omitted fields keep defaults.
+    For pickup only, pass crops=[], soils=[], seeds=[], fertilizers=[] and the wanted collect selectors.
+    Harvesting breaks crop blocks; use native interactions for crops harvested by right-click.
     """
     if process not in {"goal", "explore", "get_to_block", "farm"}:
         raise ValueError("process must be goal, explore, get_to_block or farm")
