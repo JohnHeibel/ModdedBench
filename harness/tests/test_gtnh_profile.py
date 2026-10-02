@@ -516,6 +516,21 @@ class GTNHProfileTests(unittest.TestCase):
         build = fake.last("nav.build")[1]
         self.assertEqual(build["planId"],"p"); self.assertTrue(build["allowBreak"])
 
+    def test_drawing_subsets_keep_world_layer_heights(self):
+        import mbtools_gtnh.work as work
+        import mbtools_gtnh.plan as plan
+        fake = self.use(FakeKernel(lambda method, params: {}))
+        drawing = {"origin": [10, 60, 20], "layers": [{"y": 65, "rows": ["s"]},
+                   {"y": 62, "rows": ["s"]}], "legend": {"s": {"id": "minecraft:stone", "meta": 0}}}
+        work.mb_build_preview(drawing=drawing)
+        request = fake.last("nav.build_preview")[1]
+        self.assertEqual(request["origin"], [10, 60, 20])
+        self.assertEqual([c["pos"] for c in request["cells"]], [[0, 5, 0], [0, 2, 0]])
+        with self.assertRaises(ValueError):
+            plan.from_drawing({**drawing, "layers": [{"y": "highest block per column", "rows": ["s"]}]})
+        with self.assertRaises(ValueError):
+            plan.from_drawing({**drawing, "layers": [{"y": 65, "rows": ["s"]}] * 2})
+
     def test_schematic_import_and_build_use_java_plan_and_explicit_overrides(self):
         tools = module_with(self.loaded(), "mb_schematic_build")
         plan = {"plan":{"cells":[{"pos":[0,0,0],"id":"a:b"}],"origin":[0,0,0],"size":[1,1,1]},
