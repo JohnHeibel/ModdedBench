@@ -96,6 +96,45 @@ function view(p) {
   return el;
 }
 
+/* mb_build_preview / mb_build: the plan in 3D, blocks already right drawn solid, the ones to place dropping in as outlines, materials beside */
+function plan(p) {
+  const d = p.data, C = d.cells, [ox, oy, oz] = d.origin, todo = C.filter(c => c[4]).length;
+  const W = 1 + Math.max(...C.map(c => c[0])), H = 1 + Math.max(...C.map(c => c[1])), D = 1 + Math.max(...C.map(c => c[2]));
+  const el = card(d.building ? "Building" : "Planning a build", d.building ? "mb_build" : "mb_build_preview", `<b>${d.total} block${d.total > 1 ? "s" : ""}</b> at ${ox},${oy},${oz} · ` +
+    (d.building ? "placing them now" : `${todo} to place` + (d.correct ? ` · ${d.correct} already there` : "")));
+  const g = canvasIn(el), s = Math.min(30, 290 / ((W + D) * 0.866), 280 / ((W + D) / 2 + H)), dx = s * 0.866, dy = s / 2;
+  const cx = 18 + D * dx, cy = 16 + H * s, P = (x, y, z) => [cx + (x - z) * dx, cy + (x + z) * dy - y * s], key = KEY(), lx = Math.min(330, cx + W * dx + 20);
+  const order = [...C].sort((a, b) => a[1] - b[1] || a[2] - b[2] || a[0] - b[0]), ghosts = order.filter(c => c[4]);
+  const gap = Math.min(120, 2600 / Math.max(1, ghosts.length)), rank = new Map(ghosts.map((c, i) => [c, i]));
+  const FACES = [[[0, 1, 0], [1, 1, 0], [1, 1, 1], [0, 1, 1], 1], [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1], .78], [[1, 0, 0], [1, 0, 1], [1, 1, 1], [1, 1, 0], .6]];
+  function cube(c, alpha, lift, ghost) {
+    const col = colour(d.ids[c[3]]), q = v => { const r = P(c[0] + v[0], c[1] + v[1], c[2] + v[2]); return [r[0], r[1] - lift]; };
+    for (const f of FACES) {
+      g.beginPath(); f.slice(0, 4).forEach((v, i) => i ? g.lineTo(...q(v)) : g.moveTo(...q(v))); g.closePath();
+      g.globalAlpha = alpha * (ghost ? .35 : 1); g.fillStyle = shade(col, f[4]); g.fill();
+      if (ghost) { g.globalAlpha = alpha; g.strokeStyle = key; g.lineWidth = 1.2; g.stroke(); }
+    }
+    g.globalAlpha = 1;
+  }
+  animate(el, t => {
+    g.clearRect(0, 0, 520, 310);
+    for (const c of order) {
+      if (!c[4]) { cube(c, ease(t / 500), 0, false); continue; }
+      const k = ease((t - 500 - rank.get(c) * gap) / 350); if (k > 0) cube(c, k, (1 - k) * 40, true);
+    }
+    const la = ease((t - 300) / 500); if (la <= 0) return;
+    g.globalAlpha = la; g.font = "16px Monocraft"; g.textBaseline = "top"; let y = 22;
+    for (const m of d.materials) {
+      g.fillStyle = colour(m.id || m.name); g.fillRect(lx, y + 4, 10, 10); g.fillStyle = "#e9eaee";
+      g.fillText(`${String(m.name).slice(0, 13)}${m.needed ? " ×" + m.needed : ""}`, lx + 18, y);
+      if (m.missing) { g.fillStyle = "#ff6b6b"; g.fillText(`${m.missing} short`, lx + 18, y + 19); y += 19; }
+      y += 28;
+    }
+    g.globalAlpha = 1;
+  }, 900 + ghosts.length * gap + 1500);
+  return el;
+}
+
 /* mb_view look_down: the top block of every column, as a map that scans in row by row, then its things get names */
 function down(p) {
   const d = p.data, rows = d.layers[0].rows, H = rows.length, W = rows[0].length, [ox, , oz] = d.origin;
@@ -258,7 +297,7 @@ function script(p) {
   return el;
 }
 
-const MAKE = {view, down, radar, map, shot, scan, inventory, recipe, block, note, script}, SMALL = new Set(["block", "note", "script"]);
+const MAKE = {view, plan, down, radar, map, shot, scan, inventory, recipe, block, note, script}, SMALL = new Set(["block", "note", "script"]);
 const LIFE = {big: 12000, small: 6000}, DWELL = 9000, QUIET = 12000;  // a card stays DWELL ms before the next replaces it; a small one never cuts into the first QUIET ms of a big one
 let shown = null, pending = null, seen = null;
 function life(k) { return k === "block" ? LIFE.small : LIFE.big; }  // a journal page or a script is a paragraph: read time of a big card

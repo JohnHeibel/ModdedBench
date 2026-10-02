@@ -212,6 +212,8 @@ class Console:
                 self.backups = subprocess.Popen([*PY, str(REPO / "harness" / "launcher" / "backup.py"), "loop"], cwd=REPO, stdout=log.open("ab"), stderr=subprocess.STDOUT, creationflags=NO_WINDOW)
             extra = ["--", "-m", a["model"]] if re.fullmatch(r"[\w.\-]{1,64}", a.get("model") or "") else []
             if a.get("effort") in ("minimal", "low", "medium", "high", "xhigh"): extra = [*(extra or ["--"]), "-c", f'model_reasoning_effort="{a["effort"]}"']
+            # Codex's readable summary of each reasoning step, for the stream's feed; the model's own reasoning is unchanged by it.
+            extra = [*(extra or ["--"]), "-c", 'model_reasoning_summary="detailed"']
             # Turns are recovery, not a unit of the run: the run is sized in minutes and tokens, and a turn is cut where it stands.
             budget = ["--max-turns", "200", "--max-minutes", str(max(1, min(float(a.get("maxMinutes") or 120), 100000))), "--max-tokens", str(max(100000, min(int(a.get("maxTokens") or 50_000_000), 10**11)))]
             loop = "rm -f .state/STOP; p=PROMPT.md; [ -f /brief/PROMPT.md ] && p=/brief/PROMPT.md; exec python3 harness/runner/codex_loop.py --prompt $p \"$@\" >/dev/null 2>&1"
