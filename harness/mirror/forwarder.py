@@ -159,55 +159,66 @@ class Forwarder(Feed):
 
     # ---- the tap
     async def follow(self, tap_dir: Path, poll: float = 0.5, chunk: int = 1 << 20):
-        """Reads the newest connection file the client's tap has written, from its first byte, and keeps up with it.
-        A newer file is a newer connection, and the older one is over."""
-        path, f, taps, buf, magic = None, None, {}, b"", False
+        """Reads every connection file the client's tap writes, each from its first byte, oldest first, and keeps up
+        with them. Which of them is the game is the protocol's business, as with any client: a server list ping is a
+        connection too."""
+        files, done = {}, set()
         try:
             while True:
-                newest = max(tap_dir.glob("*.tap"), key=_started, default=None)
-                if newest is not None and newest != path:
-                    if f: f.close()
-                    self._finish(taps)
-                    path, f, taps, buf, magic, self.current = newest, open(newest, "rb"), {}, b"", False, False
-                    print(f"forwarder: reading {newest.name}", flush=True)
-                data = f.read(chunk) if f else b""
-                buf += data
-                if not magic and len(buf) >= len(TAP_MAGIC):
-                    if buf[:len(TAP_MAGIC)] == TAP_MAGIC: buf, magic = buf[len(TAP_MAGIC):], True
-                    else: f.close(); f, buf = None, b""  # not a tap file: wait for the next
-                pos = 0
-                while magic and len(buf) - pos >= TAP.size:
-                    kind, conn, n = TAP.unpack_from(buf, pos)
-                    if n > TAP_RECORD:
-                        print(f"forwarder: {path.name} is damaged; waiting for the next connection", flush=True)
-                        f.close(); f, buf, magic, pos = None, b"", False, 0; self._finish(taps)
-                        break
-                    if len(buf) - pos - TAP.size < n: break
-                    self._record(taps, kind, conn, buf[pos + TAP.size:pos + TAP.size + n]); pos += TAP.size + n
-                buf = buf[pos:]
-                if len(data) == chunk: await asyncio.sleep(0); continue  # catching up
-                if f and not self.current:
+                for path in sorted(tap_dir.glob("*.tap"), key=_started):
+                    if path not in files and path not in done:
+                        files[path] = TapFile(path); print(f"forwarder: reading {path.name}", flush=True)
+                behind = False
+                for path, t in list(files.items()):
+                    behind |= t.read(self, chunk)
+                    if t.over: t.close(); del files[path]; done.add(path)
+                if behind: await asyncio.sleep(0); continue
+                if not self.current:
                     self.current = True
-                    print(f"forwarder: caught up with {path.name} ({f.tell() >> 20} MiB)", flush=True)
+                    print("forwarder: caught up with the tap", flush=True)
                     self.opening()
                 await asyncio.sleep(poll)
         finally:
-            if f: f.close()
-
-    def _record(self, taps, kind, conn, data):
-        if kind == OPENED: taps[conn] = self.new_tap()
-        elif (tap := taps.get(conn)) is None: return
-        elif kind == CLOSED: del taps[conn]; tap.dead = True; self.end(tap)
-        else: tap.feed(kind, data)
-
-    def _finish(self, taps):
-        for tap in taps.values(): tap.dead = True; self.end(tap)
-        taps.clear()
+            for t in files.values(): t.close()
 
     async def run(self, tap_dir: Path):
         self.loop = asyncio.get_running_loop()
         print(f"forwarder: following the tap in {tap_dir}", flush=True)
         await asyncio.gather(self.follow(tap_dir), self.dial())
+
+
+class TapFile:
+    """One connection's file, as SpectatorTap.java appends it: TAP_MAGIC, then records."""
+    def __init__(self, path: Path):
+        self.path, self.f, self.buf, self.magic, self.taps, self.over = path, open(path, "rb"), b"", False, {}, False
+
+    def read(self, fw: "Forwarder", chunk: int) -> bool:
+        """Takes in what has been written since; True while there is more already waiting."""
+        data = self.f.read(chunk)
+        self.buf += data
+        if not self.magic and len(self.buf) >= len(TAP_MAGIC):
+            if self.buf[:len(TAP_MAGIC)] != TAP_MAGIC: return self.give_up(fw, "is not a tap file")
+            self.buf, self.magic = self.buf[len(TAP_MAGIC):], True
+        pos = 0
+        while self.magic and len(self.buf) - pos >= TAP.size:
+            kind, conn, n = TAP.unpack_from(self.buf, pos)
+            if n > TAP_RECORD: return self.give_up(fw, "is damaged")
+            if len(self.buf) - pos - TAP.size < n: break
+            body = self.buf[pos + TAP.size:pos + TAP.size + n]; pos += TAP.size + n
+            if kind == OPENED: self.taps[conn] = fw.new_tap()
+            elif (tap := self.taps.get(conn)) is None: continue
+            elif kind == CLOSED: del self.taps[conn]; tap.dead = True; fw.end(tap); self.over = not self.taps
+            else: tap.feed(kind, body)
+        self.buf = self.buf[pos:]
+        return len(data) == chunk
+
+    def give_up(self, fw, why) -> bool:
+        print(f"forwarder: {self.path.name} {why}; leaving it", flush=True)
+        for tap in self.taps.values(): tap.dead = True; fw.end(tap)
+        self.taps.clear(); self.over = True
+        return False
+
+    def close(self): self.f.close()
 
 
 def _started(p: Path) -> int:

@@ -259,10 +259,14 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
         self.assertIn((0x23, pack("iBi", 7, 64, 7) + bytes([0, 3, 0])), got)
         self.assertEqual(len(self.relay.viewers), 1)
 
-    async def test_the_newest_connection_wins(self):
+    async def test_a_server_list_ping_beside_the_game_changes_nothing(self):
         await self.play(1)
-        await self.play(2)                                      # a new file without a CLOSED in the old one
-        self.assertTrue(self.fw.open.endswith("-2"))
+        first = self.fw.open
+        ping = rec(forwarder.OPENED, 2, b"127.0.0.1:25575") + rec(0, 2, handshake(1)) + rec(0, 2, frame(0x00, b""))
+        self.tap.write(ping + rec(1, 2, frame(0x00, string("{}"))) + rec(forwarder.CLOSED, 2))
+        self.tap.write(rec(1, 1, block(7, 64, 7, 3)))
+        await until(lambda: any(block(7, 64, 7, 3) in t for t in self.relay.world.tail))
+        self.assertEqual(self.fw.open, first)
 
     async def test_a_wrong_token_is_refused(self):
         bad = forwarder.Forwarder(self.fw.relay, b"not the secret, wrong one", None)
