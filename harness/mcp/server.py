@@ -28,6 +28,7 @@ import inspect
 import json
 import os
 import sys
+import threading
 import time
 import traceback
 import typing
@@ -207,12 +208,42 @@ class Server(FastMCP):
         if not name.startswith("mb_reload"):
             for m in self.check_reload():
                 log(m)
+        # Background tasks (harness/tools/tasks.py): acting tools wait while a task has the body, and every result says
+        # what the body is doing and hands over each finished task once.
+        tasks = sys.modules.get(mbtool.PACKAGE + ".tasks")
+        lane, effect = self._lane(name, arguments)
+        result = await self._call(name, arguments, (lambda: tasks.gate(lane, effect)) if tasks else None)
+        if tasks is None:
+            return result
+        try:
+            return _with_fields(result, await asyncio.to_thread(tasks.fields, lane == "read"))
+        except Exception as e:
+            log(f"task fields skipped: {e}")
+            return result
+
+    def _lane(self, name: str, arguments: dict[str, Any]) -> tuple[str | None, str | None]:
+        """(lane, effect) of a loaded tool for these arguments; (None, None) for the built-ins."""
+        owner = self.modules.get(self.name_owner.get(name, ""))
+        meta = owner.tools.get(name) if owner else None
+        if meta is None:
+            return None, None
+        lane = meta["lane"]
+        if callable(lane):
+            try:
+                lane = lane(dict(arguments or {}))
+            except Exception:
+                lane = "act"
+        return lane, meta["effect"]
+
+    async def _call(self, name: str, arguments: dict[str, Any], gate) -> CallToolResult:
         trace = []
         token = reply_trace.set(trace)
         scope = CancellationScope()
         scope_token = cancel_scope.set(scope)
         started, error_code = time.time(), "cancelled"
         try:
+            if gate is not None:
+                await asyncio.to_thread(gate)
             result = await super().call_tool(name, arguments)
             error_code = "tool_error" if getattr(result, "isError", False) else None
             if isinstance(result, CallToolResult):
@@ -292,6 +323,24 @@ class Server(FastMCP):
         self.add_tool(mb_tools_status, name="mb_tools_status", description=mb_tools_status.__doc__)
 
 
+def _with_fields(result: CallToolResult, extra: dict) -> CallToolResult:
+    """The result with extra fields in its JSON object, text and structured alike, or as a text block of its own."""
+    if not extra:
+        return result
+    content = list(result.content)
+    texts = [i for i, c in enumerate(content) if isinstance(c, TextContent)]
+    try:
+        obj = json.loads(content[texts[0]].text) if len(texts) == 1 else None
+    except ValueError:
+        obj = None
+    if isinstance(obj, dict):
+        content[texts[0]] = TextContent(type="text", text=json.dumps({**obj, **extra}))
+    else:
+        content.append(TextContent(type="text", text=json.dumps(extra)))
+    structured = {**result.structuredContent, **extra} if isinstance(result.structuredContent, dict) else result.structuredContent
+    return result.model_copy(update={"content": content, "structuredContent": structured})
+
+
 def main() -> int:
     import argparse
 
@@ -307,6 +356,9 @@ def main() -> int:
         if srv.error:
             print(f"ERROR\n{srv.error}")
         return 1 if srv.error else 0
+    tasks = sys.modules.get(mbtool.PACKAGE + ".tasks")
+    if tasks:  # a background task's time commands go out on this server's session, the one that owns time
+        threading.Thread(target=tasks.relay, name="mb-task-clock", daemon=True).start()
     try:
         srv.run(transport="stdio")
     finally:

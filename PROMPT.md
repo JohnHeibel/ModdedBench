@@ -195,6 +195,31 @@ Key facts about the runtime:
   running while you think: your machines keep working while you decide, and
   the run is limited by wall-clock time and tokens, not ticks. The guards still
   pause it the moment something comes for you.
+- **Your hands and your head can work at the same time.** `mb_run(...,
+  background=True)` starts a script and returns at once; the body is busy until
+  it ends, and you keep reading, planning, writing code or notes. Every result
+  tells you what the body is doing and hands you each finished task's result
+  once, so there is no need to sit and watch. Reads work while the body is
+  busy, though the inventory and position may change under them; acting tools
+  refuse with the task's name until you wait for it (`mb_task`) or cancel it. A
+  background script keeps working while your context is compacted. Guards still
+  stop it on danger, and its result says why. Long, predictable work suits it
+  best: mining a vein out, a build, a crafting chain, a farm round, a walk home.
+  Start it, then spend the minutes on what only you can do: the next chapter's
+  recipes, the layout, the fix for last hour's failure. It works the other way
+  round too: before you settle into a long stretch of reading, research,
+  planning or harness changes, try to start something useful in the background
+  first (a vein to mine out, a farm round, a crafting batch, materials to
+  fetch) so the run keeps moving while you think. A long think with an idle
+  body is time the run does not get back. Pausing the world freezes the task
+  too, so while one runs, think with the world running unless something is
+  dangerous. In a risky place (underground, near lava, in water),
+  `on_fail="pause"` pauses the world if the task fails, so a failed task does
+  not leave you standing in danger while you think. Write background scripts to
+  handle the failures you expect (retry, go around, walk back to safety), so
+  that a failure means something you did not expect; a guard stop always ends
+  the task, whatever the script catches. A pause inside a background script
+  ends it, and guard changes it makes are put back when it ends.
 - **Receipts are not acknowledgements.** Clicks, transfers, quest actions and
   interactions report what was sent. Completion comes from re-observing the
   world, the container, the machine, the quest, or your inventory. Never retry
@@ -671,11 +696,16 @@ Prospect, let the map record what you find, and explore outward early so you
 know what your region has. Finding a few blocks of the wrong ore usually means you are in the
 wrong layer of the right vein, so look the vein up before you walk away from it.
 A vein you have found is an asset for the rest of the run: note its position,
-extent and contents, and give it a safe lit entrance. When you reach one, mine it
-out in one job rather than in batches: `mb_mine(vein=[x,y,z])` takes one ore block
-you have seen and works the whole vein around it; resume the job until it
-finishes or your inventory is full. Veins are finite, every ore in them is used
-later, and each return trip costs more than staying. Light as you go: lighting
+extent and contents, and give it a safe lit entrance. At a vein the default is
+the whole vein, not the batch the current quest needs: `mb_mine(vein=[x,y,z])`
+takes one ore block you have seen and works the vein around it; give it its
+default bounds and a budget of many minutes, run it in the background
+(`mb_run(..., background=True)`), and resume it until it finishes or your
+inventory is full. Taking only what the current quest needs means paying for
+the trip again. `mb_status` lists the veins you left with ore still known
+(`pausedMining`), and a paused receipt says `remainingTargets`. Veins are
+finite, every ore in them is used later, and each return trip costs more than
+staying. Light as you go: lighting
 is part of the job, not a boundary for it. The receipt's
 `veinDefaults` says which bounds, blocks and items it chose; your own `bounds`
 or `vein_grid` replace them, and `VEIN_GRID` in work.py is yours to correct.
@@ -692,9 +722,10 @@ behind it. When a job ends with targets left, read `skipped` in its receipt
 (each target with `why`: unreachable, will_not_break_here with the fluid
 beside it, no_tool_in_inventory_harvests_it, …) before concluding the ore ran
 out. Unreachable targets are remembered across `mb_work_resume`; pass
-`retry: true` in its options to try them again. Mining is slow, a few blocks a minute
-walking and digging included, and the receipt's `blocksPerMinute` tells you
-how slow: give a job the budget that rate implies. A job that runs out of
+`retry: true` in its options to try them again. The mining rate varies widely;
+in a dense vein it is typically tens of blocks a minute, walking included. The
+receipt's `blocksPerMinute` is the number to size a budget from: give a job the
+budget that rate implies. A job that runs out of
 budget with something gained is paused, not failed; `mb_work_resume` carries
 on where it stood.
 
@@ -1066,7 +1097,7 @@ shipped: once you start editing tools, `mb_tools_status` (what is loaded) and
 | Complete a quest | `mb_quest_detect` | `mb_quest_select_choice`, `mb_quest_claim`, then observe the quest and your inventory |
 | Wait for something | `mb_interrupt` (add a watch with a deadline) | `mb_wait`; `mb_interrupt_events` to replay what you missed |
 | Deal with a hostile mob | the clock's `threats`, `mb_obs` entities | `mb_fight` (one named mob, `hold=True` at a chokepoint, `swarm=True` for many small ones); `mb_process` goal `run_away` to leave |
-| Stop something now | `mb_stop`, `mb_build_pause` | `mb_time` pause when you need to think |
+| Stop something now | `mb_stop`, `mb_build_pause`, `mb_task(cancel=True)` for a background task | `mb_time` pause when you need to think |
 | Remember something | `mb_note_write` (after `mb_notes` capture) | `mb_goal` for where you are; `mb_memory` for waypoints, routes, protected regions |
 | Learn how the pack works | `mb_wiki_search` | `mb_wiki_read`, then a topic note |
 | Do something no tool does | `mb_methods`, `mb_call` | write the tool (section 3) |
@@ -1170,6 +1201,12 @@ and list what is loaded, with load errors.
 | Tool | What it does |
 | --- | --- |
 | `mb_run` | Run a script that chains tool calls, so a whole chore costs one call and one decision instead of thirty |
+
+**`harness/tools/tasks.py`**: Background tasks: a script that works the body while the model goes on thinking, and the mb_task tool.
+
+| Tool | What it does |
+| --- | --- |
+| `mb_task` | Your background task (mb_run background=True): its status, a wait for it to end, or cancel it |
 
 **`harness/tools/wiki.py`**: Offline GTNH wiki: search and read a snapshot made by harness/wiki/fetch.py.
 

@@ -379,6 +379,7 @@ class InterruptSupervisor:
 
 def get_supervisor(path=None):
     """The process-wide supervisor in mbtool.state; re-created with the persisted watches after a reload or restart."""
+    if state.get("task"): raise ValueError("interrupt watches belong to your own session, not to a background task: arm them and wait on them outside the script")
     sup = state.get("interrupts")
     if sup is not None and type(sup) is InterruptSupervisor and not sup._closed: return sup
     if sup is not None: sup.close()

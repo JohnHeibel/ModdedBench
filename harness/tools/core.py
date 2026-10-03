@@ -67,6 +67,9 @@ def mb_status() -> Any:
     """Bridge status, the clock (paused, why, operator hold), your goal stack (mb_goal) with its stall signal, world notes near you, how long the run has been going, and your last two hours' cost (mb_cost).
 
     Call it at the start of every session and after every compaction: it is the heartbeat.
+    Also, when there are any: body (your running background task), finished (tasks whose result
+    you have not been handed yet) and pausedMining (mining jobs paused with targets still known:
+    job, vein or at, left, gained, minutesAgo; mb_work_resume continues one).
     """
     k, brief = kernel(), os.environ.get("MB_BRIEF", "")
     out = k.call("sys.capabilities")
@@ -90,6 +93,9 @@ def mb_status() -> Any:
         out["cost"] = mb_cost(hours=2, top=6)
     except Exception as e:
         out["cost"] = {"unavailable": str(e)}
+    from mbtools_gtnh import tasks, work
+    extra = {"body": tasks.body(tasks.live()), "finished": tasks.deliver(), "pausedMining": work.paused_mining()}
+    out.update({key: value for key, value in extra.items() if value})
     return notes.attach(out, notes.surface(k, reason="session", radius=32))
 
 
@@ -99,7 +105,9 @@ def mb_cost(hours: float = 2.0, top: int = 15) -> Any:
 
     Dispatchers are split by method (mb_notes(get)); time between calls is your thinking and compaction. The
     busiest tools come first. A tool you call over and over is work you are doing by hand; see section 4 of
-    your brief on costs that never fail.
+    your brief on costs that never fail. With background tasks in the window: bodyBusyShare (of the window,
+    the body working in a task), bodyWhileThinkingShare (the body working while you were not in a tool call)
+    and unseenFailureSeconds (for each failed task, how long until your next call saw it).
     """
     now = time.time()
     since, calls = now - hours * 3600, []
@@ -109,27 +117,47 @@ def mb_cost(hours: float = 2.0, top: int = 15) -> Any:
             lines = f.read().decode("utf-8", "replace").splitlines()
     except OSError:
         return {"hours": hours, "calls": 0}
+    tasks = []  # a background task's own calls are not yours; its whole run is one "task" line
     for line in lines:
         try:
             c = json.loads(line)
         except ValueError:
             continue
-        if isinstance(c, dict) and c.get("t", 0) >= since:
+        if isinstance(c, dict) and c.get("t", 0) + c.get("s", 0) >= since and c.get("caller"):
+            tasks += [c] if c.get("tool") == "task" else []
+        elif isinstance(c, dict) and c.get("t", 0) >= since:
             calls.append(c)
     by: dict[str, list] = {}
     for c in calls:
         row = by.setdefault(f"{c['tool']}({c['method']})" if c.get("method") else c["tool"], [0, 0, 0.0])
         row[0] += 1; row[1] += c.get("error") is not None; row[2] += c.get("s", 0)
-    spans = []  # union of call intervals: parallel calls count once
-    for s, e in sorted((c["t"], c["t"] + c.get("s", 0)) for c in calls):
-        if spans and s <= spans[-1][1]: spans[-1][1] = max(spans[-1][1], e)
-        else: spans.append([s, e])
+    spans = _union((c["t"], c["t"] + c.get("s", 0)) for c in calls)  # parallel calls count once
     busy = sum(e - s for s, e in spans)
     window = now - (calls[0]["t"] if calls else now)
     rows = sorted(by.items(), key=lambda kv: (-kv[1][0], -kv[1][2]))[:max(0, top)]
-    return {"hours": hours, "calls": len(calls), "failed": sum(r[1] for r in by.values()),
-            "toolMinutes": round(busy / 60, 1), "betweenCallsMinutes": round(max(0.0, window - busy) / 60, 1),
-            "top": {k: f"{n} calls, {f} failed, {s / 60:.1f} min" for k, (n, f, s) in rows}}
+    out = {"hours": hours, "calls": len(calls), "failed": sum(r[1] for r in by.values()),
+           "toolMinutes": round(busy / 60, 1), "betweenCallsMinutes": round(max(0.0, window - busy) / 60, 1),
+           "top": {k: f"{n} calls, {f} failed, {s / 60:.1f} min" for k, (n, f, s) in rows}}
+    from mbtools_gtnh.tasks import live
+    running = live()
+    worked = _union([(max(c["t"], now - window), c["t"] + c.get("s", 0)) for c in tasks] + ([(max(running["started"], now - window), now)] if running else []))
+    if window > 0 and worked:
+        body = sum(e - s for s, e in worked)
+        alongside = sum(max(0.0, min(e1, e2) - max(s1, s2)) for s1, e1 in worked for s2, e2 in spans)
+        out.update(bodyBusyShare=round(body / window, 2), bodyWhileThinkingShare=round((body - alongside) / window, 2))
+        unseen = [round(min((c["t"] for c in calls if c["t"] >= t["t"] + t["s"]), default=now) - t["t"] - t["s"]) for t in tasks
+                  if t.get("error") in ("failed", "crashed", "interrupted")]
+        if unseen: out["unseenFailureSeconds"] = unseen
+    return out
+
+
+def _union(pairs) -> list[list[float]]:
+    """Intervals merged where they overlap, in order."""
+    spans: list[list[float]] = []
+    for s, e in sorted(pairs):
+        if spans and s <= spans[-1][1]: spans[-1][1] = max(spans[-1][1], e)
+        elif e > s: spans.append([s, e])
+    return spans
 
 
 @tool(lane=lane_by_method(), effect="privileged", coverage=["meta"])

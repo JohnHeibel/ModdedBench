@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import time
+from pathlib import Path
 from statistics import median
 from typing import Any
 
@@ -26,6 +27,7 @@ REPORT_KEYS = ("size", "count", "skipped", "tileEntities")
 # `height` blocks up and down from the ore you saw. Yours to correct: edit these, or pass vein_grid / items / bounds.
 VEIN_GRID = {"period": 3, "offset": 1, "spanChunks": 1, "height": 8}
 VEIN_ITEMS = [{"id": "gregtech:gt.metaitem.03"}]
+LEFT = Path(__file__).resolve().parents[2] / ".state" / "mining-left.json"  # paused mining jobs with targets still known
 
 
 def _any_facing(params: dict) -> tuple[dict, dict | None]:
@@ -412,11 +414,13 @@ def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, q
     block with collection. A returned jobId is durable; inspect with mb_work_status
     and use mb_work_resume after correcting a blocked job. Protection override and
     terrain permissions apply only to this attempt.
-    timeout_ticks is a budget, not a verdict: mining runs at a few blocks a minute
-    (walking, digging down, tool swaps), and the receipt's blocksPerMinute is your
-    measure of it. A job that runs out of budget with something gained stops as
+    timeout_ticks is a budget, not a verdict: the mining rate varies widely (walking,
+    digging down, tool swaps); in a dense vein it is typically tens of blocks a minute,
+    walking included, and the receipt's blocksPerMinute is the number to size the next
+    budget from. A job that runs out of budget with something gained stops as
     paused (reason timeout_with_progress), which is not a failure: mb_work_resume
-    continues it. Paused or failed is judged on this session's gain alone, and so is
+    continues it. A paused receipt says remainingTargets (the targets it still knew of)
+    and, for a vein, vein; mb_status lists paused jobs that still have targets. Paused or failed is judged on this session's gain alone, and so is
     blocksPerMinute. The receipt's bounds is the box it scanned (radius covers y-16..y+16 within 1..254).
     stall_ticks (default: the stallTicks setting, 200; 0 is off) is the shared watchdog: that many
     ticks with nothing gained or broken and no block stood in that it had not stood in since, and the
@@ -469,9 +473,39 @@ def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, q
     try: result = notes.tracked("nav.mine", timeout_s, **params)
     except BridgeError as error:
         receipt = ((error.reply or {}).get("error") or {}).get("receipt")
-        if isinstance(receipt, dict): receipt.update(_drops(before, _held(k)), **facts)
+        if isinstance(receipt, dict): receipt.update(_drops(before, _held(k)), **facts); _left(receipt)
         raise
-    return {**result, **_drops(before, _held(k)), **facts} if isinstance(result, dict) else result
+    return _left({**result, **_drops(before, _held(k)), **facts}, vein) if isinstance(result, dict) else result
+
+
+def _left(receipt: dict, vein: list[int] | None = None) -> dict:
+    """A mining job that ended paused with targets still known is remembered for mb_status, and its receipt says how many
+    are left; any other end of that job forgets it."""
+    if receipt.get("action") != "mine" or receipt.get("state") not in ("succeeded", "failed", "cancelled", "paused"): return receipt
+    try: left = json.loads(LEFT.read_text(encoding="utf-8"))
+    except (OSError, ValueError): left = {}
+    job, known = str(receipt.get("jobId")), len(receipt.get("targets") or [])
+    vein = vein or (left.get(job) or {}).get("vein")
+    if receipt["state"] == "paused": receipt = {**receipt, "remainingTargets": known, **({"vein": vein} if vein else {})}
+    if receipt["state"] == "paused" and known:
+        box = receipt.get("bounds") or {}
+        at = vein or ([(lo + hi) // 2 for lo, hi in zip(box["min"], box["max"])] if box.get("min") and box.get("max") else receipt.get("endedAt"))
+        left[job] = {"vein": vein, "at": at, "left": known, "gained": receipt.get("gained"), "pausedAt": time.time()}
+    else: left.pop(job, None)
+    try:
+        LEFT.parent.mkdir(parents=True, exist_ok=True); tmp = LEFT.with_suffix(".tmp")
+        tmp.write_text(json.dumps(dict(sorted(left.items(), key=lambda kv: -kv[1]["pausedAt"])[:20])), encoding="utf-8"); tmp.replace(LEFT)
+    except OSError: pass
+    return receipt
+
+
+def paused_mining(limit: int = 5) -> list[dict]:
+    """Mining jobs that paused with targets still known, newest first: mb_status lists them."""
+    try: left = json.loads(LEFT.read_text(encoding="utf-8"))
+    except (OSError, ValueError): return []
+    rows = sorted(left.items(), key=lambda kv: -kv[1]["pausedAt"])[:limit]
+    return [{"job": job, "vein" if e.get("vein") else "at": e["at"], "left": e["left"], "gained": e.get("gained"),
+             "minutesAgo": int((time.time() - e["pausedAt"]) // 60)} for job, e in rows]
 
 
 @tool(lane="read", coverage=["machine"])
@@ -730,4 +764,9 @@ def mb_work_resume(job_id: str, options: dict | None = None,
     Native recovery re-observes world and inventory; already delivered placement/mining
     input is not blindly replayed.
     """
-    return notes.tracked("nav.resume", timeout_s, jobId=job_id, **(options or {}))
+    try: receipt = notes.tracked("nav.resume", timeout_s, jobId=job_id, **(options or {}))
+    except BridgeError as error:
+        failed = ((error.reply or {}).get("error") or {}).get("receipt")
+        if isinstance(failed, dict): _left(failed)
+        raise
+    return _left(receipt) if isinstance(receipt, dict) else receipt
