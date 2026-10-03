@@ -124,7 +124,7 @@ class Console:
         self.lock = threading.Lock(); self.kernel = None; self.supervisor = None; self.backups = None
         self.guard = None  # (compactions in the rollout when the guard held the world, monotonic time, the silence's start)
         self.guard_done = None  # the start of the silence the guard last let go of
-        self.job = {"name": "", "running": False, "ok": True, "log": ""}; self.login = (0.0, None); self.book = (0.0, []); self.ctx = (0.0, None); self.used = (0.0, None); self.shorten = Shortener(runtime.RUNTIME / "overlay-short.json")
+        self.job = {"name": "", "running": False, "ok": True, "log": ""}; self.login = (0.0, None); self.book = (0.0, []); self.ctx = (0.0, None); self.used = (0.0, None); self.quest = (0.0, None, None); self.shorten = Shortener(runtime.RUNTIME / "overlay-short.json")
 
     # The bridge, read only: one long-lived session for the state panel.
     def call(self, method, **params):
@@ -186,6 +186,30 @@ class Console:
         observed ones at 94-95%) and is a silence of a few minutes; the 'compacted' record in its rollout marks the end."""
         if status.get("state") != "thinking" or time.time() - (status.get("since") or time.time()) <= 20: return False
         ctx = self.context(); return bool(ctx and ctx[1] and ctx[0] >= 0.94 * ctx[1])
+
+    def quest_progress(self, name):
+        """How far the goal's quest is by the quest book's own count, 0 to 1: per task, the share of its required items
+        handed in or carried (a task without items counts once it is complete). None when the book has no one quest
+        of that name. It only measures the last step: a quest for one machine reads 0 until the machine is in hand.
+        Read at most every 10 s."""
+        name = re.sub("§.", "", str(name or "")).strip().lower()
+        if not name: return None
+        if self.quest[1] == name and time.monotonic() - self.quest[0] < 10: return self.quest[2]
+        share = None
+        try:
+            title = lambda q: re.sub("§.", "", q["name"]).strip().lower()
+            found = [q for q in self.call("quest.search", query=name, offset=0, limit=100)["quests"] if name in title(q)]
+            found = [q for q in found if title(q) == name] or found
+            if len(found) == 1:
+                quest = self.call("quest.observe", questId=found[0]["id"])
+                def part(task):
+                    items = [i for i in task.get("items") or [] if i.get("need")]
+                    if task.get("complete") or not items: return float(bool(task.get("complete")))
+                    return sum(min(1.0, (i.get("submitted", 0) + i.get("have", 0)) / i["need"]) for i in items) / len(items)
+                tasks = [t for t in quest["tasks"] if "optional" not in t["type"]]  # the book's optional tasks do not gate the quest
+                share = 1.0 if quest.get("complete") else sum(map(part, tasks)) / len(tasks) if tasks else 0.0
+        except Exception: pass
+        self.quest = (time.monotonic(), name, share); return share
 
     def hold_file(self, cmd):
         return sh([*COMPOSE, "exec", "-T", "server", "sh", "-c", cmd], timeout=15)
@@ -264,7 +288,7 @@ class Console:
             if p.get("kind") == "script":  # the code goes to the summary, not to the page
                 d = p.get("data") or {}; code = d.pop("code", "")
                 if code: d["short"] = self.shorten.get("script", f'script {d.get("name") or "(one-off)"}, arguments {json.dumps(d.get("args") or {})}\n{code}')
-        goal = dict(live.get("goal") or {}); goal["short"] = self.shorten.get("goal", goal.get("subgoal"))
+        goal = dict(live.get("goal") or {}); goal["short"] = self.shorten.get("goal", goal.get("subgoal")); goal["progress"] = self.quest_progress(goal.get("quest"))
         for entry in [e for e in feed if e.get("kind") == "say"][-12:]: entry["short"] = self.shorten.get("say", entry.get("text"))
         try: target = re.search(r'^TARGET_QUEST\s*=\s*"([^"<]+)"', (BRIEF / "PROMPT.md").read_text(encoding="utf-8"), re.M).group(1)
         except (OSError, AttributeError): target = ""
