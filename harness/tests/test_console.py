@@ -66,6 +66,28 @@ class ConsoleTests(unittest.TestCase):
                 self.assertEqual("Mine copper for the smelter", short.get("goal", long)); self.assertEqual(1, len(asked)); self.assertEqual(long, asked[0]["messages"][1]["content"])
                 self.assertEqual("Mine copper for the smelter", console.Shortener(Path(tmp) / "s.json").get("goal", long))  # kept on disk
 
+    def test_the_compaction_guard_does_not_hold_while_a_background_task_has_the_body(self):
+        import tempfile, types
+        from unittest import mock
+        class Done(BaseException): pass
+        def guard(live):
+            c = object.__new__(console.Console); c.guard, c.guard_done = None, None
+            held = []
+            c.hold_file = lambda cmd: held.append(cmd) or types.SimpleNamespace(returncode=0 if "echo" in cmd else 1)
+            c.agent_sh = lambda cmd: types.SimpleNamespace(stdout="3")
+            c.call = lambda method, **kw: {"state": {"paused": False, "held": False}}
+            c.compacting = lambda status: True
+            ticks = iter(range(2))
+            stop = lambda s: next(ticks, None) is None and (_ for _ in ()).throw(Done())
+            with tempfile.TemporaryDirectory() as tmp, mock.patch.object(console, "OVERLAY", Path(tmp)), mock.patch.object(console.time, "sleep", stop), mock.patch("builtins.print"):
+                (Path(tmp) / "live.json").write_text(json.dumps(live), encoding="utf-8")
+                with self.assertRaises(Done): c.compaction_guard()
+            return [cmd for cmd in held if "echo" in cmd], c.guard
+        status = {"state": "thinking", "since": 1.0}
+        self.assertEqual(guard({"status": status, "body": {"task": "t1"}}), ([], None))  # the task works through the compaction
+        holds, state = guard({"status": status, "body": None})  # once it has ended, the guard holds
+        self.assertEqual((len(holds), state[0]), (1, 3))
+
 
 if __name__ == "__main__":
     unittest.main()

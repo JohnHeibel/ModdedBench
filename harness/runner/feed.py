@@ -5,7 +5,7 @@
 The loop hands every Codex event to ``Feed.event``. Two files come out, in ``$MODBENCH_OUTBOX/overlay`` (the
 host sees that folder, ``.state/overlay`` without one; the console serves it to OBS): ``feed.jsonl``, one line per thing the model said or
 did ({ts, kind: say|tool|fail|mark, text, tool?}; ``mark`` lines are the run's milestones), and ``live.json``,
-the goal stack, what the agent is doing now, and running totals; and ``pops.json`` with ``pop-<n>.png``, the last few
+the goal stack, what the agent is doing now, its background task (``body``), and running totals; and ``pops.json`` with ``pop-<n>.png``, the last few
 things it looked at, for the stream's pop-ups. Nothing here is shown to the model or asked
 of it: the goal is the one it already keeps with ``mb_goal``, and tool lines are templates, not summaries.
 """
@@ -192,6 +192,10 @@ class Feed:
         text = re.sub("§.", "", text)  # Minecraft colour codes in quest titles
         if not text: return
         with open(self.folder / "feed.jsonl", "a", encoding="utf-8") as f: f.write(json.dumps({"ts": time.time(), "kind": kind, "text": text, **more}) + "\n")
+
+    def body(self, value):
+        """The background task the body is working on ({task, name, for, now}, None when idle): for the overlay and the console."""
+        if self.live.get("body") != value: self.live["body"] = value; self._save()
 
     def billed(self):
         """Input tokens so far, cached ones included: exact for finished turns, estimated for the one running."""
