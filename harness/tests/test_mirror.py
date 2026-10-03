@@ -225,7 +225,7 @@ class Handshake(unittest.TestCase):
         self.assertEqual(split(v.q[-1]), (0x03, b"live"))
 
 
-class Barrier(unittest.TestCase):
+class Barrier(unittest.IsolatedAsyncioTestCase):
     def test_mod_packets_wait_until_the_client_has_applied_the_world(self):
         m = state.Mirror(); hub = proxy.Hub(mirror=m)
         place = frame(0x23, pack("iBi", 5, 64, 5) + bytes(3))
@@ -242,6 +242,15 @@ class Barrier(unittest.TestCase):
         v.send([frame(0x03, b"live")]); self.assertNotIn(machine, v.q)
         v.handshook()                                   # the client's answer to the barrier
         self.assertIn(machine, v.q); self.assertEqual(split(v.q[-1]), (0x03, b"live"))
+
+    async def test_keepalives_reach_a_viewer_still_behind_the_barrier(self):
+        hub = proxy.Hub(mirror=state.Mirror())
+        v = proxy.Viewer(None, None, "Watcher", "", 1 << 20); hub.viewers.add(v)
+        v.hold([(0, state.BARRIER), (1, s3f("GregTech", bytes(30)))])
+        task = asyncio.create_task(hub.keepalive(every=0.01)); await asyncio.sleep(0.05); task.cancel()
+        self.assertEqual(v.q[0], state.BARRIER)
+        self.assertTrue(v.q[1:] and all(split(f)[0] == 0x00 for f in v.q[1:]))  # silence past half a minute drops the client
+        self.assertEqual(len(v.held), 1)
 
 
 class Pipe(unittest.IsolatedAsyncioTestCase):
