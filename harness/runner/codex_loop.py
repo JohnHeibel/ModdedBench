@@ -51,6 +51,14 @@ def _quests():
         with Kernel(timeout=10) as k: return sum(l["completed"] for l in k.call("quest.lines", query="", offset=0, limit=100)["lines"])
     except Exception: return None
 
+def _mark_run(path, started, max_minutes):
+    """The run's start, for mb_status. A start that keeps the planned end (a resume, a fresh thread) continues the run and keeps its start."""
+    ends = started + max_minutes * 60 if max_minutes else None
+    try: old = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError): old = {}
+    if ends and isinstance(old, dict) and isinstance(old.get("endsAt"), (int, float)) and abs(old["endsAt"] - ends) < 300: return
+    path.write_text(json.dumps({"startedAt": started, "endsAt": ends}), encoding="utf-8")
+
 def _git(repo, *args):
     try: return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, timeout=20).stdout.strip() or None
     except Exception: return None
@@ -105,6 +113,7 @@ def run(repo=REPO, prompt=None, max_turns=50, state=None, codex=None, extra=(), 
         try: record_path.parent.mkdir(parents=True, exist_ok=True); record_path.write_text(json.dumps(record, indent=1), encoding="utf-8")
         except OSError as e: print("codex_loop: run record: %r" % e, file=sys.stderr)
     save_record()
+    _mark_run(repo / ".state" / "run.json", started, max_minutes)
     def end(reason):
         feed.status("ended", reason)
         tokens = dict(feed.live.get("stats", {}).get("tokens") or {})
