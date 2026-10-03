@@ -9,7 +9,7 @@ or falls too far behind turns mirroring off for the session and the bytes keep f
 from __future__ import annotations
 import asyncio, json, os, random, socket, struct, threading, time
 from pathlib import Path
-from .state import Mirror, disconnect
+from .state import BARRIER_REPLY, Mirror, disconnect
 from .wire import Reader, Splitter, frame, offline_uuid, pack, split, string
 
 C, S = 0, 1  # directions: host client -> server, server -> host client
@@ -71,7 +71,7 @@ class Viewer:
         self.held, self.hs = [], 0  # (gate, frame) waiting on this viewer's FML handshake replies
 
     def hold(self, gated):
-        self.held = list(gated); self.release()
+        self.held += list(gated); self.release()
 
     def handshook(self):
         self.hs += 1; self.release()
@@ -255,11 +255,12 @@ class Stage:
 
     async def _drain(self, r, v):
         s = Splitter()
-        try:  # a viewer's Forge handshake replies release the snapshot; the rest goes to heard()
+        try:  # a viewer's Forge handshake replies and its barrier answer release the snapshot; the rest goes to heard()
             while (data := await r.read(65536)) and not v.closing:
                 for f in s.feed(data):
                     pid, body = split(f)
-                    if pid == 0x17 and Reader(body).string() == "FML|HS": v.handshook()
+                    if pid == 0x17 and Reader(body).string() == "FML|HS" or pid == 0x0F and body == BARRIER_REPLY:
+                        v.handshook()
                     else: self.heard(v, pid, body)
         except (ConnectionError, OSError, ValueError, UnicodeDecodeError, struct.error):
             pass

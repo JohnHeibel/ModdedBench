@@ -66,7 +66,8 @@ class Watcher:
             while not cond(self.got):
                 data = await self.r.read(65536)
                 if not data: raise ConnectionError("closed")
-                self.got += parsed(self.split.feed(data))
+                new = parsed(self.split.feed(data)); self.got += new
+                if (0x32, state.BARRIER[2:]) in new: self.say(frame(0x0F, state.BARRIER_REPLY))  # as a client's main thread
         await asyncio.wait_for(read(), timeout)
         return self.got
 
