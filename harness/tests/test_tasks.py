@@ -71,22 +71,39 @@ class TaskTestCase(unittest.TestCase):
         if getattr(self, "lock", None): self.lock.close(); self.lock = None
 
 
+class Methods:
+    """A connection whose game lists one read and two acting methods."""
+    def __init__(self):
+        self.asked = 0
+
+    def call(self, method, timeout=None, **p):
+        assert method == "sys.methods"; self.asked += 1
+        return [{"name": "obs.inventory", "effect": "read"}, {"name": "act.input", "effect": "interaction"},
+                {"name": "act.stop", "effect": "interaction"}]
+
+
 class BodyLockTests(TaskTestCase):
-    def test_acting_tools_are_refused_with_the_task_named_and_reads_are_marked(self):
+    def test_game_calls_that_move_the_body_are_refused_with_the_task_named_and_reads_are_marked(self):
         self.put("t1", name="vein", now="mb_mine")
+        k = Methods()
         with self.assertRaises(BridgeError) as refused:
-            tasks.gate("act", "interaction")
+            tasks.gate(k, "act.input")
         self.assertEqual(refused.exception.code, "body_busy")
         for words in ("t1", "(vein)", "mb_mine", "mb_task(wait=", "mb_task(cancel=True)"):
             self.assertIn(words, refused.exception.msg)
-        self.assertRaises(BridgeError, tasks.gate, "act", "privileged")
-        tasks.gate("read", "read"); tasks.gate("control", "privileged"); tasks.gate("act", "read")  # reads and control still run
+        self.assertRaises(BridgeError, tasks.gate, k, "nav.new_thing")  # what the game does not call a read is refused
+        for method in ("obs.inventory", "time.pause", "act.stop", "memory.waypoint"):
+            tasks.gate(k, method)  # reads, time control, stopping and bookkeeping still run
+        self.assertRaises(BridgeError, tasks.gate, k, "memory.protect")  # it cancels the running job
+        self.assertEqual(k.asked, 1)  # the game's method list is read once per connection
         read, acted = tasks.fields(read=True), tasks.fields(read=False)
         self.assertEqual((read["body"]["task"], read["body"]["now"], read["bodyBusy"]), ("t1", "mb_mine", True))
         self.assertNotIn("bodyBusy", acted)
 
     def test_a_free_body_adds_nothing_and_a_held_lock_refuses_a_start(self):
-        tasks.gate("act", "interaction")
+        k = Methods()
+        tasks.gate(k, "act.input")
+        self.assertEqual(k.asked, 0)  # nothing holds the body: no question to the game
         self.assertEqual(tasks.fields(read=True), {})
         lock = tasks._lock(self.dir); self.addCleanup(lock.close)
         self.assertTrue(tasks.held())
@@ -176,6 +193,22 @@ class CrashTests(TaskTestCase):
         self.assertEqual((st["state"], st["ended"]), ("crashed", "crash"))
         self.assertLessEqual(st["lastSeen"], st["endedAt"])
 
+    def test_the_kernel_asks_the_gate_before_sending_and_the_task_kernel_never_does(self):
+        self.put("t1")
+        self.assertIs(Kernel.body_gate, tasks.gate)
+        self.assertIsNone(tasks.TaskKernel.body_gate)
+        k = Kernel.__new__(Kernel); k.timeout, k._effects = 5.0, {"act.input": "interaction"}  # no connection: nothing is sent
+        with mock.patch.object(k, "_request") as sent:
+            self.assertRaises(BridgeError, k.call, "act.input")
+        sent.assert_not_called()
+
+    def test_handing_the_body_back_passes_the_gate(self):
+        self.put("t1")
+        k = mock.Mock(); k.__dict__["_effects"] = {}
+        k.call.side_effect = lambda method, **p: (tasks.gate(k, method), {"open": True, "cursor": None})[1]
+        tasks.release(k)
+        self.assertEqual([c.args[0] for c in k.call.call_args_list], ["act.stop", "obs.container", "gui.close"])
+
     def test_a_zombie_is_dead_even_while_the_lock_looks_held(self):
         self.put("t1", pid=4242)
         with mock.patch.object(tasks, "_zombie", lambda pid: pid == 4242):
@@ -183,10 +216,12 @@ class CrashTests(TaskTestCase):
         self.assertIsNone(tasks.live())
 
     def test_a_task_just_spawned_has_a_grace_to_take_the_lock(self):
-        self.put("t1", live=False, pid=None)
+        st = self.put("t1", live=False, pid=None)
         self.assertEqual(tasks.live()["task"], "t1")
-        tasks.gate("read", "read")
-        self.assertRaises(BridgeError, tasks.gate, "act", "interaction")  # the refusal uses the same answer
+        k = Methods()
+        with mock.patch.dict(mbtool.state, {"task_spawned": st["started"]}):
+            tasks.gate(k, "obs.inventory")
+            self.assertRaises(BridgeError, tasks.gate, k, "act.input")  # the refusal uses the same answer
         self.put("t2", live=False, pid=None, started=time.time() - 31)
         self.assertEqual(tasks.load("t2")["state"], "crashed")
 

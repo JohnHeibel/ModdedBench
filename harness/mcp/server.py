@@ -208,11 +208,11 @@ class Server(FastMCP):
         if not name.startswith("mb_reload"):
             for m in self.check_reload():
                 log(m)
-        # Background tasks (harness/tools/tasks.py): acting tools wait while a task has the body, and every result says
-        # what the body is doing and hands over each finished task once.
+        # Background tasks (harness/tools/tasks.py): a game call that would move the body is refused while a task has it
+        # (Kernel.body_gate), and every result says what the body is doing and hands over each finished task once.
         tasks = sys.modules.get(mbtool.PACKAGE + ".tasks")
-        lane, effect = self._lane(name, arguments)
-        result = await self._call(name, arguments, (lambda: tasks.gate(lane, effect)) if tasks else None)
+        lane, _ = self._lane(name, arguments)
+        result = await self._call(name, arguments)
         if tasks is None:
             return result
         try:
@@ -235,15 +235,13 @@ class Server(FastMCP):
                 lane = "act"
         return lane, meta["effect"]
 
-    async def _call(self, name: str, arguments: dict[str, Any], gate) -> CallToolResult:
+    async def _call(self, name: str, arguments: dict[str, Any]) -> CallToolResult:
         trace = []
         token = reply_trace.set(trace)
         scope = CancellationScope()
         scope_token = cancel_scope.set(scope)
         started, error_code = time.time(), "cancelled"
         try:
-            if gate is not None:
-                await asyncio.to_thread(gate)
             result = await super().call_tool(name, arguments)
             error_code = "tool_error" if getattr(result, "isError", False) else None
             if isinstance(result, CallToolResult):
