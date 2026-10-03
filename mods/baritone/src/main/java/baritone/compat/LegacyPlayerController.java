@@ -26,13 +26,17 @@ public final class LegacyPlayerController {
     }
     public boolean processRightClickBlock(BlockPos p,EnumFacing side,Vec3d hit){
         if(!permitted(1,p,side))return false;
+        // A block placed this tick may not have reached the server yet; a click against it waits a tick.
+        if(RecentPlacements.recent(p))return false;
         if(engine.getBuilderProcess().isActive())engine.getBuilderProcess().beforePlace.accept(p.offset(side));
         if(!engine.ownsNativeActions())return false;
         // The server must see the same native sneak/facing state used by placement prediction.
         mc.thePlayer.sendMotionUpdates();
         // A block goes beside the face clicked, or into the clicked cell itself when that is replaceable (tall grass, snow).
         engine.placing.accept(p.offset(side));engine.placing.accept(p);
-        return mc.playerController.onPlayerRightClick(mc.thePlayer,mc.theWorld,mc.thePlayer.getHeldItem(),p.getX(),p.getY(),p.getZ(),side.ordinal(),hit.nativeVector());
+        boolean used=mc.playerController.onPlayerRightClick(mc.thePlayer,mc.theWorld,mc.thePlayer.getHeldItem(),p.getX(),p.getY(),p.getZ(),side.ordinal(),hit.nativeVector());
+        if(used){RecentPlacements.mark(p.offset(side));RecentPlacements.mark(p);}
+        return used;
     }
     public boolean processRightClick(){
         if(!engine.ownsNativeActions()||!dev.modbench.api.ControlRegistry.memory().blockAction(2,0,0,0,-1))return false;

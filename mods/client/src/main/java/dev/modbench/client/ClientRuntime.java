@@ -218,7 +218,7 @@ public final class ClientRuntime extends BridgeRuntime {
             if(clock.refusesActions()) throw new IllegalArgumentException("time_paused: resume before executing native GUI actions");
             controlsChanged("superseded");return ui.start(r);
         });
-        for(String method:List.of("mine","build","resume")) register("nav."+method,"Owned, checkpointed "+method+" process; timeoutTicks<=72000. Mine: blocks/items selectors, quantity, bounds/radius, toolSlot (forces the tool in that slot). Build: cells, selection or planId; mode blueprint/builder, origin, size, settings, replaceExisting, allowBreak/allowPlace. Resume: jobId. Explicit overrideProtection required each attempt.","interaction",r->{
+        for(String method:List.of("mine","build","resume")) register("nav."+method,"Owned, checkpointed "+method+" process; timeoutTicks<=72000. Mine: blocks/items selectors, quantity, bounds/radius, toolSlot (forces the tool in that slot). Build: cells, selection or planId; mode blueprint/builder, origin, size, settings, replaceExisting, allowBreak/allowPlace; or steps (ordered place/use clicks with face, hit, look, sneak, expect) with origin and optional access. Resume: jobId. Explicit overrideProtection required each attempt.","interaction",r->{
             requirePlayer();Navigation provider=navigation();Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");
             if(method.equals("resume")&&suspendedId!=null&&suspendedId.equals(Json.string(r.params,"jobId",""))) { // wait on the held job again, as it is
                 if(suspendedEnd!=null){Map<String,Object> end=suspendedEnd;suspendedId=null;suspendedEnd=null;return end;}
@@ -227,7 +227,7 @@ public final class ClientRuntime extends BridgeRuntime {
             controlsChanged("superseded");ControlRegistry.controls().focusForInput();
             navigationJob=method.equals("mine")?provider.mine(params):method.equals("build")?provider.build(params):provider.resume(Json.string(r.params,"jobId",""),params);navigationRequest=r;return null;
         });
-        register("nav.build_preview","Fresh read-only build diff and material allocation for {cells|selection|planId,mode,settings,origin,size,replaceExisting,overrideProtection}; no chunk loading","read",r->navigation().previewBuild(Json.GSON.fromJson(r.params,Map.class)));
+        register("nav.build_preview","Fresh read-only build diff and material allocation for {cells|selection|planId,mode,settings,origin,size,replaceExisting,overrideProtection}, or for {steps,origin,access} the step order and a vantage or blocking cells per step; no chunk loading","read",r->navigation().previewBuild(Json.GSON.fromJson(r.params,Map.class)));
         register("nav.follow","Source FollowProcess: {target:{entityId|uuid|type|name},durationTicks:1..72000,radius,offsetDistance,offsetDirection,allowBreak:false,allowPlace:false,overrideProtection:false}. Follows loaded matches until duration/cancellation; fails when none remain loaded.","interaction",r->{
             requirePlayer();Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");controlsChanged("superseded");ControlRegistry.controls().focusForInput();
             navigationJob=navigation().follow(params);navigationRequest=r;return null;
@@ -302,6 +302,16 @@ public final class ClientRuntime extends BridgeRuntime {
         watchable("obs.player","obs.world","obs.entities","obs.inventory","obs.block","obs.container","obs.gui","obs.tooltip",
             "obs.find","gui.status","act.status","interrupt.status","nav.status","obs.terrain","obs.fluid","obs.tools",
             "memory.context","memory.status","memory.get","time.status","obs.keys","quest.status","quest.observe");
+        // Jobs in other mods (a build step's expectations) read through obs.batch, so they see what the model would.
+        dev.modbench.api.Observations.Registry.register((queries,reply)->{
+            Request r=new Request(new com.google.gson.JsonPrimitive("job-observation-"+java.util.UUID.randomUUID()),"obs.batch",Json.object("queries",Json.GSON.toJsonTree(queries)),new dev.modbench.bridge.Session(),this,envelope->{
+                boolean ok=envelope.has("ok")&&envelope.get("ok").getAsBoolean();
+                @SuppressWarnings("unchecked") Map<String,Object> value=Json.GSON.fromJson(envelope.get(ok?"data":"error"),Map.class);
+                reply.accept(ok?value:Map.of("error",value));
+            });
+            try{Object result=observations.batch(r);if(result!=null)r.reply(result);}
+            catch(Exception|LinkageError e){r.fail("observation_failed",String.valueOf(e));}
+        });
     }
     private Navigation navigation(){requirePlayer();Navigation p=NavigationRegistry.get();if(p==null)throw new IllegalArgumentException("Baritone mod is not installed");return p;}
     private List<Integer> questIds(JsonObject params,String key){if(!params.has(key)||!params.get(key).isJsonArray()||params.getAsJsonArray(key).size()>256)throw new IllegalArgumentException(key+" array required (max 256)");List<Integer> out=new ArrayList<>();for(JsonElement e:params.getAsJsonArray(key)){JsonObject one=Json.object("id",e);out.add(Json.integer(one,"id",0,0,Integer.MAX_VALUE));}return out;}

@@ -29,12 +29,12 @@ public final class StepPlan {
             return out;
         }
     }
-    static final Set<String> SPEC=Set.of("name","steps","origin","mode","timeoutTicks","overrideProtection","allowBreak","allowPlace","jobId","_timeout_ms","stallTicks","access","replaceExisting");
+    static final Set<String> SPEC=Set.of("name","steps","origin","timeoutTicks","overrideProtection","allowBreak","allowPlace","jobId","_timeout_ms","stallTicks","access");
     public static boolean isSteps(Map<String,Object> spec){return spec.containsKey("steps");}
     public static List<Step> parse(Map<String,Object> spec) {
         fields(spec,SPEC);
         if(spec.containsKey("cells")||spec.containsKey("selection"))throw new IllegalArgumentException("give steps, or cells/selection, not both");
-        for(String key:List.of("overrideProtection","allowBreak","allowPlace","replaceExisting"))bool(spec,key,false);
+        for(String key:List.of("overrideProtection","allowBreak","allowPlace"))bool(spec,key,false);
         integer(spec,"timeoutTicks",12000,1,72000);
         if(spec.containsKey("access"))Access.parse(child(spec,"access"));
         BlockPos origin=spec.containsKey("origin")?pos(spec.get("origin")):new BlockPos(0,0,0);

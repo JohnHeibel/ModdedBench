@@ -51,7 +51,7 @@ abstract class BulkJob implements Navigation.Job {
             // The upstream engine re-plans for ever around a target it cannot reach (bobbing in a pond, pacing a ledge): the
             // shared watchdog ends that with where it happened, judged the same way as the deadline.
             progressSeen=progress();
-            if(stall.tick(activity(),(int)Math.floor(mc.thePlayer.posX),(int)Math.floor(mc.thePlayer.boundingBox.minY+.001),(int)Math.floor(mc.thePlayer.posZ),WorkAccess.searchBudget(navigation.reference()))){finish(session()>0?"paused":"failed",stall.reason());return;}
+            if(stall.tick(activity(),(int)Math.floor(mc.thePlayer.posX),(int)Math.floor(mc.thePlayer.boundingBox.minY+.001),(int)Math.floor(mc.thePlayer.posZ),WorkAccess.searchBudget(navigation.reference()))){finish(session()>0?"paused":"failed",stallReason(stall.reason()));return;}
             for(int transitions=0;transitions<8&&!done();transitions++) {
                 String oldPhase=phase();step();
                 if(oldPhase.equals(phase()))return;
@@ -67,6 +67,8 @@ abstract class BulkJob implements Navigation.Job {
     /** What the stall watchdog counts as work besides new ground: progress, and whatever else this job changes on its way. */
     long activity(){return progress();}
     void releaseProcess() {}
+    /** The stall verdict's reason; a job that knows why it is stuck (a click with no vantage) adds that. */
+    String stallReason(String reason){return reason;}
     /** A job may take its ending over to do one more thing first (the miner breaking the blocks it placed): true when it did. */
     boolean ending(String terminal,String why){return false;}
     final void finish(String terminal,String why) {
