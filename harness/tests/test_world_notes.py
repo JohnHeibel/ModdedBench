@@ -313,7 +313,13 @@ class NotesSurfacingTests(unittest.TestCase):
         self.assertEqual(notes.goal(self.game)["quietGameMinutes"], 0)
         self.assertEqual(notes.goal(self.game, dict(subgoal="smelt copper"))["chapter"], "Steam Age")
         self.assertEqual(self.store.get("goal-stack")["revision"], 2)
-        self.store.write("goal-stack", 2, "archive-goal", {"status": "archived"})
+        self.assertNotIn("progress", notes.goal(self.game))  # the estimate is optional
+        self.assertEqual(notes.goal(self.game, dict(subgoal="alloy bronze", progress=60))["progress"], 60)
+        self.assertEqual(notes.goal(self.game, dict(quest="Bronze", progress=40))["progress"], 40)  # it may go down
+        self.assertEqual(notes.goal(self.game, dict(subgoal="hand it in"))["progress"], 40)
+        self.assertNotIn("progress", notes.goal(self.game, dict(quest="Steel")))  # a new quest starts without one
+        with self.assertRaisesRegex(ValueError, "progress must be an integer in 0..100"): notes.goal(self.game, dict(progress=140))
+        self.store.write("goal-stack", 6, "archive-goal", {"status": "archived"})
         self.assertIn("unset", notes.goal(self.game))
         self.assertEqual(notes.goal(self.game, dict(quest="Steel"))["chapter"], "")  # a cleared stack starts again
 
