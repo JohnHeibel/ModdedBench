@@ -318,11 +318,13 @@ def _machine(session, inputs, wait_s):
                 try: output[key] = not next(p for p in k.call("obs.container", probeSlot=s["i"])["slots"] if p["i"] == s["i"])["acceptsProbe"]
                 except BridgeError: continue  # a running machine emptied the slot between the two looks; the next pass sees it
             if output[key]:
+                identity = {field: stack[field] for field in ("id", "meta", "nbt_hash") if field in stack}
+                before = sum(p["stack"]["count"] for p in _player(session.observe()) if _matches(p.get("stack"), identity))
                 session.click(s["i"], "quick_move")
-                left = next(p for p in session.observe()["slots"] if p["i"] == s["i"]).get("stack")
-                if left and left["count"] == stack["count"]:
-                    raise ProcedureStopped("the output did not move: your inventory is full", session.receipts)
-                collected.append({"id": stack["id"], "meta": stack.get("meta"), "count": stack["count"] - (left or {}).get("count", 0)})
+                gained = sum(p["stack"]["count"] for p in _player(session.observe()) if _matches(p.get("stack"), identity)) - before
+                if gained <= 0:
+                    raise ProcedureStopped("the output did not reach your inventory; inspect the GUI and available space", session.receipts)
+                collected.append({"id": stack["id"], "meta": stack.get("meta"), "count": gained})
         inside = [dict(slot=s["i"], id=s["stack"]["id"], meta=s["stack"].get("meta"), count=s["stack"]["count"])
                   for s in session.observe()["slots"] if s["kind"] == "container" and s.get("stack")]
         slots = {x["slot"] for x in loaded}  # done when what this call loaded is used up, or, collecting only, when the machine is empty
