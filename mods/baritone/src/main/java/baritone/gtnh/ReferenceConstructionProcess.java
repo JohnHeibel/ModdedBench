@@ -408,7 +408,10 @@ final class ReferenceConstructionProcess extends BulkJob {
             finish("paused",!pending.isEmpty()?"placement_not_verified_inspect_before_retry":unavailable?"missing_materials":"source_builder_requires_materials_or_access");return;
         }
         if(centerForPlacement())return;
-        engine.tickStart();incorrect=builder.incorrectPositions().stream().limit(128).map(p->List.of(p.x,p.y,p.z)).toList();
+        engine.tickStart();
+        // Placement callbacks may finish and release this job during the source tick.
+        if(done())return;
+        incorrect=builder.incorrectPositions().stream().limit(128).map(p->List.of(p.x,p.y,p.z)).toList();
         var interaction=new LinkedHashMap<String,Object>(builder.placementDiagnostic);
         interaction.put("requestedInputs",java.util.Arrays.stream(baritone.api.utils.input.Input.values()).filter(engine.getInputOverrideHandler()::isInputForcedDown).map(Enum::name).toList());
         interaction.put("actualRotation",List.of(mc.thePlayer.rotationYaw,mc.thePlayer.rotationPitch));
