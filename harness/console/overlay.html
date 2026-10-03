@@ -168,7 +168,7 @@ function draw(d){
   window.Pops&&Pops.draw(d);
   $("readout").innerHTML=`<dt>target</dt><dd class="key">${esc(d.target||"")}</dd><dt>quests done</dt><dd>${big(d.chapters&&d.chapters.length?d.chapters.reduce((n,c)=>n+c.completed,0):s.claims)}</dd><dt>actions</dt><dd>${big(s.calls)}</dd>`+
     `<dt>failed</dt><dd class="bad">${big(s.failed)}</dd><dt>scripts</dt><dd>${big(s.scripts)}</dd><dt>tokens in</dt><dd>${(t.estimated||t.uncounted)?"~":""}${big((t.input||0)+(t.uncounted||0)+(t.estimated||0))}</dd>`+
-    `<dt>tokens out</dt><dd>${big(t.output)}</dd>`;  // the estimate is input only: output is counted when a turn ends
+    `<dt>tokens out</dt><dd>${big(t.output)}</dd>`;  // the console reads both from Codex's own record; the feed's estimate (input only) is the fallback
 }
 const thought={ts:null,title:"",text:"",since:0,drawn:null};
 setInterval(()=>{  // the summary arrives whole when the step ends; typing it out at reading pace is what makes it read as a stream

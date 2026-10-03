@@ -28,6 +28,32 @@ SNAPSHOTS = REPO / ".runtime" / "snapshots"  # written by harness/launcher/backu
 # Codex compacts its context without a word in the exec stream; only its own record of the thread says how full the context is.
 CONTEXT = ("f=$(ls -t /home/agent/.codex/sessions/*/*/*/rollout-*.jsonl 2>/dev/null | head -1); "
            "[ -n \"$f\" ] && tail -c 4000000 \"$f\" | grep '\"last_token_usage\"' | tail -1")
+# Exact tokens for the run, from Codex's record of every thread it touched: the exec stream reports usage only when a turn
+# ends, and a run is one long turn. A thread that began before the run counts from its last total before the run's start.
+USAGE = r"""
+import glob, json, os, sys
+from datetime import datetime
+sessions, run = sys.argv[1], json.load(open(sys.argv[2]))["startedAt"]
+def totals(path, before=None):
+    last = None
+    with open(path, encoding="utf-8", errors="replace") as f:
+        if before is None: f.seek(max(0, os.path.getsize(path) - 4000000)); f.readline()  # the newest total is near the end
+        for line in f:
+            if '"total_token_usage"' not in line: continue
+            e = json.loads(line)
+            if before is not None and datetime.fromisoformat(e["timestamp"].replace("Z", "+00:00")).timestamp() >= before: break
+            last = e["payload"]["info"]["total_token_usage"]
+    return last or {}
+out = {"input": 0, "cached": 0, "output": 0}
+for path in glob.glob(os.path.join(sessions, "*", "*", "*", "rollout-*.jsonl")):
+    if os.path.getmtime(path) < run: continue
+    with open(path, encoding="utf-8", errors="replace") as f: first = json.loads(f.readline())
+    began = datetime.fromisoformat(first["timestamp"].replace("Z", "+00:00")).timestamp()
+    now, then = totals(path), (totals(path, run) if began < run else {})
+    for key, field in (("input", "input_tokens"), ("cached", "cached_input_tokens"), ("output", "output_tokens")):
+        out[key] += (now.get(field) or 0) - (then.get(field) or 0)
+print(json.dumps(out))
+"""
 COMPACTIONS = "f=$(ls -t /home/agent/.codex/sessions/*/*/*/rollout-*.jsonl 2>/dev/null | head -1); [ -n \"$f\" ] && grep -c '\"type\":\"compacted\"' \"$f\""
 # The operator hold is a file in the server directory: the server only asks whether it exists, and what it says is whose
 # hold it is, so that the compaction guard ends only its own.
@@ -98,7 +124,7 @@ class Console:
         self.lock = threading.Lock(); self.kernel = None; self.supervisor = None; self.backups = None
         self.guard = None  # (compactions in the rollout when the guard held the world, monotonic time, the silence's start)
         self.guard_done = None  # the start of the silence the guard last let go of
-        self.job = {"name": "", "running": False, "ok": True, "log": ""}; self.login = (0.0, None); self.book = (0.0, []); self.ctx = (0.0, None); self.shorten = Shortener(runtime.RUNTIME / "overlay-short.json")
+        self.job = {"name": "", "running": False, "ok": True, "log": ""}; self.login = (0.0, None); self.book = (0.0, []); self.ctx = (0.0, None); self.used = (0.0, None); self.shorten = Shortener(runtime.RUNTIME / "overlay-short.json")
 
     # The bridge, read only: one long-lived session for the state panel.
     def call(self, method, **params):
@@ -147,6 +173,13 @@ class Console:
             ctx = (info["last_token_usage"]["total_tokens"], info["model_context_window"])
         except Exception: ctx = None
         self.ctx = (time.monotonic(), ctx); return ctx
+
+    def usage(self):
+        """Exact {input, cached, output} tokens of the run so far (USAGE), read at most every 30 s; None when it cannot be read."""
+        if time.monotonic() - self.used[0] < 30: return self.used[1]
+        try: used = json.loads(sh([*COMPOSE, "exec", "-T", "agent", "python3", "-c", USAGE, "/home/agent/.codex/sessions", "/work/modbench/.state/run.json"], timeout=60).stdout)
+        except Exception: used = None
+        self.used = (time.monotonic(), used); return used
 
     def compacting(self, status):
         """Codex compacts its context without a word in the exec stream. It starts once the context is nearly full (both
@@ -232,7 +265,9 @@ class Console:
         for entry in [e for e in feed if e.get("kind") == "say"][-12:]: entry["short"] = self.shorten.get("say", entry.get("text"))
         try: target = re.search(r'^TARGET_QUEST\s*=\s*"([^"<]+)"', (BRIEF / "PROMPT.md").read_text(encoding="utf-8"), re.M).group(1)
         except (OSError, AttributeError): target = ""
-        return {"now": time.time(), "goal": goal, "status": status, "stats": live.get("stats"), "run": live.get("run"), "budget": live.get("budget"), "target": target, "feed": feed, "chapters": self.book[1], "clock": why, "pops": pops}
+        stats, used = dict(live.get("stats") or {}), self.usage()
+        if used: stats["tokens"] = {**used, "estimated": 0, "uncounted": 0}  # exact, where the feed can only estimate a running turn
+        return {"now": time.time(), "goal": goal, "status": status, "stats": stats, "run": live.get("run"), "budget": live.get("budget"), "target": target, "feed": feed, "chapters": self.book[1], "clock": why, "pops": pops}
 
     # Actions. Anything slow runs as the single background job; its command lines and output are the job log.
     def run_job(self, name, steps):
