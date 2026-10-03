@@ -28,6 +28,7 @@ import inspect
 import json
 import os
 import sys
+import time
 import traceback
 import typing
 from typing import Any
@@ -210,8 +211,10 @@ class Server(FastMCP):
         token = reply_trace.set(trace)
         scope = CancellationScope()
         scope_token = cancel_scope.set(scope)
+        started, error_code = time.time(), "cancelled"
         try:
             result = await super().call_tool(name, arguments)
+            error_code = "tool_error" if getattr(result, "isError", False) else None
             if isinstance(result, CallToolResult):
                 return result.model_copy(update={"meta": {**(result.meta or {}), "bridge": trace}})
             if isinstance(result, tuple):
@@ -245,6 +248,7 @@ class Server(FastMCP):
             else:
                 log(traceback.format_exc())
                 error = {"code": "tool_exception", "msg": str(e)}
+            error_code = error["code"]
             if procedure_receipts is not None:
                 error["procedureReceipts"] = procedure_receipts
             if getattr(outer, "resumed_world", None):
@@ -255,6 +259,18 @@ class Server(FastMCP):
         finally:
             reply_trace.reset(token)
             cancel_scope.reset(scope_token)
+            self._log_call(name, arguments, started, error_code)
+
+    def _log_call(self, name: str, arguments: dict[str, Any], started: float, error: str | None) -> None:
+        method = (arguments or {}).get("method")
+        entry = {"t": round(started, 2), "s": round(time.time() - started, 2), "tool": name,
+                 "method": method if isinstance(method, str) else None, "error": error}
+        try:
+            os.makedirs(os.path.dirname(mbtool.CALL_LOG), exist_ok=True)
+            with open(mbtool.CALL_LOG, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry) + "\n")
+        except OSError as e:
+            log(f"call log skipped: {e}")
 
     # ---- built-in management tools ----
 

@@ -42,6 +42,7 @@ from typing import Any, Callable
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 TOOLS_DIR = os.path.join(os.path.dirname(_HERE), "tools")
+CALL_LOG = os.environ.get("MB_CALL_LOG") or os.path.join(os.path.dirname(os.path.dirname(_HERE)), ".state", "calls.jsonl")  # server appends every tool call
 PACKAGE = "mbtools_gtnh"
 LANES = ("read", "act", "control")
 if _HERE not in sys.path:
