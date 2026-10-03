@@ -27,11 +27,12 @@ public final class ClientControls implements Controls {
     private static net.minecraft.world.World attackWorld;
 
     /** Capture the actual ray before a raw attack hold. No target means no block edits. */
-    public void guardBlockAttack(InputArbiter.Lease lease) {
+    public int[] guardBlockAttack(InputArbiter.Lease lease) {
         requireGameThread();attackLease=lease;attackWorld=MC.theWorld;
         var hit=NativeTargeting.INSTANCE.refresh();
         attackGuard=hit!=null&&hit.typeOfHit==net.minecraft.util.MovingObjectPosition.MovingObjectType.BLOCK
             ?new BlockAttackGuard(hit.blockX,hit.blockY,hit.blockZ,MC.theWorld.getBlock(hit.blockX,hit.blockY,hit.blockZ),MC.theWorld.getBlockMetadata(hit.blockX,hit.blockY,hit.blockZ)):null;
+        return attackGuard==null?null:new int[]{attackGuard.x(),attackGuard.y(),attackGuard.z()};
     }
     public boolean blockAttackChanged(InputArbiter.Lease lease) {
         requireGameThread();

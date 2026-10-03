@@ -119,6 +119,21 @@ class GTNHProfileTests(unittest.TestCase):
             core.mb_act("input", {"keys": ["sneak", "attack"], "poseTicks": -1})
         self.assertEqual(fake.calls, [])
 
+    def test_attack_target_goes_to_the_attack_call_for_the_client_to_check(self):
+        core = module_with(self.loaded(), "mb_act")
+        fake = self.use(FakeKernel(lambda method, params: {"completed": True}))
+        params = {"keys": ["sneak", "attack"], "ticks": 20, "attackTarget": [4, 5, 6]}
+        core.mb_act("input", params)
+        self.assertEqual([m for m, p in fake.calls], ["act.input", "act.input"])
+        self.assertNotIn("attackTarget", fake.calls[0][1])
+        self.assertEqual(fake.calls[1][1]["attackTarget"], [4, 5, 6])
+        fake.calls.clear()
+        for bad in ({"keys": ["use"]}, {"keys": ["attack"], "allowRetarget": True},
+                    {"keys": ["attack"], "attackTarget": [4, True, 6]}, {"keys": ["attack"], "attackTarget": [4, 5]}):
+            with self.assertRaises(ValueError):
+                core.mb_act("input", {"attackTarget": [4, 5, 6], **bad})
+        self.assertEqual(fake.calls, [])
+
     def test_tool_set_lanes_and_metadata(self):
         srv = self.loaded()
         self.assertEqual(set(srv.name_owner), TOOLS)

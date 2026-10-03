@@ -6,7 +6,8 @@ package dev.modbench.api;
 public interface Controls {
     InputArbiter arbiter();
     void focusForInput();
-    void guardBlockAttack(InputArbiter.Lease lease);
+    /** Locks a raw attack hold to the block now under the crosshair; returns its [x,y,z], or null when there is none. */
+    int[] guardBlockAttack(InputArbiter.Lease lease);
     boolean blockAttackChanged(InputArbiter.Lease lease);
     void releaseBlockAttack(InputArbiter.Lease lease);
     InventorySession beginPlayerInventory(InputArbiter.Lease lease);
