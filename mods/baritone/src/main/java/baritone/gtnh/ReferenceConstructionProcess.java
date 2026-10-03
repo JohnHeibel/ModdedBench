@@ -41,6 +41,14 @@ final class ReferenceConstructionProcess extends BulkJob {
     private boolean clearanceEgress;
     private baritone.api.pathing.goals.Goal egressGoal;
     private final Map<BlockPos,baritone.api.pathing.goals.Goal> cleanupGoals=new HashMap<>();
+    // A cell with no vantage: when the job may not make one (restricted, or neither allowBreak nor allowPlace) and no
+    // unplaced plan cell nearby could change that, it ends with the diagnosis instead of wandering; otherwise the last such
+    // cell explains a stall.
+    private Cell noVantage,lastNoVantage;
+    private final Set<BlockPos> reachableNow=new HashSet<>();
+    private Map<String,Object> vantageDiagnosis=Map.of();
+    private final Map<BlockPos,Map<String,Object>> placements=new LinkedHashMap<>();
+    private List<Map<String,Object>> unverified=List.of();
     ReferenceConstructionProcess(BaritoneNavigation navigation,WorkJournal journal,Map<String,Object> options){
         super(navigation,journal,options);engine=navigation.reference();
         plan=new ConstructionPlan(params,journal.progress,world);repeat=plan.repeat;layer=plan.layer;
@@ -136,6 +144,8 @@ final class ReferenceConstructionProcess extends BulkJob {
                 var previous=previousObserved.put(p,state);
                 if(!now&&!state.block().isAir(world,p.getX(),p.getY(),p.getZ())&&!plan.repairPlaced()&&attempts.containsKey(ConstructionPlan.key(cell)))pending.add(p);
                 if(now&&pending.remove(p)){if(cell.clear())removedObserved.add(p);else placedObserved.add(p);}
+                var receipt=placements.get(p);
+                if(receipt!=null&&!receipt.containsKey("after")&&!state.equals(previous==null?state:previous))receipt.put("after",state(p));
                 // Explicit-air cells may start empty, receive an autonomous
                 // scaffold, then be cleared again. Count that observed removal
                 // even though the final block equals its initial state.
@@ -222,6 +232,8 @@ final class ReferenceConstructionProcess extends BulkJob {
             // No existing vantage is not proof that construction is impossible:
             // the source planner may still build the support it needs to stand on.
             if(legal.isEmpty()){
+                lastNoVantage=cell;
+                if((restricted||!allowBreak&&!allowPlace)&&!reachableNow.contains(cell.pos())&&!unplacedNear(cell)){noVantage=cell;return goal;}
                 // Standing in the cell itself fails native collision from every vantage, and the source goal (stand on top of the
                 // new block) is unreachable without scaffolding: step out to a neighbouring column first, then this adapter runs again.
                 var at=cell.pos();
@@ -306,11 +318,52 @@ final class ReferenceConstructionProcess extends BulkJob {
             if(!engine.getBuilderProcess().placementFace.test(wanted,hit.sideHit)||!bool(cell.placement(),"verifyAfterPlacement",false)&&!engine.getBuilderProcess().stateComparison.test(predicted,wanted)){
                 finish("paused","native_placement_prediction_changed");return;
             }
+            Map<String,Object> receipt=new LinkedHashMap<>();receipt.put("cell",point(pos));
+            receipt.put("clicked",Map.of("block",point(new BlockPos(hit.getBlockPos().getX(),hit.getBlockPos().getY(),hit.getBlockPos().getZ())),"face",ClickSpec.NAMES[hit.sideHit.ordinal()],
+                "hit",List.of(round(hit.hitVec.x-hit.getBlockPos().getX()),round(hit.hitVec.y-hit.getBlockPos().getY()),round(hit.hitVec.z-hit.getBlockPos().getZ()))));
+            receipt.put("sneaking",mc.thePlayer.isSneaking());receipt.put("before",state(pos));receipt.put("predicted",Map.of("id",String.valueOf(Registry.name(predicted.getBlock())),"meta",predicted.meta));
+            placements.remove(pos);placements.put(pos,receipt);if(placements.size()>64)placements.remove(placements.keySet().iterator().next());
             String key=ConstructionPlan.key(cell);int count=((Number)attempts.getOrDefault(key,0)).intValue();
             if(count>=plan.attemptLimit()){finish("paused","placement_attempt_limit_inspect_block_adapter");return;}
             journal.recordAttempt(key,count+1);attempts.put(key,count+1);pending.add(pos);
             placementGoals.clear();
         };
+    }
+    private static double round(double v){return Math.round(v*1000)/1000.0;}
+    private Map<String,Object> state(BlockPos p){
+        var b=world.getBlock(p.getX(),p.getY(),p.getZ());int meta=world.getBlockMetadata(p.getX(),p.getY(),p.getZ());
+        Map<String,Object> out=new LinkedHashMap<>();out.put("id",b.isAir(world,p.getX(),p.getY(),p.getZ())?"minecraft:air":String.valueOf(Registry.name(b)));out.put("meta",meta);out.put("hasTile",b.hasTileEntity(meta));return out;
+    }
+    /** An unplaced plan cell within reach of this one: placing it may give footing or take a view, so no vantage now is not final. */
+    private boolean unplacedNear(Cell cell){
+        double r=mc.playerController.getBlockReachDistance()+2;
+        for(Cell c:desired.values())if(c!=cell&&!c.clear()&&!correct.getOrDefault(c.pos(),false)){
+            double dx=c.pos().getX()-cell.pos().getX(),dy=c.pos().getY()-cell.pos().getY(),dz=c.pos().getZ()-cell.pos().getZ();
+            if(dx*dx+dy*dy+dz*dz<=r*r)return true;
+        }
+        return false;
+    }
+    /** The vantage search's answer for one cell, in the world as it is: why no stance gives the click. One-off, at the end of a job. */
+    private Map<String,Object> diagnose(Cell cell){
+        Integer face=cell.placement().containsKey("face")?integer(cell.placement(),"face",0,0,5):null;
+        ClickSpec.Vec hit=null;
+        if(cell.placement().containsKey("hit")){var h=list(cell.placement().get("hit"));hit=new ClickSpec.Vec(((Number)h.get(0)).doubleValue(),((Number)h.get(1)).doubleValue(),((Number)h.get(2)).doubleValue());}
+        var target=new Vantages.Target(Vantages.placing(cell.pos(),face),hit,ClickSpec.Look.ANY,cell.pos());
+        var copy=ClickWorld.around(world,List.of(cell.pos()),(int)Math.ceil(mc.playerController.getBlockReachDistance())+2,override);
+        while(!copy.step(Long.MAX_VALUE)){}
+        var space=copy.space();var tally=new Vantages.Tally();var body=ClickWorld.body(mc,true);
+        var found=Vantages.search(space,target,body,1,tally);
+        if(!found.isEmpty())return Map.of("cell",point(cell.pos()),"problem","none_now","vantage",ClickStepProcess.vantage(found.get(0)));
+        return ClickStepProcess.diagnosis(space,target,tally,Vantages.problem(space,target,tally),"cell "+cell.pos().getX()+","+cell.pos().getY()+","+cell.pos().getZ());
+    }
+    private static String blocked(Map<String,Object> d){
+        Object first=d.get("blocking") instanceof List<?> l&&!l.isEmpty()?l.get(0):null;
+        return first instanceof Map<?,?> m?" (blocked by "+m.get("id")+" at "+m.get("pos")+")":"";
+    }
+    @Override String stallReason(String reason){
+        if(lastNoVantage==null||correct.getOrDefault(lastNoVantage.pos(),false))return reason;
+        vantageDiagnosis=diagnose(lastNoVantage);
+        return reason+"; "+vantageDiagnosis.get("problem")+": cell "+lastNoVantage.pos().getX()+","+lastNoVantage.pos().getY()+","+lastNoVantage.pos().getZ()+blocked(vantageDiagnosis);
     }
     private boolean sourcePlacementHeight(Cell cell,baritone.compat.BlockPos sourceFeet){
         // A goal must be actionable by searchForPlaceables, not merely within
@@ -399,7 +452,14 @@ final class ReferenceConstructionProcess extends BulkJob {
                 repeat++;layer=plan.settings.integer("startAtLayer",0);plan.repeat=repeat;plan.layer=layer;plan.installSchematic();
                 initializeClearance();capture();configure();startPass();journal.save(status());return;
             }
-            finish("succeeded","schematic_verified");return;
+            // Block and metadata are all a cell check compares. A tile entity can keep a facing or a side the cell asked for
+            // (a placement face, hit or rotation) elsewhere, so say which cells that check cannot confirm.
+            List<Map<String,Object>> open=new ArrayList<>();
+            for(Cell c:plan.cells)if(!c.clear()&&!c.placement().isEmpty()&&open.size()<64){
+                var now=state(c.pos());if(Boolean.TRUE.equals(now.get("hasTile")))open.add(Map.of("pos",point(c.pos()),"id",now.get("id"),"placement",c.placement()));
+            }
+            unverified=List.copyOf(open);
+            finish("succeeded",open.isEmpty()?"schematic_verified":"schematic_verified_tile_state_unverified");return;
         }
         if(builder.isPaused()){
             var missing=desired.values().stream().filter(c->!correct.getOrDefault(c.pos(),false)).toList();
@@ -407,8 +467,18 @@ final class ReferenceConstructionProcess extends BulkJob {
             boolean unavailable=missing.stream().filter(c->!c.clear()&&!plan.occupied(c.pos())).allMatch(c->plan.slot(c)<0);
             finish("paused",!pending.isEmpty()?"placement_not_verified_inspect_before_retry":unavailable?"missing_materials":"source_builder_requires_materials_or_access");return;
         }
+        if(noVantage!=null){
+            // One synchronous copy of the cells around one target (about 4k blocks), once per cell: the job ends here or the
+            // cell is marked as seen reachable so this does not repeat.
+            vantageDiagnosis=diagnose(noVantage);Cell cell=noVantage;noVantage=null;
+            if(!"none_now".equals(vantageDiagnosis.get("problem"))){
+                finish("failed",vantageDiagnosis.get("problem")+": cell "+cell.pos().getX()+","+cell.pos().getY()+","+cell.pos().getZ()+blocked(vantageDiagnosis));return;
+            }
+            reachableNow.add(cell.pos());
+        }
         if(centerForPlacement())return;
-        engine.tickStart();incorrect=builder.incorrectPositions().stream().limit(128).map(p->List.of(p.x,p.y,p.z)).toList();
+        engine.tickStart();
+        incorrect=builder.incorrectPositions().stream().limit(128).map(p->List.of(p.x,p.y,p.z)).toList();
         var interaction=new LinkedHashMap<String,Object>(builder.placementDiagnostic);
         interaction.put("requestedInputs",java.util.Arrays.stream(baritone.api.utils.input.Input.values()).filter(engine.getInputOverrideHandler()::isInputForcedDown).map(Enum::name).toList());
         interaction.put("actualRotation",List.of(mc.thePlayer.rotationYaw,mc.thePlayer.rotationPitch));
@@ -449,6 +519,9 @@ final class ReferenceConstructionProcess extends BulkJob {
         var out=super.status();out.put("engine","baritone-1.2.19-source-port");out.put("process","BuilderProcess");out.put("mode",plan==null?null:plan.mode());
         out.put("buildPhase",clearanceEgress?"clearance_egress":cleanupPhase?"clearance":"construction");out.put("deferredAirCells",deferredAir.size());
         out.put("placed",placedObserved.size());out.put("removed",removedObserved.size());out.put("layer",layer);out.put("repeat",repeat);out.put("incorrect",incorrect);
+        out.put("placements",List.copyOf(placements.values()).subList(Math.max(0,placements.size()-32),placements.size()));
+        if(!unverified.isEmpty()){out.put("unverified",unverified);out.put("unverifiedMeaning","these cells hold a block with a tile entity and asked for a placement face, hit or rotation; block and metadata match, which does not confirm a facing or side the tile entity keeps");}
+        if(!vantageDiagnosis.isEmpty())out.put("vantage",vantageDiagnosis);
         out.put("selected",plan==null?0:plan.cells.size());out.put("pendingPlacementVerification",pending.size());out.put("movementTypes",List.copyOf(movements));out.put("inspection",inspection);return out;
     }
 }

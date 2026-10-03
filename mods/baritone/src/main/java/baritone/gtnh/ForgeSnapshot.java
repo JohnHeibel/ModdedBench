@@ -56,7 +56,7 @@ final class ForgeSnapshot {
         while(!snapshot.captureSlice()) { /* Small, bounded main-thread corridor capture. */ }
         return snapshot.finish();
     }
-    private record Cell(byte kind,List<CollisionBox> boxes,LadderFacing ladder) {}
+    record Cell(byte kind,List<CollisionBox> boxes,LadderFacing ladder) {}
     static boolean loaded(World world,int x,int y,int z) {
         // In 1.7.10 ChunkProviderClient.chunkExists() always returns true.
         // Missing chunks are EmptyChunk placeholders, not observed air.
@@ -66,7 +66,7 @@ final class ForgeSnapshot {
         return sample(world,x,y,z).kind();
     }
     private static Cell simple(byte kind) {return new Cell(kind,List.of(),LadderFacing.NONE);}
-    private static Cell sample(World world,int x,int y,int z) {
+    static Cell sample(World world,int x,int y,int z) {
         if (!loaded(world,x,y,z)) return simple(TerrainGrid.UNKNOWN);
         Block b=world.getBlock(x,y,z);
         if (ForgeFluids.water(b)) return simple(TerrainGrid.WATER);

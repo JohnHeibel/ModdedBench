@@ -118,7 +118,7 @@ public final class BaritoneNavigation implements Navigation {
         active=new ReferenceProcessJob(reference,params);return active;
     }
     @Override public Job mine(Map<String,Object> params) {return process(new WorkJournal("mine",params),params);}
-    @Override public Job build(Map<String,Object> params) {params=ConstructionPlans.resolve(params);return process(new WorkJournal("build",params),params);}
+    @Override public Job build(Map<String,Object> params) {params=ConstructionPlans.resolve(params);if(StepPlan.isSteps(params))StepPlan.parse(params);return process(new WorkJournal("build",params),params);}
     @Override public Map<String,Object> stageBuild(Map<String,Object> params){return ConstructionPlans.stage(params);}
     @Override public Map<String,Object> pauseBuild() {
         if(!(active instanceof BulkJob job)||!job.journal.kind.equals("build"))throw new IllegalArgumentException("no construction process");
@@ -137,12 +137,13 @@ public final class BaritoneNavigation implements Navigation {
     private Job process(WorkJournal journal,Map<String,Object> options) {
         WorkAccess.player();
         if(active!=null&&!active.done())active.cancel("superseded");
-        BulkJob job=journal.kind.equals("mine")?new MiningProcess(this,journal,options):journal.kind.equals("build")?new ReferenceConstructionProcess(this,journal,options):null;
+        BulkJob job=journal.kind.equals("mine")?new MiningProcess(this,journal,options):!journal.kind.equals("build")?null
+            :StepPlan.isSteps(journal.spec)?new ClickStepProcess(this,journal,options):new ReferenceConstructionProcess(this,journal,options);
         if(job==null)throw new IllegalArgumentException("unknown journal work kind");
         active=job;try{job.begin();}catch(Exception error){job.cancel("start_failed");throw error;}return job;
     }
     @Override public Map<String,Object> workStatus(String id) {var data=WorkJournal.status(id);if(!Objects.equals(data.get("scope"),ControlRegistry.memory().memory().scope()))throw new IllegalArgumentException("work belongs to another world/dimension");return data;}
-    @Override public Map<String,Object> previewBuild(Map<String,Object> params){params=ConstructionPlans.resolve(params);WorkAccess.player();return new ConstructionPlan(params,new LinkedHashMap<>(),mc.theWorld).preview(WorkSpec.bool(params,"overrideProtection",false));}
+    @Override public Map<String,Object> previewBuild(Map<String,Object> params){params=ConstructionPlans.resolve(params);WorkAccess.player();if(StepPlan.isSteps(params))return ClickStepProcess.preview(params);var plan=new ConstructionPlan(params,new LinkedHashMap<>(),mc.theWorld);boolean override=WorkSpec.bool(params,"overrideProtection",false);var out=plan.preview(override);out.put("clickChecks",ClickStepProcess.cellChecks(plan.cells,override));return out;}
     @Override public Map<String,Object> importSchematic(Map<String,Object> params){try{return PlanImport.schematic(params);}catch(java.io.IOException error){throw new IllegalArgumentException("schematic: "+error.getMessage(),error);}}
     @Override public Map<String,Object> copy(Map<String,Object> params){WorkAccess.player();return PlanImport.copy(mc.theWorld,params);}
     @Override public Map<String,Object> scan(Map<String,Object> params) {
