@@ -26,6 +26,9 @@ public final class InputArbiter {
         boolean isActive();
         default boolean overrideProtection() {return false;}
         default boolean automatedEdits() {return false;}
+        /** From now until it ends, this lease may use an item whose rays reach no block in a protected region (a raised
+         * sword, a drawn bow); clicks on blocks still need overrideProtection. */
+        void permitInPlaceItemUse();
         @Override void close();
     }
 
@@ -34,10 +37,10 @@ public final class InputArbiter {
         private final String label;
         private final long operationId;
         private final boolean active;
-        private final boolean overrideProtection,automatedEdits;
+        private final boolean overrideProtection,automatedEdits,inPlaceItemUse;
 
-        private Current(String label, boolean active, boolean overrideProtection, long operationId, boolean automatedEdits) {
-            this.automatedEdits=automatedEdits;
+        private Current(String label, boolean active, boolean overrideProtection, long operationId, boolean automatedEdits, boolean inPlaceItemUse) {
+            this.automatedEdits=automatedEdits;this.inPlaceItemUse=inPlaceItemUse;
             this.operationId=operationId;
             this.label = label;
             this.active = active;
@@ -49,6 +52,7 @@ public final class InputArbiter {
         public boolean active() { return active; }
         public boolean overrideProtection() {return overrideProtection;}
         public boolean automatedEdits() {return automatedEdits;}
+        public boolean inPlaceItemUse() {return inPlaceItemUse;}
     }
 
     private final Sink sink;
@@ -110,7 +114,7 @@ public final class InputArbiter {
     }
 
     public synchronized Current current() {
-        return new Current(owner == null ? null : owner.label, owner != null && owner.active, owner != null && owner.active && owner.overrideProtection, owner==null?0:owner.operationId, owner!=null&&owner.active&&owner.automatedEdits);
+        return new Current(owner == null ? null : owner.label, owner != null && owner.active, owner != null && owner.active && owner.overrideProtection, owner==null?0:owner.operationId, owner!=null&&owner.active&&owner.automatedEdits, owner!=null&&owner.active&&owner.inPlaceItemUse);
     }
 
     /** Reapplies the active state after the host's normal input processing. */
@@ -231,6 +235,7 @@ public final class InputArbiter {
         private final Consumer<String> onRevoked;
         private final boolean overrideProtection,automatedEdits;
         private boolean active = true;
+        private volatile boolean inPlaceItemUse;
 
         private LeaseImpl(String label, Consumer<String> onRevoked, boolean overrideProtection,boolean automatedEdits) {
             this.automatedEdits=automatedEdits;
@@ -245,6 +250,7 @@ public final class InputArbiter {
         @Override public boolean isActive() { return InputArbiter.this.isOwner(this); }
         @Override public boolean overrideProtection() {return isActive() && overrideProtection;}
         @Override public boolean automatedEdits() {return isActive() && automatedEdits;}
+        @Override public void permitInPlaceItemUse() {inPlaceItemUse=true;}
         @Override public void close() { InputArbiter.this.close(this); }
     }
 }

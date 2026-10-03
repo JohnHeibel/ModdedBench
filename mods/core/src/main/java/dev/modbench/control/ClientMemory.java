@@ -122,7 +122,7 @@ public final class ClientMemory implements MemoryAccess {
         if(blockedThisTick) return refuse(action,x,y,z,"refused_earlier_this_tick"); // Vanilla may fall back from right-click to sendUseItem in this same tick.
         var owner=ClientControls.INSTANCE.arbiter().current();if(!owner.active()) return true;
         try {
-            List<Pos> affected=new ArrayList<>();
+            List<Pos> affected=new ArrayList<>();boolean inPlace=false;
             if(action==2) {
                 // Arbitrary mod items may use either ray, including in-place
                 // NBT containers. Item class/use animation cannot prove no edits.
@@ -130,14 +130,15 @@ public final class ClientMemory implements MemoryAccess {
                 addRay(affected,MC.thePlayer.rayTrace(reach,1));
                 var eye=MC.thePlayer.getPosition(1);var look=MC.thePlayer.getLook(1);
                 addRay(affected,MC.theWorld.rayTraceBlocks(eye,eye.addVector(look.xCoord*reach,look.yCoord*reach,look.zCoord*reach),true));
-                if(affected.isEmpty())affected.add(feet());
+                if(inPlace=affected.isEmpty())affected.add(feet());
             } else addAffected(affected,x,y,z,action==0?-1:side);
             TreeSet<String> regions=new TreeSet<>();for(Pos pos:affected) regions.addAll(memory().snapshot().protectedAt(pos,owner.automatedEdits()));
             if(regions.isEmpty()) return true;
-            if(!owner.overrideProtection()) {blockedThisTick=true;refuse(action,x,y,z,"protected_region:"+String.join(",",regions));ClientControls.revoke("protected_region:"+String.join(",",regions));MC.playerController.resetBlockRemoving();return false;}
+            // A lease permitted in-place item use (a fight's raised sword) passes only when neither ray reached a block.
+            if(!owner.overrideProtection()&&!(inPlace&&owner.inPlaceItemUse())) {blockedThisTick=true;refuse(action,x,y,z,"protected_region:"+String.join(",",regions));ClientControls.revoke("protected_region:"+String.join(",",regions));MC.playerController.resetBlockRemoving();return false;}
             String key=owner.operationId()+"|"+owner.label()+"|"+action+"|"+affected+"|"+regions;
             if(!key.equals(lastAudit)) {
-                Map<String,Object> receipt=Map.of("timeMs",System.currentTimeMillis(),"owner",owner.label(),"operationId",owner.operationId(),"action",action,"positions",affected,"regions",regions,"overrideProtection",true);
+                Map<String,Object> receipt=Map.of("timeMs",System.currentTimeMillis(),"owner",owner.label(),"operationId",owner.operationId(),"action",action,"positions",affected,"regions",regions,"overrideProtection",owner.overrideProtection()?true:"in_place_item_use");
                 Files.writeString(file.resolveSibling(file.getFileName()+".overrides.jsonl"),new Gson().toJson(receipt)+"\n",StandardCharsets.UTF_8,StandardOpenOption.CREATE,StandardOpenOption.APPEND);
                 lastAudit=key;
             }

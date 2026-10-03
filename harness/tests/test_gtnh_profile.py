@@ -404,6 +404,11 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual(fake.last("nav.fight"), ("nav.fight", {"timeout":20, "hold":False, "leash":16, "bailHealth":8,
             "maxAttackers":2, "maxHealthLoss":10, "maxGrowth":3, "durationTicks":600, "crit":True, "block":True, "entityId":7, "weaponSlot":0}))
         with self.assertRaises(ValueError): tools.mb_fight()
+        tools.mb_fight(7, override_protection=True, timeout_s=20)
+        sent = fake.last("nav.fight")[1]
+        self.assertTrue(sent["overrideProtection"])
+        self.assertNotIn("allowBreak", sent)
+        self.assertNotIn("allowPlace", sent)
         tools.mb_fight(swarm=True, timeout_s=20)  # swarm: stands, takes no target, swings at the full rate unless asked otherwise
         sent = fake.last("nav.fight")[1]
         self.assertEqual((sent["swarm"], sent["crit"], sent["block"], "entityId" in sent), (True, False, False, False))

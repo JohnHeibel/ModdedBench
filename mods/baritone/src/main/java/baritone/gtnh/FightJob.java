@@ -89,9 +89,11 @@ final class FightJob implements Navigation.Job {
         for(var s:List.of(settings.allowBreak,settings.allowPlace,settings.followRadius,settings.followOffsetDistance))saved.put(s,s.value);
         engine.getPathingBehavior().forceCancel();engine.snags.reset();
         lease=ControlRegistry.controls().arbiter().acquire("baritone-fight",this::cancel,false,true);
+        // overrideProtection lets this fight block (or draw) in a protected room: item use that reaches no block, nothing more.
+        boolean inPlace=bool(params,"overrideProtection",false);if(inPlace)lease.permitInPlaceItemUse();
         // For this job only, shown in the receipt and restored when it ends.
         settings.allowBreak.value=bool(params,"allowBreak",false);settings.allowPlace.value=bool(params,"allowPlace",false);settings.followRadius.value=2;settings.followOffsetDistance.value=0d;
-        for(var s:saved.keySet())jobSettings.put(s.getName(),s.value);jobSettings.put("overrideProtection",false);
+        for(var s:saved.keySet())jobSettings.put(s.getName(),s.value);jobSettings.put("overrideProtection",inPlace?"in_place_item_use":false);
         engine.overrideProtection=false;engine.positionAllowed=p->true;engine.explicitMiningTargets=()->s->false;
         engine.getInputOverrideHandler().attach(lease);
         if(!hold)engine.getFollowProcess().follow(e->e==target);

@@ -141,7 +141,7 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = Fal
              max_attackers: int = 2, max_health_loss: float = 10, max_growth: int = 3, weapon_slot: int | None = None, duration_ticks: int = 600,
              crit: bool | None = None, block: bool | None = None, ranged: dict | bool | None = None,
              timeout_s: float = 60.0, target: dict | None = None, hostile: list[dict] | None = None,
-             allow_break: bool = False, allow_place: bool = False) -> Any:
+             allow_break: bool = False, allow_place: bool = False, override_protection: bool = False) -> Any:
     """Fight one mob as a job, the way mb_mine mines: you choose the mob and the limits, it does the footwork.
 
     entity_id comes from mb_obs entities or the clock's threats. It paths to the mob (never breaking
@@ -152,6 +152,9 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = Fal
     in sight. Against more than one melee mob, first stand where only one can reach you (a doorway,
     a one-wide tunnel, a pillar two blocks up) and use hold; pursuing one mob of a group walks you
     into the others. It never chooses to chase a different mob.
+    override_protection=True lets this fight raise a sword (or draw a bow) inside one of your protected
+    regions: item use whose aim reaches no block. Right-clicks on protected blocks under the crosshair stay
+    refused, and break/place remain opt-in; it ends with the job.
     swarm=True is for many small mobs at once (silverfish, a spawner): it stands like hold but
     always swings at whichever hostile is nearest in reach, never stops as outnumbered, and
     defaults crit and block off so every swing lands at the weapon's full rate. It takes no
@@ -209,6 +212,7 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = Fal
     if hostile is not None: params["hostile"] = hostile
     if allow_break: params["allowBreak"] = True
     if allow_place: params["allowPlace"] = True
+    if override_protection: params["overrideProtection"] = True
     if not ranged: return notes.tracked("nav.fight", timeout_s, **params)
     book = notes.notes_dir() / "ballistics.json"  # what each weapon has taught so far: yours to read and correct
     known = json.loads(book.read_text()) if book.is_file() else {}
