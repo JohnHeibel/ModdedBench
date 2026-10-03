@@ -125,7 +125,7 @@ public final class ClientRuntime extends BridgeRuntime {
         register("obs.gui", "Current screen class and dimensions", "read", r -> gui());
         register("obs.keys", "Registered key bindings", "read", r -> bindings());
         register("act.press_key", "Press registered binding {name,ticks:1..200,overrideProtection:false}", "interaction", r -> press(r));
-        register("act.input", "Hold vanilla controls {keys:[forward,back,left,right,jump,sneak,sprint,attack,use],ticks:1..200,overrideProtection:false,allowRetarget:false}; sneak+attack/use adds two pose ticks before the requested hold; attack locks the initial block and ends on change", "interaction", r -> input(r));
+        register("act.input", "Hold vanilla controls {keys:[forward,back,left,right,jump,sneak,sprint,attack,use],ticks:1..200,overrideProtection:false,allowRetarget:false,attackTarget?:[x,y,z]}; sneak+attack/use adds two pose ticks before the requested hold; attack locks the initial block and ends on change; attackTarget refuses, sending nothing, unless that lock is on it", "interaction", r -> input(r));
         register("act.look", "Set player view {yaw,pitch}", "interaction", r -> look(r));
         register("act.stop", "Release controls and cancel active or pending navigation, including Java API processes", "interaction", r -> {
             controlsChanged("cancelled");cancelNavigation("cancelled");return Json.object("stopped", true);
@@ -471,6 +471,7 @@ public final class ClientRuntime extends BridgeRuntime {
 
     private Object hold(Request r, Set<Integer> codes, boolean bindingPress) {
         int ticks = Json.integer(r.params, "ticks", 1, 1, 200);
+        int[] target = AttackTarget.parse(r.params, codes.contains(mc.gameSettings.keyBindAttack.getKeyCode()));
         controlsChanged("superseded");
         control = r;
         inputChord = new InputChord(codes,ticks,mc.gameSettings.keyBindSneak.getKeyCode(),
@@ -484,8 +485,11 @@ public final class ClientRuntime extends BridgeRuntime {
                 else r.fail("cancelled", "input released: "+reason);
             }
         },Json.bool(r.params,"overrideProtection",false));
-        if(codes.contains(mc.gameSettings.keyBindAttack.getKeyCode())&&!Json.bool(r.params,"allowRetarget",false))
-            ControlRegistry.controls().guardBlockAttack(inputLease);
+        if(codes.contains(mc.gameSettings.keyBindAttack.getKeyCode())&&!Json.bool(r.params,"allowRetarget",false)) {
+            // attackTarget is checked against the lock itself, this tick, before any key is down: a mismatch sends nothing.
+            JsonObject refused=AttackTarget.refusal(target,ControlRegistry.controls().guardBlockAttack(inputLease));
+            if(refused!=null) {release();r.fail("attack_target_mismatch","the crosshair is not on attackTarget; aim again before attacking",refused);return null;}
+        }
         inputLease.setKeys(inputChord.keys());
         return null; // Completed at END after the pose prelude and requested hold, or interrupted.
     }

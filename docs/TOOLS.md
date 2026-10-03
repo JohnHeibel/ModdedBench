@@ -53,6 +53,10 @@ Actions (`mb_act`) need running time, so resume first:
   a confirmed kill.
 - A raw attack hold locks block edits to the block first under the crosshair
   and ends with `attack_target_changed`; `allowRetarget: true` lifts that.
+  `attackTarget: [x,y,z]` is checked by the client against that lock in the
+  same tick as the attack: if the lock is on another block, or there is none,
+  the call fails with `attack_target_mismatch` and no attack is sent. It
+  requires `attack` and disallows `allowRetarget`; observe the block again after digging.
 - Receipts carry `nativeReturn` (not a success flag) and `serverAcknowledged`
   (only eating has one). An item may change NBT, metadata or slot, or drop an
   entity, so check the whole inventory. `overrideProtection` is per operation.

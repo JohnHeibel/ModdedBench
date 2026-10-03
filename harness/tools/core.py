@@ -168,6 +168,9 @@ def mb_act(method: str, params: dict | None = None, timeout_s: float = 60.0) -> 
     fluid=true includes collidable fluids in the targeting ray.
     Raw input attack locks to the initial block and stops when it changes;
     allowRetarget=true explicitly enables continuous block attacking.
+    input attackTarget=[x,y,z] is refused, with no attack sent, unless the block
+    the attack locks onto (first under the crosshair) is that one; checked in the
+    same tick as the attack. It requires attack and forbids allowRetarget.
     Sneak+attack/use input first holds sneak alone for poseTicks (default 15,
     0 disables, maximum 200), allowing the pose packet to precede the click.
     posePrelude reports that bounded native hold; an incomplete hold sends no
@@ -184,6 +187,11 @@ def mb_act(method: str, params: dict | None = None, timeout_s: float = 60.0) -> 
     the spot lies in or beside a region note of yours.
     """
     params = dict(params or {})
+    attack_target = params.get("attackTarget")
+    if attack_target is not None and (method_name("act", method) != "act.input" or "attack" not in params.get("keys", [])
+                                      or params.get("allowRetarget") or not isinstance(attack_target, list)
+                                      or len(attack_target) != 3 or any(type(v) is not int for v in attack_target)):
+        raise ValueError("attackTarget requires three integer coordinates and input attack without allowRetarget")
     if method_name("act", method) == "act.eat": no_threat("eat", despite=params.pop("despiteThreat", False))
     k, prelude = kernel(), None
     if method_name("act", method) == "act.input":
