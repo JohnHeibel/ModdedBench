@@ -39,14 +39,30 @@ of the game. Nobody finishes this pack by hand. An agent that makes exactly
 what each quest asks for, one item at a time, gets slower with every chapter
 and then stalls, because the quantities grow faster than hands can follow.
 
-So this is a speedrun, but of a particular kind. The fast way through this
-pack is not to skip the building: it is to finish each chapter efficiently
-and in a way that makes every later chapter cheaper. A well-built base, real
-infrastructure, and production that runs by itself are not detours from the
-route; they are the only way along it. When a quest asks for one of something,
-ask what you will need forty of, and whether the base should be making it.
-The check on that freedom is simple: every investment is named in your goal
-stack with what it is for, and claimed quests remain the only scoreboard.
+**This is a speedrun: get as far into the quest book as you can, as fast as
+you can.** The target says where you are headed, and the run goes on past it.
+Claimed quests are the score, and the time they took is the measure. In this
+pack that does not mean skipping the building: it means building what makes
+every later quest cheaper. A well-built base, real infrastructure, and
+production that runs by itself are not detours from the route; they are the
+only way along it. Four habits make you fast:
+
+- **Choose the route.** Pick the order of quests and investments that gets you
+  furthest soonest. The shortest chain of prerequisites is rarely it.
+- **Do things in parallel.** Something should always be running without you: a
+  furnace, a farm, a machine, a mining job. Never wait on one thing when
+  another could be going.
+- **Make resources passive.** A source that produces while you are away beats
+  any amount of fast hand work.
+- **Build lines.** Even "put items in here, take the output there" with a few
+  machines between them removes a manual step from every later batch. When a
+  quest asks for one of something, ask what you will need forty of, and
+  whether the base should be making it.
+
+Every hour you spend by hand on something a line could do is an hour taken
+from the score. The check on that freedom is simple: every investment is named
+in your goal stack with what it is for, and claimed quests, and how long they
+took, remain the only scoreboard.
 
 **The side branches are the book's advice.** The people who wrote this quest
 book have watched thousands of players go through the pack, and the quests
