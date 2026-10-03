@@ -259,12 +259,12 @@ public final class ClientRuntime extends BridgeRuntime {
             if(mc.currentScreen==null) throw new IllegalArgumentException("open GUI first");
             return UiWidgets.hitTest(mc.currentScreen,Json.integer(r.params,"x",0,0,mc.currentScreen.width-1),Json.integer(r.params,"y",0,0,mc.currentScreen.height-1));
         });
-        register("obs.tooltip","Native tooltip for {slot:containerIndex} or {inv:playerIndex} or {cursor:true}; defaults held stack; {advanced:true}","read",r->{
+        register("obs.tooltip","Native tooltip for {slot:containerIndex} or {inv:playerIndex} or {cursor:true}; defaults held stack; {advanced:true,shift?,ctrl?,alt?} holds modifiers only during this read","read",r->{
             requirePlayer();ItemStack stack;
             if(r.params.has("slot")) stack=InventoryView.slot(ui.view.require(r.params),Json.integer(r.params,"slot",0,0,4095)).getStack();
             else if(r.params.has("inv")) stack=mc.thePlayer.inventory.getStackInSlot(Json.integer(r.params,"inv",0,0,35));
             else stack=Json.bool(r.params,"cursor",false)?mc.thePlayer.inventory.getItemStack():mc.thePlayer.getHeldItem();
-            return Stacks.tooltip(stack,Json.bool(r.params,"advanced",true));
+            return TooltipModifiers.read(r.params,()->Stacks.tooltip(stack,Json.bool(r.params,"advanced",true)));
         });
         register("obs.find","Find observed inventory/container stacks {selector:{id,meta?,nbt_hash?,nbt?},scope:player|container}","read",r->{
             requirePlayer();if(!r.params.has("selector")||!r.params.get("selector").isJsonObject()) throw new IllegalArgumentException("selector required");
