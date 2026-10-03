@@ -270,7 +270,9 @@ class Stage:
         while True:
             await asyncio.sleep(every)
             f = frame(0x00, pack("i", random.randint(1, 2**31 - 1)))
-            for v in self.viewers: v.send([f])
+            # Past the held snapshot: a client still applying the world before answering the barrier hears nothing else,
+            # and drops a connection that stays silent for half a minute.
+            for v in self.viewers: v.send([f], now=True)
 
 
 class Hub(Feed, Stage):
