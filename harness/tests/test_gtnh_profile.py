@@ -425,10 +425,17 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertAlmostEqual(measured["speed"], 2.2, 4)
         self.assertAlmostEqual(measured["drag"], .99, 4)
         self.assertAlmostEqual(measured["gravity"], .05, 4)
-        tools.mb_mine([{"id":"gregtech:gt.blockores"}], vein=[33,56,-70], quantity=128, allow_break=True, allow_place=True)
+        tools.mb_mine([{"id":"gregtech:gt.blockores"}], vein=[33,56,-70], quantity=128, allow_break=True, allow_place=True, cleanup_scaffold=True)
         mine = fake.last("nav.mine")[1]  # chunk 1 is the ore chunk nearest x=33, chunk -4 nearest z=-70
-        self.assertEqual((mine["bounds"], mine["besideFluid"], mine["items"]),
-            ({"min":[0,48,-80],"max":[47,64,-33]}, True, [{"id":"gregtech:gt.metaitem.03"}]))
+        self.assertEqual((mine["bounds"], mine["besideFluid"], mine["items"], mine["cleanupScaffold"]),
+            ({"min":[0,48,-80],"max":[47,64,-33]}, True, [{"id":"gregtech:gt.metaitem.03"}], True))
+        # Placing is a choice about what stays standing: the model makes it every time, and it means nothing without placing.
+        with self.assertRaisesRegex(ValueError, "cleanup_scaffold"): tools.mb_mine([{"id":"minecraft:log"}], allow_place=True)
+        with self.assertRaisesRegex(ValueError, "needs allow_place"): tools.mb_mine([{"id":"minecraft:log"}], cleanup_scaffold=True)
+        tools.mb_mine([{"id":"minecraft:log"}], allow_place=True, cleanup_scaffold=False)
+        self.assertIs(fake.last("nav.mine")[1]["cleanupScaffold"], False)
+        tools.mb_mine([{"id":"minecraft:log"}])
+        self.assertNotIn("cleanupScaffold", fake.last("nav.mine")[1])
         with self.assertRaises(ValueError): tools.mb_mine()
         tools.mb_process("goal", goal={"type":"near","pos":[1,64,2],"radius":2}, duration_ticks=80, timeout_s=14)
         self.assertEqual(fake.last("nav.process")[1]["goal"]["type"], "near")

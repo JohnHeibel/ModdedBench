@@ -30,6 +30,8 @@ public final class LegacyPlayerController {
         if(!engine.ownsNativeActions())return false;
         // The server must see the same native sneak/facing state used by placement prediction.
         mc.thePlayer.sendMotionUpdates();
+        // A block goes beside the face clicked, or into the clicked cell itself when that is replaceable (tall grass, snow).
+        engine.placing.accept(p.offset(side));engine.placing.accept(p);
         return mc.playerController.onPlayerRightClick(mc.thePlayer,mc.theWorld,mc.thePlayer.getHeldItem(),p.getX(),p.getY(),p.getZ(),side.ordinal(),hit.nativeVector());
     }
     public boolean processRightClick(){

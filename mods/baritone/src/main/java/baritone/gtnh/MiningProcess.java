@@ -53,6 +53,19 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
     private int broken,extraBroken,reachableAttackTicks;
     private final List<List<Integer>> extraAt=new ArrayList<>();
     private Integer dropsLeft;
+    // The blocks the path placed to climb or bridge (never the fluid plugs, which hold fluid back), with the block each became.
+    // cleanupScaffold breaks them again when the work ends as work does; an emergency or a cancel leaves them standing.
+    private final boolean cleanupScaffold;
+    private final Map<BlockPos,net.minecraft.block.Block> scaffold=new LinkedHashMap<>();
+    private record Placing(net.minecraft.block.Block before,int due){}
+    private final Map<BlockPos,Placing> placing=new HashMap<>();
+    private record Ending(String terminal,String why){}
+    private Ending ending; // the job's own ending, held while it takes its scaffold down
+    private MiningObservation cleanup;
+    private Integer countAtCleanup;
+    private String cleanupEnd;
+    private int scaffoldRemoved,clearedAt=-1;
+    private final List<Map<String,Object>> scaffoldLeft=new ArrayList<>();
     MiningProcess(BaritoneNavigation nav,WorkJournal journal,Map<String,Object> options){
         super(nav,journal,options);engine=nav.reference();
         var blocks=WorkAccess.selectors(params.get("blocks"));items=params.containsKey("items")?WorkAccess.itemSelectors(params.get("items")):List.of();
@@ -76,6 +89,11 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
         observation=new MiningObservation(world,bounds,blocks,items);
         if(!bool(options,"retry",false))for(Object p:list(journal.progress.getOrDefault("unreachable",List.of())))unreachable.add(pos(p));
         rejectedSeen=unreachable.size();
+        cleanupScaffold=bool(params,"cleanupScaffold",false);
+        for(Object row:list(journal.progress.getOrDefault("scaffold",List.of()))){
+            var cell=list(row);var block=net.minecraft.block.Block.getBlockFromName(String.valueOf(cell.get(3)));
+            if(block!=null)scaffold.put(pos(cell.subList(0,3)),block);
+        }
     }
     @Override void begin(){
         super.begin();engine.getPathingBehavior().forceCancel();
@@ -91,6 +109,7 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
         Baritone.besideFluid=besideFluid;
         // A plug is never walked back through: the search may not stand in one, nor under one.
         if(besideFluid)engine.positionAllowed=p->!plugged.contains(p)&&!plugged.contains(new BlockPos(p.getX(),p.getY()+1,p.getZ()));
+        engine.placing=this::placing;
         engine.getInputOverrideHandler().attach(lease);
     }
     int gained(){return Math.max(0,have()-baseline);}
@@ -112,13 +131,16 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
     @Override int progress(){return mc.thePlayer==player?gained():progressSeen;}
     // Digging toward a target is work before any ore arrives, and so is the first scan of the bounds, which stands still,
     // and so is holding a swing the game promised to finish (its own limit ends a useless one): a slow block is no stall.
-    @Override long activity(){return progress()+(long)broken+(observation.passes==0?observation.cursor:0)+(swing==null?0:ticks-swing.start());}
-    @Override String phase(){return "reference_mine";}
+    // Taking the scaffold down is new work too: its start counts, so the watchdog that ended the mining does not end it at once.
+    @Override long activity(){return progress()+(long)broken+(observation.passes==0?observation.cursor:0)+(swing==null?0:ticks-swing.start())+(ending==null?0:1_000_000L);}
+    @Override String phase(){return ending==null?"reference_mine":"scaffold_cleanup";}
     @Override public boolean planningWhilePaused(){return !done()&&ticks==0&&!started&&observation.passes==0;}
     @Override public void planWhilePaused(){
         if(mc.theWorld==world&&mc.thePlayer==player&&lease!=null&&lease.isActive()){observation.tick();scannedWhilePaused=observation.passes>0;}
     }
     @Override void step(){
+        placed();
+        if(ending!=null){cleanStep();return;}
         if(gained()>=quantity){finish("succeeded","requested_inventory_gain_observed");return;}
         if(!WorkAccess.room(items)){finish("failed","inventory_full");return;}
         observation.tick();
@@ -193,10 +215,11 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
         var pathing=engine.getPathingBehavior();var goal=pathing.getGoal();var feet=WorkAccess.feet();
         if(goal==null||!goal.isInGoal(feet)||!mc.thePlayer.onGround||!pathing.isSafeToCancel()
                 ||engine.getInputOverrideHandler().isInputForcedDown(baritone.api.utils.input.Input.CLICK_LEFT))return;
+        var targets=ending==null?observation:cleanup;
         for(var p:engine.getMineProcess().knownLocations().stream().sorted(Comparator.comparingDouble(feet::distanceSq)).toList()){
             if(p.getY()<feet.getY())continue; // Never turn an idle stance into a downward dig.
             var block=engine.bsi.get0(p);
-            if(!observation.has(block)||baritone.pathing.movement.MovementHelper.avoidBreaking(engine.bsi,p.getX(),p.getY(),p.getZ(),block))continue;
+            if(!targets.has(block)||baritone.pathing.movement.MovementHelper.avoidBreaking(engine.bsi,p.getX(),p.getY(),p.getZ(),block))continue;
             var point=MiningJob.reachable(mc,world,p);if(point==null)continue;
             var input=engine.getInputOverrideHandler();input.clearAllKeys();
             baritone.pathing.movement.MovementHelper.switchToBestToolFor(engine.getPlayerContext(),block);
@@ -211,8 +234,84 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
             return;
         }
     }
+    /** Before the path clicks to place: each cell a block could go into, to see over the next ticks which one it went to. */
+    private void placing(BlockPos p){
+        if(ending!=null||scaffold.containsKey(p))return;
+        var b=world.getBlock(p.getX(),p.getY(),p.getZ());
+        if(b.isReplaceable(world,p.getX(),p.getY(),p.getZ()))placing.putIfAbsent(p,new Placing(b,ticks+5));
+    }
+    private void placed(){
+        for(var it=placing.entrySet().iterator();it.hasNext();){
+            var e=it.next();var p=e.getKey();var b=world.getBlock(p.getX(),p.getY(),p.getZ());
+            if(b!=e.getValue().before()&&b.getMaterial().blocksMovement()){scaffold.put(p,b);it.remove();}
+            else if(ticks>=e.getValue().due())it.remove();
+        }
+    }
+    /** The work is over: with cleanupScaffold, first break the blocks it placed, unless this is an ending to get away from. */
+    @Override boolean ending(String terminal,String why){
+        if(!cleanupScaffold||cleanupEnd!=null||!routine(terminal,why))return false;
+        if(ending!=null){endCleanup(why);return true;} // the cleanup's own deadline or stall
+        if(scaffold.isEmpty())return false;
+        startCleanup(terminal,why);return true;
+    }
+    /** Work ending as work does: done, full, out of reachable targets, out of time or stalled. Death, a fluid it could not
+     *  plug, a protected block broken, an error or a cancel (the model's, or another job's start) is no time to tidy up. */
+    private static boolean routine(String terminal,String why){
+        return terminal.equals("succeeded")||!terminal.equals("cancelled")&&(why.equals("inventory_full")||why.startsWith("no_remaining")
+            ||why.startsWith("no_path")||why.startsWith("timeout_")||why.startsWith("stalled_"));
+    }
+    private void startCleanup(String terminal,String why){
+        ending=new Ending(terminal,why);countAtCleanup=mc.thePlayer==player?have():null;
+        engine.getPathingBehavior().forceCancel();engine.getInputOverrideHandler().clearAllKeys();
+        Baritone.settings().allowPlace.value=false;Baritone.besideFluid=false; // no new scaffold to take the old one down
+        Map<BlockPos,baritone.compat.IBlockState.StateKey> cells=new LinkedHashMap<>();
+        scaffold.forEach((p,block)->{
+            var now=world.getBlock(p.getX(),p.getY(),p.getZ());
+            if(now.getMaterial()==net.minecraft.block.material.Material.air)scaffoldRemoved++; // dug out on the way already
+            else if(now!=block)leave(p,"changed");
+            else if(plugged.contains(p)||wet(p)||harmful(p))leave(p,"beside_fluid"); // it holds fluid back now
+            else cells.put(p,new baritone.compat.IBlockState.StateKey(now,world.getBlockMetadata(p.getX(),p.getY(),p.getZ())));
+        });
+        if(cells.isEmpty()){endCleanup("done");return;}
+        cleanup=MiningObservation.cells(world,cells);engine.explicitMiningTargets=cleanup::capture;
+        engine.bsi=new baritone.utils.BlockStateInterface(engine.getPlayerContext());engine.getMineProcess().mine(0,cleanup);
+        remaining=Math.max(remaining,600+200*cells.size());inactiveTicks=0;pathlessTicks=0;state="cleaning_scaffold";
+    }
+    private void cleanStep(){
+        var process=engine.getMineProcess();
+        boolean standing=cleanup.observedLocations().stream().anyMatch(p->world.getBlock(p.getX(),p.getY(),p.getZ())==scaffold.get(p));
+        if(!standing&&clearedAt<0)clearedAt=ticks;
+        // All down: the drops it loiters for are the scaffold's blocks back, a few seconds' worth.
+        if(!standing&&(!process.isActive()||ticks-clearedAt>200)){endCleanup("done");return;}
+        if(!process.isActive()){
+            if(inactiveTicks++>Math.max(20,(Baritone.settings().mineDropLoiterDurationMSThanksLouca.value+49)/50))endCleanup("no_remaining_reachable_targets");
+            return;
+        }
+        inactiveTicks=0;
+        engine.tickStart(this::mineAtReachedGoal);
+        if(engine.snags.failure()!=null){endCleanup(engine.snags.failure());return;}
+        if(measure())return;
+        state=engine.getInputOverrideHandler().isInputForcedDown(baritone.api.utils.input.Input.CLICK_LEFT)?"cleaning_scaffold":"pathing_to_scaffold";
+        boolean pathless=state.equals("pathing_to_scaffold")&&engine.getPathingBehavior().getCurrent()==null&&!engine.getPathingBehavior().getInProgress().isPresent();
+        pathlessTicks=pathless?pathlessTicks+1:0;
+        if(pathlessTicks>100)endCleanup("no_path_to_remaining_targets");
+    }
+    private void endCleanup(String why){
+        cleanupEnd=why;
+        if(cleanup!=null)for(var p:cleanup.observedLocations()){
+            var now=world.getBlock(p.getX(),p.getY(),p.getZ());
+            if(now==scaffold.get(p))leave(p,why);else if(now.getMaterial()==net.minecraft.block.material.Material.air)scaffoldRemoved++;else leave(p,"changed");
+        }
+        finish(ending.terminal(),ending.why());
+    }
+    private void leave(BlockPos p,String why){
+        if(scaffoldLeft.size()<32)scaffoldLeft.add(Map.of("pos",point(p),"block",String.valueOf(net.minecraft.block.Block.blockRegistry.getNameForObject(world.getBlock(p.getX(),p.getY(),p.getZ()))),"why",why));
+    }
     @Override void releaseProcess(){
-        finalCount=mc.thePlayer==player?have():null;
+        engine.placing=p->{};
+        if(mc.thePlayer==player)journal.progress.put("scaffold",scaffold.entrySet().stream().filter(e->world.getBlock(e.getKey().getX(),e.getKey().getY(),e.getKey().getZ())==e.getValue()).limit(256)
+            .map(e->List.<Object>of(e.getKey().getX(),e.getKey().getY(),e.getKey().getZ(),String.valueOf(net.minecraft.block.Block.blockRegistry.getNameForObject(e.getValue())))).toList());
+        finalCount=mc.thePlayer==player?countAtCleanup!=null?countAtCleanup:have():null; // the scaffold's own blocks back are no gain
         if(finalCount!=null)journal.progress.put("gained",Math.max(0,finalCount-baseline));
         if(mc.thePlayer==player&&observation!=null){int left=0;
             for(Object entity:world.loadedEntityList)if(entity instanceof net.minecraft.entity.item.EntityItem drop&&!drop.isDead&&observation.has(drop.getEntityItem())
@@ -237,6 +336,10 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
         // Targets it left, and why: will_not_break_here names the fluid beside it (plug or drain that, or pass besideFluid).
         var left=done()?skipped:skipped();out.put("skipped",left.stream().limit(16).toList());out.put("skippedCount",left.size());
         out.put("plugged",plugged.stream().map(MiningProcess::point).toList());out.put("plugFailures",unplugged);
+        Map<String,Object> sc=new LinkedHashMap<>();
+        sc.put("cleanup",!cleanupScaffold?"off":cleanupEnd!=null?cleanupEnd:ending!=null?done()?"interrupted":"running":!done()?"after_the_work":scaffold.isEmpty()?"nothing_placed":"skipped");
+        sc.put("placed",scaffold.size());sc.put("at",scaffold.keySet().stream().limit(32).map(MiningProcess::point).toList());
+        sc.put("removed",scaffoldRemoved);sc.put("left",scaffoldLeft);out.put("scaffold",sc);
         out.put("blocksBroken",broken);out.put("extraBroken",extraBroken);out.put("extraBrokenAt",extraAt);out.put("dropsLeftInBounds",dropsLeft);out.put("ineffectiveTools",ineffective);out.put("pathRules",BlockRules.applied());out.put("forcedTool",toolSlotTool);
         if(engine!=null)out.put("snags",engine.snags.status());out.put("cost",baritone.gtnh.pathing.Cost.status());
         if(engine!=null){
