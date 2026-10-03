@@ -10,6 +10,15 @@ import java.util.Set;
 import static org.junit.Assert.*;
 
 public class InputArbiterTest {
+    @Test public void inPlaceItemUseIsPerLeaseAndNoGeneralOverride() {
+        InputArbiter arbiter=new InputArbiter(new RecordingSink(new ArrayList<>()));
+        var fight=arbiter.acquire("fight",ignored->{},false,true);
+        assertFalse(arbiter.current().inPlaceItemUse());
+        fight.permitInPlaceItemUse();
+        assertTrue(arbiter.current().inPlaceItemUse());assertFalse(arbiter.current().overrideProtection());
+        arbiter.acquire("next",ignored->{});
+        assertFalse(arbiter.current().inPlaceItemUse());
+    }
     @Test public void releasingCameraPreservesKeysAndCannotClearAnotherOwnersCamera() {
         List<Set<Integer>> applied=new ArrayList<>();RecordingSink sink=new RecordingSink(applied);
         InputArbiter arbiter=new InputArbiter(sink);var first=arbiter.acquire("first",ignored->{});

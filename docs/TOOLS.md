@@ -130,6 +130,14 @@ location, so the next session finds where things stopped. Selectors,
 net-gain completion, the two build modes, their settings and limits are in
 [BARITONE_PORT.md](BARITONE_PORT.md).
 
+`mb_fight(override_protection=True)` lets one fight block with a sword (or draw
+a bow) inside a protected region: item use whose rays reach no block, which
+otherwise counts as an edit at your feet. A right-click on a protected block
+under the crosshair (a door, a lever, a machine) is still refused, which ends
+the fight as any protection refusal does; breaking and placing still need their
+own opt-ins. The receipt's settings show
+`overrideProtection: "in_place_item_use"`; the override ends with the job.
+
 `mb_memory` (defined in `core.py`):
 
 - `protect {name, min, max, mode?}`: `automation` (default) keeps navigation
