@@ -199,9 +199,11 @@ Key facts about the runtime:
   background=True)` starts a script and returns at once; the body is busy until
   it ends, and you keep reading, planning, writing code or notes. Every result
   tells you what the body is doing and hands you each finished task's result
-  once, so there is no need to sit and watch. Reads work while the body is
-  busy, though the inventory and position may change under them; acting tools
-  refuse with the task's name until you wait for it (`mb_task`) or cancel it. A
+  once, so there is no need to sit and watch. Everything that does not move
+  the body works while it is busy: reads, recipes, the wiki, notes, your goal,
+  waypoints, files and harness code (the inventory and position may change
+  under a read). A call that would move the body or work a screen is refused
+  with the task's name until you wait for it (`mb_task`) or cancel it. A
   background script keeps working while your context is compacted. Guards still
   stop it on danger, and its result says why. Long, predictable work suits it
   best: mining a vein out, a build, a crafting chain, a farm round, a walk home.

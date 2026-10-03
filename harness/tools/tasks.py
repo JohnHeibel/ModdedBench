@@ -5,8 +5,9 @@
 mb_run(background=True) starts one detached process per task (``harness/mcp/task.py <id>``), which loads the
 tool modules fresh, opens its own bridge session and holds the body lock (``.state/tasks/body.lock``) until it
 ends, so a task outlives the MCP server and survives a thread refresh. Each task is ``.state/tasks/<id>.json``:
-the MCP server reads it on every tool call (``fields``) to refuse acting tools while the body is busy, to say what
-the body is doing, and to hand over each finished task once. A running task is alive while the body lock is held
+the MCP server reads it on every tool call (``fields``) to say what the body is doing and to hand over each
+finished task once. While the lock is held, every other session's game call that would move the body is refused
+(``gate``, as Kernel.body_gate): the game says which of its methods only read. A running task is alive while the body lock is held
 (a dead or zombie process holds nothing); one whose lock is free is crashed, whoever reads it first.
 
 Time: the client gives time control to one connected session and pauses the world when that session leaves
@@ -175,7 +176,7 @@ def start(code: str, args: dict | None, name: str | None, on_fail: str | None, m
     TASKS.mkdir(parents=True, exist_ok=True); (TASKS / f"{task_id}.py").write_text(code, encoding="utf-8")
     st = {"task": task_id, "name": name, "started": time.time(), "state": "running", "args": args or {}, "on_fail": on_fail,
           "minutes": minutes, "delivered": False, "pid": None}  # the task writes its own once it holds the body lock
-    save(st)
+    save(st); state["task_spawned"] = st["started"]
     with open(TASKS / f"{task_id}.log", "ab") as log:  # never the server's stdout: that is the MCP channel
         flags = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS} if os.name == "nt" else {"start_new_session": True}
         proc = subprocess.Popen([sys.executable, str(RUNNER), task_id], stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
@@ -190,11 +191,30 @@ def refusal(st: dict | None) -> str:
             f" for {_age(st)} s, now in {st.get('now') or 'its script'}: wait for it with mb_task(wait=...) or end it with mb_task(cancel=True)")
 
 
-def gate(lane: str | None, effect: str | None, folder: Path | None = None) -> None:
-    """Refuses an acting tool while a task has the body (the server calls this before every tool)."""
-    if lane == "act" and effect in ("interaction", "privileged"):
-        st = live(folder)
-        if st: raise BridgeError("body_busy", refusal(st), "body")
+_releasing = threading.local()  # release() hands the body back, so its calls pass the gate
+# Game calls that change state but never the body: stopping, the transport's own, and world-memory bookkeeping (a
+# region's protection is not here: changing it cancels the running job).
+UNGATED = ("act.stop", "requests.cancel", "sys.methods", "memory.waypoint", "memory.route", "memory.record")
+
+
+def gate(k: Kernel, method: str) -> None:
+    """Refuses a game call that would move the body while a task has it (Kernel.body_gate, in every process but the
+    task's own). The game says which of its methods only read; those, time control, UNGATED, and anything that does
+    not call the game at all (notes, goals, files, recipes) still run."""
+    if method.startswith("time.") or method in UNGATED or getattr(_releasing, "on", False):
+        return
+    if not held() and time.time() - state.get("task_spawned", 0) > 30:  # a task just spawned has 30 s to take the lock
+        return
+    effects = k.__dict__.get("_effects")
+    if effects is None:
+        from mbtools_gtnh.core import methods_map
+        effects = k._effects = {n: m.get("effect") for n, m in methods_map(k.call("sys.methods", timeout=10)).items()}
+    if effects.get(method) != "read":
+        st = live()
+        if st: raise BridgeError("body_busy", refusal(st), method)
+
+
+Kernel.body_gate = gate
 
 
 def settle(st: dict, folder: Path | None = None) -> dict:
@@ -249,6 +269,7 @@ def fields(read: bool = False, folder: Path | None = None) -> dict:
 
 def release(k) -> None:
     """Gives the body back: no job running, nothing on the cursor, no screen open."""
+    _releasing.on = True
     try: k.call("act.stop", timeout=10)
     except Exception: pass
     try:
@@ -259,6 +280,7 @@ def release(k) -> None:
             view = k.call("obs.container", detail="compact", timeout=10)
         if view.get("open") and not view.get("cursor"): k.call("gui.close", timeout=10)  # closing with a stack held would drop it
     except Exception: pass
+    finally: _releasing.on = False
 
 
 def cancel_task(task_id: str, why: str = "cancelled", grace: float = 20.0, folder: Path | None = None) -> dict | None:
@@ -326,6 +348,7 @@ _halt: list = []  # why the script must not make another call: a guard stop, its
 class TaskKernel(Kernel):
     """The task's own session. Time commands go through the model's server; resume and step are refused (a task never
     lifts a guard pause); a pause the task did not cause and no guard made is waited out, then the refused call is sent again."""
+    body_gate = None  # the task is the body's owner
 
     def call(self, method, /, timeout=None, **params):
         if method in ("time.resume", "time.step") or resume_once.get() is not None:

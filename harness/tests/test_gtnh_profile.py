@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import shutil
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -175,14 +176,20 @@ class GTNHProfileTests(unittest.TestCase):
             self.assertFalse(result.isError, (name, result.content))
         self.assertEqual(chosen, ["control", "read", "act", "read", "control", "read", "act", "control", "read", "act"])
 
-    def test_a_background_task_refuses_acting_tools_marks_reads_and_lets_control_through(self):
+    def test_a_background_task_refuses_game_calls_that_move_the_body_and_lets_the_rest_through(self):
         srv = self.loaded()
         import sys, time
         tasks = sys.modules[mbtool.PACKAGE + ".tasks"]
-        self.use(FakeKernel(lambda method, params: {"method": method}))
+        listed = [{"name": "obs.inventory", "effect": "read"}, {"name": "memory.context", "effect": "read"},
+                  {"name": "act.input", "effect": "interaction"}]
+        notes_dir = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, notes_dir, True)
+        self.enterContext(patch.dict(os.environ, {"MODBENCH_NOTES_DIR": notes_dir}))
+        k = FakeKernel(lambda method, params: listed if method == "sys.methods" else {"method": method, "worldId": "00000000-0000-4000-8000-000000000001"})
+        k.call = lambda method, **params: (tasks.gate(k, method), FakeKernel.call(k, method, **params))[1]  # as Kernel.body_gate does
+        self.use(k)
         lock = tasks._lock(tasks.TASKS); self.addCleanup(lock.close)  # held, as the task process holds it while it runs
         tasks.save({"task": "t1", "name": "vein", "started": time.time(), "state": "running", "pid": os.getpid(), "now": "mb_mine"})
-        refused = asyncio.run(srv.call_tool("mb_act", {"keys": ["forward"], "ticks": 1}))
+        refused = asyncio.run(srv.call_tool("mb_act", {"method": "input", "params": {"keys": ["forward"], "ticks": 1}}))
         self.assertTrue(refused.isError)
         self.assertEqual(refused.structuredContent["error"]["code"], "body_busy")
         self.assertIn("mb_task(cancel=True)", refused.structuredContent["error"]["msg"])
@@ -192,6 +199,8 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual((fields["bodyBusy"], fields["body"]["task"]), (True, "t1"))
         stop = asyncio.run(srv.call_tool("mb_stop", {}))
         self.assertFalse(stop.isError); self.assertNotIn("bodyBusy", json.loads(stop.content[0].text))
+        goal = asyncio.run(srv.call_tool("mb_goal", {"subgoal": "plan the coke ovens while the vein is mined"}))
+        self.assertFalse(goal.isError, goal.content)  # no game call, so nothing to refuse
         tasks.save({"task": "t1", "name": "vein", "started": time.time(), "state": "done", "endedAt": time.time(), "result": 3})
         first, second = (json.loads(asyncio.run(srv.call_tool("mb_stop", {})).content[0].text) for _ in range(2))
         self.assertEqual([f["task"] for f in first["finished"]], ["t1"]); self.assertNotIn("finished", second)

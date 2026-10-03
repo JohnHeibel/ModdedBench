@@ -113,6 +113,8 @@ class Reply:
     raw: dict = field(default_factory=dict)
 
 class Kernel:
+    body_gate: Callable[[Kernel, str], None] | None = None  # harness/tools/tasks.py: refuses a call that would move the body while a background task has it
+
     def __init__(self, url: str | None = None, token: str | None = None, timeout: float = 60.0,
                  on_event: Callable[[dict], None] | None = None, connect_retries: int = 1, retry_delay: float = 2.0,
                  event_capacity: int = 1024):
@@ -238,6 +240,8 @@ class Kernel:
         timeout = self.timeout if timeout is None else timeout
         if timeout <= 0:
             raise ValueError("timeout must be positive")
+        if self.body_gate is not None:
+            self.body_gate(method)
         # The server deadline precedes the socket deadline, so timed out work is canceled there.
         # Java clamps _timeout_ms to 1..3600000 and rejects larger values.
         params.setdefault("_timeout_ms", min(3_600_000, max(1, int(timeout * 1000) - 250)))
