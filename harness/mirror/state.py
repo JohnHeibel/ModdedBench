@@ -65,8 +65,8 @@ class Entity:
 
 
 class Mirror:
-    def __init__(self, payload_cap: int = 8 << 20, chat_keep: int = 20, score_keep: int = 2000):
-        self.payload_cap, self.chat_keep, self.score_keep = payload_cap, chat_keep, score_keep
+    def __init__(self, payload_cap: int = 8 << 20, chat_keep: int = 20, score_keep: int = 2000, kind_keep: int = 128):
+        self.payload_cap, self.chat_keep, self.score_keep, self.kind_keep = payload_cap, chat_keep, score_keep, kind_keep
         self.inv_version = 0  # bumped on every change to the host's inventory or held slot; never reset
         self.reset()
 
@@ -79,6 +79,10 @@ class Mirror:
         self.time = self.spawnpos = None
         self.players, self.scores, self.chat = {}, deque(maxlen=self.score_keep), deque(maxlen=self.chat_keep)
         self.payloads, self.pinned, self.payload_bytes, self.dropped = {}, {}, 0, [0, 0]  # seq -> frame; pinned ones are never dropped
+        # Mod packets the mirror cannot read are kept as packets, not as a log: one that repeats (some mods send the same
+        # few every tick) keeps only its latest copy, and each kind (channel and first byte) only its latest kind_keep
+        # (HUD values, tooltips, food stats: news that the next one replaces), so a late viewer gets a few hundred.
+        self.payload_at, self.payload_kind, self.kinds = {}, {}, {}  # frame -> seq; seq -> kind; kind -> {seq: None}
         self.inv, self.held = {}, 0
         self.hpos, self.avatar, self.place = None, False, False  # hpos: [x, feet y, z, yaw, pitch]
         self.chunked = False  # any chunk seen: payloads before it are pinned (login-time config sync)
@@ -259,7 +263,13 @@ class Mirror:
             if channel == "FML" and data:
                 if data[0] == 1: return []  # OpenGui: the host's screen
                 if self._fml(f, data): return [f]
-            (self.payloads if self.chunked else self.pinned)[self.seq] = f; self.payload_bytes += len(f)
+            if not self.chunked: self.pinned[self.seq] = f; self.payload_bytes += len(f)
+            else:
+                if (old := self.payload_at.get(f)) is not None: self._unkeep(old)
+                kind = (channel, data[:1]); same = self.kinds.setdefault(kind, {})
+                self.payloads[self.seq] = f; self.payload_at[f] = self.seq; self.payload_kind[self.seq] = kind; same[self.seq] = None
+                self.payload_bytes += len(f)
+                if len(same) > self.kind_keep: self._unkeep(next(iter(same)), dropped=True)
             self._cap_payloads()
             return [f]
         if pid == 0x2B:
@@ -327,9 +337,12 @@ class Mirror:
 
     def _cap_payloads(self):
         if self.payload_bytes <= self.payload_cap: return
-        while self.payload_bytes > self.payload_cap and self.payloads:  # oldest first
-            n = len(self.payloads.pop(next(iter(self.payloads)))); self.payload_bytes -= n
-            self.dropped[0] += 1; self.dropped[1] += n
+        while self.payload_bytes > self.payload_cap and self.payloads: self._unkeep(next(iter(self.payloads)), dropped=True)  # oldest first
+
+    def _unkeep(self, s, dropped=False):
+        f = self.payloads.pop(s); del self.payload_at[f]; self.kinds[self.payload_kind.pop(s)].pop(s)
+        self.payload_bytes -= len(f)
+        if dropped: self.dropped[0] += 1; self.dropped[1] += len(f)
 
     # ---- late join
     def gated(self) -> list[tuple[int, bytes]]:
