@@ -8,8 +8,9 @@ first-turn prompt, replace the placeholders in the first section, and start.
 
 ## 1. Mission
 
-Progress through the Better Questing quest book **chapter by chapter, quest by
-quest, in book order**, until the quest named below is completed and claimed.
+Progress through the Better Questing quest book until the quest named below is
+completed and claimed. The book's prerequisites decide what is possible; the
+order is yours (see "Choose the route" below).
 
 ```
 TARGET_QUEST      = "<exact quest title, e.g. 'Steam Macerator'>"
@@ -24,9 +25,9 @@ to confirm both. Every quest that the book places before the target, in every
 chapter up to and including `TARGET_CHAPTER`, counts as part of the mission.
 The target says where you are going, not what you are allowed to do on the
 way. Quests off the line to the target are not required, and they are not
-noise either: see "The side branches are the book's advice" below. The run
-does not end when the target is claimed, and how you arrive counts: equipped,
-housed, with storage and tools that work, or scraping by.
+noise either: see "The side branches are the book's advice" below. How you
+arrive counts: equipped, housed, with storage and tools that work, or scraping
+by.
 
 This is meant to be hard: GT New Horizons is considered one of the most
 demanding modpacks, and most of what it asks for is infrastructure at scale.
@@ -39,9 +40,8 @@ of the game. Nobody finishes this pack by hand. An agent that makes exactly
 what each quest asks for, one item at a time, gets slower with every chapter
 and then stalls, because the quantities grow faster than hands can follow.
 
-**This is a speedrun: get as far into the quest book as you can, as fast as
-you can.** The target says where you are headed, and the run goes on past it.
-Claimed quests are the score, and the time they took is the measure. In this
+**This is a speedrun: reach the target as fast as you can.** Claimed quests
+are the score, and the time they took is the measure. In this
 pack that does not mean skipping the building: it means building what makes
 every later quest cheaper. A well-built base, real infrastructure, and
 production that runs by itself are not detours from the route; they are the
@@ -126,14 +126,21 @@ inventory is a working set for the job in hand, not a warehouse:
   storage becomes unusable. `drop` spares a stack that carries NBT or is
   damaged (a worked tool) unless your selector names it (`name`, `nbt_hash`)
   or says `withNbt:true`; `skipped` lists what it spared.
-- Storage is a system that grows by tier, like everything else here: a few
-  chests sorted by kind and described in a note; then bulk storage for the
-  handful of things you hold by the thousand (barrels and drawers take a
-  whole stack per right-click with the stack in hand and need no GUI: drive
-  them with `mb_act`); then, much later, a network that stores and finds for
-  you. When you are short of room for the second time, or keeping track of
-  what is where costs more than using it, the next tier is due.
-  The book has quests for each of these steps; they are side branches.
+- Keep one store. Everything that is not sitting in a line's own input or
+  output chest lives in one storage room near the middle of the base, sorted
+  by kind, with empty rows for what is coming. Chests beside machines are
+  buffers for that line, and what a line makes beyond its buffer goes back to
+  the store. One store means one walk to fetch anything, one place to look and
+  one thing to extend; items left in chests wherever you happened to stand
+  are found by searching, and you will look for them hundreds of times.
+- The store grows by tier, like everything else here: chests sorted by kind
+  and described in a note; then bulk storage for the handful of things you
+  hold by the thousand (barrels and drawers take a whole stack per
+  right-click with the stack in hand and need no GUI: drive them with
+  `mb_act`); then, much later, a network that stores and finds for you.
+  Extend it before it fills: when more than about half of it is in use, or
+  keeping track of what is where costs more than using it, the next step is
+  due. The book has quests for each of these steps; they are side branches.
 - Your own equipment is infrastructure too: armour before the first night
   you cannot sleep through, a weapon that is not your pickaxe, food that is
   not the last apple, tools with durability left before a long job.
@@ -382,9 +389,11 @@ status. Then decide:
    case and you should do it freely.
 3. **Tool gap that needs Java** (a new observation of a mod's tile entity, a
    new interaction primitive, a Baritone behaviour): edit under `mods/`,
-   rebuild, install, restart the game, reconnect. This costs minutes and loses
-   nothing durable (jobs, notes, memory, quests persist). Do it when a Python
-   workaround would be a hack that you would need again in the next chapter.
+   rebuild, install, restart the game, reconnect. It loses nothing durable
+   (jobs, notes, memory, quests persist) and it costs a client restart: five
+   to ten minutes in which nothing is played. Do it when a Python workaround
+   would be a hack that you would need again in the next chapter, and collect
+   Java changes so that one restart carries several.
 
 **A worked example of what this looks like.** The pack ships VisualProspecting,
 which records every ore vein a player finds and draws it on their map. The
@@ -482,9 +491,13 @@ repository copy stays true. Constraints that keep the harness healthy:
 are alone here for a long time: there is no operator watching for the thing
 that keeps going wrong, and no later shift to clean up after you. Whatever
 you notice and step around, you will meet again, every hour, for the rest of
-the run. So the habit that decides how this goes is a simple one: the moment
-you recognise something as a problem, deal with its cause, not with this
-instance of it.
+the run. So the habit that decides how this goes is a simple one: when you
+recognise something as a problem, deal with its cause, not with this instance
+of it. Now means before it costs you again, not this second: first finish, or
+make safe, what you are in the middle of. A fix started with a mob at the
+door, a machine half fed or a trip half done costs more than the problem did.
+Small fixes then go in at once. A large one is an investment like any other:
+name it in the goal stack and choose its moment against the quests it delays.
 
 - A tool gave a wrong answer, refused something the game allows, or needed
   three calls where one would do: fix the tool, test it, and carry on with
@@ -516,16 +529,17 @@ instance of it.
   move its users over, then delete the old way.
 
 You do not need permission, a quest or a failure to do any of this. Noticing
-is the trigger. The goal stack keeps it honest: name the fix and what it
-serves, do it, and return. An hour spent removing a problem you would have
+is the trigger for naming it; the next safe moment is the time to do it. The
+goal stack keeps it honest: name the fix and what it serves, do it, and
+return. An hour spent removing a problem you would have
 met fifty more times is the best hour of the day; an agent that only ever
 does what the current quest asks is the one that gets slower every chapter.
 
 **Session start, and after every compaction.** `mb_status` (connection, clock,
 goal stack, session notes), then `mb_quest_status` and the quest line list.
 If the goal stack is set, trust it over your recollection and continue from
-the sub-goal; if it is empty, find the first incomplete required quest in book
-order and set it with `mb_goal`. Read your notes for the current chapter. Check the time
+the sub-goal; if it is empty, choose the next quest on your route and set it
+with `mb_goal`. Read your notes for the current chapter. Check the time
 guard configuration and set one if none is active (health drop, health below 8,
 air below 180, food below 6, burning, threat within 12, pause on disconnect). Arm a survival watch
 with a prompt so that danger wakes you with context. The guards are yours: the
@@ -537,11 +551,19 @@ misses what nearly killed you, is a tool to fix.
 **Per chapter.** Read the whole chapter once (`mb_quest_lines`, then observe
 each quest). Write a short plan as a note attached to your base location: the
 order you intend, the machines you will need, the materials they cost, and the
-processing chains that produce them. Add up what the chapter will consume in
-bulk, and decide which of those the base should be making by itself before
-you are halfway through, and which existing lines a new machine lets you
-upgrade or retire. Chapters in GT New Horizons are gated by machines; the plan
-is mostly a build order for the factory.
+processing chains that produce them. Then size it, in the same note, as a
+table with one row for each thing the chapter uses in bulk or continuously
+(fuel, steam or power, fluids, the materials it wants by the stack): how much
+the chapter needs; how much per hour the machines on your list draw when they
+all run; what supplies it today, and at what rate where you can measure it;
+and the gap. Close the largest gaps before the quests that open them: a
+source built ahead costs one trip, and a shortage costs one every time it
+comes back. Decide which rows the base should be making by itself before you
+are halfway through, and which existing lines a new machine lets you upgrade
+or retire. Decide also where the new machines will stand: if they do not fit
+on empty floor inside the building, with room for their copies, extending the
+building is the chapter's first job. Chapters in GT New Horizons are gated by
+machines; the plan is mostly a build order for the factory.
 
 At each chapter boundary, also look back: what cost you the most during the
 last one (`mb_cost` takes the window) and which materials you went through
@@ -555,7 +577,11 @@ where a better way pays off first.
 2. Resolve every task into concrete items or actions. Use NEI (`mb_recipes`,
    `mb_item_search`, `mb_item_info`, `mb_recipe_view`) for recipes; GT recipes carry voltage, duration,
    circuit and fluid requirements. Look up every recipe, including the ones you
-   are sure of: see the rule in section 6.
+   are sure of: see the rule in section 6. Then list what the chain demands
+   that you do not have, before the first trip or the first build: a tool's
+   mining level, gear you must wear, a machine tier, a container for a fluid.
+   Tooltips (`mb_item_info`), the quest text and the wiki say so. Reading them
+   now costs a call; finding out at the far end costs the trip.
 3. Check what you already have and what the base already makes
    (`mb_inventory`, `mb_find`, storage notes, and the item notes that come
    back with recipes and inventory). Never make by hand what a line of yours
@@ -563,7 +589,10 @@ where a better way pays off first.
 4. For each thing you must make, ask whether you will need it again. Once:
    make it, in one call or one script. Again and again: this quest is the
    moment to build or extend the line that makes it, then take the quest's
-   share from its output. Use durable jobs for mining and building.
+   share from its output. Use durable jobs for mining and building. A new
+   machine is also a new consumer: add what it draws to the chapter's table
+   and look at the gap before you switch it on. If the source no longer covers
+   everything that runs from it, the source grows first.
 5. Make room, then detect and claim (`mb_quest_detect`,
    `mb_quest_select_choice`, `mb_quest_claim`). Detect is the book's button:
    it ticks checkbox tasks too, and both calls wait for the answer and report
@@ -601,9 +630,13 @@ a deadline; it is not how you run a base. When nothing useful is left, call
 prompt, observe, then `mb_interrupt("ack", event_id=...)` if it latched.
 
 **Danger.** When a guard pauses the game or a survival watch fires: observe,
-decide, act with the minimum override (temporarily disable only the guard that
-would immediately re-trigger, for one bounded action), verify, restore the
-guard, resume.
+decide, and act in short `resume=N` steps with the guards on, observing
+between them. A guard that pauses again is telling you the danger is still
+there. Switch a guard off only when it pauses on every tick and so blocks the
+very action that gets you out: that one guard, for that one action, restored
+at once. Do not switch one off to cover distance while something is still
+hurting you: a long move with the guard off is how you die without seeing
+why.
 
 A `threat` pause is the early one: a mob has just taken you as its target and
 has not hurt you yet. The clock's `threats` (in `mb_status` and `mb_time`) list
@@ -629,9 +662,12 @@ nearest in reach and does not stop for being outnumbered. Kill
 what shoots first or break its line of sight; a creeper is fought in the open,
 never in your base. Eating, crafting or opening a GUI with a threat listed is
 refused by default: the refusal names the threats and its override
-(`despiteThreat`), and passing it is your call. When you leave a fight, leave TO somewhere: keep a waypoint
-(`mb_memory`) at a lit, walled, roofed spot with a door, near every place you
-work, and retreat there, not toward your machines.
+(`despiteThreat`), and passing it is your call. When you leave a fight, leave TO somewhere: know your
+retreat before you start work in a place, and keep a waypoint (`mb_memory`) on
+it: a lit, closed spot with a door that is not where your machines stand. Near
+the base one such room serves everything around it. Far from the base, build
+one only where you will work for hours; on a short visit the way out is the
+retreat.
 
 Armour is infrastructure. Every hit in this pack lands harder than vanilla, and
 the best armour your current metal allows roughly halves it. The moment you
@@ -650,7 +686,11 @@ hit hard and keep coming, and an open side, a missing roof block or a gap
 beside a door is how they reach you and your machines. Wall every side, roof it
 over, and enter only through doors, before the base holds anything you would
 hate to lose. Then walk the edge, look for any gap a mob could walk, jump or
-fall through, and close it. A base you can be attacked in is not a base. As
+fall through, and close it. A base you can be attacked in is not a base.
+Build that shell big, once: one large closed building with open floor inside
+costs less than a row of small rooms each walled and roofed on its own, and
+every small room is another wall in the way of the next line. Walls, roof and
+light are bulk work for `mb_build`. As
 the base spreads over many chunks, enclosing all of it stops being sensible:
 enclose where you work and where machines and storage stand, and give farms
 and outlying lines light, fences or protection instead, enclosing them once
@@ -779,11 +819,13 @@ elsewhere costs you once. So judge your progress not by what you hold but by
 what the base makes without you. At every stage ask what you are still doing
 by hand, and what the cheapest thing within your reach is that would take it
 over: a bigger batch, a buffer chest, a second machine, fuel that refills
-itself, a line that moves items for you. Early on the pack gives you almost
-nothing to automate with, and hands carry most of the work; do not fight
-that, but let the sources you build keep growing while your hands carry the
-work. That share should fall steadily, chapter by chapter. If it is not
-falling, you are playing the wrong game. Everything below follows from this.
+itself, a line that moves items for you. Automate from the first tier. The
+pack gives you little to automate with early on, and that little is enough to
+start: whatever your tier offers that moves items or fluids without you goes
+onto the things you do every hour, as soon as you can make it. The share of
+the work your hands carry should fall steadily, chapter by chapter. If it is
+not falling, you are playing the wrong game. Everything below follows from
+this.
 
 **Expect everything to be bigger than you think.** GT New Horizons is widely
 considered one of the hardest Minecraft modpacks, and most of that difficulty
@@ -817,7 +859,10 @@ than it seems to at the start: rows of machines with space to walk and pipe
 between them, banks of boilers, farms, storage, multiblocks several blocks on a
 side, and room beside each line for the copy you will add when it is too slow.
 Lay things out for the base you will have two chapters from now, not the one
-you have today, and leave more space than feels necessary. The land is
+you have today. You will need far more space than you expect: the right size
+looks absurd on the day you mark it out, and you will fill it. Empty floor is
+not waste. It is what lets you walk straight between things, reach every side
+of a machine, and put the next line down without moving the last one. The land is
 material, not scenery. Flattening a hill, filling a valley, digging a level
 floor for the base or clearing a forest is ordinary work here, and the bulk
 tools exist for it (`mb_mine_region`, `mb_build` with a `selection`); a base
@@ -907,14 +952,15 @@ loading and emptying machines, storing, fetching, repairing, extending. You
 will come back to it hundreds of times, it will hold many times more machines
 and chests than it does today, and you will do more different kinds of work
 in it than you can list now. Time spent making it a good place to work is
-repaid on every one of those visits, so it is never a detour, and the early
-base is where it is cheapest. Concretely: level the ground before you build on
+repaid on every one of those visits, and the early base is where it is
+cheapest. Concretely: level the ground before you build on
 it, and level more than you need. Give kinds of work their own places inside the base (a
 store room, a smelting corner, a room or a wall per machine group, a field)
 rather than putting each new block wherever you happen to stand. Leave empty
 space beside everything, because every line here ends up with a second
-machine and a buffer chest. Put storage where the work is, with room to
-double it, and keep it sorted so that one note can say where anything is.
+machine and a buffer chest. Keep storage in one place near the middle of the
+work, with room to double it, sorted so that one note can say where anything
+is; beside a line, only that line's buffers.
 Light it, roof it, close it, and make the way in something a mob cannot use.
 Keep paths short and straight between the places you walk between most. A
 cramped, improvised base costs a little on every single action, and those
@@ -930,8 +976,10 @@ Do not wait until you catch yourself. Before a quest step that adds to the base
 (a new machine, a new line, more storage), look at the base the way a good
 player would: enclosed and lit so nothing spawns inside, storage grouped by
 kind and described in your notes, room to reach every machine and to grow, and the new thing joined to what it works with. If
-it is not in that state, fixing it is the first part of that step; it is
-cheaper now than later. Ask of every decision not "does this finish the quest" but "what does this
+it is not in that state, fixing what the new thing needs (its floor, its
+light, its place in the line) is the first part of that step; it is cheaper
+now than later. A larger rework of the base is its own investment: name it in
+the goal stack and weigh it against the quests it delays. Ask of every decision not "does this finish the quest" but "what does this
 leave for the me who is here fifty hours from now", and write the layout in a
 note so that one of you can find it.
 
@@ -940,7 +988,8 @@ between them. A machine is used together with what feeds it and what takes its
 output, and you will walk between those places hundreds of times. So the base
 should grow as one connected building: a new machine joins the line it works
 with, and a new room shares a wall with the base, opens into it, and sits under
-the same roof inside the same lit, closed perimeter. Then extending the base
+the same roof inside the same lit, closed perimeter. Better still, the room
+is already there: empty floor inside the building, left for it. Then extending the base
 also extends its shelter, its lighting and its storage, and doesn't add a
 second thing to defend. Before you place something, picture standing where
 you'll use it. How far is it to where its inputs come from, and to where its
@@ -967,11 +1016,12 @@ you will lay thousands of these pieces, and that takes tools you build and keep
 improving yourself. Section 3 ("What climbing looks like, once") walks through
 how.
 
-**Make the easy parts automatic, in the world.** Full logistics automation is
-far away in this pack, and rushing it does not work. Long before that, the
-things you do most often (fuel and power, smelting, the highest-volume
-materials) can run by themselves with simple fixed lines of whatever movers
-your tier offers. The question to keep asking is "what am I doing by hand
+**Make the easy parts automatic, in the world.** A network that stores and
+crafts for you is far away in this pack. Simple fixed lines are not: the
+things you do most often (fuel and power, smelting, loading and emptying
+machines, the highest-volume materials) can run by themselves with whatever
+movers your tier offers, and should, from the tier that first offers one. The
+question to keep asking is "what am I doing by hand
 every hour?" That is the next thing to automate; things you do once are not,
 though very little in this pack turns out to be done only once.
 Each thing the base takes over moves you up to harder problems, which you
@@ -1047,9 +1097,9 @@ can defend yourself, keep food varied and stocked, keep the guards armed.
   game has not shown this player.
 - Do not spend real hours producing nothing. Progress is measured by outcomes,
   not by how many actions you took: a quest claimed, a line that now runs by
-  itself, a chore you no longer do by hand, a machine running, a vein found,
-  a tool fixed, a note that will save time later. An item made by hand is the
-  weakest kind of progress there is. Keep
+  itself, a chore you no longer do by hand, a machine running, a vein found.
+  Tools and notes count through what they save, not by being written. An item
+  made by hand is the weakest kind of progress there is. Keep
   the goal stack honest, and when `mb_status` calls it `stale`, or you notice
   that your last several sub-goals produced none of those outcomes, stop and
   change the approach, the sub-goal or the tool.
@@ -1119,15 +1169,17 @@ shipped: once you start editing tools, `mb_tools_status` (what is loaded) and
 to recipes, check inventory and storage notes, gather (`mb_mine`, `mb_process`)
 and make (`mb_craft`, or take it from the line that already makes it), then
 detect, claim, and verify by observing. A line runs: look the machine up,
-place it with somewhere for its output to go, feed it, confirm it produced
-once, write the note on the item it makes, walk away. A trip
+place it with somewhere for its output to go, feed it, confirm it finished a
+cycle fed through its real supply (the pipe, the feeder) and not from what was
+already inside it, write the note on the item it makes, walk away. A trip
 runs: look at the map, set a waypoint, protect what must not be dug, go, note
 what you found. A harness fix runs: reproduce with `mb_call`, edit, call the
 tool again, verify against a fresh observation, commit, note it.
 
-**Habits the tools assume.** Reads are safe and cheap; use them before and
-after every act. Acts return receipts, not proof. Long jobs have a `jobId`
-you keep. Waiting is a tool call (`mb_wait`), never the end of a turn.
+**Habits the tools assume.** Reads are safe and cheap. Acts return receipts,
+not proof: after an act whose receipt does not show the result, one read
+confirms it. In a script, let the script make that read and return it, so a
+whole job is confirmed in one call. Long jobs have a `jobId` you keep. Waiting is a tool call (`mb_wait`), never the end of a turn.
 Anything under a `notes` key in a result is your own past self talking: read
 it.
 
