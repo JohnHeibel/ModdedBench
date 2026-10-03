@@ -8,6 +8,7 @@ import base64
 import json
 import os
 import time
+from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import Image
@@ -63,7 +64,7 @@ def mb_methods() -> Any:
 
 @tool(lane="read", coverage=["meta"])
 def mb_status() -> Any:
-    """Bridge status, the clock (paused, why, operator hold), your goal stack (mb_goal) with its stall signal, world notes near you, and your last two hours' cost (mb_cost).
+    """Bridge status, the clock (paused, why, operator hold), your goal stack (mb_goal) with its stall signal, world notes near you, how long the run has been going, and your last two hours' cost (mb_cost).
 
     Call it at the start of every session and after every compaction: it is the heartbeat.
     """
@@ -79,6 +80,12 @@ def mb_status() -> Any:
         out["inventory"] = f"{free} of 36 slots free" + ("" if free is None or free > 6 else ": store or discard (mb_move_items) before you gather, craft in bulk or claim rewards")
     except Exception as e:  # not in a world yet, or the clock is unreachable: status must still answer
         out["goal"] = {"unavailable": str(e)}
+    try:
+        run = json.loads((Path(__file__).resolve().parents[2] / ".state" / "run.json").read_text(encoding="utf-8"))
+        minutes = int((time.time() - run["startedAt"]) // 60)
+        out["run"] = f"{minutes // 60}h{minutes % 60:02d}m since the run started"
+    except (OSError, ValueError, KeyError, TypeError):
+        pass  # not started by the run loop
     try:
         out["cost"] = mb_cost(hours=2, top=6)
     except Exception as e:

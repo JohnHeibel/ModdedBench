@@ -39,6 +39,14 @@ class CodexLoopTests(unittest.TestCase):
             reason = codex_loop.run(self.repo, codex=[sys.executable, str(self.repo / "fake.py")], backoff_s=0, **{"ready": lambda: True, "quests": lambda: 7, **kw})
         return reason, json.loads((self.repo / "calls.json").read_text())
 
+    def test_a_start_that_keeps_the_planned_end_keeps_the_run_start(self):
+        path = self.repo / "run.json"
+        codex_loop._mark_run(path, 1000.0, 60)
+        codex_loop._mark_run(path, 1600.0, 50.5)  # a fresh thread 10 min in, same end within a minute
+        self.assertEqual(json.loads(path.read_text())["startedAt"], 1000.0)
+        codex_loop._mark_run(path, 9000.0, 60)    # a new run
+        self.assertEqual(json.loads(path.read_text()), {"startedAt": 9000.0, "endsAt": 9000.0 + 3600})
+
     def test_a_screenshot_is_estimated_by_its_tiles_not_its_base64(self):
         from feed import Feed, BASE
         with tempfile.TemporaryDirectory() as d:
