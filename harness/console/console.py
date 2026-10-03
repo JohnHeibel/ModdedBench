@@ -24,6 +24,10 @@ PY = [sys.executable, "-u"]
 LAUNCHER, DEPLOY = str(REPO / "harness" / "launcher" / "runtime.py"), str(REPO / "harness" / "launcher" / "deploy.py")
 BRIEF = REPO / ".runtime" / "brief"
 OVERLAY = Path(os.environ.get("MODBENCH_OVERLAY") or REPO / ".runtime" / "outbox" / "overlay")  # written by the loop (harness/runner/feed.py)
+SNAPSHOTS = REPO / ".runtime" / "snapshots"  # written by harness/launcher/backup.py, which holds the world while it copies
+# Codex compacts its context without a word in the exec stream; only its own record of the thread says how full the context is.
+CONTEXT = ("f=$(ls -t /home/agent/.codex/sessions/*/*/*/rollout-*.jsonl 2>/dev/null | head -1); "
+           "[ -n \"$f\" ] && tail -c 4000000 \"$f\" | grep '\"last_token_usage\"' | tail -1")
 TOKEN = secrets.token_urlsafe(24)
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 # One line of JSON about the loop, produced inside the agent container.
@@ -88,7 +92,7 @@ def sh(cmd, stdin=None, timeout=30):
 class Console:
     def __init__(self):
         self.lock = threading.Lock(); self.kernel = None; self.supervisor = None; self.backups = None
-        self.job = {"name": "", "running": False, "ok": True, "log": ""}; self.login = (0.0, None); self.book = (0.0, []); self.shorten = Shortener(runtime.RUNTIME / "overlay-short.json")
+        self.job = {"name": "", "running": False, "ok": True, "log": ""}; self.login = (0.0, None); self.book = (0.0, []); self.ctx = (0.0, None); self.shorten = Shortener(runtime.RUNTIME / "overlay-short.json")
 
     # The bridge, read only: one long-lived session for the state panel.
     def call(self, method, **params):
@@ -129,6 +133,15 @@ class Console:
                 "supervisor": self.supervisor is not None and self.supervisor.poll() is None,
                 "backups": self.backups is not None and self.backups.poll() is None, "job": self.job}
 
+    def context(self):
+        """(tokens in context, context window) of the newest thread, read at most every 5 s."""
+        if time.monotonic() - self.ctx[0] < 5: return self.ctx[1]
+        try:
+            info = json.loads(sh([*COMPOSE, "exec", "-T", "agent", "sh", "-c", CONTEXT], timeout=10).stdout)["payload"]["info"]
+            ctx = (info["last_token_usage"]["total_tokens"], info["model_context_window"])
+        except Exception: ctx = None
+        self.ctx = (time.monotonic(), ctx); return ctx
+
     def overlay(self):
         """Everything the OBS pages show, read only: the loop's feed and totals, plus the clock and the quest book from the bridge."""
         try: live = json.loads((OVERLAY / "live.json").read_text(encoding="utf-8"))
@@ -145,14 +158,23 @@ class Console:
         try: clock = self.call("time.status")["state"]
         except Exception: clock = None
         status = dict(live.get("status") or {})
+        # A compaction is a silence of a few minutes that starts once the context is nearly full (both observed ones fired at 94-95%).
+        compacting = False
+        if status.get("state") == "thinking" and time.time() - (status.get("since") or time.time()) > 15:
+            ctx = self.context(); compacting = bool(ctx and ctx[1] and ctx[0] >= 0.93 * ctx[1])
+        # The backup holds the world while it copies (about 20 s); its newest snapshot folder is being written all that time.
+        try: backup = bool(clock and clock.get("held")) and time.time() - max((p.stat().st_mtime for p in max(SNAPSHOTS.glob("2*"), default=SNAPSHOTS).glob("*")), default=0) < 15
+        except OSError: backup = False
         if clock is None: status = {"state": "game_down", "text": "", "since": status.get("since")}
+        elif backup and status.get("state") in ("thinking", "acting", "waiting"): status = {"state": "backup", "text": "", "since": status.get("since")}
+        elif compacting: status = {"state": "compacting", "text": "", "since": status.get("since")}
         elif clock.get("paused") and status.get("state") in ("thinking", "acting", "waiting"):  # between turns the world is always paused; that is not news
             status = {"state": "held" if clock.get("held") else "paused", "text": "" if clock.get("held") else str(clock.get("reason") or "").replace("_", " "), "since": status.get("since")}
         # The banner over the game says why the world stands still in words a viewer reads: the cause and its specifics.
         why = None
         if clock is not None:
             near = min(clock.get("threats") or [], key=lambda t: t.get("distance") or 99, default=None)
-            why = {k: clock.get(k) for k in ("paused", "reason", "held", "stepping")}
+            why = {k: clock.get(k) for k in ("paused", "reason", "held", "stepping")}; why["backup"] = backup
             if near: why["threat"] = {"type": near.get("type"), "distance": near.get("distance"), "ranged": near.get("ranged"), "swelling": near.get("swelling")}
             if clock.get("paused") and str(clock.get("reason")) in ("health_dropped", "health_threshold", "air_threshold", "food_threshold", "burning"):
                 try: why["player"] = {k: v for k, v in self.call("obs.player").items() if k in ("health", "food", "air", "burning")}
