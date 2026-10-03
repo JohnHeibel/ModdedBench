@@ -60,9 +60,15 @@ class TaskTestCase(unittest.TestCase):
         tasks.TASK.clear(); tasks._halt.clear()
         self.addCleanup(tasks.TASK.clear); self.addCleanup(tasks._halt.clear)
 
-    def put(self, task, **st):
+    def put(self, task, live=True, **st):
+        """A status file; a running one is alive (its body lock held, as the task process would) unless live=False."""
         st = {"task": task, "name": None, "started": time.time(), "state": "running", "pid": os.getpid(), "delivered": False, **st}
+        if st["state"] == "running" and live and not getattr(self, "lock", None):
+            self.lock = tasks._lock(self.dir); self.addCleanup(self.free)
         tasks.save(st); return st
+
+    def free(self):
+        if getattr(self, "lock", None): self.lock.close(); self.lock = None
 
 
 class BodyLockTests(TaskTestCase):
@@ -142,25 +148,55 @@ class DeliveryTests(TaskTestCase):
 
 class CrashTests(TaskTestCase):
     def test_a_running_task_whose_process_died_is_crashed_and_on_fail_pauses(self):
-        self.put("t1", pid=dead_pid(), on_fail="pause", guards={"healthDrop": 8})
+        self.put("t1", live=False, pid=dead_pid(), on_fail="pause", guards={"healthDrop": 8})
         [f] = tasks.fields()["finished"]
         self.assertEqual((f["state"], f["ended"], f["paused"], f["guardsRestored"]), ("crashed", "crash", True, True))
         self.assertIn(("time.pause", {"reason": "background_task_crashed"}), self.k.calls)
         self.assertIn(("time.configure", {"healthDrop": 8}), self.k.calls)
 
     def test_a_crash_without_on_fail_never_pauses(self):
-        self.put("t1", pid=dead_pid())
+        self.put("t1", live=False, pid=dead_pid())
         [f] = tasks.deliver()
         self.assertEqual(f["state"], "crashed")
         self.assertNotIn("time.pause", self.k.methods())
 
     def test_a_runner_that_exits_before_writing_its_pid_is_crashed(self):
-        self.put("t1")  # the server's own pid, as start leaves it
+        self.put("t1", live=False, pid=None)  # as start leaves it
         proc = mock.Mock(); proc.poll.return_value = 2; proc.returncode = 2
         mbtool.state["task_procs"] = {"t1": proc}
         [f] = tasks.deliver()
         self.assertEqual(f["state"], "crashed"); self.assertIn("(2)", f["error"])
         self.assertEqual(mbtool.state["task_procs"], {})
+
+    def test_liveness_is_the_body_lock_not_the_pid(self):
+        self.put("t1", pid=os.getpid())  # this process is alive, but what matters is the lock
+        self.assertEqual(tasks.load("t1")["state"], "running")
+        self.free()
+        st = tasks.load("t1")
+        self.assertEqual((st["state"], st["ended"]), ("crashed", "crash"))
+        self.assertLessEqual(st["lastSeen"], st["endedAt"])
+
+    def test_a_zombie_is_dead_even_while_the_lock_looks_held(self):
+        self.put("t1", pid=4242)
+        with mock.patch.object(tasks, "_zombie", lambda pid: pid == 4242):
+            self.assertEqual(tasks.load("t1")["state"], "crashed")
+        self.assertIsNone(tasks.live())
+
+    def test_a_task_just_spawned_has_a_grace_to_take_the_lock(self):
+        self.put("t1", live=False, pid=None)
+        self.assertEqual(tasks.live()["task"], "t1")
+        tasks.gate("read", "read")
+        self.assertRaises(BridgeError, tasks.gate, "act", "interaction")  # the refusal uses the same answer
+        self.put("t2", live=False, pid=None, started=time.time() - 31)
+        self.assertEqual(tasks.load("t2")["state"], "crashed")
+
+    def test_zombie_reads_proc_where_there_is_one(self):
+        self.assertFalse(tasks._zombie(None))
+        stat = mock.mock_open(read_data="123 (python3 (x)) Z 1 1 1")
+        with mock.patch("builtins.open", stat):
+            self.assertTrue(tasks._zombie(123))
+        with mock.patch("builtins.open", mock.mock_open(read_data="123 (python3) S 1 1 1")):
+            self.assertFalse(tasks._zombie(123))
 
 
 class CancelTests(TaskTestCase):
@@ -207,7 +243,7 @@ class CancelTests(TaskTestCase):
 class RunnerTests(TaskTestCase):
     """tasks.run, the task process's main, in this process: a fake kernel, fake tools, a short or expired limit."""
     def run_task(self, code, tools, **st):
-        self.put("t1", **{"args": {}, "minutes": 20, **st})
+        self.put("t1", live=False, **{"pid": None, "args": {}, "minutes": 20, **st})  # as start leaves it
         stop = signal.getsignal(signal.SIGTERM) if os.name != "nt" else None
         with mock.patch.object(scripts, "_tools", return_value=tools), mock.patch.object(mbtool, "set_kernel_factory"):
             (self.dir / "t1.py").write_text(code, encoding="utf-8")
@@ -314,8 +350,8 @@ class TaskKernelTests(TaskTestCase):
         self.assertEqual(tasks.load("t1")["guards"], {"healthDrop": 4, "threatWithin": 8})  # saved, in case the process dies
         with self.assertRaises(tasks.ScriptPaused):
             k.call("time.pause", reason="think")
-        self.assertIn(("time.pause", {"reason": "think"}), seen)
-        self.assertTrue(tasks._halt and tasks.TASK["pausedByScript"])
+        self.assertEqual([m for m, _ in seen], ["time.status", "time.status"])  # no server up: nothing sent from this session
+        self.assertTrue(tasks._halt and tasks.TASK["pausedByScript"] and tasks.TASK["relayPending"])
         traced = tasks._traced("mb_obs", lambda: 1)
         self.assertRaises(scripts.ScriptInterrupted, traced)  # nothing more after the pause
 
@@ -356,12 +392,25 @@ class TaskKernelTests(TaskTestCase):
         time.sleep(0.3)  # the relay removes its claim just after it replies
         self.assertEqual(list(self.dir.glob("*.req")) + list(self.dir.glob("*.rep")) + list(self.dir.glob("*.run")), [])
 
-    def test_with_no_server_up_the_task_sends_time_commands_itself(self):
-        tasks.TASK.update(task="t1", state="done")
+    def test_with_no_server_up_time_requests_wait_for_one_and_are_never_sent_by_the_task(self):
+        tasks.TASK.update(self.put("t1", on_fail="pause", guards={"healthDrop": 4}))
         (self.dir / "relay.json").write_text(json.dumps({"pid": dead_pid()}), encoding="utf-8")
-        k, direct = self.kernel(lambda m, p: {})
-        k.call("time.pause", reason="x")
-        self.assertEqual(direct, [("time.pause", {"reason": "x"})])
+        k, direct = self.kernel(lambda m, p: {"state": {"paused": False, "conditions": {"healthDrop": 9}}} if m == "time.status" else {})
+        with mock.patch.object(tasks, "kernel", lambda: k):
+            st = tasks.finish(k, {"stopped": "ValueError: x", "line": 1, "log": []}, None)
+        self.assertEqual((st["state"], st["paused"], st["guardsRestored"], st["relayPending"]), ("failed", "pending", "pending", True))
+        self.assertNotIn("time.pause", [m for m, _ in direct]); self.assertNotIn("time.configure", [m for m, _ in direct])
+        self.assertTrue(tasks.entry(st)["relayPending"])
+        self.assertEqual(len(list(self.dir.glob("*.req"))), 2)
+        server, stop = FakeKernel(), threading.Event()  # the server starts: it sends them, oldest first, and nobody waits for a reply
+        relay = threading.Thread(target=tasks.relay, args=(self.dir, lambda: server, stop), daemon=True); relay.start()
+        self.addCleanup(lambda: (stop.set(), relay.join(5)))
+        for _ in range(50):
+            if len(server.calls) >= 2: break
+            time.sleep(0.05)
+        time.sleep(0.2)
+        self.assertEqual(server.calls, [("time.configure", {"healthDrop": 4}), ("time.pause", {"reason": "background_task_failed"})])
+        self.assertEqual([p.suffix for p in self.dir.iterdir() if p.suffix in (".req", ".rep", ".run")], [])
 
 
 class AccountingTests(TaskTestCase):
@@ -386,6 +435,13 @@ class AccountingTests(TaskTestCase):
         out = self.cost([dict(t=6400, s=100, tool="mb_obs", method=None, error=None)], now=7000)
         self.assertEqual((out["bodyBusyShare"], out["bodyWhileThinkingShare"]), (0.33, 0.33))
         self.assertNotIn("unseenFailureSeconds", out)
+
+    def test_a_crashed_task_counts_from_its_last_sign_of_life(self):
+        self.put("t1", live=False, state="crashed", started=6500, lastSeen=6700, endedAt=6950)
+        out = self.cost([dict(t=6400, s=100, tool="mb_obs", method=None, error=None),
+                         dict(t=6950, s=1, tool="mb_obs", method=None, error=None)], now=7000)
+        self.assertEqual(out["bodyBusyShare"], 0.33)          # 6500..6700 of a 600 s window
+        self.assertEqual(out["unseenFailureSeconds"], [250])  # last seen at 6700, next model call at 6950
 
     def test_no_tasks_no_body_fields(self):
         out = self.cost([dict(t=6400, s=100, tool="mb_obs", method=None, error=None)], now=7000)
