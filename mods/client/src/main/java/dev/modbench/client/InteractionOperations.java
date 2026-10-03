@@ -103,7 +103,9 @@ final class InteractionOperations {
                 face=p.has("face")||p.has("hit")||fluidTarget?Json.integer(p,"face",1,0,5):visibleFace();
                 double[] hit=facePoint(face);
                 if(p.has("hit")) {JsonArray a=p.getAsJsonArray("hit");if(a.size()!=3) throw new IllegalArgumentException("hit must have 3 local coordinates");for(int i=0;i<3;i++){hit[i]=a.get(i).getAsDouble();if(!Double.isFinite(hit[i])||Math.abs(hit[i])>16)throw new IllegalArgumentException("hit coordinates must be finite and within 16 blocks of the target");}}
-                point=Vec3.createVectorHelper(x+hit[0],y+hit[1],z+hit[2]);checkBlock();
+                point=Vec3.createVectorHelper(x+hit[0],y+hit[1],z+hit[2]);
+                if(!p.has("hit")&&!fluidTarget) {Vec3 visible=visiblePoint(face);if(visible!=null)point=visible;}
+                checkBlock();
             }
             if(kind.equals("use_entity")||kind.equals("attack_entity")||p.has("entityId")) {
                 target=world.getEntityByID(Json.integer(p,"entityId",-1,0,Integer.MAX_VALUE));
@@ -154,10 +156,21 @@ final class InteractionOperations {
             return 1;
         }
         boolean sees(int f) {
-            double[] h=facePoint(f);Vec3 eye=eyes();
-            double dx=x+h[0]-eye.xCoord,dy=y+h[1]-eye.yCoord,dz=z+h[2]-eye.zCoord,far=1+.05/Math.max(.05,Math.sqrt(dx*dx+dy*dy+dz*dz));
-            MovingObjectPosition m=world.rayTraceBlocks(eye,Vec3.createVectorHelper(eye.xCoord+dx*far,eye.yCoord+dy*far,eye.zCoord+dz*far));
-            return m!=null&&m.typeOfHit==MovingObjectPosition.MovingObjectType.BLOCK&&m.blockX==x&&m.blockY==y&&m.blockZ==z&&m.sideHit==f;
+            return visiblePoint(f)!=null;
+        }
+        /** Selection boxes can span several blocks or enclose empty space. Only a native ray decides what is clickable. */
+        Vec3 visiblePoint(int f) {
+            double[] centre=facePoint(f);Vec3 eye=eyes();double reach=mc.playerController.getBlockReachDistance();
+            for(double[] h:FaceSamples.points(f,centre)) {
+                double dx=x+h[0]-eye.xCoord,dy=y+h[1]-eye.yCoord,dz=z+h[2]-eye.zCoord;
+                double distance=Math.sqrt(dx*dx+dy*dy+dz*dz);if(distance<.0001)continue;
+                Vec3 end=eye.addVector(dx*reach/distance,dy*reach/distance,dz*reach/distance);
+                // World ray traversal mutates its start vector. Every candidate starts at the same eye.
+                MovingObjectPosition m=(MovingObjectPosition)ControlRegistry.targeting().trace(world,Vec3.createVectorHelper(eye.xCoord,eye.yCoord,eye.zCoord),end,false,false,false);
+                if(m!=null&&m.typeOfHit==MovingObjectPosition.MovingObjectType.BLOCK&&m.blockX==x&&m.blockY==y&&m.blockZ==z&&m.sideHit==f
+                        &&FaceSamples.stableHit(f,m.hitVec.xCoord-x,m.hitVec.yCoord-y,m.hitVec.zCoord-z))return m.hitVec;
+            }
+            return null;
         }
         /** What a player looking from here would see instead: where the look stopped, how far the target is, and which faces are in sight. */
         String unseen(MovingObjectPosition hit) {
@@ -167,7 +180,7 @@ final class InteractionOperations {
                 :hit.blockX==x&&hit.blockY==y&&hit.blockZ==z?"the look reached face "+hit.sideHit+" of the target, not face "+face
                 :"the look stopped at "+hit.blockX+","+hit.blockY+","+hit.blockZ+" ("+net.minecraft.block.Block.blockRegistry.getNameForObject(world.getBlock(hit.blockX,hit.blockY,hit.blockZ))+", face "+hit.sideHit+")";
             List<Integer> faces=new ArrayList<>();for(int f=0;f<6;f++)if(sees(f))faces.add(f);
-            return stopped+"; target centre "+dist+" blocks from the eye, reach "+reach+"; faces in sight from here: "+(faces.isEmpty()?"none":faces);
+            return stopped+"; aimed at "+point+"; target centre "+dist+" blocks from the eye, reach "+reach+"; faces in sight from here: "+(faces.isEmpty()?"none":faces);
         }
         // Forge 1.7's local player eyeHeight is an offset from its stance, not feet.
         // The native override includes that offset and matches Item's own ray.
@@ -208,6 +221,7 @@ final class InteractionOperations {
                 if(sneak&&!player.isSneaking())return;
                 // Sneaking and residual movement change the native eye position.
                 // Re-aim from the actual stance before ray validation and delivery.
+                if(blockTarget&&!p.has("hit")&&!fluidTarget) {Vec3 visible=visiblePoint(face);if(visible!=null)point=visible;}
                 if(target!=null)aimEntity();else if(point!=null)aim(point);
                 player.sendMotionUpdates();
                 delivering=true;
