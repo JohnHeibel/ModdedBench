@@ -8,6 +8,13 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-03** Background body tasks: `mb_run(background=True)` runs a script in its own
+  process holding a body lock while the model keeps thinking; acting tools refuse with
+  `body_busy`, every result carries `body`/`finished`, `mb_task` waits or cancels (never pauses).
+- **2026-10-03** The client gives time to one session, so a task's time commands are relayed
+  through the model's MCP server; a task waits out ordinary pauses and ends on a guard stop.
+- **2026-10-03** Paused mining receipts say `remainingTargets` and mb_status lists the veins
+  left (`pausedMining`); the prompt makes the whole vein, mined in the background, the default.
 - **2026-10-03** Scripts could swallow a guard interrupt with `except Exception`. A
   latch, pause or cancellation met inside mb_run now stops the script and is reported
   as `interrupted`; guard settings a script changed come back as `guardsChanged`.

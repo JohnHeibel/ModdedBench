@@ -101,7 +101,8 @@ class _Watch:
 
 
 @tool(effect="privileged", coverage=["meta"])
-def mb_run(code: str | None = None, args: dict | None = None, name: str | None = None) -> Any:
+def mb_run(code: str | None = None, args: dict | None = None, name: str | None = None, background: bool = False,
+           on_fail: str | None = None, minutes: float = 20) -> Any:
     """Run a script that chains tool calls, so a whole chore costs one call and one decision instead of thirty.
 
     code is Python defining main(**args); every mb_* tool is already in scope as a function
@@ -118,12 +119,22 @@ def mb_run(code: str | None = None, args: dict | None = None, name: str | None =
     back as guardsChanged {name: [before, after]}; nothing is put back for you.
     Write steps as "make sure X holds" (check, then act), so that after an interruption you
     deal with the cause and can simply run it again. The first tool error stops the script:
-    you get the error, the line, and what you logged, never a retry. One run must finish inside
-    20 minutes: start long mining or building jobs and return rather than waiting on them.
-    Nothing stops a script that never ends, and until the 20 minutes are up you can do nothing
-    else: give every loop in it a count or a deadline of its own (time.monotonic()), and let a
-    wait that has run out return what it saw instead of going round again. Try a new script on
-    a small count before a large one.
+    you get the error, the line, and what you logged, never a retry. A foreground run must finish
+    inside 20 minutes and you can do nothing else until it does: give every loop in it a count
+    or a deadline of its own (time.monotonic()), and let a wait that has run out return what it
+    saw instead of going round again. Try a new script on a small count before a large one.
+
+    background=True starts the script in its own process and returns {task, started} at once;
+    it resumes a paused world first. The body is busy until the task ends: acting tools refuse
+    with body_busy, reads still run (bodyBusy: true), and every result carries body {task, name,
+    for (seconds), now (its current call)} and, once, finished [...] with each ended task's
+    result or error and line. mb_task waits for it or cancels it. minutes (default 20, at most
+    60) is its limit; past it the task is stopped and counts as failed (time_limit). Inside a
+    background script resume= and time resume/step are refused; a time pause ends the task
+    (paused_by_script); guard settings it configures are put back when it ends. A pause by you
+    or the operator is waited out; a guard stop ends it (interrupted) whatever it catches.
+    on_fail="pause" pauses the world if the task fails, crashes, is stopped by a guard or runs
+    out of minutes; a cancel or a success never pauses.
     """
     if name is not None and not re.fullmatch(r"[a-z][a-z0-9_]{0,48}", name):
         raise ValueError("name is lower_snake_case, at most 49 characters")
@@ -134,15 +145,23 @@ def mb_run(code: str | None = None, args: dict | None = None, name: str | None =
         code = path.read_text(encoding="utf-8")
     elif path is not None:
         SCRIPTS.mkdir(exist_ok=True); path.write_text(code, encoding="utf-8", newline="\n")
-    lines: list[str] = []
+    if background:
+        from mbtools_gtnh import tasks
+        return tasks.start(code, args, name, on_fail, minutes)
+    return execute(code, args, name, [])
+
+
+def execute(code: str, args: dict | None, name: str | None, lines: list, wrap=None) -> dict:
+    """Runs a script's main(**args) with every tool in scope; wrap(name, fn), if given, goes around each tool (background tasks)."""
     watch = _Watch()
-    scope = {**{n: watch.wrap(n, f) for n, f in _tools().items()}, "log": lambda text: lines.append(str(text)[:300]), "__name__": name or "script"}
+    tools = {n: watch.wrap(n, f) for n, f in _tools().items()}
+    scope = {**({n: wrap(n, f) for n, f in tools.items()} if wrap else tools), "log": lambda text: lines.append(str(text)[:300]), "__name__": name or "script"}
     try:
         exec(compile(code, "<script>", "exec"), scope)
         return watch.report({"result": scope["main"](**(args or {})), "log": lines[-40:]})
     except (Exception, ScriptInterrupted) as error:  # the script is the model's own code: say where it stopped instead of failing the call opaquely
         here = [f.lineno for f in traceback.extract_tb(error.__traceback__) if f.filename == "<script>"]
         line = here[-1] if here else getattr(error, "lineno", None)
-        shown = error.__cause__ if isinstance(error, ScriptInterrupted) else error
+        shown = error.__cause__ if isinstance(error, ScriptInterrupted) and error.__cause__ else error
         return watch.report({"stopped": f"{type(shown).__name__}: {shown}"[:1500], "line": line,
                              "source": code.splitlines()[line - 1].strip() if line and line <= len(code.splitlines()) else None, "log": lines[-40:]})

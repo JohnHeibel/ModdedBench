@@ -31,7 +31,7 @@ TOOLS = {
     "mb_mine", "mb_build_preview", "mb_build", "mb_copy",
     "mb_schematic_import", "mb_schematic_build", "mb_scan", "mb_work_status",
     "mb_work_resume", "mb_build_pause", "mb_build_materials", "mb_quest_status", "mb_quest_sync", "mb_quest_search", "mb_quest_lines",
-    "mb_quest_observe", "mb_quest_detect", "mb_quest_select_choice", "mb_quest_claim",
+    "mb_quest_observe", "mb_quest_detect", "mb_quest_select_choice", "mb_quest_claim", "mb_task",
 }
 
 
@@ -61,6 +61,8 @@ def module_with(srv, attr):
 class GTNHProfileTests(unittest.TestCase):
     def setUp(self):
         mbtool.state.pop("notes", None)
+        tasks = tempfile.TemporaryDirectory(); self.addCleanup(tasks.cleanup)  # never the live run's background tasks
+        env = patch.dict(os.environ, {"MB_TASKS_DIR": tasks.name}); env.start(); self.addCleanup(env.stop)
         self.srv = server.Server()
         self.addCleanup(self.srv.close)
         self.addCleanup(mbtool.install_package)   # tests below re-point the package at temp dirs
@@ -137,9 +139,9 @@ class GTNHProfileTests(unittest.TestCase):
     def test_tool_set_lanes_and_metadata(self):
         srv = self.loaded()
         self.assertEqual(set(srv.name_owner), TOOLS)
-        self.assertEqual(len(srv.modules), 9)
+        self.assertEqual(len(srv.modules), 10)
         self.assertEqual({os.path.basename(p) for p in srv.modules},
-                         {"core.py", "inventory.py", "work.py", "recipes_quests.py", "interrupts.py", "notes.py", "wiki.py", "scripts.py", "plan.py"})
+                         {"core.py", "inventory.py", "work.py", "recipes_quests.py", "interrupts.py", "notes.py", "wiki.py", "scripts.py", "plan.py", "tasks.py"})
         for name in ("mb_selection", "mb_selection_build", "mb_coverage", "mb_load_inputs"):
             self.assertNotIn(name, srv.name_owner)
         lanes = {n: tm.tools[n]["lane"] for tm in srv.modules.values() for n in tm.tools}
@@ -152,7 +154,7 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertTrue(registered.annotations.readOnlyHint)
         self.assertFalse(srv._tool_manager._tools["mb_build"].annotations.readOnlyHint)
         status = srv._tool_manager._tools["mb_tools_status"].fn()
-        self.assertEqual(sum(len(m["tools"]) for m in status["modules"]), 63)
+        self.assertEqual(sum(len(m["tools"]) for m in status["modules"]), 64)
         json.dumps(status)
 
     def test_worker_picks_pool_from_lane_metadata(self):
@@ -172,6 +174,35 @@ class GTNHProfileTests(unittest.TestCase):
             result = asyncio.run(srv.call_tool(name, args))
             self.assertFalse(result.isError, (name, result.content))
         self.assertEqual(chosen, ["control", "read", "act", "read", "control", "read", "act", "control", "read", "act"])
+
+    def test_a_background_task_refuses_acting_tools_marks_reads_and_lets_control_through(self):
+        srv = self.loaded()
+        import sys, time
+        tasks = sys.modules[mbtool.PACKAGE + ".tasks"]
+        self.use(FakeKernel(lambda method, params: {"method": method}))
+        tasks.save({"task": "t1", "name": "vein", "started": time.time(), "state": "running", "pid": os.getpid(), "now": "mb_mine"})
+        refused = asyncio.run(srv.call_tool("mb_act", {"keys": ["forward"], "ticks": 1}))
+        self.assertTrue(refused.isError)
+        self.assertEqual(refused.structuredContent["error"]["code"], "body_busy")
+        self.assertIn("mb_task(cancel=True)", refused.structuredContent["error"]["msg"])
+        read = asyncio.run(srv.call_tool("mb_inventory", {}))
+        self.assertFalse(read.isError)
+        fields = json.loads(read.content[0].text)
+        self.assertEqual((fields["bodyBusy"], fields["body"]["task"]), (True, "t1"))
+        stop = asyncio.run(srv.call_tool("mb_stop", {}))
+        self.assertFalse(stop.isError); self.assertNotIn("bodyBusy", json.loads(stop.content[0].text))
+        tasks.save({"task": "t1", "name": "vein", "started": time.time(), "state": "done", "endedAt": time.time(), "result": 3})
+        first, second = (json.loads(asyncio.run(srv.call_tool("mb_stop", {})).content[0].text) for _ in range(2))
+        self.assertEqual([f["task"] for f in first["finished"]], ["t1"]); self.assertNotIn("finished", second)
+
+    def test_task_fields_join_the_result_object_or_come_as_their_own_block(self):
+        from mcp.types import CallToolResult, TextContent
+        one = CallToolResult(content=[TextContent(type="text", text='{"a": 1}')], structuredContent={"a": 1})
+        merged = server._with_fields(one, {"body": {"task": "t1"}})
+        self.assertEqual((json.loads(merged.content[0].text), merged.structuredContent), ({"a": 1, "body": {"task": "t1"}},) * 2)
+        plain = server._with_fields(CallToolResult(content=[TextContent(type="text", text="ok")]), {"bodyBusy": True})
+        self.assertEqual([c.text for c in plain.content], ["ok", '{"bodyBusy": true}'])
+        self.assertIs(server._with_fields(one, {}), one)
 
     def test_failed_reload_retains_last_good_tools(self):
         srv = self.srv
