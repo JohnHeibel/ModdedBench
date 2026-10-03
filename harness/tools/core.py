@@ -7,11 +7,13 @@ from __future__ import annotations
 import base64
 import json
 import os
+import time
 from typing import Any
 
 from mcp.server.fastmcp import Image
 from mcp.types import CallToolResult, ImageContent, TextContent
 
+import mbtool
 from mbtool import kernel, state, tool
 from mbtools_gtnh import notes
 
@@ -61,7 +63,7 @@ def mb_methods() -> Any:
 
 @tool(lane="read", coverage=["meta"])
 def mb_status() -> Any:
-    """Bridge status, the clock (paused, why, operator hold), your goal stack (mb_goal) with its stall signal, and world notes near you.
+    """Bridge status, the clock (paused, why, operator hold), your goal stack (mb_goal) with its stall signal, world notes near you, and your last two hours' cost (mb_cost).
 
     Call it at the start of every session and after every compaction: it is the heartbeat.
     """
@@ -77,7 +79,50 @@ def mb_status() -> Any:
         out["inventory"] = f"{free} of 36 slots free" + ("" if free is None or free > 6 else ": store or discard (mb_move_items) before you gather, craft in bulk or claim rewards")
     except Exception as e:  # not in a world yet, or the clock is unreachable: status must still answer
         out["goal"] = {"unavailable": str(e)}
+    try:
+        out["cost"] = mb_cost(hours=2, top=6)
+    except Exception as e:
+        out["cost"] = {"unavailable": str(e)}
     return notes.attach(out, notes.surface(k, reason="session", radius=32))
+
+
+@tool(lane="read", coverage=["meta"])
+def mb_cost(hours: float = 2.0, top: int = 15) -> Any:
+    """What your own tool calls cost over the last `hours`: calls, failures and minutes per tool, and the time between calls.
+
+    Dispatchers are split by method (mb_notes(get)); time between calls is your thinking and compaction. The
+    busiest tools come first. A tool you call over and over is work you are doing by hand; see section 4 of
+    your brief on costs that never fail.
+    """
+    now = time.time()
+    since, calls = now - hours * 3600, []
+    try:
+        with open(mbtool.CALL_LOG, "rb") as f:
+            f.seek(max(0, f.seek(0, 2) - (8 << 20)))  # the tail is enough for any window a run needs
+            lines = f.read().decode("utf-8", "replace").splitlines()
+    except OSError:
+        return {"hours": hours, "calls": 0}
+    for line in lines:
+        try:
+            c = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(c, dict) and c.get("t", 0) >= since:
+            calls.append(c)
+    by: dict[str, list] = {}
+    for c in calls:
+        row = by.setdefault(f"{c['tool']}({c['method']})" if c.get("method") else c["tool"], [0, 0, 0.0])
+        row[0] += 1; row[1] += c.get("error") is not None; row[2] += c.get("s", 0)
+    spans = []  # union of call intervals: parallel calls count once
+    for s, e in sorted((c["t"], c["t"] + c.get("s", 0)) for c in calls):
+        if spans and s <= spans[-1][1]: spans[-1][1] = max(spans[-1][1], e)
+        else: spans.append([s, e])
+    busy = sum(e - s for s, e in spans)
+    window = now - (calls[0]["t"] if calls else now)
+    rows = sorted(by.items(), key=lambda kv: (-kv[1][0], -kv[1][2]))[:max(0, top)]
+    return {"hours": hours, "calls": len(calls), "failed": sum(r[1] for r in by.values()),
+            "toolMinutes": round(busy / 60, 1), "betweenCallsMinutes": round(max(0.0, window - busy) / 60, 1),
+            "top": {k: f"{n} calls, {f} failed, {s / 60:.1f} min" for k, (n, f, s) in rows}}
 
 
 @tool(lane=lane_by_method(), effect="privileged", coverage=["meta"])
