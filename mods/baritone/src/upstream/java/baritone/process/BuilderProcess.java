@@ -22,6 +22,7 @@ package baritone.process;
 
 import baritone.Baritone;
 import baritone.compat.LegacyPlayer;
+import baritone.gtnh.pathing.PlacementGoalSupport;
 import baritone.api.pathing.goals.Goal;
 import baritone.api.pathing.goals.GoalBlock;
 import baritone.api.pathing.goals.GoalComposite;
@@ -281,8 +282,10 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
     private Optional<Placement> searchForPlaceables(BuilderCalculationContext bcc, List<IBlockState> desirableOnHotbar) {
         placementDiagnostic = Map.of();
         BetterBlockPos center = ctx.playerFeet();
+        // Above the feet only a ceiling can support a placement; look no higher than its face is in reach.
+        int up = PlacementGoalSupport.reachUp(RayTraceUtils.inferSneakingEyePosition(ctx.player()).y - center.y, ctx.playerController().getBlockReachDistance());
         for (int dx = -5; dx <= 5; dx++) {
-            for (int dy = -5; dy <= 1; dy++) {
+            for (int dy = -5; dy <= up; dy++) {
                 for (int dz = -5; dz <= 5; dz++) {
                     int x = center.x + dx;
                     int y = center.y + dy;
@@ -294,7 +297,10 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
                     IBlockState curr = bcc.bsi.get0(x, y, z);
                     if (bcc.isPossiblyProtected(x, y, z)) continue;
                     if (MovementHelper.isReplaceable(x, y, z, curr, bcc.bsi) && !valid(curr, desired, false)) {
-                        if (dy == 1 && bcc.bsi.get0(x, y + 1, z).getBlock() == Blocks.AIR) {
+                        // A ceiling provides an existing clickable support above
+                        // the player. Native reach and collision still decide
+                        // whether that face can actually place this cell.
+                        if (dy > 0 && bcc.bsi.get0(x, y + 1, z).getBlock() == Blocks.AIR) {
                             continue;
                         }
                         desirableOnHotbar.add(desired);
