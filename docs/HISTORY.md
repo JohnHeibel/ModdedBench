@@ -8,6 +8,16 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-03** Scripts could swallow a guard interrupt with `except Exception`. A
+  latch, pause or cancellation met inside mb_run now stops the script and is reported
+  as `interrupted`; guard settings a script changed come back as `guardsChanged`.
+- **2026-10-03** Upstreamed the agent's 24 h run fixes: clicks aim where the ray lands,
+  construction places under ceilings and skips path doors, traverse recentres off raised
+  edges, the client refuses mistargeted attacks, GUI moves release a grabbed cursor.
+- **2026-10-03** Inventory tools count what the player's slots gained; machine loading
+  spreads one transfer; mb_hold(None) empties the hand; tooltips hold modifiers only for
+  the read; mb_fight can block or draw in a protected room without lifting protection.
+
 - **2026-10-02** Overnight the agent nearly drowned: the air guard re-paused on every
   resume, so it disabled the guard and swam out by hand. Threshold and burning guards
   now pause once per crossing; mb_process has a `breathable` goal (cells re-checked live,
