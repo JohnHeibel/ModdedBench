@@ -133,5 +133,14 @@ class ScriptGuardTests(unittest.TestCase):
         self.assertNotIn('guardsChanged', out)
 
 
+    def test_a_tool_called_with_a_dict_first_is_not_mistaken_for_a_configure(self):
+        k = GuardKernel()
+        def mb_hold(item=None, slot=None):
+            return {'held': item}
+        with mock.patch.object(scripts, '_tools', return_value={'mb_hold': mb_hold}), mock.patch.object(scripts, 'kernel', lambda: k):
+            out = scripts.mb_run(code='def main():\n return mb_hold({"id": "IC2:itemTreetap"}, slot=1)')
+        self.assertEqual(out['result'], {'held': {'id': 'IC2:itemTreetap'}})
+
+
 if __name__ == '__main__':
     unittest.main()
