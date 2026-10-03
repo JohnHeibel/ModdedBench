@@ -1036,6 +1036,12 @@ and list what is loaded, with load errors.
 | `mb_note_write` | Create/update a durable note with history and a retry-safe receipt |
 | `mb_goal` | Read or update your goal stack: chapter > current quest > working sub-goal |
 
+**`harness/tools/patterns.py`**: Saved click-step plans (patterns): save, list, load, and place them turned and mirrored.
+
+| Tool | What it does |
+| --- | --- |
+| `mb_pattern` | Keep a click-step plan that worked so it can be built again elsewhere, turned or mirrored |
+
 **`harness/tools/plan.py`**: The drawing: one format to look at a place, to plan in it and to build from.
 
 | Tool | What it does |
@@ -1087,8 +1093,8 @@ and list what is loaded, with load errors.
 | `mb_settings` | Read, atomically set, or reset pinned source settings while the source engine is idle |
 | `mb_cache` | Inspect or administer the source terrain cache; cached cells are approximate evidence |
 | `mb_mine` | Run bounded native quantity mining and return its terminal receipt |
-| `mb_build_preview` | Read-only fresh build diff and shared-inventory material allocation |
-| `mb_build` | Execute a bounded, explicit-cell or selection build and return its receipt |
+| `mb_build_preview` | Read-only fresh build diff and shared-inventory material allocation, or click-step readiness |
+| `mb_build` | Execute a bounded cell, selection or click-step build and return its receipt |
 | `mb_schematic_import` | Import a file under the game's schematics/ directory without building: MCEdit .schematic or a canonical JSON plan |
 | `mb_schematic_build` | Import a schematic, then preview (default) or build it with the strict build contract |
 | `mb_copy` | Copy loaded blocks inside inclusive bounds {min,max} into a build plan; optionally rebuild it elsewhere |
