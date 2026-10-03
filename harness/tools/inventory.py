@@ -349,7 +349,7 @@ def _shift(session, slot):
     stack = slot["stack"]; before = _held(session.observe(), stack)
     direction = 1 if slot["kind"] == "container" else -1
     try:
-        session.click(slot["i"], "quick_move")
+        session.click(slot["i"], "quick_move", path="structured" if slot.get("ordinary") else None)
     except ProcedureStopped as error:
         # A rejected transaction can still have effects. Observe, report, and stop;
         # native acceptance stays authoritative and no input is replayed.

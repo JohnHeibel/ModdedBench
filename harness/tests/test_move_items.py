@@ -67,6 +67,13 @@ class MoveItemsTests(unittest.TestCase):
         out = self.run_tool(k, at=[1, 64, 1], take=[dict(id='coal')])
         self.assertEqual((out['took'], out['unmoved']), ([dict(id='coal', meta=0, count=12)], []))
 
+    def test_native_ordinary_slots_use_atomic_structured_shift_click(self):
+        k = ChestKernel(); k.slots[1]['ordinary'] = True
+        out = self.run_tool(k, at=[1, 64, 1], take=[dict(id='coal')])
+        self.assertEqual(out['took'], [dict(id='coal', meta=0, count=8)])
+        click = next(p for m, p in k.calls if m == 'gui.click_slot')
+        self.assertEqual(click['path'], 'structured')
+
     def test_failed_click_reports_observed_effects_without_retry(self):
         k = ChestKernel(); call = k.call
         def rejected(method, **p):
