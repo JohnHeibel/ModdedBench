@@ -128,7 +128,7 @@
     <dl id="readout" class="screen">
       <dt>target</dt><dd class="key">Steam Macerator</dd>
       <dt>quests claimed</dt><dd>164</dd><dt>actions</dt><dd>3,912</dd><dt>failed</dt><dd class="bad">47</dd>
-      <dt>scripts</dt><dd>38</dd><dt>tokens</dt><dd>~1.84B</dd></dl>
+      <dt>scripts</dt><dd>38</dd><dt>tokens in</dt><dd>~1.84B</dd><dt>tokens out</dt><dd>4.2M</dd></dl>
   </div>
 </div>
 <script src="/overlay/pops.js"></script>
@@ -167,7 +167,8 @@ function draw(d){
   if($("feed").dataset.html!==html){$("feed").dataset.html=html;$("feed").innerHTML=html}
   window.Pops&&Pops.draw(d);
   $("readout").innerHTML=`<dt>target</dt><dd class="key">${esc(d.target||"")}</dd><dt>quests done</dt><dd>${big(d.chapters&&d.chapters.length?d.chapters.reduce((n,c)=>n+c.completed,0):s.claims)}</dd><dt>actions</dt><dd>${big(s.calls)}</dd>`+
-    `<dt>failed</dt><dd class="bad">${big(s.failed)}</dd><dt>scripts</dt><dd>${big(s.scripts)}</dd><dt>tokens</dt><dd>${(t.estimated||t.uncounted)?"~":""}${big((t.input||0)+(t.uncounted||0)+(t.estimated||0)+(t.output||0))}</dd>`;
+    `<dt>failed</dt><dd class="bad">${big(s.failed)}</dd><dt>scripts</dt><dd>${big(s.scripts)}</dd><dt>tokens in</dt><dd>${(t.estimated||t.uncounted)?"~":""}${big((t.input||0)+(t.uncounted||0)+(t.estimated||0))}</dd>`+
+    `<dt>tokens out</dt><dd>${big(t.output)}</dd>`;  // the estimate is input only: output is counted when a turn ends
 }
 const thought={ts:null,title:"",text:"",since:0,drawn:null};
 setInterval(()=>{  // the summary arrives whole when the step ends; typing it out at reading pace is what makes it read as a stream
