@@ -406,22 +406,31 @@ def mb_move_items(at: list[int] | None = None, put: list[dict] | str | None = No
 
 
 @tool(coverage=["inventory"])
-def mb_hold(item: dict, slot: int | None = None) -> Any:
-    """Put an item in your hand in ONE call: selects it on your hotbar, or swaps it there from your inventory and selects it.
+def mb_hold(item: dict | None = None, slot: int | None = None) -> Any:
+    """Select an item or an observed empty hand in ONE call, swapping inventory slots when necessary.
 
     item is a selector {id?, meta?, nbt_hash?, nbt?, name?} as in mb_move_items; give id or name. Of several matching
     stacks one on the hotbar wins, then the first in your inventory. slot=0..8 names the hotbar slot it goes to; omit
     it for the selected slot when your hand is empty, else an empty hotbar slot, else the selected one. Whatever was
     in that slot takes the item's old place. The swap happens in the GUI already open, else in your inventory, opened
     and closed for it. It is not refused near threats: arming yourself is what you do then. Mining picks its own tool;
-    this is for what you place, use, eat, wield or throw. Returns {held, slot}.
+    this is for what you place, use, eat, wield or throw. Omit item (or use null) to empty your hand before
+    block interactions: selects an empty hotbar slot, else parks the held stack in a free inventory slot.
+    Empty-hand selection requires a closed GUI and no explicit slot. Returns verified {held, slot}.
     """
-    if not isinstance(item, dict) or not (item.get("id") or item.get("name")):
+    if item is not None and (not isinstance(item, dict) or not (item.get("id") or item.get("name"))):
         raise ValueError("item is a {id?, meta?, nbt_hash?, nbt?, name?} with id or name")
     if slot is not None and (type(slot) is not int or not 0 <= slot <= 8):
         raise ValueError("slot is a hotbar slot, 0..8")
     k = kernel(); inv = k.call("obs.inventory", detail="full")
     if inv.get("cursor"): raise ValueError("the cursor must be empty before mb_hold")
+    if item is None:
+        if slot is not None: raise ValueError("omit slot when selecting an empty hand")
+        if k.call("obs.container")["open"]: raise ValueError("close the GUI before selecting an empty hand")
+        _empty_hand(k)
+        after = k.call("obs.inventory", detail="compact")
+        if after.get("held"): raise ValueError("empty hand was not observed; inspect mb_inventory before trying again")
+        return {"held": None, "slot": after["selected"]}
     found = [s for s in inv["main"] if _matches(s.get("stack"), item)]
     if not found: raise ValueError(f"no {item.get('id') or item['name']} in your inventory (mb_find with the selector shows what matches)")
     source = next((s for s in found if s["kind"] == "hotbar" and slot in (None, s["slot"])), found[0])

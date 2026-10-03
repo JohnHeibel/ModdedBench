@@ -67,6 +67,33 @@ class HoldTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.hold(PlayerKernel({0: SWORD}), item=dict(id='sword'), slot=9)
         with self.assertRaises(ValueError): self.hold(PlayerKernel({0: SWORD}), item=dict(meta=0))
 
+    def test_empty_hand_selects_a_free_hotbar_slot(self):
+        k = PlayerKernel({0: SWORD})
+        self.assertEqual(self.hold(k), dict(held=None, slot=1))
+        self.assertEqual(k.inv[0], SWORD)
+        self.assertNotIn('gui.open_inventory', [m for m, _ in k.calls])
+
+    def test_empty_hand_parks_a_full_hotbars_selected_stack(self):
+        k = PlayerKernel({i: TORCH for i in range(9)}, selected=3)
+        self.assertEqual(self.hold(k, item=None), dict(held=None, slot=3))
+        self.assertEqual((k.inv[9], k.open), (TORCH, False))
+
+    def test_empty_hand_refuses_full_inventory_or_open_gui(self):
+        with self.assertRaises(ValueError): self.hold(PlayerKernel({i: DIRT for i in range(36)}))
+        k = PlayerKernel({0: SWORD}); k.open = True
+        with self.assertRaisesRegex(ValueError, 'close the GUI'): self.hold(k)
+        self.assertEqual(k.inv[0], SWORD)
+        with self.assertRaisesRegex(ValueError, 'omit slot'): self.hold(PlayerKernel({}), slot=2)
+
+    def test_empty_hand_requires_observed_selection(self):
+        k = PlayerKernel({0: SWORD})
+        original = k.call
+        def ignored_select(method, **p):
+            if method == 'act.select_hotbar': return dict(state='completed')
+            return original(method, **p)
+        k.call = ignored_select
+        with self.assertRaisesRegex(ValueError, 'not observed'): self.hold(k)
+
 
 if __name__ == '__main__':
     unittest.main()
