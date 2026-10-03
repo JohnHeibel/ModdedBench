@@ -19,6 +19,19 @@ class ConsoleTests(unittest.TestCase):
         for bad in ("", 'a"b', "a\nb"):
             with self.assertRaises(ValueError): console.fill_prompt("x", bad, "chapter")
 
+    def test_run_tokens_are_exact_and_count_an_older_thread_only_from_the_run_start(self):
+        import subprocess, tempfile
+        from datetime import datetime, timezone
+        def total(ts, i, c, o): return json.dumps({"timestamp": ts, "type": "event_msg", "payload": {"type": "token_count",
+                                                   "info": {"total_token_usage": {"input_tokens": i, "cached_input_tokens": c, "output_tokens": o}}}})
+        with tempfile.TemporaryDirectory() as d:
+            day = Path(d, "s", "2026", "10", "03"); day.mkdir(parents=True)
+            (day / "rollout-a.jsonl").write_text("\n".join([json.dumps({"timestamp": "2026-10-03T10:00:00Z"}), total("2026-10-03T11:00:00Z", 100, 50, 10), total("2026-10-03T12:30:00Z", 300, 200, 40)]) + "\n")
+            (day / "rollout-b.jsonl").write_text("\n".join([json.dumps({"timestamp": "2026-10-03T12:40:00Z"}), total("2026-10-03T13:00:00Z", 2000, 1800, 9)]) + "\n")
+            Path(d, "run.json").write_text(json.dumps({"startedAt": datetime(2026, 10, 3, 12, tzinfo=timezone.utc).timestamp()}))
+            out = subprocess.run([sys.executable, "-c", console.USAGE, str(Path(d, "s")), str(Path(d, "run.json"))], capture_output=True, text=True)
+        self.assertEqual(json.loads(out.stdout), {"input": 2200, "cached": 1950, "output": 39})
+
     def test_actions_need_the_page_token_and_a_loopback_host(self):
         class Fake:
             def act(self, name, args): return {"accepted": name}
