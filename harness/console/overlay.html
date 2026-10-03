@@ -35,7 +35,7 @@
   #run .bar{flex:none;display:flex;gap:4px;align-items:center;color:var(--dim)} #run .bar em{margin-left:6px;font-style:normal}
   #run .bar i{width:12px;height:12px;background:color-mix(in srgb,var(--dim) 30%,transparent)}
   #run.busy .bar i{animation:chase 1.6s steps(1) infinite} @keyframes chase{0%,24%{background:var(--key)}25%,100%{background:color-mix(in srgb,var(--dim) 30%,transparent)}}
-  #thought{flex:1;min-height:0;overflow:hidden;line-height:1.45;color:var(--txt);-webkit-mask-image:linear-gradient(transparent,#000 14px)}
+  #thought{flex:1;min-height:0;overflow:hidden;line-height:1.4;color:var(--txt)} #thought.over{-webkit-mask-image:linear-gradient(transparent,#000 14px)}
   #thought.none{color:var(--dim)} #idea{flex:none;color:var(--key);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:-4px}
   #thought .caret{display:inline-block;width:9px;height:15px;margin-left:3px;vertical-align:-2px;background:var(--key);animation:caret 1s steps(1) infinite} @keyframes caret{50%{opacity:0}}
   #feed{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;gap:4px}
@@ -158,13 +158,13 @@ function draw(d){
   const [label,cls]=STATES[st.state]||[st.state||"Idle","idle"];
   $("run").className=cls; $("run").querySelector(".state").textContent=label; $("run").querySelector(".what").textContent=st.state==="thinking"?"":st.text||""; $("run").querySelector("em").textContent=st.since?span(d.now-st.since):"";
   const th=[...(d.feed||[])].reverse().find(e=>e.kind==="think");  // the box types the newest summary out; one already old when the page loads shows whole
-  if(th&&th.ts!==thought.ts)Object.assign(thought,{ts:th.ts,title:th.title||"",text:th.text===th.title?"":th.text,since:d.now-th.ts>30?-1e9:performance.now()});
-  if(!th&&thought.ts!==0){thought.ts=0;thought.drawn=null;$("idea").textContent="";$("thought").className="none";$("thought").textContent="No reasoning summary yet"}
+  if(th&&th.ts!==thought.ts){Object.assign(thought,{ts:th.ts,title:th.title||"",text:th.text===th.title?"":th.text,since:d.now-th.ts>30?-1e9:performance.now()});sized(thought.text)}
+  if(!th&&thought.ts!==0){thought.ts=0;thought.drawn=null;$("idea").textContent="";$("thought").className="none";$("thought").style.fontSize="";$("thought").textContent="No reasoning summary yet"}
   const sub=g.subgoal||g.quest||"No goal set yet",attr=s=>esc(s).replace(/"/g,"&quot;"),serves=g.serves?"for "+g.serves.replace(/^for:?\s*/i,""):"";
   const ch=(d.chapters||[]).find(c=>g.chapter&&(g.chapter.includes(c.name)||c.name.includes(g.chapter)))||[...(d.chapters||[])].reverse().find(c=>c.completed>0);
   const bar=(p,cls)=>`<i class="bar ${cls}" style="--p:${Math.max(0,Math.min(1,p||0))}"></i>`,tier=ch?ch.name:g.chapter||"";
   const goal=`<dt>goal</dt><dd><h2 data-full="${attr(sub)}" data-short="${attr(g.short||"")}">${esc(sub)}</h2><div class="serves">${esc(serves)}</div></dd>`+
-    (g.quest?`<dt>quest</dt><dd class="row"><b>${esc(g.quest)}</b>${g.progress==null?"":bar(g.progress,"")+`<span>${Math.floor(g.progress*100)}%</span>`}</dd>`:"")+  // floor: 100% only when the book says done
+    (g.quest?`<dt>quest</dt><dd class="row"><b>${esc(g.quest)}</b>${g.progress==null?"":bar(g.progress,"")+`<span>${g.estimated?"~":""}${Math.floor(g.progress*100)}%</span>`}</dd>`:"")+  // ~: the model's own estimate; without it, the quest book's count
     (tier?`<dt>${/^Tier /.test(tier)?"tier":"chapter"}</dt><dd class="row"><b>${esc(tier.replace(/^Tier /,""))}</b>${ch?bar(ch.completed/ch.total,"dim")+`<span>${ch.completed} of ${ch.total}</span>`:""}</dd>`:"");
   if($("goal").dataset.html!==goal){$("goal").dataset.html=goal;$("goal").innerHTML=goal;fit()}
   const rows=[];  // consecutive calls of one tool collapse into the newest, with a count
@@ -185,13 +185,18 @@ function fit(){const h=$("goal").querySelector("h2"),s=$("goal").querySelector("
   const full=h.dataset.full||h.textContent,short=h.dataset.short||full;  // its own words while they fit at 32; the summariser's shorter line only past that
   for(const [text,px] of [[full,48],[full,40],[full,32],[short,48],[short,40],[short,32],[short,24]]){h.textContent=text;h.style.fontSize=px+"px";if(h.scrollHeight<=h.clientHeight+1)break}
   for(const px of [24,16]){s.style.fontSize=px+"px";if(s.scrollWidth<=s.clientWidth)break}}
-document.fonts.ready.then(fit);
+// The summary is set in the largest type at which all of it fits the mind box, so the box reads full, not a third empty.
+// It is measured whole before the first letter is typed. One longer than the box at 16 scrolls, newest lines in view, under a top fade.
+function sized(text){const t=$("thought"),probe=document.createElement("div"); probe.style.cssText=`position:absolute;visibility:hidden;width:${t.clientWidth}px`; probe.textContent=text+" M";  // M: room for the caret
+  t.appendChild(probe); for(const px of [22,21,20,19,18,17,16]){t.style.fontSize=px+"px";if(probe.offsetHeight<=t.clientHeight)break} probe.remove()}
 const thought={ts:null,title:"",text:"",since:0,drawn:null};
 setInterval(()=>{  // the summary arrives whole when the step ends; typing it out at reading pace is what makes it read as a stream
   if(!thought.ts)return; const shown=Math.min(thought.text.length,Math.floor((performance.now()-thought.since)*.06));  // 60 characters a second, by the clock: timers in a hidden page are slowed
   const key=thought.ts+":"+shown; if(thought.drawn===key)return; thought.drawn=key;
   $("thought").className=""; $("idea").textContent=thought.title; $("thought").innerHTML=`<div>${esc(thought.text.slice(0,shown))}<i class="caret"></i></div>`; $("thought").scrollTop=1e9;  // past the box's height the newest lines stay in view
+  $("thought").classList.toggle("over",$("thought").scrollHeight>$("thought").clientHeight+1);
 },50);
 async function tick(){try{draw(await (await fetch("/overlay/data",{cache:"no-store"})).json())}catch(e){}setTimeout(tick,1000)}
-if(!opts.has("sample"))tick();else if(opts.get("tier"))canvas.dataset.tier=opts.get("tier");
+// Text is measured to be fitted, so nothing is drawn before the typeface is there.
+Promise.all([document.fonts.load("16px Monocraft"),document.fonts.load("700 16px Monocraft")]).finally(()=>{fit(); if(!opts.has("sample"))tick();else if(opts.get("tier"))canvas.dataset.tier=opts.get("tier")});
 </script>

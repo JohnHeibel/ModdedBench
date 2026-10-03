@@ -655,8 +655,9 @@ def goal(kernel, changes=None):
     except ValueError:
         note = {"revision": 0, "data": {}}
     data = {} if note.get("status") == "archived" else dict(note["data"])  # archiving the note clears the stack
-    changes = {k: _text(v, k, 512, empty=True).strip() for k, v in (changes or {}).items() if v is not None}
+    changes = {k: _int(v, k, 0, 100) if k == "progress" else _text(v, k, 512, empty=True).strip() for k, v in (changes or {}).items() if v is not None}
     if changes:
+        if "progress" not in changes and changes.get("quest", data.get("quest")) != data.get("quest"): data.pop("progress", None)  # the estimate was for the quest before
         data.update(changes, setAt=datetime.now(timezone.utc).isoformat())
         text = " / ".join(f"{k}: {data[k]}" for k in GOAL_FIELDS if data.get(k))
         store.write(GOAL_ID, note["revision"], f"goal-{uuid.uuid4()}", {"title": "Goal stack", "text": text, "data": data, "tags": ["goal"], "status": "open",
@@ -672,13 +673,14 @@ def goal(kernel, changes=None):
         watch["quiet"] = watch.get("quiet", 0) + max(0, ticks - watch.get("ticks", ticks))  # the counter restarts with the server
     watch["ticks"] = ticks
     out = {**{k: data.get(k, "") for k in GOAL_FIELDS}, "setAt": data.get("setAt"), "quietGameMinutes": round(watch["quiet"] / 1200, 1)}
+    if "progress" in data: out["progress"] = data["progress"]
     if watch["quiet"] >= STALE_TICKS:
         out["stale"] = "same sub-goal and same inventory for a game day of running time: say in one sentence why, then change something or re-scope. A running job, an armed wait, or work on the base that does not pass through your hands (wiring, configuring, reading before a build) is a fine reason; put it in the sub-goal."
     return out
 
 
 @tool(coverage=["memory"])
-def mb_goal(chapter: str | None = None, quest: str | None = None, subgoal: str | None = None, serves: str | None = None) -> Any:
+def mb_goal(chapter: str | None = None, quest: str | None = None, subgoal: str | None = None, serves: str | None = None, progress: int | None = None) -> Any:
     """Read or update your goal stack: chapter > current quest > working sub-goal. One cheap call; only the fields you pass change.
 
     chapter changes rarely; quest changes when one is claimed and verified or parked
@@ -686,11 +688,15 @@ def mb_goal(chapter: str | None = None, quest: str | None = None, subgoal: str |
     should be rewritten whenever you switch. serves names what the sub-goal is for when
     it is not the current quest: a named investment ("second coke oven: charcoal for
     the next three quests"). If you cannot say what a sub-goal serves, you have drifted.
+    progress is a number, 0 to 100: how far through the current quest you think you
+    are right now. Pass it whenever you rewrite the sub-goal. It is a quick guess for
+    the people watching: do not work it out or look anything up for it, and it may go
+    down as well as up. A new quest clears it.
     mb_status returns this stack every time, with quietGameMinutes (running game time
     since the sub-goal or your inventory last changed) and a stale flag after a game day.
     It lives in the note "goal-stack", so it survives compaction, restarts and crashes.
     """
-    return goal(kernel(), {"chapter": chapter, "quest": quest, "subgoal": subgoal, "serves": serves})
+    return goal(kernel(), {"chapter": chapter, "quest": quest, "subgoal": subgoal, "serves": serves, "progress": progress})
 
 
 if __name__ == "__main__":

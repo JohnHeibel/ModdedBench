@@ -288,7 +288,10 @@ class Console:
             if p.get("kind") == "script":  # the code goes to the summary, not to the page
                 d = p.get("data") or {}; code = d.pop("code", "")
                 if code: d["short"] = self.shorten.get("script", f'script {d.get("name") or "(one-off)"}, arguments {json.dumps(d.get("args") or {})}\n{code}')
-        goal = dict(live.get("goal") or {}); goal["short"] = self.shorten.get("goal", goal.get("subgoal")); goal["progress"] = self.quest_progress(goal.get("quest"))
+        goal = dict(live.get("goal") or {}); goal["short"] = self.shorten.get("goal", goal.get("subgoal"))
+        # How far the quest is: the model's own estimate (mb_goal progress) when it gave one, else the quest book's count of items.
+        own = goal.get("progress"); goal["estimated"] = isinstance(own, (int, float))
+        goal["progress"] = own / 100 if goal["estimated"] else self.quest_progress(goal.get("quest"))
         for entry in [e for e in feed if e.get("kind") == "say"][-12:]: entry["short"] = self.shorten.get("say", entry.get("text"))
         try: target = re.search(r'^TARGET_QUEST\s*=\s*"([^"<]+)"', (BRIEF / "PROMPT.md").read_text(encoding="utf-8"), re.M).group(1)
         except (OSError, AttributeError): target = ""

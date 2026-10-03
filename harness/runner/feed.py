@@ -39,7 +39,7 @@ def _said(method, prefix=""):
 def _pos(p): return " ".join(str(int(v)) for v in p) if isinstance(p, list) else ""
 
 LINES = {  # tool -> line from (arguments, result); anything absent gets the generic line
-    "mb_goal": lambda a, r: "goal: " + str(a.get("subgoal") or a.get("quest") or a.get("chapter")) if any(a.values()) else "",
+    "mb_goal": lambda a, r: "goal: " + str(a.get("subgoal") or a.get("quest") or a.get("chapter")) if a.get("subgoal") or a.get("quest") or a.get("chapter") else "",  # progress or serves alone is no news for the log
     "mb_status": lambda a, r: "", "mb_methods": lambda a, r: "", "mb_work_status": lambda a, r: "",
     "mb_craft": lambda a, r: (f"crafted {r.get('gained', '')} × {_name(r['crafted'])}" if r.get("crafted") else
                               "machine: " + " and ".join(f"{k} {_name(r[k])}" for k in ("loaded", "collected") if r.get(k)) if r.get("loaded") or r.get("collected") else "crafting"),
@@ -252,6 +252,7 @@ class Feed:
             if isinstance(goal, dict) and "subgoal" in goal and not failed:
                 if goal.get("chapter") and self.live["goal"].get("chapter") not in (None, goal["chapter"]): self.add("mark", "new chapter: " + str(goal["chapter"]))
                 self.live["goal"] = {k: goal.get(k) or "" for k in ("chapter", "quest", "subgoal", "serves")}
+                if goal.get("progress") is not None: self.live["goal"]["progress"] = goal["progress"]  # its own estimate of the quest, 0 to 100
             if tool == "mb_run": stats["scripts"] += 1
             if tool == "mb_quest_claim" and not failed and isinstance(result, dict) and (result.get("claimed") or result.get("accepted")):
                 stats["claims"] += 1; self.add("mark", "quest claimed: " + str((result.get("quest") or {}).get("name") or self.live["goal"].get("quest") or "?"))
