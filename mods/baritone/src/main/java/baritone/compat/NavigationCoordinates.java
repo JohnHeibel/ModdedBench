@@ -11,6 +11,14 @@ public final class NavigationCoordinates {
         var feet=new baritone.api.utils.BetterBlockPos(x,feetY+.1251,z);
         return slabAt.test(feet)?feet.up():feet;
     }
+    /** A neighbouring block can support an off-centre player one cell above a clear, supported path cell.
+     *  Centring over that cell lets ordinary gravity settle the player; no block is edited. */
+    public static boolean recenterDown(BlockPos src,BlockPos feet,double x,double z,
+            java.util.function.Predicate<BlockPos> walkOn,java.util.function.Predicate<BlockPos> walkThrough){
+        return feet.getY()==src.getY()+1&&feet.getX()==src.getX()&&feet.getZ()==src.getZ()
+            &&Math.hypot(x-src.getX()-.5,z-src.getZ()-.5)>.05
+            &&walkOn.test(src.down())&&walkThrough.test(src)&&walkThrough.test(src.up())&&walkThrough.test(src.up(2));
+    }
     public static BlockPos goal(World world,BlockPos physical){
         return goal(world,physical,physical);
     }

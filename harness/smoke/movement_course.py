@@ -81,6 +81,7 @@ CASES: dict[str, dict] = {
     "overhang_plant": dict(expect="succeed", bound=30, allow=(False, True)),
     "head_plant_leaves": dict(expect="succeed", bound=60, max_dev=1.0, allow=(True, False)),
     "bridge_drop": dict(expect="succeed", bound=60, allow=(False, True), change_at_u=6, change="bridge_drop_fall"),
+    "raised_edge": dict(expect="succeed", bound=60, max_dev=1.0, change_at_u=6, change="raised_edge_lift"),  # ad8a612: held above the floor by a neighbour's edge
     # parkour: gaps a player jumps; with break and place off nothing else crosses them
     "gap1": dict(expect="succeed", bound=60, max_dev=1.0),
     "gap2": dict(expect="succeed", bound=60, max_dev=1.0),

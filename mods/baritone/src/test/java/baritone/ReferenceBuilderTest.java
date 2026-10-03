@@ -33,6 +33,18 @@ public class ReferenceBuilderTest {
         assertEquals(new BetterBlockPos(-2,65,-4),NavigationCoordinates.feet(-1.5,65,-3.5,lowerSlab));
         assertEquals(new BetterBlockPos(-2,64,-4),NavigationCoordinates.feet(-1.5,64,-3.5,p->false));
     }
+    @Test public void raisedEdgeRecentersOnlyOntoASupportedClearColumn(){
+        var src=new BlockPos(77,24,-251);var feet=src.up();
+        java.util.function.Predicate<BlockPos> floor=p->p.equals(src.down());
+        java.util.function.Predicate<BlockPos> clear=p->p.getX()==77&&p.getZ()==-251&&p.getY()>=24&&p.getY()<=26;
+        assertTrue(NavigationCoordinates.recenterDown(src,feet,77.835,-250.7,floor,clear));
+        assertFalse(NavigationCoordinates.recenterDown(src,feet,77.835,-250.7,p->false,clear));
+        for(var blocked:List.of(src,src.up(),src.up(2)))
+            assertFalse(NavigationCoordinates.recenterDown(src,feet,77.835,-250.7,floor,p->clear.test(p)&&!p.equals(blocked)));
+        assertFalse(NavigationCoordinates.recenterDown(src,src.up(2),77.835,-250.7,floor,clear));
+        assertFalse(NavigationCoordinates.recenterDown(src,feet.east(),78.1,-250.7,floor,clear));
+        assertFalse(NavigationCoordinates.recenterDown(src,feet,77.5,-250.5,floor,clear));
+    }
     @Test public void loadedGoalAdaptsToSlabAndRetainsKnowledgeAcrossUnload(){
         var physical=new BlockPos(-700,64,500);
         var unknown=NavigationCoordinates.goal(physical,physical,null);assertEquals(physical,unknown);

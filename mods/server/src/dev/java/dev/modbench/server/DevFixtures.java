@@ -39,7 +39,7 @@ final class DevFixtures {
         runtime.fixture("dev.movement_fixture.create","Journalled sky movement/flowing-liquid course; measures every registered block's collision boxes once","privileged",r->movement.create());
         runtime.fixture("dev.movement_fixture.position","Rebuild a case's plot, reset the player and place them at its start {name,yaw?,pitch?}","privileged",r->movement.position(Json.string(r.params,"name","corner_l"),r.params));
         runtime.fixture("dev.movement_fixture.status","Authoritative player state; with {name} the plot's items, falling blocks, fluids and obsidian","privileged",r->movement.status(r.params));
-        runtime.fixture("dev.movement_fixture.change","Named mid-run world change {name:lava_approach_open|lava_approach_close}","privileged",r->movement.change(Json.string(r.params,"name","")));
+        runtime.fixture("dev.movement_fixture.change","Named mid-run world change {name:lava_approach_open|lava_approach_close|natural_flow_on|natural_flow_off|bridge_drop_fall|raised_edge_lift}","privileged",r->movement.change(Json.string(r.params,"name","")));
         runtime.fixture("dev.movement_fixture.shapes","Measured partial collision shapes {filter:picked|thin|low|all,limit}","privileged",r->movement.shapes(r.params));
         runtime.fixture("dev.movement_fixture.restore","Restore original player, game rules, and remove the course","privileged",r->movement.restore());
         ReplayFixture replay=new ReplayFixture(server);
