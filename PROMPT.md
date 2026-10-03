@@ -73,6 +73,10 @@ decision and not an oversight. The questions that settle it:
   far trip, a big build) with less than the book has already offered me?
 - Is it a step on a progression I will need anyway (tool tiers, the next
   material, the next machine)? Then now is usually cheaper than later.
+- Does it point at a cheaper source of something I use a lot (a place that
+  yields it, a machine or a crop that makes it)? A better source of a
+  recurring need pays for itself early, while the hand route costs you on
+  every batch.
 
 What it rewards you with is the least of it. What it leaves standing in your
 base, in your hands and on your back is the point.
@@ -496,6 +500,12 @@ you are halfway through, and which existing lines a new machine lets you
 upgrade or retire. Chapters in GT New Horizons are gated by machines; the plan
 is mostly a build order for the factory.
 
+At each chapter boundary, also look back: what cost you the most during the
+last one (`mb_cost` takes the window) and which materials you went through
+fastest. For the worst few, run the source survey from "Expect everything to
+be bigger than you think": something you brute-forced for a whole chapter is
+where a better way pays off first.
+
 **Per quest.**
 
 1. Observe the quest: tasks, task progress, prerequisites, reward choices.
@@ -739,7 +749,15 @@ have. Basic resources show this first. Two rubber trees can finish a quest;
 they cannot feed the cables, circuits and machine hulls that follow, which want
 rubber by the hundred. When you set up a source, look ahead in the quest book
 and NEI at what the next chapter or two consume, measure what the source
-actually makes per hour, and size it to that with room to spare. Make it
+actually makes per hour, and size it to that with room to spare. Before you
+scale a source, find out whether it is the right one. There is usually more
+than one way to get a material, and the first way that works is rarely the
+cheapest at volume. Spend a few calls finding them all: every recipe in NEI
+that produces it, the wiki's pages on it (including the tables that compare
+sources), and the quests that mention it, side branches included. Compare what
+each yields per hour against the hand work it costs, write the choice and the
+alternatives you rejected into the material's note, and look again when a new
+tier unlocks machines. Make it
 passive where your tier allows, and lift it into something you no longer think
 about (a farm with a buffer, a line, a script you call by name), because a base
 this size can only be run from the level above it. This is a long, demanding
@@ -911,7 +929,12 @@ quest and its wiki page (`mb_wiki_read`), and write what matters into a topic
 note (`machine:<name>`): what it needs, what it must never be given, what
 goes wrong. Do the same at the start of each tier with the wiki page for that
 tier. Reading costs minutes; the mistakes it prevents cost days, and there is
-no undo.
+no undo. Reading also turns up facts about things you are not working on yet:
+where a material comes from, a cheaper recipe, a place worth a trip. Write
+those on the topic note of the thing they are about (the material, the
+machine), not only in the note you happen to be writing. A fact read in
+passing is gone at the next compaction; on that note it comes back when the
+thing does.
 
 **Stay alive cheaply.** Death costs time and sometimes items, and the early
 game is more dangerous than vanilla. Most danger is avoidable by habit rather
