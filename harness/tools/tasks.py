@@ -6,12 +6,12 @@ mb_run(background=True) starts one detached process per task (``harness/mcp/task
 tool modules fresh, opens its own bridge session and holds the body lock (``.state/tasks/body.lock``) until it
 ends, so a task outlives the MCP server and survives a thread refresh. Each task is ``.state/tasks/<id>.json``:
 the MCP server reads it on every tool call (``fields``) to refuse acting tools while the body is busy, to say what
-the body is doing, and to hand over each finished task once. A running task whose process has died is crashed,
-whoever reads it first.
+the body is doing, and to hand over each finished task once. A running task is alive while the body lock is held
+(a dead or zombie process holds nothing); one whose lock is free is crashed, whoever reads it first.
 
 Time: the client gives time control to one connected session and pauses the world when that session leaves
 (pauseOnDisconnect). That session is the model's MCP server, so a task never sends a time command itself: the
-server relays them (``relay``) and the task's session never owns time. With no server up it sends them itself.
+server relays them (``relay``). With no server up the request waits in a file until one starts (relayPending).
 """
 from __future__ import annotations
 
@@ -48,17 +48,21 @@ class ScriptPaused(scripts.ScriptInterrupted):
 
 # ---- status files ----
 
+def _zombie(pid) -> bool:
+    """An exited process nobody has reaped (the container's PID 1 reaps nothing); False where there is no /proc."""
+    try:
+        with open(f"/proc/{int(pid)}/stat") as f: return f.read().rsplit(")", 1)[1].split()[0] in ("Z", "X")
+    except (OSError, IndexError, ValueError, TypeError): return False
+
+
 def _alive(pid) -> bool:
-    if not pid: return False
+    if not pid or _zombie(pid): return False
     if os.name == "nt":
         import ctypes
         k32 = ctypes.windll.kernel32; handle = k32.OpenProcess(0x1000, False, int(pid))
         if not handle: return False
         code = ctypes.c_ulong(); k32.GetExitCodeProcess(handle, ctypes.byref(code)); k32.CloseHandle(handle)
         return code.value == 259  # STILL_ACTIVE
-    try:  # an exited process nobody has reaped is a zombie, and signal 0 still reaches it
-        with open(f"/proc/{int(pid)}/stat") as f: return f.read().rsplit(")", 1)[1].split()[0] not in ("Z", "X")
-    except (OSError, IndexError): pass
     try: os.kill(int(pid), 0); return True
     except ProcessLookupError: return False
     except PermissionError: return True
@@ -81,10 +85,22 @@ def _read(task_id: str, folder: Path | None = None) -> dict | None:
 def load(task_id: str, folder: Path | None = None) -> dict | None:
     folder, st = folder or TASKS, _read(task_id, folder)
     if st is None: return None
-    if st.get("state") == "running" and not _alive(st.get("pid")):
-        st.update(state="crashed", endedAt=time.time(), ended="crash", error="the task process died without reporting")
-        save(st, folder)
+    if st.get("state") == "running" and not _running(st, folder):
+        _crash(st, "the task process died without reporting", folder)
     return st
+
+
+def _running(st: dict, folder: Path | None = None) -> bool:
+    """Whether a running task's process is still there: it holds the body lock while it runs, and a dead or zombie
+    process holds nothing. One just spawned has 30 s to take the lock and write its pid."""
+    if st.get("pid") and _zombie(st["pid"]): return False
+    return held(folder) or (not st.get("pid") and time.time() - st.get("started", 0) < 30)
+
+
+def _crash(st: dict, error: str, folder: Path | None = None) -> None:
+    try: seen = ((folder or TASKS) / f"{st['task']}.json").stat().st_mtime  # its last word: when it started its last call
+    except OSError: seen = time.time()
+    st.update(state="crashed", endedAt=time.time(), ended="crash", error=error, lastSeen=seen); save(st, folder)
 
 
 def every(folder: Path | None = None) -> list[dict]:
@@ -116,7 +132,7 @@ def entry(st: dict) -> dict:
     """A finished task as the model is handed it: compact; mb_task(task=id) has everything."""
     out = {"task": st["task"], "name": st.get("name"), "state": st["state"], "ended": st.get("ended"),
            "ago": int(time.time() - st.get("endedAt", time.time()))}
-    for key in ("result", "error", "line", "source", "interrupted", "guardsChanged", "guardsRestored", "paused"):
+    for key in ("result", "error", "line", "source", "interrupted", "guardsChanged", "guardsRestored", "paused", "relayPending"):
         if st.get(key) is not None: out[key] = _brief(st[key]) if key == "result" else st[key]
     return out
 
@@ -158,7 +174,7 @@ def start(code: str, args: dict | None, name: str | None, on_fail: str | None, m
     task_id = uuid.uuid4().hex[:8]
     TASKS.mkdir(parents=True, exist_ok=True); (TASKS / f"{task_id}.py").write_text(code, encoding="utf-8")
     st = {"task": task_id, "name": name, "started": time.time(), "state": "running", "args": args or {}, "on_fail": on_fail,
-          "minutes": minutes, "delivered": False, "pid": os.getpid()}  # this server's pid until the task writes its own
+          "minutes": minutes, "delivered": False, "pid": None}  # the task writes its own once it holds the body lock
     save(st)
     with open(TASKS / f"{task_id}.log", "ab") as log:  # never the server's stdout: that is the MCP channel
         flags = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS} if os.name == "nt" else {"start_new_session": True}
@@ -185,7 +201,7 @@ def settle(st: dict, folder: Path | None = None) -> dict:
     """What a task that ended without its own process doing it still owes: guards put back, on_fail's pause."""
     k = kernel()
     if st.get("guards") and st.get("guardsRestored") is None:
-        try: k.call("time.configure", **st["guards"]); st["guardsRestored"] = True
+        try: st["guardsRestored"] = "pending" if (k.call("time.configure", **st["guards"]) or {}).get("pending") else True
         except Exception as e: st["guardsRestored"] = f"failed: {e}"[:200]
     if st.get("on_fail") == "pause" and st["state"] in FAILED and not st.get("paused"):
         st["paused"] = _pause(k, st["state"])
@@ -194,7 +210,8 @@ def settle(st: dict, folder: Path | None = None) -> dict:
 
 def _pause(k, why: str):
     try:
-        if not (k.call("time.status", timeout=5).get("state") or {}).get("paused"): k.call("time.pause", reason=f"background_task_{why}")
+        if not (k.call("time.status", timeout=5).get("state") or {}).get("paused"):
+            if (k.call("time.pause", reason=f"background_task_{why}") or {}).get("pending"): return "pending"
         return True
     except Exception as e: return f"failed: {e}"[:200]
 
@@ -206,8 +223,8 @@ def deliver(folder: Path | None = None, limit: int = 5) -> list[dict]:
         if proc.poll() is None: continue
         del state["task_procs"][task_id]
         st = load(task_id, folder)
-        if st and st["state"] == "running" and st.get("pid") == os.getpid():  # it died before it could write its own pid
-            st.update(state="crashed", endedAt=time.time(), ended="crash", error=f"the task process exited ({proc.returncode}) before it started"); save(st, folder)
+        if st and st["state"] == "running" and not st.get("pid"):  # it died before it could write its own pid
+            _crash(st, f"the task process exited ({proc.returncode}) before it started", folder)
     tasks, out = every(folder), []
     for st in tasks:
         if st["state"] in ENDED and not st.get("delivered"):
@@ -251,14 +268,14 @@ def cancel_task(task_id: str, why: str = "cancelled", grace: float = 20.0, folde
     st = load(task_id, folder)
     if not st or st["state"] != "running": return st
     (folder / f"{task_id}.cancel").write_text(why, encoding="utf-8")
-    if os.name != "nt" and st.get("pid") != os.getpid(): os.kill(st["pid"], signal.SIGTERM)  # wakes it at once; the file says why
+    if os.name != "nt" and st.get("pid") not in (None, os.getpid()): os.kill(st["pid"], signal.SIGTERM)  # wakes it at once; the file says why
     until = time.monotonic() + grace
-    while time.monotonic() < until and _alive(st["pid"]) and (load(task_id, folder) or {}).get("state") == "running":
+    while time.monotonic() < until and (load(task_id, folder) or {}).get("state") == "running":
         time.sleep(0.2)
     st = load(task_id, folder)
     if st and st["state"] in ("running", "crashed"):
         try:
-            if st.get("pid") != os.getpid(): os.kill(st["pid"], signal.SIGKILL if os.name != "nt" else signal.SIGTERM)
+            if st.get("pid") not in (None, os.getpid()): os.kill(st["pid"], signal.SIGKILL if os.name != "nt" else signal.SIGTERM)
         except OSError: pass
         try: release(kernel())
         except Exception: pass
@@ -276,23 +293,27 @@ def end_all(why: str, wait: float = 0.0, folder: Path | None = None) -> dict | N
 
 
 def relay(folder: Path | None = None, get_kernel=None, stop: threading.Event | None = None) -> None:
-    """The MCP server's thread that sends the tasks' time commands on its own session (the one that owns time)."""
+    """The MCP server's thread that sends the tasks' time commands on its own session (the one that owns time), oldest
+    first; requests left pending while no server was up are sent as soon as it starts."""
     folder, get_kernel, stop = folder or TASKS, get_kernel or kernel, stop or threading.Event()
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "relay.json").write_text(json.dumps({"pid": os.getpid()}), encoding="utf-8")
     while not stop.wait(0.1):
-        try: asked = list(folder.glob("*.req"))
+        try: asked = sorted(folder.glob("*.req"))
         except OSError: continue
         for req in asked:
             run = req.with_suffix(".run")
             try: req.rename(run)  # claimed: exactly one relay sends it
             except OSError: continue
+            ask = {}
             try:
                 ask = json.loads(run.read_text(encoding="utf-8"))
                 reply = {"ok": True, "data": get_kernel().call(ask["method"], timeout=ask.get("timeout"), **ask.get("params", {}))}
             except BridgeError as e: reply = {"ok": False, "code": e.code, "msg": e.msg}
             except Exception as e: reply = {"ok": False, "code": type(e).__name__, "msg": str(e)}
-            try: req.with_suffix(".rep").write_text(json.dumps(reply, default=str), encoding="utf-8"); run.unlink(missing_ok=True)
+            try:
+                if not ask.get("pending"): req.with_suffix(".rep").write_text(json.dumps(reply, default=str), encoding="utf-8")  # nobody waits for a pending one
+                run.unlink(missing_ok=True)
             except OSError: pass
 
 
@@ -335,10 +356,13 @@ class TaskKernel(Kernel):
     def _clock(self, method, timeout, params):
         try: pid = json.loads((TASKS / "relay.json").read_text(encoding="utf-8"))["pid"]
         except (OSError, ValueError, KeyError): pid = None
-        if not _alive(pid): return Kernel.call(self, method, timeout, **params)  # no server up: this session takes the clock
-        name = TASKS / f"{TASK['task']}-{uuid.uuid4().hex[:6]}"
-        name.with_suffix(".tmp").write_text(json.dumps({"method": method, "params": params, "timeout": timeout}), encoding="utf-8")
+        pending = not _alive(pid)  # never sent from this session: it would take the clock, and its exit would pause the world
+        name = TASKS / f"{time.time_ns()}-{TASK['task']}-{uuid.uuid4().hex[:4]}"
+        name.with_suffix(".tmp").write_text(json.dumps({"method": method, "params": params, "timeout": timeout, "pending": pending}), encoding="utf-8")
         name.with_suffix(".tmp").replace(name.with_suffix(".req"))
+        if pending:
+            TASK["relayPending"] = True; save(TASK)
+            return {"pending": True, "note": "no MCP server is up: it sends this when it starts"}
         until = time.monotonic() + (timeout or self.timeout) + 10
         while time.monotonic() < until:
             try: reply = json.loads(name.with_suffix(".rep").read_text(encoding="utf-8"))
@@ -375,10 +399,11 @@ def log_call(entry: dict) -> None:
 
 def run(task_id: str) -> int:
     """The task process: holds the body lock, runs the script on a worker thread, and watches for a cancel or the time limit."""
-    TASK.update(_read(task_id) or {"task": task_id, "started": time.time(), "minutes": 20}, pid=os.getpid(), state="running"); save(TASK)
+    TASK.update(_read(task_id) or {"task": task_id, "started": time.time(), "minutes": 20})
     lock = _lock(TASKS, wait=5)
     if lock is None:
         TASK.update(state="failed", ended="body_busy", endedAt=time.time(), error="another process holds the body lock"); save(TASK); return 1
+    TASK.update(pid=os.getpid(), state="running"); save(TASK)  # alive from here: the lock says so
     state["task"] = task_id
     mbtool.set_kernel_factory(lambda: TaskKernel(connect_retries=3, retry_delay=1.0))
     woken = threading.Event()

@@ -180,6 +180,7 @@ class GTNHProfileTests(unittest.TestCase):
         import sys, time
         tasks = sys.modules[mbtool.PACKAGE + ".tasks"]
         self.use(FakeKernel(lambda method, params: {"method": method}))
+        lock = tasks._lock(tasks.TASKS); self.addCleanup(lock.close)  # held, as the task process holds it while it runs
         tasks.save({"task": "t1", "name": "vein", "started": time.time(), "state": "running", "pid": os.getpid(), "now": "mb_mine"})
         refused = asyncio.run(srv.call_tool("mb_act", {"keys": ["forward"], "ticks": 1}))
         self.assertTrue(refused.isError)

@@ -107,7 +107,8 @@ def mb_cost(hours: float = 2.0, top: int = 15) -> Any:
     busiest tools come first. A tool you call over and over is work you are doing by hand; see section 4 of
     your brief on costs that never fail. With background tasks in the window: bodyBusyShare (of the window,
     the body working in a task), bodyWhileThinkingShare (the body working while you were not in a tool call)
-    and unseenFailureSeconds (for each failed task, how long until your next call saw it).
+    and unseenFailureSeconds (for each failed task, how long until your next call saw it; a crashed one from its
+    last sign of life).
     """
     now = time.time()
     since, calls = now - hours * 3600, []
@@ -138,15 +139,17 @@ def mb_cost(hours: float = 2.0, top: int = 15) -> Any:
     out = {"hours": hours, "calls": len(calls), "failed": sum(r[1] for r in by.values()),
            "toolMinutes": round(busy / 60, 1), "betweenCallsMinutes": round(max(0.0, window - busy) / 60, 1),
            "top": {k: f"{n} calls, {f} failed, {s / 60:.1f} min" for k, (n, f, s) in rows}}
-    from mbtools_gtnh.tasks import live
-    running = live()
-    worked = _union([(max(c["t"], now - window), c["t"] + c.get("s", 0)) for c in tasks] + ([(max(running["started"], now - window), now)] if running else []))
+    from mbtools_gtnh.tasks import every
+    known = every()  # a running task, and crashed ones (they never wrote their line): from their last sign of life
+    crashed = [t for t in known if t["state"] == "crashed" and t.get("lastSeen", 0) >= since]
+    ended = [(t["t"], t["t"] + t.get("s", 0)) for t in tasks] + [(t["started"], t["lastSeen"]) for t in crashed]
+    worked = _union([(max(s, now - window), e) for s, e in ended] + [(max(t["started"], now - window), now) for t in known if t["state"] == "running"])
     if window > 0 and worked:
         body = sum(e - s for s, e in worked)
         alongside = sum(max(0.0, min(e1, e2) - max(s1, s2)) for s1, e1 in worked for s2, e2 in spans)
         out.update(bodyBusyShare=round(body / window, 2), bodyWhileThinkingShare=round((body - alongside) / window, 2))
-        unseen = [round(min((c["t"] for c in calls if c["t"] >= t["t"] + t["s"]), default=now) - t["t"] - t["s"]) for t in tasks
-                  if t.get("error") in ("failed", "crashed", "interrupted")]
+        failed = [t["t"] + t.get("s", 0) for t in tasks if t.get("error") in ("failed", "crashed", "interrupted")] + [t["lastSeen"] for t in crashed]
+        unseen = [round(min((c["t"] for c in calls if c["t"] >= end), default=now) - end) for end in failed]
         if unseen: out["unseenFailureSeconds"] = unseen
     return out
 
