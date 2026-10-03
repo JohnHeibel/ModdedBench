@@ -45,6 +45,7 @@ import baritone.compat.Vec3d;
 import java.util.Optional;
 import java.util.Set;
 import baritone.gtnh.BlockShapes; // ModdedBench
+import baritone.gtnh.pathing.DoorsBehind; // ModdedBench
 
 public class MovementTraverse extends Movement {
 
@@ -263,6 +264,8 @@ public class MovementTraverse extends Movement {
             }
             doorClicks++;
             doorWait = 2;
+            // ModdedBench: the click opens the door; a restricted build must not take it for a placement.
+            ctx.playerController().markInteraction(DoorsBehind.cells(ctx.world().nativeWorld, shut, ctx.world().nativeWorld.getBlock(shut.getX(), shut.getY(), shut.getZ())));
             return state.setTarget(new MovementState.MovementTarget(rotation.get(), true)).setInput(Input.CLICK_RIGHT, true);
         }
 
