@@ -262,6 +262,43 @@ except as a default you can change. And delete what stopped earning its place
 rather than leaving it beside its replacement: everything you keep costs
 attention in every later context.
 
+**What climbing looks like, once.** Connections are the example here; the shape
+is the point. Say the base needs steam moved from boilers to machines, and the
+pack hands you a pipe whose sides are set by clicking a particular part of a
+face with a tool; or conduits where every side of every block has its own input
+and output settings in a menu; or fluid lines whose direction depends on what
+pushes and what pulls.
+
+1. **By hand, carefully.** Read how it works. Place one piece, set one side
+   with an aimed click (`face` and `hit` pick the exact point), and check what
+   arrived. The moment you are sure of a rule, write it in a topic note ("an
+   edge of the face selects the neighbouring side"), together with what
+   surprised you.
+2. **A tool for one step.** Once the rule holds, stop working out clicks in
+   your head: write a script that takes "connect this piece to the west", makes
+   the right click, and checks the result.
+3. **A tool for a run.** On top of it: lay a line from A to B, or from A to B
+   and C, joining each piece to the last and setting every side, then check the
+   far ends.
+4. **A tool for a network.** A plan for a set of machines and the lines between
+   them, built and configured in one call. Order matters: set a side before the
+   block that would hide it goes in. Check it by what arrives everywhere it
+   should.
+
+Each rung is built from the one below it, and is trusted only after it has
+worked on the real thing. When a rung surprises you, fix that rung and its
+note, not the one case. No one's code is perfect, yours or the harness's, and
+bugs turn up where you least expect them. When something behaves differently
+from what you expected, find out why and fix the cause, wherever it is: in your
+own tools or in the harness. Every rung built on a broken one repeats its
+fault, so a bug costs more the higher you climb. The same climb applies to
+everything you do over and over: storing, crafting, feeding machines, mining. Your tools should improve
+alongside your base. As the base gets lines that run without you, your calls
+should each do more of the right thing, and the number of calls a job takes
+should keep falling. A change that would help with every mod (a clearer
+receipt, a build that can also click) belongs in the harness. Anything about
+one mod belongs in your tools and notes.
+
 The harness was built and tested against a handful of situations: early
 hand-tool survival, a few steam and LV machines, some construction, one
 electric blast furnace line with supplied materials. GT New Horizons runs from
@@ -787,12 +824,9 @@ connect to, because a source has only so many sides. Judge a connection by what
 arrives: the machine runs, the tank fills.
 
 The harness knows nothing about any mod's connections, and it is not meant to:
-that knowledge is yours to build into tools (section 3). As you learn a kind of
-connection, design the tools it needs: laying a run so that every piece links
-the way you intend, setting each side, checking what reaches the far end. Keep
-refining them as your networks grow. You will lay thousands of these pieces
-over this run, and that is only possible with tools you trust, improved every
-time one of them surprises you.
+you will lay thousands of these pieces, and that takes tools you build and keep
+improving yourself. Section 3 ("What climbing looks like, once") walks through
+how.
 
 **Make the easy parts automatic, in the world.** Full logistics automation is
 far away in this pack, and rushing it does not work. Long before that, the
