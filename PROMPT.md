@@ -1127,7 +1127,7 @@ and list what is loaded, with load errors.
 | `mb_transfer` | Move up to count (1..64) items through native clicks to explicit ordinary slots |
 | `mb_click_slot` | Click an observed slot with explicit stale-stack/cursor guards |
 | `mb_move_items` | Store, fetch and discard in ONE call, at anything with a GUI: it opens the block, shift-clicks whole stacks, and closes |
-| `mb_hold` | Put an item in your hand in ONE call: selects it on your hotbar, or swaps it there from your inventory and selects it |
+| `mb_hold` | Select an item or an observed empty hand in ONE call, swapping inventory slots when necessary |
 | `mb_craft` | Make something in ONE call, at any station with a GUI: it opens the station, moves the items, takes the result and closes |
 
 **`harness/tools/notes.py`**: Durable world notes (SQLite, one file per server world) and their surfacing as a side effect of play.
