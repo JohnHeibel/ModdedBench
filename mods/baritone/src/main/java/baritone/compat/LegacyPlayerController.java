@@ -24,9 +24,17 @@ public final class LegacyPlayerController {
         if(!permitted(0,p,side))return false;
         mc.playerController.onPlayerDamageBlock(p.getX(),p.getY(),p.getZ(),side.ordinal());return true;
     }
+    private java.util.List<BlockPos> interaction=java.util.List.of();private int interactionTick=-1;
+    /** This tick's right click at one of these cells works a door or gate a path opens or closes: it places nothing. */
+    public void markInteraction(java.util.List<BlockPos> cells){interaction=cells;interactionTick=mc.thePlayer.ticksExisted;}
+    /** A sneaking click places the held block against the door instead, so it stays a placement. */
+    public static boolean interacting(java.util.List<BlockPos> marked,boolean sameTick,BlockPos clicked,boolean sneaking){
+        return sameTick&&!sneaking&&marked.contains(clicked);
+    }
     public boolean processRightClickBlock(BlockPos p,EnumFacing side,Vec3d hit){
         if(!permitted(1,p,side))return false;
-        if(engine.getBuilderProcess().isActive())engine.getBuilderProcess().beforePlace.accept(p.offset(side));
+        boolean interacting=interacting(interaction,interactionTick==mc.thePlayer.ticksExisted,p,mc.thePlayer.isSneaking());interaction=java.util.List.of();
+        if(engine.getBuilderProcess().isActive()&&!interacting)engine.getBuilderProcess().beforePlace.accept(p.offset(side));
         if(!engine.ownsNativeActions())return false;
         // The server must see the same native sneak/facing state used by placement prediction.
         mc.thePlayer.sendMotionUpdates();

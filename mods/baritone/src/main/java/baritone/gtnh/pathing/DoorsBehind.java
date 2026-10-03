@@ -55,7 +55,7 @@ public final class DoorsBehind {
             baritone.getLookBehavior().updateTarget(look.get(),true);
             if(d.wait>0){d.wait--;return true;}
             if(ctx.getSelectedBlock().filter(cells::contains).isPresent()){
-                baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT,true);d.clicks++;d.wait=2;
+                baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT,true);ctx.playerController().markInteraction(cells);d.clicks++;d.wait=2;
             }else d.aim++;
             return true;
         }
@@ -63,7 +63,7 @@ public final class DoorsBehind {
     }
 
     /** The cells one door fills: both halves of a door, the one cell of a gate; none once it is no door or gate. */
-    private static List<BlockPos> cells(World world,BlockPos p,Block block){
+    public static List<BlockPos> cells(World world,BlockPos p,Block block){
         if(block instanceof BlockDoor){
             BlockPos other=world.getBlock(p.getX(),p.getY()+1,p.getZ())==block?p.up():p.down();
             return List.of(p,other);
