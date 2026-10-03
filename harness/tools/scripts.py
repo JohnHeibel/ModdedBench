@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from kernel import call_resuming, resume_arg
-from mbtool import PACKAGE, resumable, tool
+from mbtool import PACKAGE, kernel, resumable, tool
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 # What a guard interrupt, a guard pause or a paused world says when it ends or refuses a tool's work.
@@ -54,14 +54,25 @@ def _interrupt(error):
     return None
 
 
+def _configures(name, args, kwargs):
+    method = args[0] if args else kwargs.get("method")
+    return (name, method) in {("mb_time", "configure"), ("mb_time", "time.configure"), ("mb_call", "time.configure")}
+
+
+def _guards():
+    return (kernel().call("time.status", timeout=5).get("state") or {}).get("conditions") or {}
+
+
 class _Watch:
-    """What the tools a script calls meet that the script must not hide: the first interrupt."""
+    """What the tools a script calls meet that the script must not hide: the first interrupt, and guard changes."""
     def __init__(self):
-        self.interrupted = None
+        self.interrupted, self.guards = None, None
 
     def wrap(self, name, fn):
         @functools.wraps(fn)
         def call(*args, **kwargs):
+            if self.guards is None and _configures(name, args, kwargs):
+                self.guards = _guards()  # read once, before the script's first change
             try:
                 result = fn(*args, **kwargs)
             except Exception as error:
@@ -77,6 +88,15 @@ class _Watch:
     def report(self, out):
         if self.interrupted:
             out["interrupted"] = self.interrupted
+        if self.guards is not None:
+            try:
+                after = _guards()
+            except Exception as error:
+                out["guardsChanged"] = f"unread after the script: {error}"[:300]
+                return out
+            changed = {k: [self.guards.get(k), after.get(k)] for k in {*self.guards, *after} if self.guards.get(k) != after.get(k)}
+            if changed:
+                out["guardsChanged"] = changed
         return out
 
 
@@ -94,7 +114,8 @@ def mb_run(code: str | None = None, args: dict | None = None, name: str | None =
     the hour, when the base changes or a machine takes the job over. Do not collect or polish
     them; a chore you keep scripting is a production line you have not built yet.
     A guard interrupt or pause stops the script even inside try/except, and the result says
-    which tool met it (interrupted).
+    which tool met it (interrupted). Guard settings the script changed with time configure come
+    back as guardsChanged {name: [before, after]}; nothing is put back for you.
     Write steps as "make sure X holds" (check, then act), so that after an interruption you
     deal with the cause and can simply run it again. The first tool error stops the script:
     you get the error, the line, and what you logged, never a retry. One run must finish inside
