@@ -16,7 +16,7 @@ from typing import Any
 from kernel import BridgeError
 from mbtool import kernel, tool
 from mbtools_gtnh import notes
-from mbtools_gtnh import plan
+from mbtools_gtnh import patterns, plan
 from mbtools_gtnh.recipes_quests import _delta, _held
 
 STAGE = 4096
@@ -72,6 +72,20 @@ def _build_call(method: str, params: dict, timeout_s: float | None = None) -> An
         if key in params:
             forwarded[key] = params[key]
     return notes.tracked(method, timeout_s, **forwarded)
+
+
+def _steps_params(steps: list[dict] | None, pattern: dict | None, origin: list[int] | None, access: dict | None) -> tuple[dict, Any]:
+    """The step-plan fields of a build call, and what turning a pattern changed (None when nothing)."""
+    if steps is not None and pattern is not None: raise ValueError("give steps or pattern, not both")
+    note = None
+    if pattern is not None:
+        placed = patterns.build_params(pattern)
+        steps, origin = placed["steps"], placed["origin"]
+        note = {k: v for k, v in placed.items() if k.startswith("metaDropped")} or None
+    out: dict = {"steps": steps}
+    if origin is not None: out["origin"] = origin
+    if access is not None: out["access"] = access
+    return out, note
 
 
 def _spec(result: dict, **overrides) -> dict:
@@ -489,8 +503,9 @@ def mb_build_preview(cells: list[dict] | None = None, selection: dict | None = N
                      override_protection: bool = False, allow_break: bool = False,
                      allow_place: bool = False, mode: str = "blueprint",
                      settings: dict | None = None, size: list[int] | None = None,
-                     drawing: dict | None = None) -> Any:
-    """Read-only fresh build diff and shared-inventory material allocation.
+                     drawing: dict | None = None, steps: list[dict] | None = None,
+                     access: dict | None = None, pattern: dict | None = None) -> Any:
+    """Read-only fresh build diff and shared-inventory material allocation, or click-step readiness.
 
     Provide exactly one of cells or selection. Cells use {pos,id,meta?,item?,
     placement?,verify?:{pickedItem:itemSelector},clear?,replace?}. Selection uses inclusive bounds plus shape
@@ -509,7 +524,20 @@ def mb_build_preview(cells: list[dict] | None = None, selection: dict | None = N
     prove reachability or mutate the world.
     Builder mode defaults to settings.restricted=true, confining edits to plan cells;
     explicit false permits outside access excavation/scaffolding with terrain permissions.
+    For cells that give placement.face or placement.hit (up to 32), clickChecks says whether some
+    stance gives that click now and with every other plan cell placed (restPlaced); a problem in
+    restPlaced is where a build that may not break or place outside the plan stops with that reason.
+    With steps or pattern (see mb_build) it gives the order the build would use and, per step, ready
+    with one stance that works (vantage: stand, block, face, yaw, pitch), or the problem and a
+    diagnosis (clicks, blocking cells with how many look rays each stopped, rejected stance counts),
+    and with access the cells whose removal opens a view (openings); each step is judged in the world
+    as the steps before it leave it; itemInInventory per step. The game's own ray decides at the click.
     """
+    if steps is not None or pattern is not None:
+        if cells is not None or selection is not None or drawing is not None: raise ValueError("give steps or cells/selection/drawing, not both")
+        fields, note = _steps_params(steps, pattern, origin, access)
+        params = {**fields, "overrideProtection": override_protection, "allowBreak": allow_break, "allowPlace": allow_place}
+        return _with(notes.tracked("nav.build_preview", None, **params), "pattern", note)
     if drawing is not None:
         if cells is not None or selection is not None: raise ValueError("provide exactly one of cells, selection or drawing")
         cells, origin = plan.from_drawing(drawing)
@@ -531,8 +559,9 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
              timeout_s: float = 600.0, allow_break: bool = False,
              allow_place: bool = False, mode: str = "blueprint",
              settings: dict | None = None, size: list[int] | None = None,
-             drawing: dict | None = None, stall_ticks: int | None = None) -> Any:
-    """Execute a bounded, explicit-cell or selection build and return its receipt.
+             drawing: dict | None = None, stall_ticks: int | None = None,
+             steps: list[dict] | None = None, access: dict | None = None, pattern: dict | None = None) -> Any:
+    """Execute a bounded cell, selection or click-step build and return its receipt.
 
     Preview first. Native preflight checks loaded cells, conflicts, protection,
     supported placement items and a shared inventory allocation. Placement and
@@ -549,7 +578,61 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
     if this session placed something, else failed (a cell nothing can be placed against, a standing
     cell it cannot leave). Holding a break on one block that long counts as stalled too.
     symptoms: what happened to you during the job, as in mb_mine.
+    Cells: a build that may not break or place outside the plan (builder mode restricted, or neither
+    allow_break nor allow_place) and has a cell no stance can click, with no other unplaced plan cell
+    near it that could change that, fails with no_vantage, look_unreachable or support_missing naming
+    the cell and the first blocking cell; the receipt's vantage holds the diagnosis. A stall adds the
+    same reason. placements lists the last 32 placement clicks: cell, clicked {block, face, hit},
+    sneaking, before and after {id, meta, hasTile}, predicted. schematic_verified_tile_state_unverified:
+    block and metadata match, but the cells in unverified hold a tile entity and asked for a placement
+    face, hit or rotation, which block and metadata cannot confirm; read those with mb_obs, or use steps
+    with expect.
+
+    steps (instead of cells): an ordered list of clicks, for blocks whose result depends on how they are
+    clicked (a facing, a side, a cover, a pipe connection). Each step is
+    {name?, kind: "place"|"use", pos, id?, meta?, item?, click?: {face?, hit?, look?, sneak?}, expect?}.
+    place puts block id into pos (relative to origin); item picks the stack when several items make
+    that block; meta, when given, is checked after. use right-clicks the block at pos with item (a
+    selector, or {empty: true}); id, when given, is checked before the click. click.face is the face
+    clicked: for place, the face of the neighbouring block the new one goes against (up = against the
+    block below); for use, the face of the block at pos; 0..5 or down, up, north, south, west, east.
+    click.hit is the point on the clicked block, block-local 0..1. click.look must hold at the click:
+    toward (a direction; north/south/east/west compare the yaw quadrant as player facing does, up/down
+    mean pitch at most -45 / at least 45), yaw and pitch (a value or [low, high] in degrees; yaw 0 looks
+    south, 90 west; pitch 90 looks down). click.sneak defaults to true for place and false for use.
+    expect: up to 4 reads made after the click, {method: "obs.*", params?, pos?, path, equals | contains
+    | changed: true, faces?}; pos is relative to origin and is added to params; path is keys and indices
+    into the result (a.b[0]); changed compares with the same read made just before the click; faces:
+    true marks the value as faces so a turned pattern turns it. An unmet expectation is read once more
+    20 ticks later; the step is not clicked again. The builder picks the order (blocks something is
+    clicked against first, blocks that would hide a later click after), finds a stance for each click
+    and fails with a reason when a click has none: no_vantage (diagnosis names the clicked block and
+    face and the cells in the way), look_unreachable, support_missing (nothing to click against),
+    hit_not_on_face, no_route_from_here, occupied.
+    access: {allow: true, bounds?: [{min, max}], tileDistance?: 4, maxCells?: 3} lets it remove up to
+    maxCells blocks in the way of one click and put them back after it (journaled). It does not remove
+    blocks with a tile entity, fluids, plan cells or protected cells; without bounds it leaves cells
+    within tileDistance of a tile entity alone. Inside bounds it may take those, and puts back only the
+    same block there, since a machine may check its structure when a neighbour changes. Elsewhere a
+    block it no longer has may go back as another full block from the inventory (a substitute in the
+    access log). A job that is cancelled or ends with a death leaves removed cells in restorePending.
+    pattern={name, at, rotate?, mirror?} builds a saved pattern (mb_pattern), turned and placed at `at`.
+    The steps receipt: receipts per step {step, label, kind, result, clicked {block, face, hit, yaw,
+    pitch, sneak, stand}, placed | target {pos, before, after {id, meta, hasTile}}, predicted, expect
+    [{method, path, observed, before?, met}], why}. result verified: block, metadata (given or predicted
+    from the click) and expectations agree; unverified: the block has a tile entity and the step fixes a
+    face, hit or look with no expectation to confirm it; used: a use step without expectations;
+    already_present: the cell held the block before the job. On failure, failedStep is the receipt of
+    the step that failed (mismatch, expect_failed) and diagnosis says why a click had no stance.
+    Success reasons: steps_done, steps_done_some_unverified.
     """
+    if steps is not None or pattern is not None:
+        if cells is not None or selection is not None or drawing is not None: raise ValueError("give steps or cells/selection/drawing, not both")
+        fields, note = _steps_params(steps, pattern, origin, access)
+        params = {**fields, "overrideProtection": override_protection, "allowBreak": allow_break,
+                  "allowPlace": allow_place, "timeoutTicks": timeout_ticks}
+        if stall_ticks is not None: params["stallTicks"] = stall_ticks
+        return _with(_labelled(notes.tracked("nav.build", timeout_s, **params), params), "pattern", note)
     if drawing is not None:
         if cells is not None or selection is not None: raise ValueError("provide exactly one of cells, selection or drawing")
         cells, origin = plan.from_drawing(drawing)
@@ -569,7 +652,8 @@ def _labelled(receipt: Any, params: dict) -> Any:
     """Name the region notes of the model's own that a build touched: its plan, said back to it, never a refusal."""
     if not isinstance(receipt, dict): return receipt
     at = params.get("origin") or [0, 0, 0]
-    if "cells" in params: spots = [[at[i] + c["pos"][i] for i in range(3)] for c in params["cells"]]
+    if "cells" in params or "steps" in params:
+        spots = [[at[i] + c["pos"][i] for i in range(3)] for c in params.get("cells") or params["steps"] if isinstance(c.get("pos"), list)]
     else: spots = [params["selection"].get("min"), params["selection"].get("max")]
     if not spots or not all(isinstance(s, list) for s in spots): return receipt
     labels = plan.labels_at(kernel(), [min(s[i] for s in spots) for i in range(3)], [max(s[i] for s in spots) for i in range(3)])
