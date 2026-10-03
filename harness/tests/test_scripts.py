@@ -97,5 +97,41 @@ class ScriptInterruptTests(unittest.TestCase):
         self.assertEqual(out, {'result': 'no such item', 'log': []})
 
 
+class GuardKernel:
+    def __init__(self):
+        self.conditions, self.reads = dict(healthDrop=True, airBelow=180, threatWithin=12), 0
+
+    def call(self, method, timeout=None, **p):
+        if method == 'time.status':
+            self.reads += 1
+            return {'state': {'conditions': dict(self.conditions)}}
+        self.conditions.update(p)
+        return {}
+
+
+class ScriptGuardTests(unittest.TestCase):
+    def run_script(self, k, code):
+        def mb_time(method='status', params=None):
+            return k.call(f'time.{method}', **(params or {}))
+
+        def mb_call(method, params=None):
+            return k.call(method, **(params or {}))
+        with mock.patch.object(scripts, '_tools', return_value={'mb_time': mb_time, 'mb_call': mb_call}), mock.patch.object(scripts, 'kernel', lambda: k):
+            return scripts.mb_run(code=code)
+
+    def test_guards_a_script_changed_are_reported_and_left_as_they_are(self):
+        k = GuardKernel()
+        out = self.run_script(k, 'def main():\n mb_time("configure", {"airBelow": -1})\n mb_call("time.configure", {"threatWithin": -1, "healthDrop": True})')
+        self.assertEqual(out['guardsChanged'], {'airBelow': [180, -1], 'threatWithin': [12, -1]})
+        self.assertEqual(k.conditions['airBelow'], -1)
+
+    def test_no_configure_no_read_and_a_restored_guard_is_not_reported(self):
+        k = GuardKernel()
+        self.assertNotIn('guardsChanged', self.run_script(k, 'def main():\n mb_time("status")'))
+        self.assertEqual(k.reads, 1)  # the script's own status call only
+        out = self.run_script(k, 'def main():\n mb_time("configure", {"airBelow": -1})\n mb_time("configure", {"airBelow": 180})')
+        self.assertNotIn('guardsChanged', out)
+
+
 if __name__ == '__main__':
     unittest.main()
