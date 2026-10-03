@@ -301,13 +301,19 @@ def _machine(session, inputs, wait_s):
             if source is None:
                 raise ProcedureStopped(f"not enough {want['id']} in your inventory", session.receipts)
             # The slot's own validity check decides where an item may go, so this works for any machine without a slot table.
-            dest = next((s for s in k.call("obs.container", probeSlot=source["i"])["slots"] if s["kind"] == "container" and s["ordinary"]
-                         and s.get("spaceForProbe") and want.get("slot") in (None, s["i"])), None)
-            if dest is None:
+            destinations = [s for s in k.call("obs.container", probeSlot=source["i"])["slots"] if s["kind"] == "container" and s["ordinary"]
+                            and s.get("spaceForProbe") and want.get("slot") in (None, s["i"])]
+            if not destinations:
                 raise ProcedureStopped(f"no free slot of this GUI accepts {want['id']}", session.receipts)
-            moved = min(need, source["stack"]["count"], dest["spaceForProbe"])
-            session.transfer(source["i"], [dest["i"]], moved, "consuming")
-            loaded.append({"slot": dest["i"], "id": want["id"], "count": moved}); need -= moved
+            moved = min(need, source["stack"]["count"], sum(s["spaceForProbe"] for s in destinations))
+            session.transfer(source["i"], [s["i"] for s in destinations], moved, "consuming")
+            left = moved
+            for dest in destinations:
+                amount = min(left, dest["spaceForProbe"])
+                if amount:
+                    loaded.append({"slot": dest["i"], "id": want["id"], "count": amount})
+                    left -= amount
+            need -= moved
     deadline = time.monotonic() + wait_s
     while True:
         for s in session.observe()["slots"]:

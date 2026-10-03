@@ -32,6 +32,36 @@ class MachineKernel:
 
 
 class MachineCollectionTests(unittest.TestCase):
+    def test_loading_distributes_one_transfer_across_native_input_capacities(self):
+        class LoadingKernel:
+            def __init__(self):
+                self.transfers = []
+                self.slots = [dict(i=i, kind='container', ordinary=True, canTake=True) for i in range(3)]
+                self.slots.append(dict(i=3, kind='main', ordinary=True, canTake=True,
+                                       stack=dict(id='example:input', meta=0, count=5)))
+
+            def call(self, method, **params):
+                if method == 'obs.container':
+                    slots = deepcopy(self.slots)
+                    if 'probeSlot' in params:
+                        for slot, capacity in zip(slots, (1, 2, 2)):
+                            slot['spaceForProbe'] = capacity - slot.get('stack', {}).get('count', 0)
+                            slot['acceptsProbe'] = True
+                    return dict(open=True, windowId=1, epoch=1, slots=slots)
+                if method == 'gui.transfer':
+                    self.transfers.append(params)
+                    for slot, count in zip(self.slots, (1, 2, 2)):
+                        slot['stack'] = dict(id='example:input', meta=0, count=count)
+                    self.slots[3].pop('stack')
+                    return dict(state='completed', transfer=dict(moved=5))
+                raise AssertionError(method)
+
+        k = LoadingKernel()
+        result = inventory._machine(inventory.ContainerSession(k), [dict(id='example:input', count=5)], 0)
+        self.assertEqual(len(k.transfers), 1)
+        self.assertEqual(k.transfers[0]['destinations'], [0, 1, 2])
+        self.assertEqual(result['loaded'], [dict(slot=i, id='example:input', count=n) for i, n in enumerate((1, 2, 2))])
+
     def test_collection_survives_same_count_replacement(self):
         for item in ('example:output', 'example:other'):
             with self.subTest(item=item):
