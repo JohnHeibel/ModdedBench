@@ -349,7 +349,9 @@ function banner(d) {
   const hp = c && c.player && c.player.health != null ? ` · ${Math.round(c.player.health)} of 20 health` : "";
   if (st.state === "game_down") chip = ["RECONNECTING", "dim", "the game client is restarting"];
   else if (!c || st.state === "ended") chip = null;
+  else if (c.held && c.backup) chip = ["BACKUP", "dim", "the world is held while the server backs up, about 20 seconds"];
   else if (c.held) chip = PLAIN.operator_hold;
+  else if (st.state === "compacting" && c.paused) chip = ["COMPACTING", "key", `${secs(d.now - (st.since || d.now))} so far · condensing its memory, usually 3 to 4 minutes`];
   else if (["between_turns", "backing_off"].includes(st.state)) chip = ["RECONNECTING", "dim", st.state === "backing_off" ? "the last turn failed; it starts again shortly" : "between turns; the agent picks up where it left off"];
   else if (!c.paused) chip = null;  // nothing to cover: the game draws its strip only while paused
   else {

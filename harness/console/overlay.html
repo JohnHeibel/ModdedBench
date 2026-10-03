@@ -140,7 +140,7 @@ const two=n=>String(n).padStart(2,"0"),hms=s=>{s=Math.max(0,Math.floor(s));retur
 const span=s=>{s=Math.max(0,Math.floor(s));const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h?`${h}h ${two(m)}m`:m?`${m}m ${two(s%60)}s`:`${s}s`};
 const big=n=>n>=1e9?(n/1e9).toFixed(2)+"B":n>=1e6?(n/1e6).toFixed(1)+"M":n>=1e4?(n/1e3).toFixed(0)+"k":(n||0).toLocaleString("en-US");
 const STATES={thinking:["Thinking","busy"],acting:["Running","busy"],waiting:["Waiting on the base","busy"],between_turns:["Between turns","idle"],paused:["World paused","stopped"],
-              held:["Operator hold","stopped"],game_down:["Game is down","stopped"],backing_off:["Sleeping after a failed turn","stopped"],ended:["Run ended","idle"]};
+              held:["Operator hold","stopped"],backup:["Server backup","stopped"],compacting:["Compacting memory","busy"],game_down:["Game is down","stopped"],backing_off:["Sleeping after a failed turn","stopped"],ended:["Run ended","idle"]};
 function tierOf(chapters){const done=n=>(chapters||[]).some(c=>c.name.startsWith(n)&&c.completed>0);return done("Tier 1")?"lv":done("Tier 0.5")?"steam":"stone"}
 function draw(d){
   const g=d.goal||{},st=d.status||{},s=d.stats||{},t=s.tokens||{},run=d.run||{};
