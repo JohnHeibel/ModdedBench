@@ -8,7 +8,7 @@ from the start means this can restart, or start late, without the client reconne
 the relay back towards the game: the forwarder reads the relay's nonce and nothing after it, and the tap is one way.
 """
 from __future__ import annotations
-import argparse, asyncio, json, secrets, ssl, struct, zlib
+import argparse, asyncio, json, secrets, ssl, struct, time, zlib
 from pathlib import Path
 from .link import END, HEARTBEAT, INVENTORY, LIVE, MAGIC, NEWS, NONCE, SNAPSHOT, STATUS, headed, message, proof, token
 from .proxy import Feed
@@ -59,9 +59,10 @@ EMPTY = pack("h", -1)
 
 class Forwarder(Feed):
     def __init__(self, relay: tuple[str, int], secret: bytes, tls: ssl.SSLContext | None, mirror: Mirror | None = None,
-                 refresh_min: int = 4 << 20, backlog: int = 64 << 20):
+                 refresh_min: int = 4 << 20, backlog: int = 64 << 20, refresh_every: float = 60.0):
         super().__init__(mirror=mirror)
         self.relay, self.secret, self.tls, self.refresh_min, self.backlog = relay, secret, tls, refresh_min, backlog
+        self.refresh_every, self.snap_at = refresh_every, 0.0
         self.boot, self.sessions = secrets.token_hex(4), 0
         self.link = None     # the relay link's writer, once authenticated
         self.open = None     # the session id the relay is showing
@@ -85,7 +86,7 @@ class Forwarder(Feed):
         start, diff = Reader(join).u("iBbB")[2:]
         respawn = frame(0x07, pack("iBB", start, diff, SPECTATOR) + join[8:])
         snap = [(g, f) for g, f in m.gated() if public(f)]
-        self.snap_bytes, self.tail_bytes = sum(len(f) for _, f in snap), 0
+        self.snap_bytes, self.tail_bytes, self.snap_at = sum(len(f) for _, f in snap), 0, time.monotonic()
         meta = {"session": self.open, "dim": start, "host": m.name, "prelude": len(m.prelude), "respawn": 1,
                 "eid": m.eid, "pos": m.hpos, "uuid": m.uuid}  # the agent's entity and where it stands (/tp); its account
         self.send(message(SNAPSHOT, headed(meta, [(0, respawn), *snap])))
@@ -119,7 +120,10 @@ class Forwarder(Feed):
         live = b"".join(f for f in frames if public(f))
         if not live: return
         self.send(message(LIVE, live)); self.tail_bytes += len(live)
-        if self.open and self.tail_bytes > max(self.snap_bytes, self.refresh_min): self.snapshot()  # bounds the relay's cache
+        # The relay hands a joining viewer the last snapshot and the live frames since, so both stay small: a fresh
+        # snapshot once a minute, or sooner after a burst, keeps the replayed part to at most a minute of the stream.
+        if self.open and (self.tail_bytes > max(self.snap_bytes, self.refresh_min) or time.monotonic() - self.snap_at > self.refresh_every):
+            self.snapshot()
 
     def ended(self, text):
         self.close_session()

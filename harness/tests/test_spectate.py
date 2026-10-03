@@ -321,7 +321,7 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
                 quests(2), message("notification", mainText="done")]
         self.tap.write(b"".join(rec(1, 1, f) for m in sync for f in bq.frames(m))); await self.tap.drain()
         self.fw.mirror.payload_cap = 100                          # other mods' chatter cannot push the book out
-        self.tap.write(b"".join(rec(1, 1, s3f("GalacticraftCore", bytes(200))) for _ in range(20))); await self.tap.drain()
+        self.tap.write(b"".join(rec(1, 1, s3f("GalacticraftCore", bytes([i]) * 200)) for i in range(20))); await self.tap.drain()
         await until(lambda: self.fw.mirror.stats()["payloads"]["dropped"]["entries"] > 0)
         self.fw.snapshot()                                        # a refreshed snapshot, as for a late viewer
         await until(lambda: any(b"BQ_NET_CHAN" in f for _, f in self.relay.world.snap))

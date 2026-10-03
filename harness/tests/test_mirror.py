@@ -180,16 +180,32 @@ class Snapshot(unittest.TestCase):
 
     def test_payload_cap_keeps_pinned(self):
         m = state.Mirror(payload_cap=100); hub = proxy.Hub(mirror=m)
-        feed(hub, frames_s=SERVER + [s3f("gt", bytes(60)) for _ in range(5)])
+        feed(hub, frames_s=SERVER + [s3f("gt", bytes([i]) * 60) for i in range(5)])
         chans = [wire.payload(split(f)[1])[0] for f in m.snapshot() if split(f)[0] == 0x3F]
         self.assertIn("gtnh-config", chans)
         self.assertEqual(m.stats()["payloads"]["dropped"]["entries"], 4)
+
+    def test_a_repeated_mod_packet_is_kept_once_where_it_was_last_seen(self):
+        m = state.Mirror(); hub = proxy.Hub(mirror=m)
+        tick, other = s3f("GalacticraftCore", b"\x00\x00\x00\x00\x20same"), s3f("other", b"once")
+        feed(hub, frames_s=SERVER + [tick] * 500 + [other, tick])
+        mods = [f for f in m.snapshot() if f in (tick, other)]
+        self.assertEqual(mods, [other, tick])
+        self.assertEqual(m.stats()["payloads"]["bytes"], len(tick) + len(other) + sum(len(f) for f in m.pinned.values()))
+
+    def test_each_kind_of_mod_packet_keeps_only_its_latest(self):
+        m = state.Mirror(kind_keep=3); hub = proxy.Hub(mirror=m)
+        hud = [s3f("ingameinfoxml", b"\x00" + bytes([i])) for i in range(10)]
+        other = s3f("ingameinfoxml", b"\x01keep")
+        feed(hub, frames_s=SERVER + [other] + hud)
+        self.assertEqual([f for f in m.snapshot() if f in hud or f == other], [other] + hud[-3:])
+        self.assertEqual(m.stats()["payloads"]["dropped"]["entries"], 7)
 
     def test_gregtech_machines_and_ores_live_with_their_chunk(self):
         gt = lambda kind, x, y, z, tag: s3f("GregTech", bytes([kind]) + pack("ihi", x, y, z) + tag + bytes(200))
         m = state.Mirror(payload_cap=100); hub = proxy.Hub(mirror=m)
         feed(hub, frames_s=SERVER + [gt(0, 5, 64, 5, b"old"), gt(0, 5, 64, 5, b"new"), gt(3, 50, 20, 5, b"ore"),
-                                     gt(0, 20, 64, 5, b"gone")] + [s3f("other", bytes(60)) for _ in range(5)])
+                                     gt(0, 20, 64, 5, b"gone")] + [s3f("other", bytes([i]) * 60) for i in range(5)])
         gts = [wire.payload(split(f)[1]) for f in m.snapshot() if split(f)[0] == 0x3F]
         self.assertEqual([d[11:14] for ch, d in gts if ch == "GregTech"], [b"new", b"ore"])  # past the cap, latest per block,
                                                                                               # none in an unloaded chunk
