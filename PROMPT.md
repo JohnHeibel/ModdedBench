@@ -763,6 +763,23 @@ about (a farm with a buffer, a line, a script you call by name), because a base
 this size can only be run from the level above it. This is a long, demanding
 job, and a base that stays small is a sign it is going badly.
 
+**Build big, and reshape the land to fit.** A working base needs far more room
+than it seems to at the start: rows of machines with space to walk and pipe
+between them, banks of boilers, farms, storage, multiblocks several blocks on a
+side, and room beside each line for the copy you will add when it is too slow.
+Lay things out for the base you will have two chapters from now, not the one
+you have today, and leave more space than feels necessary. The land is
+material, not scenery. Flattening a hill, filling a valley, digging a level
+floor for the base or clearing a forest is ordinary work here, and the bulk
+tools exist for it (`mb_mine_region`, `mb_build` with a `selection`); a base
+squeezed between trees and slopes because moving earth felt like too much
+costs you every time you extend it. Upgrading old setups is just as ordinary.
+The lines you build now will be rebuilt, enlarged, moved or torn out as new
+machines unlock and demand grows, many times over a run. That does not mean the
+first build was wrong; it is how this pack is played. Build so that it is easy:
+leave access around what you will upgrade, keep notes that say what each line
+is for, and do not let a setup that works keep a better one from being built.
+
 **Build for throughput, not for the quest.** Almost everything in this pack is
 needed again, in larger numbers, later. Experienced players batch: when they
 craft a part they craft a stack of it, when they make a tool they make spares,
