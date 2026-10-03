@@ -5,7 +5,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'mcp'))
 import mbtool
-from kernel import Kernel, Reply, resume_once
+from kernel import BridgeError, Kernel, Reply, resume_once
 from mbtools_gtnh import scripts
 
 
@@ -64,6 +64,37 @@ class ScriptResumeTests(unittest.TestCase):
             return resume
         self.assertIs(scripts._resuming(look), look)
         self.assertIs(scripts._resuming(own), own)
+
+
+
+class ScriptInterruptTests(unittest.TestCase):
+    def run_script(self, code, **tools):
+        with mock.patch.object(scripts, '_tools', return_value=tools):
+            return scripts.mb_run(code=code)
+
+    def test_a_guard_refusal_cannot_be_swallowed_by_except_exception(self):
+        def act():
+            raise BridgeError('bad_request', 'interrupt_latched: 1 delivered, this action was not started', 'act.input')
+        out = self.run_script('def main():\n try:\n  act()\n except Exception:\n  return "carried on"', act=act)
+        self.assertNotIn('result', out)
+        self.assertEqual(out['stopped'], 'BridgeError: act.input: bad_request: interrupt_latched: 1 delivered, this action was not started')
+        self.assertEqual((out['line'], out['interrupted']['tool']), (3, 'act'))
+
+    def test_a_wrapped_pause_still_counts_and_a_bare_except_is_reported(self):
+        def craft():
+            try:
+                raise BridgeError('cancelled', 'world paused by a guard (threat): read mb_time status, decide, resume', 'gui.click_slot')
+            except BridgeError as error:
+                raise RuntimeError('screen changed') from error
+        out = self.run_script('def main():\n try:\n  craft()\n except:\n  pass\n return 1', craft=craft)
+        self.assertEqual(out['result'], 1)
+        self.assertEqual(out['interrupted'], {'tool': 'craft', 'error': 'screen changed'})
+
+    def test_ordinary_errors_stay_catchable(self):
+        def act():
+            raise ValueError('no such item')
+        out = self.run_script('def main():\n try:\n  act()\n except Exception as e:\n  return str(e)', act=act)
+        self.assertEqual(out, {'result': 'no such item', 'log': []})
 
 
 if __name__ == '__main__':
