@@ -772,6 +772,28 @@ output goes? If the answer is "outside and across open ground", it belongs
 somewhere else. Something standing alone should be a choice you can defend in
 its region note, not the result of where you were standing.
 
+**Things connect, and the connections are the factory.** Nearly everything you
+build from here on moves something somewhere: steam, fluids, items, energy, and
+whatever else the pack invents. Every mod does it its own way, with pipes,
+cables, conduits, ducts, buses, wireless links, or blocks that hand off only to
+their neighbours. Each has its own rules: which sides accept and which output,
+whether a link forms when you place it or needs a tool, what can be set per
+side, whether one line can carry several things, how much it carries, and what
+happens when it's overloaded. Learn the rules of a kind of connection before you
+build with it: read about it first, then try it on the smallest setup (one
+source, one link, one consumer), and write what you learned in a topic note.
+When you connect something, think about what the next one of its kind will
+connect to, because a source has only so many sides. Judge a connection by what
+arrives: the machine runs, the tank fills.
+
+The harness knows nothing about any mod's connections, and it is not meant to:
+that knowledge is yours to build into tools (section 3). As you learn a kind of
+connection, design the tools it needs: laying a run so that every piece links
+the way you intend, setting each side, checking what reaches the far end. Keep
+refining them as your networks grow. You will lay thousands of these pieces
+over this run, and that is only possible with tools you trust, improved every
+time one of them surprises you.
+
 **Make the easy parts automatic, in the world.** Full logistics automation is
 far away in this pack, and rushing it does not work. Long before that, the
 things you do most often (fuel and power, smelting, the highest-volume
