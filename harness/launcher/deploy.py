@@ -24,9 +24,20 @@ def outbox() -> Path:
     return Path(os.environ.get("MODBENCH_OUTBOX", REPO / ".runtime" / "outbox"))
 
 
+def end_task(wait: float = 120) -> dict | None:
+    """A client restart cuts a background task's bridge session mid-job: wait up to wait seconds for it, then cancel it."""
+    sys.path.insert(0, str(REPO / "harness" / "mcp"))
+    import mbtool  # noqa: F401  (installs the tool package)
+    from mbtools_gtnh import tasks
+    ended = tasks.end_all("deploy", wait)
+    if ended: print(f"background task {ended['task']} ended: {ended['state']} ({ended.get('ended')})", file=sys.stderr)
+    return ended
+
+
 def request(args: argparse.Namespace) -> int:
     box = outbox(); box.mkdir(parents=True, exist_ok=True)
     if (box / "request.json").exists(): raise RuntimeError_("a deploy request is already waiting")
+    end_task()
     ident = uuid.uuid4().hex
     for kind in args.components:
         shutil.copy2(runtime.artifact(kind), box / f"modbench-{kind}.jar")

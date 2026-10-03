@@ -51,6 +51,17 @@ def _quests():
         with Kernel(timeout=10) as k: return sum(l["completed"] for l in k.call("quest.lines", query="", offset=0, limit=100)["lines"])
     except Exception: return None
 
+def _tasks():
+    """harness/tools/tasks.py: the background task the overlay shows and the run's end cancels."""
+    sys.path.insert(0, str(REPO / "harness" / "mcp"))
+    import mbtool  # noqa: F401  (installs the tool package)
+    from mbtools_gtnh import tasks
+    return tasks
+
+def _body(folder):
+    try: tasks = _tasks(); return tasks.body(tasks.live(folder))
+    except Exception: return None
+
 def _mark_run(path, started, max_minutes):
     """The run's start, for mb_status. A start that keeps the planned end (a resume, a fresh thread) continues the run and keeps its start."""
     ends = started + max_minutes * 60 if max_minutes else None
@@ -114,7 +125,10 @@ def run(repo=REPO, prompt=None, max_turns=50, state=None, codex=None, extra=(), 
         except OSError as e: print("codex_loop: run record: %r" % e, file=sys.stderr)
     save_record()
     _mark_run(repo / ".state" / "run.json", started, max_minutes)
+    folder = repo / ".state" / "tasks"
     def end(reason):
+        try: _tasks().end_all("run_end", folder=folder)  # between turns a task runs on; when the run is over it stops
+        except Exception as e: print("codex_loop: cancelling the background task: %r" % e, file=sys.stderr)
         feed.status("ended", reason)
         tokens = dict(feed.live.get("stats", {}).get("tokens") or {})
         harness = [c for c in (_git(repo, "rev-list", record["harnessCommit"] + "..HEAD") or "").split() if c] if record["harnessCommit"] else []
@@ -123,7 +137,9 @@ def run(repo=REPO, prompt=None, max_turns=50, state=None, codex=None, extra=(), 
                     harnessCommitAtEnd=_git(repo, "rev-parse", "HEAD"))
         return reason
     feed.live["budget"] = {"minutes": max_minutes, "tokens": max_tokens, "startedAt": started, "tokensBefore": tokens0}
+    seen = [0.0]
     def over():
+        if time.monotonic() - seen[0] >= 5: seen[0] = time.monotonic(); feed.body(_body(folder))  # for the overlay, at the budget check's pace
         if (repo / ".state" / "STOP").exists(): return "stop_file"  # a run is usually one long turn: stop means now, and the thread resumes
         if max_minutes and time.time() - started >= max_minutes * 60: return "time_budget"
         if max_tokens and feed.billed() - tokens0 >= max_tokens: return "token_budget"
@@ -142,7 +158,9 @@ def run(repo=REPO, prompt=None, max_turns=50, state=None, codex=None, extra=(), 
             # Options go before ``resume``: that subcommand does not accept all of them (-C, -s) after it.
             cmd = [*codex, "exec", "--json", "-C", str(repo), *extra, *(["resume", thread] if thread else []), "-"]
             log.write("# %s %s\n" % (time.strftime("%Y-%m-%dT%H:%M:%S"), " ".join(cmd)))
-            code, found, last, spent = turn(cmd, CONTINUE if thread else prompt.read_text(encoding="utf-8"), repo, log, feed, over)
+            body = _body(folder)
+            again = CONTINUE + (" Your background task %s (%s) is still running: mb_task shows it." % (body["task"], body["name"] or "unnamed") if body else "")
+            code, found, last, spent = turn(cmd, again if thread else prompt.read_text(encoding="utf-8"), repo, log, feed, over)
             if found and not thread:
                 thread = found; state.write_text(json.dumps({"thread": thread}), encoding="utf-8")
             if spent: return end(spent)

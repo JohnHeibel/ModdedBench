@@ -196,16 +196,19 @@ class Console:
     def compaction_guard(self, every=2.0):
         """Holds the world while the model compacts, so the game does not run on for minutes with nobody at the controls.
         Only a world the guard finds running and unheld; it lets go when the compaction ends, when the model acts again
-        (it was a long think), or after ten minutes, and never ends a hold that is not its own."""
+        (it was a long think), or after ten minutes, and never ends a hold that is not its own. While a background task has
+        the body (live.json body) it does not hold: that would freeze the task; it holds once the task has ended."""
         if self.hold_file(f"[ \"$(cat {HOLD} 2>/dev/null)\" = {OWN_HOLD} ] && rm -f {HOLD}").returncode == 0:
             print("[ModdedBench] released a compaction hold left by an earlier console", flush=True)
         while True:
             time.sleep(every)
             try:
-                try: status = json.loads((OVERLAY / "live.json").read_text(encoding="utf-8")).get("status") or {}
-                except (OSError, ValueError): status = {}
+                try: live = json.loads((OVERLAY / "live.json").read_text(encoding="utf-8"))
+                except (OSError, ValueError): live = {}
+                status = live.get("status") or {}
                 if self.guard is None:
                     if status.get("since") == self.guard_done or not self.compacting(status): continue  # one hold per silence
+                    if live.get("body"): continue  # a background task is working through the compaction
                     clock = self.call("time.status")["state"]
                     if clock.get("held") or clock.get("paused"): continue  # someone else's hold, or the agent's own pause
                     count = int(self.agent_sh(COMPACTIONS).stdout.strip() or 0)

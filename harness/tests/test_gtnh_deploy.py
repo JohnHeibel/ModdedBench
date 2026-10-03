@@ -18,6 +18,15 @@ def jar(path: Path) -> None:
 
 
 class DeployTests(unittest.TestCase):
+    def test_a_deploy_ends_a_background_task_after_its_wait(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "mcp"))
+        import mbtool  # noqa: F401
+        from mbtools_gtnh import tasks
+        ended = {"task": "t1", "state": "cancelled", "ended": "deploy"}
+        with patch.object(tasks, "end_all", return_value=ended) as end_all, patch("builtins.print"):
+            self.assertEqual(deploy.end_task(wait=7)["ended"], "deploy")
+        end_all.assert_called_once_with("deploy", 7)
+
     def test_only_the_three_client_jars_are_accepted(self):
         with tempfile.TemporaryDirectory() as tmp:
             box = Path(tmp) / "box"; box.mkdir(); jar(box / "modbench-client.jar"); (box / "modbench-core.jar").write_bytes(b"not a zip")

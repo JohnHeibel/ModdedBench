@@ -117,6 +117,16 @@ class CodexLoopTests(unittest.TestCase):
         self.assertEqual(("stop_file", 7, 7, "T-1"), (record["endReason"], record["questsBefore"], record["questsAfter"], record["thread"]))
         self.assertEqual(64, len(record["promptSha256"]))
 
+    def test_the_end_of_the_run_cancels_a_background_task(self):
+        class Tasks:
+            ended = []
+            def end_all(self, why, wait=0.0, folder=None): self.ended.append((why, folder))
+            def live(self, folder=None): return None
+            def body(self, st): return None
+        with unittest.mock.patch.object(codex_loop, "_tasks", Tasks):
+            reason, _ = self.loop([{"events": [{"type": "thread.started", "thread_id": "T-1"}], "stop": True}])
+        self.assertEqual(("stop_file", [("run_end", self.repo / ".state" / "tasks")]), (reason, Tasks.ended))
+
     def test_twelve_consecutive_failures_stop_and_a_success_resets_the_count(self):
         reason, calls = self.loop([{"exit": 1}, {"exit": 1}, {"exit": 0}, {"exit": 1}])
         self.assertEqual(("failed", 15), (reason, len(calls)))
