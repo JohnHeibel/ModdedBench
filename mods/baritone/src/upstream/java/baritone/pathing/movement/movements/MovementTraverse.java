@@ -41,6 +41,7 @@ import baritone.compat.IBlockState;
 import baritone.compat.Blocks;
 import baritone.compat.BlockPos;
 import baritone.compat.Vec3d;
+import baritone.compat.NavigationCoordinates; // ModdedBench
 
 import java.util.Optional;
 import java.util.Set;
@@ -53,6 +54,7 @@ public class MovementTraverse extends Movement {
      * Did we have to place a bridge block or was it always there
      */
     private boolean wasTheBridgeBlockAlwaysThere = true;
+    private int groundRecenterTicks; // ModdedBench: bounded recovery from a neighbouring block edge
     private int doorClicks, doorWait; // ModdedBench: see shutInLane
 
     public MovementTraverse(IBaritone baritone, BetterBlockPos from, BetterBlockPos to) {
@@ -77,6 +79,7 @@ public class MovementTraverse extends Movement {
         wasTheBridgeBlockAlwaysThere = true;
         doorClicks = 0;
         doorWait = 0;
+        groundRecenterTicks = 0;
     }
 
     @Override
@@ -278,6 +281,14 @@ public class MovementTraverse extends Movement {
             // was to fill, or up onto something) this traverse cannot finish from: end it and re-plan from here.
             if (MovementHelper.isLiquid(ctx, feet) || !ctx.player().onGround) {
                 return feet.getY() < dest.getY() ? state.setInput(Input.JUMP, true) : state;
+            }
+            // ModdedBench: mining can leave the hitbox supported by a higher neighbour while its centre is over
+            // this path cell. Re-planning repeats the same lower traverse until we centre and settle onto its floor.
+            if (groundRecenterTicks++ < 20 && NavigationCoordinates.recenterDown(src, feet,
+                    ctx.player().posX, ctx.player().posZ, p -> MovementHelper.canWalkOn(ctx, p),
+                    p -> MovementHelper.canWalkThrough(ctx, new BetterBlockPos(p)))) {
+                MovementHelper.moveTowards(ctx, state, src);
+                return state.setInput(Input.SPRINT, false);
             }
             return state.setStatus(MovementStatus.UNREACHABLE);
         }

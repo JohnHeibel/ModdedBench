@@ -493,6 +493,11 @@ public final class MovementFixture {
         add(new Case("bridge_drop",19,()->{
             box(19,0,B,7,15,B+1,7,Blocks.stone);box(19,8,B,7,8,B+1,7,Blocks.air);
         })).start(2.5,B+2,7.5,-90).goal(12,B+2,7).route(2.5,7.5,12.5,7.5).note("change bridge_drop_fall at u>=6");
+        // Plot 19, lane v=12 on the floor, beside a one-high stone row (v=11, u 5..9); nothing here leads up to bridge_drop's
+        // ridge. The change lifts the player mid-traverse onto the row's edge, centre over the lane: held one above its
+        // floor by a neighbour (the agent's ad8a612).
+        add(new Case("raised_edge",19,()->box(19,5,B,11,9,B,11,Blocks.stone)))
+            .start(2.5,B,12.5,-90).goal(12,B,12).route(2.5,12.5,12.5,12.5).note("change raised_edge_lift at u>=6");
         // Plots 20-21: gaps across a 1-wide stone ridge three high (top at B+2). A fall into a gap lands three below with no
         // way back up without placing, so with break and place off a jump is the only way across.
         add(new Case("gap1",20,()->gapRidge(20,1,7,7,0))).start(1.5,B+3,1.5,-90).goal(14,B+3,1).route(1.5,1.5,14.5,1.5).note("1-wide gap");
@@ -885,7 +890,10 @@ public final class MovementFixture {
             case "natural_flow_off" -> set(16,NU,B+7,NV,Blocks.glowstone,0,3);
             case "bridge_drop_fall" -> {EntityPlayerMP p=livePlayer();double[] a=abs(19,8.5,B,7.5);
                 p.playerNetServerHandler.setPlayerLocation(a[0],a[1],a[2],p.rotationYaw,p.rotationPitch);}
-            default -> throw new IllegalArgumentException("unknown movement change: lava_approach_open|lava_approach_close|natural_flow_on|natural_flow_off|bridge_drop_fall");
+            // the hitbox overlaps the raised row by 0.08; its centre is 0.28 from the lane cell's
+            case "raised_edge_lift" -> {EntityPlayerMP p=livePlayer();double[] a=abs(19,7.5,B+1,12.22);
+                p.playerNetServerHandler.setPlayerLocation(a[0],a[1],a[2],p.rotationYaw,p.rotationPitch);}
+            default -> throw new IllegalArgumentException("unknown movement change: lava_approach_open|lava_approach_close|natural_flow_on|natural_flow_off|bridge_drop_fall|raised_edge_lift");
         }
         return Json.object("changed",name);
     }
