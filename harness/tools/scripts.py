@@ -15,6 +15,8 @@ from kernel import call_resuming, resume_arg
 from mbtool import PACKAGE, resumable, tool
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
+# What a guard interrupt, a guard pause or a paused world says when it ends or refuses a tool's work.
+_INTERRUPTS = ("interrupt_latched", "time_paused", "world_paused", "world paused by a guard")
 
 
 def _tools() -> dict:
@@ -36,6 +38,48 @@ def _resuming(fn):
     return call
 
 
+class ScriptInterrupted(BaseException):
+    """A guard interrupt or pause met by a tool inside a script. Not an Exception, so the script's own
+    except Exception cannot swallow it: it stops the script and mb_run reports it."""
+
+
+def _interrupt(error):
+    """The interrupt, guard pause or cancellation behind error, through the errors it wraps, or None."""
+    for _ in range(8):
+        if error is None:
+            return None
+        if getattr(error, "code", None) == "cancelled" or any(m in str(error) for m in _INTERRUPTS):
+            return error
+        error = error.__cause__ or error.__context__
+    return None
+
+
+class _Watch:
+    """What the tools a script calls meet that the script must not hide: the first interrupt."""
+    def __init__(self):
+        self.interrupted = None
+
+    def wrap(self, name, fn):
+        @functools.wraps(fn)
+        def call(*args, **kwargs):
+            try:
+                result = fn(*args, **kwargs)
+            except Exception as error:
+                if _interrupt(error) is None:
+                    raise
+                self.interrupted = self.interrupted or {"tool": name, "error": str(error)[:1500]}
+                raise ScriptInterrupted(str(error)) from error
+            if isinstance(result, dict) and result.get("interrupted"):  # a nested mb_run
+                self.interrupted = self.interrupted or {"tool": name, **result["interrupted"]}
+            return result
+        return call
+
+    def report(self, out):
+        if self.interrupted:
+            out["interrupted"] = self.interrupted
+        return out
+
+
 @tool(effect="privileged", coverage=["meta"])
 def mb_run(code: str | None = None, args: dict | None = None, name: str | None = None) -> Any:
     """Run a script that chains tool calls, so a whole chore costs one call and one decision instead of thirty.
@@ -49,6 +93,8 @@ def mb_run(code: str | None = None, args: dict | None = None, name: str | None =
     only if you expect to use it again soon. Scripts are disposable: most are obsolete within
     the hour, when the base changes or a machine takes the job over. Do not collect or polish
     them; a chore you keep scripting is a production line you have not built yet.
+    A guard interrupt or pause stops the script even inside try/except, and the result says
+    which tool met it (interrupted).
     Write steps as "make sure X holds" (check, then act), so that after an interruption you
     deal with the cause and can simply run it again. The first tool error stops the script:
     you get the error, the line, and what you logged, never a retry. One run must finish inside
@@ -68,12 +114,14 @@ def mb_run(code: str | None = None, args: dict | None = None, name: str | None =
     elif path is not None:
         SCRIPTS.mkdir(exist_ok=True); path.write_text(code, encoding="utf-8", newline="\n")
     lines: list[str] = []
-    scope = {**_tools(), "log": lambda text: lines.append(str(text)[:300]), "__name__": name or "script"}
+    watch = _Watch()
+    scope = {**{n: watch.wrap(n, f) for n, f in _tools().items()}, "log": lambda text: lines.append(str(text)[:300]), "__name__": name or "script"}
     try:
         exec(compile(code, "<script>", "exec"), scope)
-        return {"result": scope["main"](**(args or {})), "log": lines[-40:]}
-    except Exception as error:  # the script is the model's own code: say where it stopped instead of failing the call opaquely
+        return watch.report({"result": scope["main"](**(args or {})), "log": lines[-40:]})
+    except (Exception, ScriptInterrupted) as error:  # the script is the model's own code: say where it stopped instead of failing the call opaquely
         here = [f.lineno for f in traceback.extract_tb(error.__traceback__) if f.filename == "<script>"]
         line = here[-1] if here else getattr(error, "lineno", None)
-        return {"stopped": f"{type(error).__name__}: {error}"[:1500], "line": line,
-                "source": code.splitlines()[line - 1].strip() if line and line <= len(code.splitlines()) else None, "log": lines[-40:]}
+        shown = error.__cause__ if isinstance(error, ScriptInterrupted) else error
+        return watch.report({"stopped": f"{type(shown).__name__}: {shown}"[:1500], "line": line,
+                             "source": code.splitlines()[line - 1].strip() if line and line <= len(code.splitlines()) else None, "log": lines[-40:]})
