@@ -160,8 +160,8 @@ class Console:
         status = dict(live.get("status") or {})
         # A compaction is a silence of a few minutes that starts once the context is nearly full (both observed ones fired at 94-95%).
         compacting = False
-        if status.get("state") == "thinking" and time.time() - (status.get("since") or time.time()) > 15:
-            ctx = self.context(); compacting = bool(ctx and ctx[1] and ctx[0] >= 0.93 * ctx[1])
+        if status.get("state") == "thinking" and time.time() - (status.get("since") or time.time()) > 20:
+            ctx = self.context(); compacting = bool(ctx and ctx[1] and ctx[0] >= 0.94 * ctx[1])
         # The backup holds the world while it copies (about 20 s); its newest snapshot folder is being written all that time.
         try: backup = bool(clock and clock.get("held")) and time.time() - max((p.stat().st_mtime for p in max(SNAPSHOTS.glob("2*"), default=SNAPSHOTS).glob("*")), default=0) < 15
         except OSError: backup = False
