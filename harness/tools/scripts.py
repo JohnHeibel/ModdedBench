@@ -56,7 +56,7 @@ def _interrupt(error):
 
 def _configures(name, args, kwargs):
     method = args[0] if args else kwargs.get("method")
-    return (name, method) in {("mb_time", "configure"), ("mb_time", "time.configure"), ("mb_call", "time.configure")}
+    return isinstance(method, str) and (name, method) in {("mb_time", "configure"), ("mb_time", "time.configure"), ("mb_call", "time.configure")}
 
 
 def _guards():
