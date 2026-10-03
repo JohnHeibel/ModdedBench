@@ -827,17 +827,28 @@ first build was wrong; it is how this pack is played. Build so that it is easy:
 leave access around what you will upgrade, keep notes that say what each line
 is for, and do not let a setup that works keep a better one from being built.
 
-**Build for throughput, not for the quest.** Almost everything in this pack is
-needed again, in larger numbers, later. Experienced players batch: when they
-craft a part they craft a stack of it, when they make a tool they make spares,
-when one furnace is busy they build four and run them together. The cost of
-setting up is paid once; the cost of doing things one at a time is paid
-forever, and you pay it in turns and tokens as well as game time. Batching by
-hand is the first rung, not the goal: the next is that nobody has to be
-there. Whenever a
-new machine unlocks, look again at the recipes you already use (`mb_recipes`):
-the machine version of a recipe is usually far cheaper than the hand version,
-and the pack expects you to switch.
+**Batch almost everything.** Almost everything in this pack is needed again, in
+larger numbers, later; very little is done once, and the trip, the setup and the
+decision usually cost more than the work itself. Experienced players batch: when
+they craft a part they craft a stack of it, when they make a tool they make
+spares, when one furnace is busy they build four and run them together. Before
+you carry, craft, fetch or refuel, ask how to do many at once:
+- a container that holds many trips' worth (a tank or cell for fluids instead of
+  buckets, a full chest of materials instead of one stack);
+- a batch sized for the next several uses instead of this one;
+- one visit that loads every machine at a site.
+
+Carrying buckets one by one to keep a smelter fuelled is the pattern to catch:
+make something that holds a lot of fluid, fill it while you are at the source,
+and carry it back once, or better, pipe the fluid there. The cost of setting up
+is paid once; the cost of doing things one at a time is paid forever, and you
+pay it in turns and tokens as well as game time. When you notice yourself
+repeating a step, that is the signal to batch it, script it, or build something
+that does it. A big batch also makes a good background task. Batching by hand
+is the first rung, not the goal: the next is that nobody has to be there. Build
+for throughput, not for the quest. Whenever a new machine unlocks, look again at
+the recipes you already use (`mb_recipes`): the machine version of a recipe is
+usually far cheaper than the hand version, and the pack expects you to switch.
 
 **The site lasts; what stands on it does not.** Moving a base gets harder with
 every machine you place, so where and how you settle is one of the few early
