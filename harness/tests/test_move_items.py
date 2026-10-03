@@ -48,6 +48,39 @@ class MoveItemsTests(unittest.TestCase):
         out = self.run_tool(k, at=[1, 64, 1], put=[dict(id='dirt')])
         self.assertEqual((out['put'], out['unmoved']), ([], [dict(id='dirt', meta=0, count=64)]))
 
+    def test_container_refill_does_not_reduce_reported_take(self):
+        k = ChestKernel(); call = k.call
+        def refill(method, **p):
+            result = call(method, **p)
+            if method == 'gui.click_slot': k.slots[1]['stack'] = dict(id='coal', meta=0, count=5)
+            return result
+        k.call = refill
+        out = self.run_tool(k, at=[1, 64, 1], take=[dict(id='coal')])
+        self.assertEqual(out['took'], [dict(id='coal', meta=0, count=8)])
+
+    def test_topped_up_slot_moves_more_than_seen_and_reports_nothing_unmoved(self):
+        k = ChestKernel(); call = k.call
+        def top_up(method, **p):
+            if method == 'gui.click_slot': k.slots[1]['stack'] = dict(id='coal', meta=0, count=12)
+            return call(method, **p)
+        k.call = top_up
+        out = self.run_tool(k, at=[1, 64, 1], take=[dict(id='coal')])
+        self.assertEqual((out['took'], out['unmoved']), ([dict(id='coal', meta=0, count=12)], []))
+
+    def test_failed_click_reports_observed_effects_without_retry(self):
+        k = ChestKernel(); call = k.call
+        def rejected(method, **p):
+            result = call(method, **p)
+            if method == 'gui.click_slot':
+                raise inventory.BridgeError('server_rejected', 'transaction rejected', 'gui.click_slot')
+            return result
+        k.call = rejected
+        with self.assertRaises(inventory.ProcedureStopped) as caught:
+            self.run_tool(k, at=[1, 64, 1], take=[dict(id='coal')])
+        self.assertEqual(caught.exception.receipts[-1]['observedMovement'], dict(id='coal', meta=0, count=8))
+        self.assertEqual(sum(m == 'gui.click_slot' for m, _ in k.calls), 1)
+        self.assertFalse(k.open)
+
     def test_drop_works_in_your_own_inventory_and_put_there_is_refused(self):
         k = ChestKernel('net.minecraft.inventory.ContainerPlayer'); out = self.run_tool(k, drop=[dict(id='dye', meta=3)])
         self.assertEqual(out['dropped'], [dict(id='dye', meta=3, count=5)])

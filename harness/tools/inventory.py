@@ -179,6 +179,12 @@ def _player(view):
     return [s for s in view["slots"] if s["kind"] not in ("container", "armor")]
 
 
+def _held(view, stack):
+    """How many items like stack (same id, meta, nbt_hash, nbt) the player's own slots of this view hold."""
+    identity = {k: stack[k] for k in ("id", "meta", "nbt_hash", "nbt") if k in stack}
+    return sum(s["stack"]["count"] for s in _player(view) if _matches(s.get("stack"), identity))
+
+
 def _empty_hand(k):
     """Open blocks without letting a held item's interaction intercept the GUI click."""
     view = k.call("obs.inventory", detail="full")
@@ -324,10 +330,9 @@ def _machine(session, inputs, wait_s):
                 try: output[key] = not next(p for p in k.call("obs.container", probeSlot=s["i"])["slots"] if p["i"] == s["i"])["acceptsProbe"]
                 except BridgeError: continue  # a running machine emptied the slot between the two looks; the next pass sees it
             if output[key]:
-                identity = {field: stack[field] for field in ("id", "meta", "nbt_hash") if field in stack}
-                before = sum(p["stack"]["count"] for p in _player(session.observe()) if _matches(p.get("stack"), identity))
+                before = _held(session.observe(), stack)
                 session.click(s["i"], "quick_move")
-                gained = sum(p["stack"]["count"] for p in _player(session.observe()) if _matches(p.get("stack"), identity)) - before
+                gained = _held(session.observe(), stack) - before
                 if gained <= 0:
                     raise ProcedureStopped("the output did not reach your inventory; inspect the GUI and available space", session.receipts)
                 collected.append({"id": stack["id"], "meta": stack.get("meta"), "count": gained})
@@ -340,10 +345,21 @@ def _machine(session, inputs, wait_s):
 
 
 def _shift(session, slot):
-    """Shift-click one slot; how many items left it. The GUI's own routing decides where they go and whether they fit."""
-    before = slot["stack"]["count"]; session.click(slot["i"], "quick_move")
-    left = next(s for s in session.observe()["slots"] if s["i"] == slot["i"]).get("stack")
-    return before - (left["count"] if left and _matches(left, slot["stack"]) else 0)
+    """Shift-click one slot; how many items moved, measured on the player's side: automation may refill or drain the container slot meanwhile."""
+    stack = slot["stack"]; before = _held(session.observe(), stack)
+    direction = 1 if slot["kind"] == "container" else -1
+    try:
+        session.click(slot["i"], "quick_move")
+    except ProcedureStopped as error:
+        # A rejected transaction can still have effects. Observe, report, and stop;
+        # native acceptance stays authoritative and no input is replayed.
+        try:
+            observed = direction * (_held(session.observe(), stack) - before)
+        except ProcedureStopped:
+            raise error
+        receipts = error.receipts + [{"observedMovement": {"id": stack["id"], "meta": stack.get("meta"), "count": observed}, "slot": slot["i"]}]
+        raise ProcedureStopped(str(error), receipts) from error
+    return direction * (_held(session.observe(), stack) - before)
 
 
 @tool(coverage=["inventory"])
@@ -369,7 +385,8 @@ def mb_move_items(at: list[int] | None = None, put: list[dict] | str | None = No
     damaged (a tool that keeps its state in NBT, anything named or enchanted) is not dropped unless its selector picks it by
     nbt_hash, nbt or name, or says withNbt:true; it is listed in skipped with why. Order: put, take, drop.
     Returns {put, took, dropped, unmoved, skipped, free: {you, there}}: unmoved is what found no room, free counts
-    empty slots on each side afterwards. Opening a block is refused while the clock lists a threat (the error's
+    empty slots on each side afterwards. Counts are what your inventory gained or lost, so a hopper or pipe
+    working the container meanwhile does not skew them; a refused click reports what moved and stops, never retried. Opening a block is refused while the clock lists a threat (the error's
     procedureReceipts name the mobs); despite_threat=True opens it anyway. Blocks that store without a GUI (barrels, drawers: right-click with the stack
     in hand, left-click to take) are driven with mb_act, not with this.
     """
@@ -390,12 +407,12 @@ def mb_move_items(at: list[int] | None = None, put: list[dict] | str | None = No
         for s in _player(view) if put else []:
             stack = s.get("stack")
             if not stack or wanted(stack, keep) or (put == "all" and s["kind"] == "hotbar") or (put != "all" and not wanted(stack, put)): continue
-            count = _shift(session, s); note("put", stack, count); note("unmoved", stack, stack["count"] - count)
+            count = _shift(session, s); note("put", stack, count); note("unmoved", stack, max(0, stack["count"] - count))
         for want in take or []:
             need = want.get("count")
             for s in session.observe()["slots"]:
                 if s["kind"] != "container" or not _matches(s.get("stack"), want) or need is not None and need <= 0: continue
-                count = _shift(session, s); note("took", s["stack"], count); note("unmoved", s["stack"], s["stack"]["count"] - count)
+                count = _shift(session, s); note("took", s["stack"], count); note("unmoved", s["stack"], max(0, s["stack"]["count"] - count))
                 if need is not None: need -= count
             if need is not None and need > 0: raise ProcedureStopped(f"{need} {want.get('id') or want['name']} short: not there, or no room in your inventory", session.receipts)
         for s in _player(session.observe()) if drop else []:
