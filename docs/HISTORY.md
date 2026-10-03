@@ -11,8 +11,14 @@ contract notes. What was still true is now in the current docs.
 - **2026-10-03** Background body tasks: `mb_run(background=True)` runs a script in its own
   process holding a body lock while the model keeps thinking; acting tools refuse with
   `body_busy`, every result carries `body`/`finished`, `mb_task` waits or cancels (never pauses).
+- **2026-10-03** Batching prompt: one paragraph, "Batch almost everything", with buckets carried
+  one by one to a smelter as the pattern to catch.
+- **2026-10-03** An operator's run extension no longer resets the run's start (the console's
+  run token total): a start before the old end, or under ten minutes after it, continues the run.
 - **2026-10-03** The client gives time to one session, so a task's time commands are relayed
-  through the model's MCP server; a task waits out ordinary pauses and ends on a guard stop.
+  through the model's MCP server, or wait in a file until one starts (`relayPending`); a task is
+  alive while it holds the body lock, so an unreaped zombie counts as crashed. It waits out
+  ordinary pauses and ends on a guard stop.
 - **2026-10-03** Paused mining receipts say `remainingTargets` and mb_status lists the veins
   left (`pausedMining`); the prompt makes the whole vein, mined in the background, the default.
 - **2026-10-03** Scripts could swallow a guard interrupt with `except Exception`. A

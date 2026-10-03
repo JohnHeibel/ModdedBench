@@ -44,8 +44,12 @@ class CodexLoopTests(unittest.TestCase):
         codex_loop._mark_run(path, 1000.0, 60)
         codex_loop._mark_run(path, 1600.0, 50.5)  # a fresh thread 10 min in, same end within a minute
         self.assertEqual(json.loads(path.read_text())["startedAt"], 1000.0)
-        codex_loop._mark_run(path, 9000.0, 60)    # a new run
-        self.assertEqual(json.loads(path.read_text()), {"startedAt": 9000.0, "endsAt": 9000.0 + 3600})
+        codex_loop._mark_run(path, 2000.0, 240)   # an operator's extension moves the end, not the start
+        self.assertEqual(json.loads(path.read_text()), {"startedAt": 1000.0, "endsAt": 2000.0 + 240 * 60})
+        codex_loop._mark_run(path, 16400.0 + 599, 60)  # the end passed under ten minutes ago: the same run
+        self.assertEqual(json.loads(path.read_text())["startedAt"], 1000.0)
+        codex_loop._mark_run(path, 90000.0, 60)   # long after the end: a new run
+        self.assertEqual(json.loads(path.read_text()), {"startedAt": 90000.0, "endsAt": 90000.0 + 3600})
 
     def test_a_screenshot_is_estimated_by_its_tiles_not_its_base64(self):
         from feed import Feed, BASE

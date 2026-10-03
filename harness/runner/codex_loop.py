@@ -63,11 +63,13 @@ def _body(folder):
     except Exception: return None
 
 def _mark_run(path, started, max_minutes):
-    """The run's start, for mb_status. A start that keeps the planned end (a resume, a fresh thread) continues the run and keeps its start."""
+    """The run's start, for mb_status and the console's run totals. A start while the previous run is still on (its planned end
+    ahead, or passed less than ten minutes ago: a resume, a fresh thread, an operator's extension) continues it and keeps its start."""
     ends = started + max_minutes * 60 if max_minutes else None
     try: old = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError): old = {}
-    if ends and isinstance(old, dict) and isinstance(old.get("endsAt"), (int, float)) and abs(old["endsAt"] - ends) < 300: return
+    if isinstance(old, dict) and all(isinstance(old.get(k), (int, float)) for k in ("startedAt", "endsAt")) and old["endsAt"] > started - 600:
+        started = old["startedAt"]
     path.write_text(json.dumps({"startedAt": started, "endsAt": ends}), encoding="utf-8")
 
 def _git(repo, *args):
