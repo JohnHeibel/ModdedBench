@@ -24,6 +24,13 @@ final class MiningObservation extends BlockOptionalMetaLookup {
     MiningObservation(World world,WorkSpec.Bounds bounds,List<Map<String,Object>> selectors,List<Map<String,Object>> items){
         super(new BlockOptionalMeta[0]);this.world=world;this.bounds=bounds;this.selectors=selectors;this.items=items;
     }
+    /** Exactly these cells, each while it holds what it held then (the job's own scaffold, to break again); never rescanned. */
+    static MiningObservation cells(World world,Map<baritone.compat.BlockPos,IBlockState.StateKey> cells){
+        int[] lo={Integer.MAX_VALUE,255,Integer.MAX_VALUE},hi={Integer.MIN_VALUE,0,Integer.MIN_VALUE};
+        for(var p:cells.keySet()){int[] c={p.getX(),p.getY(),p.getZ()};for(int i=0;i<3;i++){lo[i]=Math.min(lo[i],c[i]);hi[i]=Math.max(hi[i],c[i]);}}
+        var out=new MiningObservation(world,new WorkSpec.Bounds(new BlockPos(lo[0],lo[1],lo[2]),new BlockPos(hi[0],hi[1],hi[2])),List.of(),List.of());
+        out.published=Map.copyOf(cells);out.passes=1;return out;
+    }
     void tick(){
         long until=System.nanoTime()+2_000_000L;int budget=2048;
         while(cursor<bounds.volume()&&budget-->0&&System.nanoTime()<until){

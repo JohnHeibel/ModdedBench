@@ -67,8 +67,10 @@ abstract class BulkJob implements Navigation.Job {
     /** What the stall watchdog counts as work besides new ground: progress, and whatever else this job changes on its way. */
     long activity(){return progress();}
     void releaseProcess() {}
+    /** A job may take its ending over to do one more thing first (the miner breaking the blocks it placed): true when it did. */
+    boolean ending(String terminal,String why){return false;}
     final void finish(String terminal,String why) {
-        if(done())return;state=terminal;reason=why;
+        if(done()||ending(terminal,why))return;state=terminal;reason=why;
         try{releaseProcess();}finally{if(lease!=null)lease.close();}
         journal.progress.put("lastTicks",ticks);
         try{journal.save(status());}catch(Exception error){state="failed";reason+="; checkpoint_failed: "+error.getMessage();}

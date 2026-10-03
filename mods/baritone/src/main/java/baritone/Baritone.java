@@ -53,6 +53,8 @@ public final class Baritone implements IBaritone {
     /** Doors and gates a path opened, to close behind it. */
     public final baritone.gtnh.pathing.DoorsBehind doorsBehind=new baritone.gtnh.pathing.DoorsBehind();
     public java.util.function.Supplier<java.util.function.Predicate<IBlockState>> explicitMiningTargets=()->s->false;
+    /** Told the cells before each native block placement the path asks for (pillar, bridge): the mining job keeps its scaffold. */
+    public java.util.function.Consumer<BlockPos> placing=p->{};
     /** The single native inventory swap in flight; acknowledged through the core packet hook. */
     public LegacyInventorySwap pendingSwap;
     private boolean tickStarted;
