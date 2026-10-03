@@ -25,6 +25,13 @@ GT_BLOCKS = (b"\x00", b"\x03")
 # drops it unless the block already stands, and the log keeps only a block's newest change (servers re-send unchanged
 # blocks), so a late viewer gets all of it after every frame that places blocks.
 BLOCK_DATA = {"t", "s", "gt"}
+# A 1.7.10 client handles mod packets on its network thread the moment they arrive, but queues vanilla ones for its main
+# thread (about a thousand a tick), so in a snapshot a mod packet overtakes the blocks it is about. The snapshot's mod
+# packets and block data therefore wait behind this transaction check on the player's own inventory: the client answers
+# it from the main thread, once everything before it is in its world. The answer counts as one more handshake reply.
+BARRIER_ACTION = -2026
+BARRIER = frame(0x32, pack("bh?", 0, BARRIER_ACTION, False))
+BARRIER_REPLY = pack("bh?", 0, BARRIER_ACTION, True)
 ARMOR = {5: 4, 6: 3, 7: 2, 8: 1}  # player container slot -> equipment slot
 
 
@@ -329,7 +336,8 @@ class Mirror:
         """The snapshot, each frame with the FML|HS messages a viewer must have sent first. The server's side of the
         Forge handshake waits for the client's replies, and a client handed JoinGame mid-handshake crashes."""
         snap, last = self.snapshot(), max(self.gates, default=0)
-        return [(self.gates[i] if i < len(self.gates) else last, f) for i, f in enumerate(snap)]
+        cut = snap.index(BARRIER)
+        return [(self.gates[i] if i < len(self.gates) else last if i <= cut else last + 1, f) for i, f in enumerate(snap)]
 
     def snapshot(self) -> list[bytes]:
         """Frames that bring a freshly logged-in viewer to the host's present, after LoginSuccess."""
@@ -337,10 +345,9 @@ class Mirror:
         out += [f for f in (self.spawnpos, self.time) if f] + [*self.weather.values(), *self.players.values(), *self.scores]
         held = lambda e: e[2] is not None and e[2][0] in BLOCK_DATA
         ordered = [((s, e[0]) for s, e in self.log.items() if not held(e)), iter(self.pinned.items()),
-                   iter(self.payloads.items()), iter(self.book.entries())]
+                   iter(self.book.entries())]
         if self.respawn: ordered.append(iter([self.respawn]))
         out += [f for _, f in heapq.merge(*ordered, key=lambda t: t[0])]
-        out += [e[0] for e in self.log.values() if held(e)]
         if self.unload:  # a bulk packet still held for one chunk also reloads its unloaded neighbours
             stale = {c for e in self.log.values() for c, _ in e[1] if c not in self.chunks}
             out += [frame(0x21, pack("ii", *c) + self.unload) for c in sorted(stale)]
@@ -354,7 +361,9 @@ class Mirror:
             out += [self._avatar_spawn(), *host.extras(self.eid), *host.attach.values()]
         out += self.chat
         if self.hpos: out.append(self._place())
-        return out
+        out.append(BARRIER)
+        after = [((s, e[0]) for s, e in self.log.items() if held(e)), iter(self.payloads.items())]
+        return out + [f for _, f in heapq.merge(*after, key=lambda t: t[0])]
 
     def stats(self) -> dict:
         return {"host": self.name, "joined": self.join is not None, "dimension": self.dim, "chunks": len(self.chunks),

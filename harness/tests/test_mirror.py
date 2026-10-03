@@ -133,8 +133,9 @@ class Snapshot(unittest.TestCase):
         self.assertEqual(r.u("iiiBBh"), (3232, 2048, -640, 32, 3, 267))
         equip = {Reader(b).u("ih")[1]: b[6:] for b in self.of(0x04)}
         self.assertEqual((equip[0], equip[4], equip[1]), (HELD, HELMET, pack("h", -1)))
-        x, y, z, yaw, pitch, _ = Reader(self.snap[-1][1]).u("dddff?")
-        self.assertEqual(self.snap[-1][0], 0x08)
+        place = self.snap[[p for p, _ in self.snap].index(0x32) - 1]  # the last frame before the barrier
+        x, y, z, yaw, pitch, _ = Reader(place[1]).u("dddff?")
+        self.assertEqual(place[0], 0x08)
         self.assertEqual((x, round(y, 2), z, yaw, pitch), (101.0, 65.62, -20.0, 45.0, 5.0))
 
     def test_live_stream(self):
@@ -224,6 +225,25 @@ class Handshake(unittest.TestCase):
         self.assertEqual(split(v.q[-1]), (0x03, b"live"))
 
 
+class Barrier(unittest.TestCase):
+    def test_mod_packets_wait_until_the_client_has_applied_the_world(self):
+        m = state.Mirror(); hub = proxy.Hub(mirror=m)
+        place = frame(0x23, pack("iBi", 5, 64, 5) + bytes(3))
+        machine = s3f("GregTech", bytes(1) + pack("ihi", 5, 64, 5) + bytes(20))
+        feed(hub, frames_s=SERVER + [place, machine, s3f("other", bytes(10))])
+        gated = m.gated(); frames = [f for _, f in gated]
+        cut, last = frames.index(state.BARRIER), max(m.gates, default=0)
+        self.assertLess(frames.index(place), cut)
+        self.assertGreater(frames.index(machine), cut)
+        self.assertTrue(all(g == last + 1 for g, _ in gated[cut + 1:]))
+        v = proxy.Viewer(None, None, "Watcher", "", 1 << 20)
+        v.hold(gated); [v.handshook() for _ in range(last)]
+        self.assertEqual(v.q[-1], state.BARRIER)        # the world is out, the mod packets wait
+        v.send([frame(0x03, b"live")]); self.assertNotIn(machine, v.q)
+        v.handshook()                                   # the client's answer to the barrier
+        self.assertIn(machine, v.q); self.assertEqual(split(v.q[-1]), (0x03, b"live"))
+
+
 class Pipe(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.got = bytearray(); self.reply = asyncio.Queue()
@@ -294,10 +314,15 @@ class Viewers(unittest.IsolatedAsyncioTestCase):
         r, w = await asyncio.open_connection("127.0.0.1", self.port)
         w.write(handshake() + frame(0, string("Watcher"))); await w.drain()
         s = wire.Splitter(); got = []
-        while not got or got[-1][0] != 0x08:
+        snap = parsed(self.hub.mirror.snapshot()); cut = [p for p, _ in snap].index(0x32) + 1
+        while len(got) < cut + 1:
             got += parsed(s.feed(await asyncio.wait_for(r.read(65536), 5)))
         self.assertEqual(got[0], (0x02, string(wire.offline_uuid("Watcher")) + string("Watcher")))
-        self.assertEqual(got[1:], parsed(self.hub.mirror.snapshot()))
+        self.assertEqual(got[1:], snap[:cut])  # up to the barrier; the rest waits for its answer
+        w.write(frame(0x0F, state.BARRIER_REPLY)); await w.drain()
+        while len(got) < len(snap) + 1:
+            got += parsed(s.feed(await asyncio.wait_for(r.read(65536), 5)))
+        self.assertEqual(got[1:], snap)
         self.assertEqual(len(self.hub.viewers), 1)
         self.hub.end(self.hub.session)
         rest = parsed(s.feed(await asyncio.wait_for(r.read(65536), 5)))

@@ -15,7 +15,7 @@ from . import board, bq
 from .link import END, HEAD, HEARTBEAT, INVENTORY, LIVE, MAGIC, MAX, NEWS, SNAPSHOT, STATUS, header, proof, token, unheaded
 from .forwarder import clearing
 from .proxy import Stage
-from .state import EYE, SPECTATOR, VIEWER_EID, Mirror, abilities
+from .state import BARRIER, EYE, SPECTATOR, VIEWER_EID, Mirror, abilities
 from .wire import Reader, Splitter, frame, pack, payload, split, string, varint
 
 FROZEN = "the agent is reconnecting; this view is frozen until it returns"
@@ -229,8 +229,9 @@ class Relay(Stage):
                 new = World(meta, entries)
                 if self.viewers and w:
                     if w.clear is None: w.settle()
-                    moved = new.into(w)
-                    self.broadcast(moved + [notice(BACK)])
+                    moved = new.into(w) + [notice(BACK)]
+                    cut = moved.index(BARRIER) if BARRIER in moved else len(moved)
+                    for v in list(self.viewers): v.hold([(v.hs + (i > cut), f) for i, f in enumerate(moved)])
                     self.reset("world" in self.watch(moved))
                 else: self.watch([f for _, f in new.snap])  # where a viewer joining now will be
                 self.world = new
