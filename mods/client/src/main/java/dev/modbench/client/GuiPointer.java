@@ -11,6 +11,10 @@ import org.lwjgl.input.Mouse;
 final class GuiPointer {
     static Point move(GuiScreen gui,int x,int y) throws Exception {
         Minecraft mc=Minecraft.getMinecraft();
+        // A screen opened by an RPC can precede Minecraft's own cursor release, and absolute movement is
+        // ignored while the gameplay cursor is grabbed. Release it the game's way when the game holds focus,
+        // so closing the screen grabs it again.
+        if(Mouse.isGrabbed()) {if(mc.inGameHasFocus) mc.setIngameNotInFocus();else Mouse.setGrabbed(false);}
         int px=(int)Math.ceil((x+0.5)*mc.displayWidth/gui.width);
         int py=(int)Math.ceil((y+0.5)*mc.displayHeight/gui.height);
         Class<?> display=null;
@@ -27,6 +31,8 @@ final class GuiPointer {
                     .invoke(null,window,px/scale,py/scale);
                 Class.forName("org.lwjglx.input.Mouse").getMethod("addMoveEvent",double.class,double.class)
                     .invoke(null,px/scale,py/scale);
+                // Pump GLFW so the read-back below sees this position, not the previous one.
+                Class.forName("org.lwjgl.glfw.GLFW").getMethod("glfwPollEvents").invoke(null);
             } else Mouse.setCursorPosition(px,mc.displayHeight-py);
             Mouse.poll();
             actual=new Point(Mouse.getX()*gui.width/mc.displayWidth,gui.height-Mouse.getY()*gui.height/mc.displayHeight-1);
