@@ -229,8 +229,8 @@ final class ReferenceConstructionProcess extends BulkJob {
                 // A low neighbouring stance can still overlap a different floor
                 // cell, while searchForPlaceables refuses every upward click.
                 // Egress must reach a height where this cell becomes actionable.
-                boolean covered=world.getBlock(at.getX(),at.getY()+1,at.getZ())!=net.minecraft.init.Blocks.air;
-                var out=WorkAccess.buildingApproaches(world,at).stream().map(pose->pose.feet()).filter(f->PlacementGoalSupport.egress(at,f,covered)&&ForgeSnapshot.liveStandable(world,f))
+                boolean covered=world.getBlock(at.getX(),at.getY()+1,at.getZ())!=net.minecraft.init.Blocks.air;int up=reachUp();
+                var out=WorkAccess.buildingApproaches(world,at).stream().map(pose->pose.feet()).filter(f->PlacementGoalSupport.egress(at,f,covered,up)&&ForgeSnapshot.liveStandable(world,f))
                     .map(f->(baritone.api.pathing.goals.Goal)new baritone.api.pathing.goals.GoalBlock(f)).toArray(baritone.api.pathing.goals.Goal[]::new);
                 return out.length==0?goal:new baritone.api.pathing.goals.GoalComposite(out);
             }
@@ -314,9 +314,13 @@ final class ReferenceConstructionProcess extends BulkJob {
     }
     private boolean sourcePlacementHeight(Cell cell,baritone.compat.BlockPos sourceFeet){
         // A goal must be actionable by searchForPlaceables, not merely within
-        // native click reach. Its upward-placement restriction deliberately
-        // leaves unsupported vertical construction to MovementPillar.
-        return PlacementGoalSupport.actionableHeight(cell.pos().getY(),sourceFeet.getY(),world.getBlock(cell.pos().getX(),cell.pos().getY()+1,cell.pos().getZ())!=net.minecraft.init.Blocks.air);
+        // native click reach. Unsupported vertical construction remains the
+        // responsibility of MovementPillar; a ceiling can supply support.
+        return PlacementGoalSupport.actionableHeight(cell.pos().getY(),sourceFeet.getY(),world.getBlock(cell.pos().getX(),cell.pos().getY()+1,cell.pos().getZ())!=net.minecraft.init.Blocks.air,reachUp());
+    }
+    /** The source scan's upward limit, from this player's sneaking eye and native reach. */
+    private int reachUp(){
+        return PlacementGoalSupport.reachUp(baritone.compat.LegacyPlayer.sneakingEyes(mc.thePlayer).y-mc.thePlayer.boundingBox.minY,mc.playerController.getBlockReachDistance());
     }
     private boolean centerForPlacement(){
         if(!mc.thePlayer.onGround||!pending.isEmpty())return false;
