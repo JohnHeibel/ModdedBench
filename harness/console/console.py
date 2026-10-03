@@ -28,6 +28,10 @@ SNAPSHOTS = REPO / ".runtime" / "snapshots"  # written by harness/launcher/backu
 # Codex compacts its context without a word in the exec stream; only its own record of the thread says how full the context is.
 CONTEXT = ("f=$(ls -t /home/agent/.codex/sessions/*/*/*/rollout-*.jsonl 2>/dev/null | head -1); "
            "[ -n \"$f\" ] && tail -c 4000000 \"$f\" | grep '\"last_token_usage\"' | tail -1")
+COMPACTIONS = "f=$(ls -t /home/agent/.codex/sessions/*/*/*/rollout-*.jsonl 2>/dev/null | head -1); [ -n \"$f\" ] && grep -c '\"type\":\"compacted\"' \"$f\""
+# The operator hold is a file in the server directory: the server only asks whether it exists, and what it says is whose
+# hold it is, so that the compaction guard ends only its own.
+HOLD, OWN_HOLD, OPERATOR_HOLD = "/data/modbench-hold", "compaction", "operator"
 TOKEN = secrets.token_urlsafe(24)
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 # One line of JSON about the loop, produced inside the agent container.
@@ -92,6 +96,8 @@ def sh(cmd, stdin=None, timeout=30):
 class Console:
     def __init__(self):
         self.lock = threading.Lock(); self.kernel = None; self.supervisor = None; self.backups = None
+        self.guard = None  # (compactions in the rollout when the guard held the world, monotonic time, the silence's start)
+        self.guard_done = None  # the start of the silence the guard last let go of
         self.job = {"name": "", "running": False, "ok": True, "log": ""}; self.login = (0.0, None); self.book = (0.0, []); self.ctx = (0.0, None); self.shorten = Shortener(runtime.RUNTIME / "overlay-short.json")
 
     # The bridge, read only: one long-lived session for the state panel.
@@ -142,6 +148,45 @@ class Console:
         except Exception: ctx = None
         self.ctx = (time.monotonic(), ctx); return ctx
 
+    def compacting(self, status):
+        """Codex compacts its context without a word in the exec stream. It starts once the context is nearly full (both
+        observed ones at 94-95%) and is a silence of a few minutes; the 'compacted' record in its rollout marks the end."""
+        if status.get("state") != "thinking" or time.time() - (status.get("since") or time.time()) <= 20: return False
+        ctx = self.context(); return bool(ctx and ctx[1] and ctx[0] >= 0.94 * ctx[1])
+
+    def hold_file(self, cmd):
+        return sh([*COMPOSE, "exec", "-T", "server", "sh", "-c", cmd], timeout=15)
+
+    def agent_sh(self, cmd):
+        return sh([*COMPOSE, "exec", "-T", "agent", "sh", "-c", cmd], timeout=15)
+
+    def compaction_guard(self, every=2.0):
+        """Holds the world while the model compacts, so the game does not run on for minutes with nobody at the controls.
+        Only a world the guard finds running and unheld; it lets go when the compaction ends, when the model acts again
+        (it was a long think), or after ten minutes, and never ends a hold that is not its own."""
+        if self.hold_file(f"[ \"$(cat {HOLD} 2>/dev/null)\" = {OWN_HOLD} ] && rm -f {HOLD}").returncode == 0:
+            print("[ModdedBench] released a compaction hold left by an earlier console", flush=True)
+        while True:
+            time.sleep(every)
+            try:
+                try: status = json.loads((OVERLAY / "live.json").read_text(encoding="utf-8")).get("status") or {}
+                except (OSError, ValueError): status = {}
+                if self.guard is None:
+                    if status.get("since") == self.guard_done or not self.compacting(status): continue  # one hold per silence
+                    clock = self.call("time.status")["state"]
+                    if clock.get("held") or clock.get("paused"): continue  # someone else's hold, or the agent's own pause
+                    count = int(self.agent_sh(COMPACTIONS).stdout.strip() or 0)
+                    if self.hold_file(f"[ -e {HOLD} ] || echo {OWN_HOLD} > {HOLD}").returncode == 0:
+                        self.guard = (count, time.monotonic(), status.get("since")); print("[ModdedBench] compaction: world held", flush=True)
+                    continue
+                done = int(self.agent_sh(COMPACTIONS).stdout.strip() or 0) > self.guard[0]
+                acted = status.get("state") != "thinking"
+                if done or acted or time.monotonic() - self.guard[1] > 600:
+                    self.hold_file(f"[ \"$(cat {HOLD} 2>/dev/null)\" = {OWN_HOLD} ] && rm -f {HOLD}")
+                    print(f"[ModdedBench] compaction: world released ({'compacted' if done else 'the model acted' if acted else 'ten minutes'})", flush=True)
+                    self.guard_done, self.guard, self.ctx = self.guard[2], None, (0.0, None)  # read the context afresh
+            except Exception as e: print(f"[ModdedBench] compaction guard: {type(e).__name__}: {e}", flush=True)
+
     def overlay(self):
         """Everything the OBS pages show, read only: the loop's feed and totals, plus the clock and the quest book from the bridge."""
         try: live = json.loads((OVERLAY / "live.json").read_text(encoding="utf-8"))
@@ -158,12 +203,9 @@ class Console:
         try: clock = self.call("time.status")["state"]
         except Exception: clock = None
         status = dict(live.get("status") or {})
-        # A compaction is a silence of a few minutes that starts once the context is nearly full (both observed ones fired at 94-95%).
-        compacting = False
-        if status.get("state") == "thinking" and time.time() - (status.get("since") or time.time()) > 20:
-            ctx = self.context(); compacting = bool(ctx and ctx[1] and ctx[0] >= 0.94 * ctx[1])
+        compacting = self.guard is not None or self.compacting(status)
         # The backup holds the world while it copies (about 20 s); its newest snapshot folder is being written all that time.
-        try: backup = bool(clock and clock.get("held")) and time.time() - max((p.stat().st_mtime for p in max(SNAPSHOTS.glob("2*"), default=SNAPSHOTS).glob("*")), default=0) < 15
+        try: backup = self.guard is None and bool(clock and clock.get("held")) and time.time() - max((p.stat().st_mtime for p in max(SNAPSHOTS.glob("2*"), default=SNAPSHOTS).glob("*")), default=0) < 15
         except OSError: backup = False
         if clock is None: status = {"state": "game_down", "text": "", "since": status.get("since")}
         elif backup and status.get("state") in ("thinking", "acting", "waiting"): status = {"state": "backup", "text": "", "since": status.get("since")}
@@ -174,7 +216,7 @@ class Console:
         why = None
         if clock is not None:
             near = min(clock.get("threats") or [], key=lambda t: t.get("distance") or 99, default=None)
-            why = {k: clock.get(k) for k in ("paused", "reason", "held", "stepping")}; why["backup"] = backup
+            why = {k: clock.get(k) for k in ("paused", "reason", "held", "stepping")}; why["backup"] = backup; why["compacting"] = compacting
             if near: why["threat"] = {"type": near.get("type"), "distance": near.get("distance"), "ranged": near.get("ranged"), "swelling": near.get("swelling")}
             if clock.get("paused") and str(clock.get("reason")) in ("health_dropped", "health_threshold", "air_threshold", "food_threshold", "burning"):
                 try: why["player"] = {k: v for k, v in self.call("obs.player").items() if k in ("health", "food", "air", "burning")}
@@ -212,11 +254,9 @@ class Console:
         if name == "server.start": self.run_job(name, [[*COMPOSE, "up", "-d", "server"]])
         elif name == "server.stop": self.run_job(name, [[*COMPOSE, "stop", "server"]])
         elif name in ("time.pause", "time.resume"):  # the operator hold: a file in the server directory, which outranks every bridge session
-            def hold(*cmd):
-                done = sh([*COMPOSE, "exec", "-T", "server", *cmd, "/data/modbench-hold"])
-                if done.returncode: raise RuntimeError((done.stderr or done.stdout).strip()[-300:])
-            if name == "time.pause": hold("touch")
-            else: hold("rm", "-f")  # the release resumes only the hold's own pause: an agent's pause stays its own to end
+            done = self.hold_file(f"echo {OPERATOR_HOLD} > {HOLD}" if name == "time.pause" else f"rm -f {HOLD}")
+            if done.returncode: raise RuntimeError((done.stderr or done.stdout).strip()[-300:])
+            if name == "time.resume": self.guard = None  # the release resumes only the hold's own pause: an agent's pause stays its own to end
         elif name == "client.launch": self.run_job(name, [[*PY, LAUNCHER, "launch-client", "--installed-as-is"]])
         elif name == "client.stop": self.run_job(name, [[*PY, LAUNCHER, "stop-client"]])
         elif name == "client.install":  # the host's own build of this checkout, client side only
@@ -296,6 +336,7 @@ class Handler(BaseHTTPRequestHandler):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__); parser.add_argument("--port", type=int, default=47300); args = parser.parse_args(argv)
     Handler.console = Console()
+    threading.Thread(target=Handler.console.compaction_guard, daemon=True).start()
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     print(f"[ModdedBench] operator console at http://127.0.0.1:{args.port}", flush=True)
     try: server.serve_forever()
