@@ -28,6 +28,9 @@ noise either: see "The side branches are the book's advice" below. The run
 does not end when the target is claimed, and how you arrive counts: equipped,
 housed, with storage and tools that work, or scraping by.
 
+This is meant to be hard: GT New Horizons is considered one of the most
+demanding modpacks, and most of what it asks for is infrastructure at scale.
+
 **The book is the route; the factory is how you travel it.** This pack is
 where the factory-game genre comes from. Every quest is a milestone on a
 production chain: the quest that asks for one steam machine is telling you
@@ -587,14 +590,18 @@ Most fights are avoidable. Mobs spawn where block light is 7 or less:
 it and torch the base until the list is empty under its roof. `mb_settings` set
 `avoidance` true makes every path cost more near hostile mobs and spawners.
 
-**Enclose your base completely.** Light only stops mobs spawning inside; it
-does nothing about the ones that spawn outside and walk in. Every GTNH player
+**Enclose the heart of your base completely.** Light only stops mobs spawning
+inside; it does nothing about the ones that spawn outside and walk in. Every GTNH player
 learns this early, and it is easy to miss coming from vanilla habits: mobs here
 hit hard and keep coming, and an open side, a missing roof block or a gap
 beside a door is how they reach you and your machines. Wall every side, roof it
 over, and enter only through doors, before the base holds anything you would
 hate to lose. Then walk the edge, look for any gap a mob could walk, jump or
-fall through, and close it. A base you can be attacked in is not a base.
+fall through, and close it. A base you can be attacked in is not a base. As
+the base spreads over many chunks, enclosing all of it stops being sensible:
+enclose where you work and where machines and storage stand, and give farms
+and outlying lines light, fences or protection instead, enclosing them once
+what they hold is worth it.
 
 **Clutch.** In an emergency a paused world gives you all the time you need: there, only ticks count.
 When a pause catches you in trouble (falling, at an edge, next to lava, a mob
@@ -715,8 +722,28 @@ by hand, and what the cheapest thing within your reach is that would take it
 over: a bigger batch, a buffer chest, a second machine, fuel that refills
 itself, a line that moves items for you. Early on the pack gives you almost
 nothing to automate with, and hands carry most of the work; do not fight
-that. But that share should fall steadily, chapter by chapter. If it is not
+that, but let the sources you build keep growing while your hands carry the
+work. That share should fall steadily, chapter by chapter. If it is not
 falling, you are playing the wrong game. Everything below follows from this.
+
+**Expect everything to be bigger than you think.** GT New Horizons is widely
+considered one of the hardest Minecraft modpacks, and most of that difficulty
+is scale. Progress here means the base keeps growing: more of each machine than
+seems reasonable, raw materials flowing at many times what the current quest
+asks for, and a footprint that covers many chunks, parts of it beyond render
+distance. Very little is one-and-done. Something you need once now usually
+comes back by the stack two chapters later, as an ingredient of an ingredient.
+So when something is slow, the usual answer is more of it: a second and third
+machine, another boiler, a bigger farm, rather than waiting on the one you
+have. Basic resources show this first. Two rubber trees can finish a quest;
+they cannot feed the cables, circuits and machine hulls that follow, which want
+rubber by the hundred. When you set up a source, look ahead in the quest book
+and NEI at what the next chapter or two consume, measure what the source
+actually makes per hour, and size it to that with room to spare. Make it
+passive where your tier allows, and lift it into something you no longer think
+about (a farm with a buffer, a line, a script you call by name), because a base
+this size can only be run from the level above it. This is a long, demanding
+job, and a base that stays small is a sign it is going badly.
 
 **Build for throughput, not for the quest.** Almost everything in this pack is
 needed again, in larger numbers, later. Experienced players batch: when they
@@ -850,7 +877,8 @@ far away in this pack, and rushing it does not work. Long before that, the
 things you do most often (fuel and power, smelting, the highest-volume
 materials) can run by themselves with simple fixed lines of whatever movers
 your tier offers. The question to keep asking is "what am I doing by hand
-every hour?" That is the next thing to automate; things you do once are not.
+every hour?" That is the next thing to automate; things you do once are not,
+though very little in this pack turns out to be done only once.
 Each thing the base takes over moves you up to harder problems, which you
 then build out of the easy ones you no longer touch.
 
