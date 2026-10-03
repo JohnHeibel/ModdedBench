@@ -108,7 +108,8 @@ inventory is a working set for the job in hand, not a warehouse:
   handful of things you hold by the thousand (barrels and drawers take a
   whole stack per right-click with the stack in hand and need no GUI: drive
   them with `mb_act`); then, much later, a network that stores and finds for
-  you. When you are short of room for the second time, the next tier is due.
+  you. When you are short of room for the second time, or keeping track of
+  what is where costs more than using it, the next tier is due.
   The book has quests for each of these steps; they are side branches.
 - Your own equipment is infrastructure too: armour before the first night
   you cannot sleep through, a weapon that is not your pickaxe, food that is
@@ -317,7 +318,8 @@ automation. **No tool here has been validated across that range.** Expect:
   wrapper does not offer;
 - outright bugs, and gaps where no tool exists at all.
 
-When a tool fails, your first question is *why*, and your second is *is this a
+A failure is the obvious reason to change a tool, not the only one (section 4:
+what keeps costing you). When a tool fails, your first question is *why*, and your second is *is this a
 tool problem or a game problem*. Diagnose with the raw method (`mb_call`), a
 screenshot, the GUI hit-test, the block and tile observations, and the work
 status. Then decide:
@@ -447,6 +449,21 @@ instance of it.
   quest, not merely your luck next time.
 - You were surprised: write the note that would have spared you, where you
   will meet it again.
+- Nothing failed, but something keeps costing you: a ledger you rewrite after
+  every transfer, a lookup you repeat every trip, the same checks around every
+  job. This is the easiest problem to miss, because nothing forces your hand
+  and it grows with the base. Within one context it never looks expensive, so
+  judge it by your cost numbers, not by feel: `mb_status` shows the last two
+  hours under `cost`, and `mb_cost` takes a longer window. When the
+  bookkeeping around a kind of work costs more than the work, build what
+  carries it, even when that is a large change. Storage is one example, not a
+  template: a layer over every item interaction that remembers what you have
+  seen and moved, which later tools and scripts build on. The same holds for
+  crafting, machines, travel, anything you keep paying for. The limit is
+  stability, not size. Stable means everything that worked before still
+  works, including the scripts and notes built on the old way, and the new
+  behaviour is proven against fresh observations. Build it beside the old way,
+  move its users over, then delete the old way.
 
 You do not need permission, a quest or a failure to do any of this. Noticing
 is the trigger. The goal stack keeps it honest: name the fix and what it
@@ -996,7 +1013,8 @@ and list what is loaded, with load errors.
 | Tool | What it does |
 | --- | --- |
 | `mb_methods` | List bridge methods advertised by the GTNH profile; also caches their effects for lane routing of mb_call |
-| `mb_status` | Bridge status, the clock (paused, why, operator hold), your goal stack (mb_goal) with its stall signal, and world notes near you |
+| `mb_status` | Bridge status, the clock (paused, why, operator hold), your goal stack (mb_goal) with its stall signal, world notes near you, and your last two hours' cost (mb_cost) |
+| `mb_cost` | What your own tool calls cost over the last `hours`: calls, failures and minutes per tool, and the time between calls |
 | `mb_call` | Call any advertised bridge method with JSON parameters |
 | `mb_obs` | Call an obs.* capability by short or full method name |
 | `mb_act` | Native act.* input/look/stop, use_block, use_entity, attack_entity, use_item, eat, select_hotbar, combat and status |
