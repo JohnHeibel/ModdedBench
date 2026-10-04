@@ -147,6 +147,11 @@ class CodexLoopTests(unittest.TestCase):
         self.assertEqual(("failed", 15), (reason, len(calls)))
         self.assertFalse((self.repo / ".state" / "codex-loop.json").exists())  # no id was ever reported
 
+    def test_a_failed_turn_that_ran_long_starts_the_row_of_failures_again(self):
+        with unittest.mock.patch.object(codex_loop, "LONG_TURN", 0):  # every turn counts as long: each failure is the first of its row
+            reason, calls = self.loop([{"exit": 1}], max_turns=14)
+        self.assertEqual(("max_turns", 14), (reason, len(calls)))
+
     def test_no_turn_starts_while_the_game_is_down(self):
         answers = iter([False, False, True])
         reason, calls = self.loop([{}], max_turns=1, ready=lambda: next(answers))

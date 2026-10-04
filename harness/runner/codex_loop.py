@@ -7,7 +7,8 @@ ended. A turn is not a unit of the run: Codex is told not to stop, one turn can 
 recovery after it did. The run's size is ``--max-minutes`` and ``--max-tokens`` (input tokens including cached ones, about 100k a call once the context is full; estimated
 while a turn runs from what has streamed, exact at its end), enforced mid-turn by ending the Codex process; the
 thread stays resumable. It also stops on a ``MISSION COMPLETE`` line in a turn's last message, on
-``<repo>/.state/STOP``, after ``--max-turns``, or after 12 failed turns in a row: the wait after a failure grows from 30 s to an hour, so a
+``<repo>/.state/STOP``, after ``--max-turns``, or after 12 failed turns in a row (a turn that ran over ten minutes starts
+the row again): the wait after a failure grows from 30 s to an hour, so a
 usage limit is slept through (about 9 hours) rather than ending the run. No turn starts while the game is
 down or the player is out of the world, because such a turn only burns tokens. The thread id is kept in ``--state``, so a restarted
 loop resumes the same conversation; delete that file to start a new one. Arguments after ``--`` go to
@@ -20,6 +21,7 @@ from feed import Feed
 
 REPO = Path(__file__).resolve().parents[2]
 BACKOFF = (1, 10, 60, 120)  # times backoff_s: 30 s, 5 min, 30 min, then hourly
+LONG_TURN = 600  # seconds: a turn that ran this long was working, so its failure is the first of a row, not one more
 CONTINUE = ("Continue the mission in your standing brief (mb_status says where it is). Rebuild your picture from mb_status, mb_quest_status and notes. "
             "If you are only waiting, call mb_wait instead of ending the turn.")
 
@@ -169,9 +171,11 @@ def run(repo=REPO, prompt=None, max_turns=50, state=None, codex=None, extra=(), 
             log.write("# %s %s\n" % (time.strftime("%Y-%m-%dT%H:%M:%S"), " ".join(cmd)))
             body = _body(folder)
             again = CONTINUE + (" Your background task %s (%s) is still running: mb_task shows it." % (body["task"], body["name"] or "unnamed") if body else "")
+            began = time.monotonic()
             code, _, last, spent = turn(cmd, again if thread else prompt.read_text(encoding="utf-8"), repo, log, feed, over, keep)
             if spent: return end(spent)
             if "MISSION COMPLETE" in [x.strip() for x in last.splitlines()]: feed.add("mark", "MISSION COMPLETE"); return end("complete")
+            if time.monotonic() - began > LONG_TURN: failures = 0  # hours of play that end in a crash are not a start that keeps failing
             failures = failures + 1 if code else 0
             if failures == max_failures: return end("failed")
             if code: feed.status("backing_off", "turn failed %d in a row" % failures); idle(backoff_s * BACKOFF[min(failures, len(BACKOFF)) - 1])
