@@ -192,9 +192,10 @@ def refusal(st: dict | None) -> str:
 
 
 _releasing = threading.local()  # release() hands the body back, so its calls pass the gate
-# Game calls that change state but never the body: stopping, the transport's own, and world-memory bookkeeping (a
-# region's protection is not here: changing it cancels the running job).
-UNGATED = ("act.stop", "requests.cancel", "sys.methods", "memory.waypoint", "memory.route", "memory.record")
+# Game calls that change state but never the body: stopping, the transport's own, world-memory bookkeeping (a
+# region's protection is not here: changing it cancels the running job), and the model's own watches firing and
+# being acknowledged, which are what it armed them for while the task works.
+UNGATED = ("act.stop", "requests.cancel", "sys.methods", "memory.waypoint", "memory.route", "memory.record", "interrupt.fire", "interrupt.ack")
 
 
 def gate(k: Kernel, method: str) -> None:
