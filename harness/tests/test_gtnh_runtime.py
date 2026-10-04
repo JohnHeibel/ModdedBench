@@ -295,6 +295,21 @@ class RuntimeTests(unittest.TestCase):
             self.assertNotIn("--offline", command)
             self.assertNotIn("-s", command)
 
+    def test_the_game_is_launched_without_the_operators_keys(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); instance = root / "instances" / runtime.INSTANCE_NAME; instance.mkdir(parents=True)
+            runtime.save_json(instance / runtime.MARKER, {"managedBy": "modbench"})
+            runtime.save_json(root / "config.json", {"prism": sys.executable, "prismData": str(root), "java": sys.executable})
+            secret = {"OPENROUTER_API_KEY": "dummy", "GH_TOKEN": "dummy", "MB_KEPT": "kept"}
+            with patch.dict(os.environ, secret), patch.object(runtime, "instance_dir", return_value=instance), patch.object(runtime.subprocess, "Popen") as popen, \
+                    patch.object(runtime, "wait_for_client_join", return_value={}), patch.object(runtime, "record_joined_client_build"), patch("builtins.print"):
+                runtime.provision_client(Namespace(runtime=str(root)))
+                runtime.launch_client(Namespace(runtime=str(root), username="", timeout=1, installed_as_is=True))
+            self.assertEqual(2, popen.call_count)
+            for call in popen.call_args_list:
+                env = call.kwargs["env"]; self.assertEqual("kept", env["MB_KEPT"]); self.assertIn("PATH", {k.upper() for k in env})
+                self.assertFalse({"OPENROUTER_API_KEY", "GH_TOKEN"} & set(env))
+
     def test_client_wait_connects_only_after_main_menu_and_reports_identity(self):
         class Kernel:
             def __init__(self): self.calls = []; self.gui_calls = 0
