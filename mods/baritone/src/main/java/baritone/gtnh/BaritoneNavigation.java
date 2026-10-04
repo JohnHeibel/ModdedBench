@@ -176,10 +176,10 @@ public final class BaritoneNavigation implements Navigation {
         if(mc.theWorld==null||mc.thePlayer==null)return;
         long started=System.nanoTime();
         answerSearch();
-        if(planningWhilePaused())try{((PlansWhilePaused)active).planWhilePaused();}catch(Exception e){failed(e);}
+        if(planningWhilePaused())try{((PlansWhilePaused)active).planWhilePaused();}catch(Exception|LinkageError e){failed(e);}
         Cost.paused(System.nanoTime()-started);
     }
-    private void failed(Exception e){
+    private void failed(Throwable e){
         String reason="game_error: "+e.getClass().getSimpleName()+": "+e.getMessage();
         if(active instanceof RouteRun route) route.finish("failed",reason);else if(active instanceof ReferenceNavigationJob run)run.finish("failed",reason); else active.cancel(reason);
     }
@@ -188,7 +188,7 @@ public final class BaritoneNavigation implements Navigation {
         reference.getWorldProvider().tick();
         if(active!=null && !active.done()) {
             try { if(active instanceof BulkJob work){work.symptoms.sample(mc.thePlayer);work.tick();}else if(active instanceof RouteRun route) route.tick();else tickChild(active); }
-            catch(Exception e) {failed(e);}
+            catch(Exception|LinkageError e) {failed(e);}
         }else apiSession.tick();
     }
     private BlockPos feet() {
