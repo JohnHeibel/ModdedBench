@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+# A second stack beside the real one for a supplied-materials test run: its own world and agent checkout, the same
+# Codex login (a copy would fork the rotating token and log one of the two out). Stop the real stack first: both
+# publish 25575. The console drives it when MB_COMPOSE_PROJECT is set:
+#   MB_COMPOSE_PROJECT=mbdev python harness/console/console.py --port 47301
+volumes:
+  agent-home: {external: true, name: moddedbench_agent-home}
