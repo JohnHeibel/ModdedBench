@@ -42,6 +42,17 @@ public class MiningToolsTest {
         // No promise, no limit: the stall watchdog ends that hold, not the tool measurement.
         for(double strength:new double[]{0,-1,Double.NaN})assertEquals(Integer.MAX_VALUE,MiningTools.swingLimit(strength));
     }
+    @Test public void aPickHookThatThrowsNamesNoItem() {
+        var coal=new ItemStack(Items.coal);var at=new baritone.compat.BlockPos(1,2,3);
+        var rock=net.minecraft.block.material.Material.rock;
+        var answers=new net.minecraft.block.Block(rock){@Override public ItemStack getPickBlock(net.minecraft.util.MovingObjectPosition t,net.minecraft.world.World w,int x,int y,int z,net.minecraft.entity.player.EntityPlayer p){return coal;}};
+        var throwsOne=new net.minecraft.block.Block(rock){@Override public ItemStack getPickBlock(net.minecraft.util.MovingObjectPosition t,net.minecraft.world.World w,int x,int y,int z,net.minecraft.entity.player.EntityPlayer p){throw new NullPointerException("tile");}};
+        var unlinked=new net.minecraft.block.Block(rock){@Override public ItemStack getPickBlock(net.minecraft.util.MovingObjectPosition t,net.minecraft.world.World w,int x,int y,int z,net.minecraft.entity.player.EntityPlayer p){throw new NoSuchMethodError("client only");}};
+        assertSame(coal,WorkAccess.picked(answers,null,at,null));
+        assertNull(WorkAccess.picked(throwsOne,null,at,null));assertNull(WorkAccess.picked(unlinked,null,at,null));
+        // No stack matches no selector, so such a block is not a target rather than the end of the scan.
+        assertFalse(WorkAccess.item(null,Map.of("ore","oreCoal")));
+    }
     @Test public void invalidAndUnbreakableStrengthsStayRejected() {
         for(double strength:new double[]{Double.NaN,Double.NEGATIVE_INFINITY,-1,0})
             assertEquals(Double.POSITIVE_INFINITY,MiningTools.breakTicks(strength),0);

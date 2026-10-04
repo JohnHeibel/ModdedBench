@@ -49,7 +49,7 @@ final class MiningJob implements Navigation.Job {
         String unsafe=unsafe();
         if(unsafe!=null) throw new IllegalArgumentException(unsafe);
         if(aim()==null) throw new IllegalArgumentException("target is occluded or outside normal reach");
-        if(autoTool) selectTool();
+        if(autoTool && !selectTool()) throw new IllegalArgumentException("no_eligible_harvest_tool");
         lease=ControlRegistry.controls().arbiter().acquire("baritone_mining",this::cancel,overrideProtection,false);
         if(!lease.isActive()) finish("cancelled","input_unavailable");
     }
@@ -82,7 +82,10 @@ final class MiningJob implements Navigation.Job {
             toolsUsed.add(selection.status());selection=null;state="mining";
         }
         if(autoTool && (MiningTools.rejected(mc.thePlayer.getHeldItem())!=null || !original.canHarvestBlock(mc.thePlayer,metadata))) {
-            lease.setKeys(Set.of(mc.gameSettings.keyBindSneak.getKeyCode()));mc.playerController.resetBlockRemoving();selectTool();return;
+            lease.setKeys(Set.of(mc.gameSettings.keyBindSneak.getKeyCode()));mc.playerController.resetBlockRemoving();
+            // The tool wore out or left the inventory: an end of the job with its reason, not a game error.
+            if(!selectTool()) finish("failed","no_eligible_harvest_tool");
+            return;
         }
         if(!original.canHarvestBlock(mc.thePlayer,metadata)) {finish("failed","tool_changed_or_broken");return;}
         Vec3 point=aim();
@@ -109,10 +112,10 @@ final class MiningJob implements Navigation.Job {
     private String unsafe() {
         return dev.modbench.api.ControlRegistry.memory().editProblem(target.getX(),target.getY(),target.getZ(),overrideProtection,false);
     }
-    private void selectTool() {
+    private boolean selectTool() {
         var choice=MiningTools.choose(world,target,null);
-        if(choice.get("bestSlot")==null||!Boolean.TRUE.equals(choice.get("harvestable"))) throw new IllegalArgumentException("no_eligible_harvest_tool");
-        selection=new InventorySelection((Integer)choice.get("bestSlot"));
+        if(choice.get("bestSlot")==null||!Boolean.TRUE.equals(choice.get("harvestable"))) return false;
+        selection=new InventorySelection((Integer)choice.get("bestSlot"));return true;
     }
 
     private boolean matches(MovingObjectPosition hit) {
