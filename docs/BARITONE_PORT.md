@@ -92,10 +92,11 @@ cancelled and a superseded search cannot install its result into a newer job.
 ## Construction contract (`nav.build`, `nav.build_preview`)
 
 Exactly one of explicit `cells` or a `selection` (`fill`, `replace`, `walls`,
-`shell`, `clear`, `sphere`, `hsphere`, `cylinder`, `hcylinder` with an `axis`).
+`shell`, `clear`, `sphere`, `hsphere`, `cylinder`, `hcylinder` with an `axis`);
+`uses` (Clicks, below) may come with either or stand alone.
 A cell is `{pos, id, meta?}` or `{pos, clear: true}`, with optional `item`
 (the inventory selector used to place it: `id`, `meta`, `nbt`, `ore`),
-`verify: {pickedItem}`, `replace` and `stage`. A cell, or a selection's
+`verify: {pickedItem}`, `replace`, `stage`, `click` and `expect`. A cell, or a selection's
 `block`, that names no `meta` accepts any variant of its block (the facing a
 furnace, chest or machine takes from how it is placed); one that names it is
 exact. Block state and placement item are separate because a machine's item
@@ -186,10 +187,29 @@ Attempts. A cell is charged for a click only when the game took it
 dropped when the cell is seen to match, so a resume or a later repair starts
 from none.
 
-Not in the contract: a block's facing. A cell that names `meta` is placed
-from wherever the walk stands, and stops as `mismatch` when that click would
-make another variant; placing a block to face a chosen way is left to the
-precise interaction tools.
+Clicks (`ClickRun`, inside the same job). A cell with `click {face?, hit?,
+look?, sneak?}` (or only `expect`) is left out of upstream's schematic and
+placed by the click executor; `uses [{pos, item | {empty: true}, click?,
+expect?, id?, stage?, name?}]` are right clicks on blocks that stand. Each
+stage is three steps of the build order: its plain cells by height
+(`BuilderProcess`), its click cells, its uses in the order given. The job is
+one: one jobId, journal, tick budget, receipt and stop shape; a resume reads
+the step from the world and the journal's per-click results.
+
+| | |
+| --- | --- |
+| A click | Made with the use key through the input lease, from a stance the pure search (`ClickSearch`, `Vantages`) found in a copy of the blocks around it: a place to stand, the face in line of sight and reach, the look the cell asks for. Checked against the game's own ray before the press |
+| Order of click cells | `StepPlan.next`: what a click lands on stands before it, and a cell whose block would hide every way of making another goes after it. Complete at the cap |
+| Limits | 256 clicks a job (`StepPlan.CLICKS`); the click cells of one stage inside 200,000 copied blocks, else refused at begin as `clicks_too_spread` |
+| `expect` | Up to 4 `{method: obs.*, params?, pos?, path, equals \| contains \| changed: true}` a click, read through `Observations` after it (and before, for `changed`). Compared, never interpreted |
+| Walks | `ReferenceNavigationJob` under the job's lease with `Baritone.editAllowed` set: a walk neither breaks nor places in a plan cell or a cell that is out for access |
+| Access | Only with `allowBreak`: up to 3 cells in the way of a click are taken out and the same blocks put back (`Access`). Never a tile entity, a fluid, a plan or protected cell, a cell within 4 of a tile entity, or a block that could not come back (none carried, and it does not drop itself) |
+| Scaffolds | Blocks the job placed outside the plan (builder, walks) are recorded by the `placed` consumer and taken away when the job ends |
+| Closing | A job that ends by itself or is paused with cells out or scaffolds standing runs on in state `closing` (budget 1,200 ticks and 100 a cell, at most 6,000) and then ends with the reason it had. What it could not put right is `accessLeft` / `scaffoldLeft {count, first}`, journaled, and a resume starts with it. A hard cancel (death, world change, supersede) does not close; the journal rows remain for the resume |
+| A use | Journaled `taking` before the key goes down and never pressed again: cut off in between, the resume stops as `unknown_after_restart`. One that opens a screen has it closed and stops the job as `gui_opened` |
+
+A cell that names `meta` and has no `click` is placed from wherever the walk
+stands, and stops as `mismatch` when that click would make another variant.
 
 `PlacementStateAdapters` predicts the placed metadata for known callbacks,
 including GregTech's machine item registry; anything else is verified after
@@ -202,13 +222,15 @@ GUI tools and verify with `obs.tile`.
 Each mining or building job writes `modbench/work/<jobId>.json` (checkpoint
 and last receipt), `<jobId>.spec.json` (the frozen specification) and
 `<jobId>.attempts.jsonl` (one row per click the game took, a measurement log
-appended with each checkpoint and never read back) under the game directory,
+appended with each checkpoint and never read back) and, for a build with
+clicks, `<jobId>.clicks.jsonl` (one row per click made: stance, aim, result,
+what `expect` read) under the game directory,
 scoped to world and dimension. `nav.work_status` reads the
 bounded checkpoint; collections over 128 entries appear as
 `{omitted: true, count}`. `nav.resume {jobId}` accepts a new timeout and edit
 permissions, never a different plan, and re-observes the world before acting.
-`nav.build_pause` releases controls and leaves the job resumable; server time
-keeps running.
+`nav.build_pause` releases controls and leaves the job resumable (after its
+closing, when it has something to put back); server time keeps running.
 
 ## Schematic import and copy
 
