@@ -371,6 +371,7 @@ class RuntimeTests(unittest.TestCase):
                     self.assertEqual(runtime.install_jar("server", {}, root)[0].read_bytes(), b"new")
                 self.assertEqual((root / "backups/server/modbench-server.previous.jar").read_bytes(), b"old")
                 with patch.object(runtime, "bridge_is_live", return_value=False):
+                    runtime.install_jar("server", {}, root)  # a deploy replayed: the backup stays the jar before it, not the new jar
                     self.assertEqual(runtime.rollback_jar("server", root)[0].read_bytes(), b"old")
             finally: runtime.REPO = old_repo
 
