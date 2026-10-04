@@ -218,7 +218,7 @@ public final class ClientRuntime extends BridgeRuntime {
             if(clock.refusesActions()) throw new IllegalArgumentException("time_paused: resume before executing native GUI actions");
             controlsChanged("superseded");return ui.start(r);
         });
-        for(String method:List.of("mine","build","resume")) register("nav."+method,"Owned, checkpointed "+method+" process; timeoutTicks<=72000. Mine: blocks/items selectors, quantity, bounds/radius, toolSlot (forces the tool in that slot). Build: cells, selection or planId; mode blueprint/builder, origin, size, settings, replaceExisting, allowBreak/allowPlace. Resume: jobId. Explicit overrideProtection required each attempt.","interaction",r->{
+        for(String method:List.of("mine","build","resume")) register("nav."+method,"Owned, checkpointed "+method+" process; timeoutTicks<=72000. Mine: blocks/items selectors, quantity, bounds/radius, toolSlot (forces the tool in that slot). Build: cells (at most 4096) or selection; origin, replaceExisting, allowBreak/allowPlace. Resume: jobId. Explicit overrideProtection required each attempt.","interaction",r->{
             requirePlayer();Navigation provider=navigation();Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");
             if(method.equals("resume")&&suspendedId!=null&&suspendedId.equals(Json.string(r.params,"jobId",""))) { // wait on the held job again, as it is
                 if(suspendedEnd!=null){Map<String,Object> end=suspendedEnd;suspendedId=null;suspendedEnd=null;return end;}
@@ -227,7 +227,7 @@ public final class ClientRuntime extends BridgeRuntime {
             controlsChanged("superseded");ControlRegistry.controls().focusForInput();
             navigationJob=method.equals("mine")?provider.mine(params):method.equals("build")?provider.build(params):provider.resume(Json.string(r.params,"jobId",""),params);navigationRequest=r;return null;
         });
-        register("nav.build_preview","Fresh read-only build diff and material allocation for {cells|selection|planId,mode,settings,origin,size,replaceExisting,overrideProtection}; no chunk loading","read",r->navigation().previewBuild(Json.GSON.fromJson(r.params,Map.class)));
+        register("nav.build_preview","Fresh read-only build diff and material allocation for {cells|selection,origin,replaceExisting,overrideProtection}: counts and the first few of each list; no chunk loading","read",r->navigation().previewBuild(Json.GSON.fromJson(r.params,Map.class)));
         register("nav.follow","Source FollowProcess: {target:{entityId|uuid|type|name},durationTicks:1..72000,radius,offsetDistance,offsetDirection,allowBreak:false,allowPlace:false,overrideProtection:false}. Follows loaded matches until duration/cancellation; fails when none remain loaded.","interaction",r->{
             requirePlayer();Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");controlsChanged("superseded");ControlRegistry.controls().focusForInput();
             navigationJob=navigation().follow(params);navigationRequest=r;return null;
@@ -249,7 +249,6 @@ public final class ClientRuntime extends BridgeRuntime {
             requirePlayer();Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");controlsChanged("superseded");ControlRegistry.controls().focusForInput();
             navigationJob=navigation().sourceProcess(params);navigationRequest=r;return null;
         });
-        register("nav.build_stage","Stage a large immutable plan: operation begin(spec), append(stageId,offset,cells), finish(stageId). Finish returns planId for build/preview.","interaction",r->{Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");return navigation().stageBuild(params);});
         register("obs.scan","Paged native block/metadata/ore-dictionary/item selectors {blocks:[selector],bounds:{min,max},cursor,limit,budget}; reports unloaded cells","read",r->navigation().scan(Json.GSON.fromJson(r.params,Map.class)));
         register("nav.schematic_import","Read <gameDir>/schematics/{path} (MCEdit .schematic or a canonical JSON plan) into {plan:{cells,origin,size},size:[w,h,l],count,skipped:{air,unknown}}; plan is accepted by nav.build_preview/nav.build. Params {path,origin?:[x,y,z],includeAir?}; at most 1048576 cells","read",r->navigation().importSchematic(Json.GSON.fromJson(r.params,Map.class)));
         register("nav.copy","Copy loaded blocks in {bounds:{min,max}} into {plan:{cells,origin,size},size,count,skipped:{air,unknown,unloaded},tileEntities}; positions are relative so that bounds.min maps to origin (default [0,0,0]). Tile entities are copied as plain blocks (no NBT); their cells add tile:true and name, the hover name, which builds ignore. Params {bounds,origin?,includeAir?}; at most 1048576 cells","read",r->navigation().copy(Json.GSON.fromJson(r.params,Map.class)));

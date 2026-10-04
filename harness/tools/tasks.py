@@ -16,6 +16,7 @@ server relays them (``relay``). With no server up the request waits in a file un
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import signal
@@ -127,6 +128,15 @@ def body(st: dict | None) -> dict | None:
 def _brief(value: Any, limit: int = 1500) -> Any:
     text = json.dumps(value, default=str)
     return value if len(text) <= limit else text[:limit] + f"... (cut; mb_task shows it whole)"
+
+
+def _said(args: Any, limit: int = 1500) -> Any:
+    """What a task was started with, said back: whole when small, else its size, a hash that tells two apart and its
+    first keys. The model wrote the args itself; a drawing echoed on every poll was 178 KB a time."""
+    text = json.dumps(args, sort_keys=True, default=str)
+    if len(text) <= limit: return args
+    return {"omitted": True, "bytes": len(text), "sha256": hashlib.sha256(text.encode()).hexdigest()[:12],
+            "keys": list(args)[:8] if isinstance(args, dict) else []}
 
 
 def entry(st: dict) -> dict:
@@ -492,6 +502,7 @@ def mb_task(task: str | None = None, wait: float = 0, cancel: bool = False) -> A
     inventory, an open screen closes, guard settings it changed are put back; the world is not paused. The
     result is the whole status: state (running, done, failed, cancelled, crashed, interrupted, paused_by_script),
     ended (why), result or error with line, log, interrupted, paused (on_fail), and recent: your last few tasks.
+    args are said back whole when small, else as {omitted, bytes, sha256, keys}: you wrote them.
     """
     if not 0 <= wait <= 900: raise ValueError("wait is 0..900 seconds")
     st = load(task) if task else (live() or next(iter(every()), None))
@@ -504,6 +515,7 @@ def mb_task(task: str | None = None, wait: float = 0, cancel: bool = False) -> A
         if st["state"] == "crashed": st = settle(st)
         st["delivered"] = True; save(st)
     out = {k: v for k, v in st.items() if k not in ("pid", "delivered", "guards", "pausedByScript")}
+    if "args" in out: out["args"] = _said(out["args"])
     if st["state"] == "running": out["for"] = _age(st)
     out["recent"] = [{"task": t["task"], "name": t.get("name"), "state": t["state"]} for t in every()[:5] if t["task"] != st["task"]]
     return out

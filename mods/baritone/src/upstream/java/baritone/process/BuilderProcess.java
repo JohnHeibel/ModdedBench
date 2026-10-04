@@ -80,21 +80,14 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
     public java.util.function.Predicate<BlockPos> mayPlace=pos->true;
     public java.util.function.Predicate<BlockPos> movementMayPlace=pos->true;
     public java.util.function.BiPredicate<IBlockState,IBlockState> stateComparison;
-    public java.util.function.BiPredicate<IBlockState,EnumFacing> placementFace=(state,face)->true;
-    @FunctionalInterface public interface PlacementPoint {Vec3d apply(IBlockState state,BlockPos support,Vec3d point);}
-    public PlacementPoint placementPoint=(state,support,point)->point;
-    public java.util.function.BiFunction<IBlockState,Rotation,Rotation> placementRotation=(state,rotation)->rotation;
-    public java.util.function.Predicate<IBlockState> deferredPlacementState=state->false;
     public java.util.function.BiFunction<BlockPos,Goal,Goal> placementGoalAdapter=(pos,goal)->goal;
     public java.util.function.BiFunction<BlockPos,Goal,Goal> breakGoalAdapter=(pos,goal)->goal;
     public java.util.function.Supplier<Goal> accessGoal=()->null;
     public java.util.function.BiPredicate<IBlockState,IBlockState> approximateMaterialMatches;
-    public void resetAdapters(){stateValidator=(current,desired,itemVerify)->true;beforePlace=pos->{};mayBreak=pos->true;mayPlace=pos->true;movementMayPlace=pos->true;stateComparison=null;placementFace=(s,f)->true;placementPoint=(s,b,p)->p;placementRotation=(s,r)->r;deferredPlacementState=s->false;placementGoalAdapter=(p,g)->g;breakGoalAdapter=(p,g)->g;accessGoal=()->null;approximateMaterialMatches=null;}
-    public int layer(){return layer;}
+    public void resetAdapters(){stateValidator=(current,desired,itemVerify)->true;beforePlace=pos->{};mayBreak=pos->true;mayPlace=pos->true;movementMayPlace=pos->true;stateComparison=null;placementGoalAdapter=(p,g)->g;breakGoalAdapter=(p,g)->g;accessGoal=()->null;approximateMaterialMatches=null;}
     public int repeats(){return numRepeats;}
     public Vec3i origin(){return origin;}
     public Set<BetterBlockPos> incorrectPositions(){return incorrectPositions==null?Set.of():Set.copyOf(incorrectPositions);}
-    public void restoreProgress(int layer,int repeats){this.layer=layer;this.numRepeats=repeats;}
 
     private HashSet<BetterBlockPos> incorrectPositions;
     private LongOpenHashSet observedCompleted; // positions that are completed even if they're out of render distance and we can't make sure right now
@@ -278,9 +271,7 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
         }
     }
 
-    public Map<String,Object> placementDiagnostic = Map.of();
     private Optional<Placement> searchForPlaceables(BuilderCalculationContext bcc, List<IBlockState> desirableOnHotbar) {
-        placementDiagnostic = Map.of();
         BetterBlockPos center = ctx.playerFeet();
         // Above the feet only a ceiling can support a placement; look no higher than its face is in reach.
         int up = PlacementGoalSupport.reachUp(RayTraceUtils.inferSneakingEyePosition(ctx.player()).y - center.y, ctx.playerController().getBlockReachDistance());
@@ -337,7 +328,6 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
     }
     private Optional<Placement> possibleToPlaceSneaking(IBlockState toPlace,int x,int y,int z,BlockStateInterface bsi,Vec3d bodyOffset,int candidateSlot,Vec3d eye) {
         for (EnumFacing against : EnumFacing.values()) {
-            if(!placementFace.test(toPlace,against.getOpposite()))continue;
             BetterBlockPos placeAgainstPos = new BetterBlockPos(x, y, z).offset(against);
             IBlockState placeAgainstState = bsi.get0(placeAgainstPos);
             if (MovementHelper.isReplaceable(placeAgainstPos.x, placeAgainstPos.y, placeAgainstPos.z, placeAgainstState, bsi)) {
@@ -348,15 +338,13 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
                 double placeX = placeAgainstPos.x + aabb.minX * placementMultiplier.x + aabb.maxX * (1 - placementMultiplier.x);
                 double placeY = placeAgainstPos.y + aabb.minY * placementMultiplier.y + aabb.maxY * (1 - placementMultiplier.y);
                 double placeZ = placeAgainstPos.z + aabb.minZ * placementMultiplier.z + aabb.maxZ * (1 - placementMultiplier.z);
-                Vec3d point=placementPoint.apply(toPlace,placeAgainstPos,new Vec3d(placeX,placeY,placeZ));
-                Rotation rot = placementRotation.apply(toPlace,RotationUtils.calcRotationFromVec3d(eye, point, ctx.playerRotations()));
+                Rotation rot = RotationUtils.calcRotationFromVec3d(eye, new Vec3d(placeX, placeY, placeZ), ctx.playerRotations());
                 Rotation actualRot = baritone.getLookBehavior().getAimProcessor().peekRotation(rot);
                 Vec3d end=eye.add(RotationUtils.calcLookDirectionFromRotation(actualRot).scale(ctx.playerController().getBlockReachDistance()));
                 RayTraceResult result = ctx.world().rayTraceBlocks(eye,end,false,false,true);
                 if (result != null && result.typeOfHit == RayTraceResult.Type.BLOCK && result.getBlockPos().equals(placeAgainstPos) && result.sideHit == against.getOpposite()) {
                     OptionalInt hotbar = hasAnyItemThatWouldPlace(toPlace, result, actualRot, bodyOffset, candidateSlot, eye);
                     if (hotbar.isPresent()) {
-                        if(candidateSlot<0)placementDiagnostic = Map.of("target", List.of(x,y,z), "against", List.of(placeAgainstPos.x,placeAgainstPos.y,placeAgainstPos.z), "side", against.getOpposite().ordinal(), "rotation", List.of(rot.getYaw(),rot.getPitch()), "predictedRotation", List.of(actualRot.getYaw(),actualRot.getPitch()), "slot",hotbar.getAsInt(), "predictedEye",List.of(eye.x,eye.y,eye.z));
                         return Optional.of(new Placement(hotbar.getAsInt(), placeAgainstPos, against.getOpposite(), rot));
                     }
                 }
@@ -847,7 +835,7 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
     }
 
     private boolean nativeMayPlaceAt(IBlockState desired,BlockPos pos,EnumFacing clickedSide){
-        if(desired==null||!placementFace.test(desired,clickedSide))return false;
+        if(desired==null)return false;
         // Forge 1.7 asks canReplace about the actual placement stack and the
         // clicked support face. The currently held tool and reverse offset are
         // unrelated to a future placement goal.
@@ -1017,9 +1005,9 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
     }
 
     private boolean valid(IBlockState current, IBlockState desired, boolean itemVerify) {
-        return valid(current,desired,itemVerify,stateValidator,stateComparison,deferredPlacementState,approximateMaterialMatches);
+        return valid(current,desired,itemVerify,stateValidator,stateComparison,approximateMaterialMatches);
     }
-    private boolean valid(IBlockState current, IBlockState desired, boolean itemVerify,StateValidator validator,java.util.function.BiPredicate<IBlockState,IBlockState> comparison,java.util.function.Predicate<IBlockState> deferred,java.util.function.BiPredicate<IBlockState,IBlockState> materialMatch) {
+    private boolean valid(IBlockState current, IBlockState desired, boolean itemVerify,StateValidator validator,java.util.function.BiPredicate<IBlockState,IBlockState> comparison,java.util.function.BiPredicate<IBlockState,IBlockState> materialMatch) {
         if (desired == null) {
             return true;
         }
@@ -1028,7 +1016,6 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
         // registered orientation bits are ignored here; the actual ray/placement
         // prediction below is still required to match the requested final state.
         if(itemVerify && current.isApproximateMaterial() && (materialMatch!=null?materialMatch.test(current,desired):LegacyStateProperties.same(current,desired,true,List.of())))return true;
-        if(itemVerify && current.getBlock()==desired.getBlock() && deferred.test(desired))return true;
         if (LegacyFluids.isFluid(current.getBlock()) && Baritone.settings().okIfWater.value) {
             return true;
         }
@@ -1066,7 +1053,6 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
         private final java.util.function.Predicate<BlockPos> placementAllowed;
         private final java.util.function.BiPredicate<IBlockState,IBlockState> comparisonSnapshot;
         private final java.util.function.BiPredicate<IBlockState,IBlockState> materialMatchSnapshot;
-        private final java.util.function.Predicate<IBlockState> deferredSnapshot;
 
         public BuilderCalculationContext() {
             super(BuilderProcess.this.baritone, true); // wew lad
@@ -1082,7 +1068,6 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
             this.placementAllowed=pos->allowed.test(pos)&&movementAllowed.test(pos);
             this.comparisonSnapshot=stateComparison;
             this.materialMatchSnapshot=approximateMaterialMatches;
-            this.deferredSnapshot=deferredPlacementState;
 
             this.jumpPenalty += 10;
             this.backtrackCostFavoringCoefficient = 1;
@@ -1110,7 +1095,7 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
                     // this won't be a schematic block, this will be a throwaway
                     return hasThrowaway ? placeBlockCost * 2 : COST_INF; // authorized scaffolding only
                 }
-                if (placeable.stream().anyMatch(p->valid(p,sch,true,validatorSnapshot,comparisonSnapshot,deferredSnapshot,materialMatchSnapshot))) {
+                if (placeable.stream().anyMatch(p->valid(p,sch,true,validatorSnapshot,comparisonSnapshot,materialMatchSnapshot))) {
                     return 0; // thats right we gonna make it FREE to place a block where it should go in a structure
                     // no place block penalty at all 😎
                     // i'm such an idiot that i just tried to copy and paste the epic gamer moment emoji too
@@ -1146,7 +1131,7 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
                 }
                 // it should be a real block
                 // is it already that block?
-                if (valid(bsi.get0(x, y, z), sch, false,validatorSnapshot,comparisonSnapshot,deferredSnapshot,materialMatchSnapshot)) {
+                if (valid(bsi.get0(x, y, z), sch, false,validatorSnapshot,comparisonSnapshot,materialMatchSnapshot)) {
                     return Baritone.settings().breakCorrectBlockPenaltyMultiplier.value;
                 } else {
                     // can break if it's wrong

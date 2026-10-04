@@ -82,7 +82,7 @@ def main():
             # Builder must clear grass itself, without the old raw-input workaround.
             block(10,177,11,'minecraft:tallgrass',1);time.sleep(.2)
             pos=list(coords(10,177,11).values())
-            receipt=call('nav.build',selection={'min':pos,'max':pos,'shape':'fill','block':{'id':'minecraft:cobblestone','meta':0}},mode='builder',allowBreak=True,allowPlace=True,replaceExisting=True,timeoutTicks=400)
+            receipt=call('nav.build',selection={'min':pos,'max':pos,'shape':'fill','block':{'id':'minecraft:cobblestone','meta':0}},allowBreak=True,allowPlace=True,replaceExisting=True,timeoutTicks=400)
             check('builder clears tallgrass and places block',receipt['state']=='succeeded' and s.call('obs.block',**coords(10,177,11))['id']=='minecraft:cobblestone',receipt)
             evidence['ok']=True
         finally:

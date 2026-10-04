@@ -274,6 +274,17 @@ class CancelTests(TaskTestCase):
         self.assertRaises(ValueError, tasks.mb_task, wait=901)
         self.assertEqual(tasks.mb_task(task="nope"), {"task": None, "recent": []})
 
+    def test_mb_task_says_small_args_back_whole_and_a_large_plan_as_its_size(self):
+        self.put("t1", state="done", endedAt=time.time(), args={"n": 1})
+        self.assertEqual(tasks.mb_task(task="t1")["args"], {"n": 1})
+        drawing = {"origin": [0, 64, 0], "legend": {"#": {"id": "minecraft:stone"}}, "layers": [["#" * 48] * 48] * 12}
+        self.put("t2", state="done", endedAt=time.time(), args={"drawing": drawing, "label": "shell"})
+        out = tasks.mb_task(task="t2")
+        self.assertEqual((out["args"]["omitted"], out["args"]["keys"]), (True, ["drawing", "label"]))
+        self.assertGreater(out["args"]["bytes"], 20000); self.assertEqual(len(out["args"]["sha256"]), 12)
+        self.assertLess(len(json.dumps(out)), 2000)
+        self.assertEqual(tasks.load("t2")["args"]["drawing"], drawing)  # the task itself keeps what it was given
+
 
 class RunnerTests(TaskTestCase):
     """tasks.run, the task process's main, in this process: a fake kernel, fake tools, a short or expired limit."""

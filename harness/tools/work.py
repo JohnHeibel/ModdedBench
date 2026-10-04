@@ -20,7 +20,6 @@ from mbtools_gtnh import notes
 from mbtools_gtnh import plan
 from mbtools_gtnh.recipes_quests import _delta, _held
 
-STAGE = 4096
 REPORT_KEYS = ("size", "count", "skipped", "tileEntities")
 # mb_mine(vein=...) defaults: GregTech's ore-vein grid as this harness understands it, and what counts as its ore.
 # Veins centre on chunks whose |chunk coordinate| % period == offset and reach spanChunks chunks around that one,
@@ -30,17 +29,12 @@ VEIN_ITEMS = [{"id": "gregtech:gt.metaitem.03"}]
 LEFT = Path(__file__).resolve().parents[2] / ".state" / "mining-left.json"  # paused mining jobs with targets still known
 
 
-def _any_facing(params: dict) -> tuple[dict, dict | None]:
-    """A hand-written cell without meta means "this block, any facing". Meta 0 is a facing no furnace, chest or machine can be
-    placed with, so taken literally the builder would stand beside the cell for ever, unable to make what was asked.
-    That reading is a guess, so it comes back as a fact for the receipt (None when nothing was guessed)."""
-    cells = [c for c in params.get("cells") or [] if isinstance(c, dict) and "id" in c]
-    own = (params.get("settings") or {}).get("metadataMasks", {})
-    guessed = sorted({c["id"] for c in cells} - {c["id"] for c in cells if "meta" in c} - set(own))
-    if not guessed: return params, None
-    fact = {"ids": guessed, "meaning": "cells without meta accept any meta of these ids (settings.metadataMasks 0)",
-            "override": "give the cells meta, or settings.metadataMasks yourself"}
-    return {**params, "settings": {**(params.get("settings") or {}), "metadataMasks": {**dict.fromkeys(guessed, 0), **own}}}, fact
+def _any_meta(params: dict) -> dict | None:
+    """A cell without meta means "this block, any variant": meta 0 is a facing no furnace, chest or machine can be placed
+    with. The job reads each cell that way itself; this only says back which ids were read so (None when none were)."""
+    named = params.get("cells") or [(params.get("selection") or {}).get("block")]
+    ids = sorted({c["id"] for c in named if isinstance(c, dict) and "id" in c and "meta" not in c})
+    return {"ids": ids, "meaning": "cells without meta accept any meta of these ids; give a cell meta to demand a variant or a facing"} if ids else None
 
 
 def _wait(ticks: int) -> float:
@@ -55,32 +49,9 @@ def _with(receipt: Any, key: str, fact: Any) -> Any:
 
 
 def _build_call(method: str, params: dict) -> Any:
-    """Direct request for small plans; bounded staging (nav.build_stage) for large cell lists."""
+    """One request: a job's plan is at most 4096 cells (Java says so when it is more)."""
     timeout_s = _wait(params["timeoutTicks"]) if params.get("timeoutTicks") else None  # a preview has no budget: the default wait
-    if params.get("mode") == "builder":
-        params = {**params, "settings": {"restricted": True, **(params.get("settings") or {})}}
-    cells = params.get("cells")
-    if not isinstance(cells, list) or len(cells) <= STAGE:
-        return notes.tracked(method, timeout_s, **params)
-    spec = {key: value for key, value in params.items() if key != "cells"}
-    begun = kernel().call("nav.build_stage", operation="begin", spec=spec)
-    stage_id = begun.get("stageId") if isinstance(begun, dict) else None
-    if not isinstance(stage_id, str) or not stage_id:
-        raise ValueError("build_stage begin did not return stageId")
-    for start in range(0, len(cells), STAGE):
-        appended = kernel().call("nav.build_stage", operation="append", stageId=stage_id,
-                                 offset=start, cells=cells[start:start + STAGE])
-        if not isinstance(appended, dict) or appended.get("stageId") != stage_id or appended.get("count") != min(start + STAGE, len(cells)):
-            raise ValueError("build_stage append returned an invalid count")
-    finished = kernel().call("nav.build_stage", operation="finish", stageId=stage_id)
-    plan_id = finished.get("planId") if isinstance(finished, dict) else None
-    if not isinstance(plan_id, str) or not plan_id or finished.get("stageId") != stage_id or finished.get("count") != len(cells):
-        raise ValueError("build_stage finish did not return the complete plan")
-    forwarded = {"planId": plan_id}
-    for key in ("timeoutTicks", "allowBreak", "allowPlace", "overrideProtection", "stallTicks"):
-        if key in params:
-            forwarded[key] = params[key]
-    return notes.tracked(method, timeout_s, **forwarded)
+    return notes.tracked(method, timeout_s, **params)
 
 
 def _spec(result: dict, **overrides) -> dict:
@@ -518,43 +489,74 @@ def paused_mining(limit: int = 5) -> list[dict]:
 def mb_build_preview(cells: list[dict] | None = None, selection: dict | None = None,
                      origin: list[int] | None = None, replace_existing: bool = False,
                      override_protection: bool = False, allow_break: bool = False,
-                     allow_place: bool = False, mode: str = "blueprint",
-                     settings: dict | None = None, size: list[int] | None = None,
+                     allow_place: bool = False, size: list[int] | None = None,
                      drawing: dict | None = None) -> Any:
-    """Read-only fresh build diff and shared-inventory material allocation.
+    """Read-only: what mb_build would find and need for the same plan. Nothing in the world changes.
 
-    Provide exactly one of cells or selection. Cells use {pos,id,meta?,item?,
-    placement?,verify?:{pickedItem:itemSelector},clear?,replace?}. Selection uses inclusive bounds plus shape
-    fill|replace|walls|shell|clear|sphere|hsphere|cylinder|hcylinder (with axis), block and optional
-    replace selector. A cell without meta accepts any meta, which is what you want for blocks that face
-    the way they are placed (furnace, chest, machines); give meta to demand a variant or a facing.
-    The result's anyMeta lists the ids read that way (mb_build too).
-    Explicit registry IDs are required. Tile NBT is rejected rather than ignored.
-    drawing={origin:[x,y,z], layers, legend} is the third way to say what to build, in the format
-    mb_view returns: layers bottom first, rows north to south, one character per block west to
-    east, legend {char: {id, meta?}}; '.', ' ' and '+' are left alone. It is for bulk: floors, walls,
-    roofs, rows of plain blocks. Place what faces, connects or is configured with the precise tools.
-    Dictionary layers with y use that absolute world height, including subsets or gaps;
-    plain row lists use consecutive heights starting at origin. Survey layers without
-    numeric heights cannot be built. Preview does not load chunks, reserve inventory,
-    prove reachability or mutate the world.
-    Builder mode defaults to settings.restricted=true, confining edits to plan cells;
-    explicit false permits outside access excavation/scaffolding with terrain permissions.
+    It takes what mb_build takes (cells, selection or drawing; mb_build has the formats, the build
+    order and the 4096-cell cap) and answers with counts and the first few of each list:
+    total, correct, mismatched, matches; unloaded, protected, unsupported (no item places that
+    block: name one with the cell's item); conflicts (cells that want a block and hold another: the
+    build stops as occupied unless replace_existing); materials, one row per item {selector, needed,
+    allocated, missing} against what you carry now, and missingItems, their sum; differences, the
+    first 8 cells that do not match with what is there; steps, the build order as {stage, y, cells}.
+    anyMeta lists the ids read as "any variant". It does not load chunks, reserve inventory or prove
+    that a cell can be reached.
+    """
+    if drawing is not None:
+        if cells is not None or selection is not None: raise ValueError("provide exactly one of cells, selection or drawing")
+        cells, origin = plan.from_drawing(drawing)
+    if (cells is None) == (selection is None): raise ValueError("provide exactly one of cells or selection")
+    params = {"replaceExisting": replace_existing, "overrideProtection": override_protection,
+              "allowBreak": allow_break, "allowPlace": allow_place,
+              "cells" if cells is not None else "selection": cells if cells is not None else selection}
+    if origin is not None: params["origin"] = origin
+    if size is not None: params["size"] = size
+    return _with(_build_call("nav.build_preview", params), "anyMeta", _any_meta(params))
 
-    Build order. Every cell that must hold a block has a step: its stage, then its height. The
-    builder is shown only the cells of steps up to the current one and moves on when they all
-    match. With no stages named every cell is stage 0, so a plan goes up one layer at a time from
-    the bottom. Nothing, neither a plan block nor a scaffold, is placed in a cell whose step has
-    not come; cells that must be empty are not delayed. `steps` in the result lists the steps in
-    order as {stage, y, cells}.
-    Stages put one part of a plan after another. A drawing may carry stages: an ordered list of
-    strings of legend characters, first stage first (a character no stage names is in the first).
-    A cell may carry stage: n (0 is first). A selection is one stage. Inside a stage the order is
-    still bottom-up. Stage what must stand before something else is placed against or between
-    it; the builder only places blocks, so whether a piece joined its neighbours, and anything
-    set with a tool or in a GUI, is yours to check and do afterwards.
-    settings.buildInSteps=false is the old order (whatever is nearest; stages are then refused).
-    settings.clickInterval is the ticks from one click to the next: 5 unless set, down to 1.
+
+@tool(rung=1, coverage=["machine"])
+def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
+             origin: list[int] | None = None, replace_existing: bool = False,
+             override_protection: bool = False, timeout_ticks: int = 12000,
+             allow_break: bool = False, allow_place: bool = False,
+             size: list[int] | None = None, drawing: dict | None = None) -> Any:
+    """Build a plan of blocks and return the job's receipt. A build runs one way; nothing selects another.
+
+    What to build, said in exactly one of three ways. A job takes at most 4096 cells: a larger build
+    is several jobs.
+      cells: [{pos, id, meta?, item?, verify?: {pickedItem: itemSelector}, clear?, replace?, stage?}],
+        pos relative to origin when origin is given. clear: true asks for the cell to be empty.
+      selection: inclusive {min, max} with shape fill|replace|walls|shell|clear|sphere|hsphere|
+        cylinder|hcylinder (with axis), block {id, meta?} and an optional replace selector.
+      drawing: {origin: [x,y,z], layers, legend, stages?} in the format mb_view returns: layers
+        bottom first, rows north to south, one character per block west to east, legend
+        {char: {id, meta?}}; '.', ' ' and '+' are left alone. Dictionary layers with y use that
+        absolute height, including subsets or gaps; plain row lists use consecutive heights from origin.
+    Registry ids are required. A cell, legend entry or selection block without meta accepts any
+    variant of the block, which is what you want for blocks that face the way they are placed
+    (furnace, chest, machines); give meta to demand one. The receipt's anyMeta lists the ids read
+    that way. Tile NBT is refused, not ignored: the job only places blocks, so whether a piece
+    joined its neighbours, and anything set with a tool or in a GUI, is yours to check and do after.
+
+    What the job does. It walks, places from the inventory you carry with ordinary clicks, and digs
+    out the cells marked clear. Inside the plan it needs no permission. allow_place lets it put
+    scaffold blocks outside the plan, allow_break lets it dig outside the plan to get somewhere;
+    without them it touches plan cells only. replace_existing lets it dig out a plan cell that holds
+    a different block; a plan cell that already matches is never dug through. Tall grass, a snow
+    layer or water in a cell is not an occupant: the block goes in as it would by hand. Nothing is
+    checked against your inventory up front: the job builds what it can and stops when it runs out.
+    timeout_ticks is the job's budget in game ticks.
+
+    Build order. Every cell that must hold a block has a step: its stage, then its height. The job
+    works only the cells of steps up to the current one and moves on when they all match. With no
+    stages named every cell is stage 0, so a plan goes up one layer at a time from the bottom.
+    Nothing, neither a plan block nor a scaffold, is placed in a cell whose step has not come; cells
+    that must be empty are not delayed. Stages put one part of a plan after another: a drawing may
+    carry stages, an ordered list of strings of legend characters, first stage first (a character
+    no stage names is in the first); a cell may carry stage: n (0 is first); a selection is one
+    stage. Inside a stage the order is still bottom-up. Stage what must stand before something else
+    is placed against or between it.
 
     Example, no stages: a closed room 5 x 5 and 4 high.
       {"origin": [100, 64, 200], "legend": {"#": {"id": "minecraft:cobblestone"}},
@@ -571,79 +573,47 @@ def mb_build_preview(cells: list[dict] | None = None, selection: dict | None = N
        "layers": [["#####"], ["AjjjB"]]}
       steps: stage 0 y64 base (5), stage 1 y65 the two ends (2), stage 2 y65 the line (3).
       The line is placed last, so both ends stand when its pieces go in.
+
+    Receipt. state succeeded (reason schematic_verified) means every cell was looked at again and
+    matches. Every receipt has jobId, placed, removed, left {count, first: up to 8 cells still
+    wrong}, step {stage, y, index, of, left, first} (where the order stands: the index-th of `of`
+    steps, `left` cells of it and of earlier steps still wrong), symptoms (what happened to you, as
+    in mb_mine), and labels (the region notes of yours the build touches).
+    A job that ends any other way adds stopped {reason, pos, step: {stage, y}}: one reason, and the
+    one cell it is about (pos is absent only when no cell is to blame). The reasons:
+      occupied           pos wants a block and holds a different one, and replace_existing is false.
+                         A plan that starts that way is refused before any input (state failed), with
+                         `occupied` {count, first: up to 8}.
+      missing_materials  nothing you carry goes into any cell the order allows now; pos is one such
+                         cell and `missing` lists {selector, needed, allocated, missing}.
+      attempt_limit      8 clicks the game took into pos without the block appearing there.
+      mismatch           what is at pos, or what the click would make there, is another variant than
+                         the plan's (a facing): place it with the precise tools, or leave its meta out.
+      no_stance          no standing spot from which a face to place pos against is in view; often
+                         there is nothing to place it against yet (stage it later, or allow_place).
+      no_route           everything reachable was searched and none of it is a place to work pos from.
+      stalled            200 ticks (the stallTicks setting) with nothing placed, cleared or pending and
+                         no new ground stood on, and neither of the two above explains it.
+      timeout            timeout_ticks ran out.
+      requested          mb_build_pause.
+    A job can also end as any job does: player_died, or cancelled (superseded, interrupted,
+    gui_opened, world_or_player_changed), or with the game's own error text as the reason.
+    A stop is state paused, or failed (error code build_failed, the receipt inside) when it stalled
+    or timed out with nothing done this session or never started. Either way mb_work_resume(jobId)
+    continues it once what the reason names is dealt with; a resumed or repeated job reads the
+    world, so what is built is not built again and nothing of a later step was begun.
+    A finished or failed build is journaled as an auto world note at its location.
     """
     if drawing is not None:
         if cells is not None or selection is not None: raise ValueError("provide exactly one of cells, selection or drawing")
         cells, origin = plan.from_drawing(drawing)
     if (cells is None) == (selection is None): raise ValueError("provide exactly one of cells or selection")
     params = {"replaceExisting": replace_existing, "overrideProtection": override_protection,
-              "allowBreak": allow_break, "allowPlace": allow_place, "mode": mode,
+              "allowBreak": allow_break, "allowPlace": allow_place, "timeoutTicks": timeout_ticks,
               "cells" if cells is not None else "selection": cells if cells is not None else selection}
     if origin is not None: params["origin"] = origin
-    if settings is not None: params["settings"] = settings
     if size is not None: params["size"] = size
-    params, loose = _any_facing(params)
-    return _with(_build_call("nav.build_preview", params), "anyMeta", loose)
-
-
-@tool(rung=1, coverage=["machine"])
-def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
-             origin: list[int] | None = None, replace_existing: bool = False,
-             override_protection: bool = False, timeout_ticks: int = 12000,
-             allow_break: bool = False,
-             allow_place: bool = False, mode: str = "blueprint",
-             settings: dict | None = None, size: list[int] | None = None,
-             drawing: dict | None = None, stall_ticks: int | None = None) -> Any:
-    """Execute a bounded, explicit-cell or selection build and return its receipt.
-
-    Preview first. Native preflight checks loaded cells, conflicts, protection,
-    supported placement items and a shared inventory allocation. Placement and
-    clearing use ordinary player input and default to edits inside the plan only.
-    Builder mode can opt into outside scaffolding/access excavation with
-    settings.restricted=false and terrain permissions. Completion means a fresh
-    comparison of selected cells against the plan's predicates.
-    Tile configuration, multiblock formation and machine state require separate
-    normal-interaction adapters. Retain jobId for status or resume. A finished or
-    failed build is journaled as an auto world note at its location. drawing: see mb_build_preview.
-    The receipt's `labels` names the region notes of yours that the build touches.
-    stall_ticks (default the stallTicks setting, 200; 0 off): that many ticks with no cell placed,
-    cleared or pending and no new ground stood on end it as stalled_no_progress_near_x,y,z, paused
-    if this session placed something, else failed (a cell nothing can be placed against, a standing
-    cell it cannot leave). Holding a break on one block that long counts as stalled too.
-    A plan cell that already matches is never dug through to get somewhere, replace_existing or not;
-    where finished work is the only way to the rest, the job ends stalled as above.
-    A cell that wants a block and holds a different solid one is occupied: without replace_existing
-    the job does not start (reason occupied, the cells under `occupied` {count, first}), and stops
-    the same way if one turns up later and nothing else can be done. Tall grass, a snow layer or
-    water in a cell is not an occupant: the block goes in as it would by hand. Cells to be cleared
-    never need replace_existing. A cell clicked into several times without the block appearing
-    ends the job as attempt_limit. `stopped` {reason, pos} names the cell a stop is about.
-    A failed build is error code build_failed; every way a job ends answers with its receipt.
-    Build order, stages and the two examples: mb_build_preview. The receipt's `step` says where
-    the order stands: {stage, y, index, of, left, first}, the index-th of `of` steps, `left` cells
-    of it (and of earlier steps) still wrong, `first` one of them. A step that cannot be finished
-    ends the job as any stall does, with that step in the receipt: nothing of a later step was
-    begun, and the job does not skip ahead. A resumed or repeated job reads its step from the
-    world, so what is already built is not built again.
-    noVantage (present when not empty, first 64): unfinished cells that, when last looked at, had no
-    standing spot in the world as it is from which a face to place them against is in view.
-    pathSearch (present when the job's last path search found no way): no_route_to_goal means every
-    place reachable from where you stood was searched and none is a standing spot for a cell left.
-    symptoms: what happened to you during the job, as in mb_mine.
-    """
-    if drawing is not None:
-        if cells is not None or selection is not None: raise ValueError("provide exactly one of cells, selection or drawing")
-        cells, origin = plan.from_drawing(drawing)
-    if (cells is None) == (selection is None): raise ValueError("provide exactly one of cells or selection")
-    params = {"replaceExisting": replace_existing, "overrideProtection": override_protection,
-              "allowBreak": allow_break, "allowPlace": allow_place, "mode": mode, "timeoutTicks": timeout_ticks,
-              "cells" if cells is not None else "selection": cells if cells is not None else selection}
-    if origin is not None: params["origin"] = origin
-    if settings is not None: params["settings"] = settings
-    if size is not None: params["size"] = size
-    if stall_ticks is not None: params["stallTicks"] = stall_ticks
-    params, loose = _any_facing(params)
-    return _with(_labelled(_build_call("nav.build", params), params), "anyMeta", loose)
+    return _with(_labelled(_build_call("nav.build", params), params), "anyMeta", _any_meta(params))
 
 
 def _labelled(receipt: Any, params: dict) -> Any:
@@ -675,16 +645,15 @@ def mb_schematic_import(path: str, origin: list[int] | None = None, include_air:
 def mb_schematic_build(path: str, origin: list[int] | None = None, include_air: bool = False,
                        preview: bool = True, timeout_ticks: int = 12000,
                        allow_break: bool | None = None, allow_place: bool | None = None,
-                       replace_existing: bool | None = None, override_protection: bool | None = None,
-                       settings: dict | None = None) -> Any:
-    """Import a schematic, then preview (default) or build it with the strict build contract.
+                       replace_existing: bool | None = None, override_protection: bool | None = None) -> Any:
+    """Import a schematic, then preview (default) or build it as mb_build does (at most 4096 cells a job).
 
     Set preview=false only after reviewing the material/conflict preview. The nested plan of the
     import result is forwarded; omitted options keep Java's defaults, explicit ones override them.
     """
     imported = mb_schematic_import(path, origin, include_air)
     spec = _spec(imported, allowBreak=allow_break, allowPlace=allow_place, replaceExisting=replace_existing,
-                 overrideProtection=override_protection, settings=settings, timeoutTicks=None if preview else timeout_ticks)
+                 overrideProtection=override_protection, timeoutTicks=None if preview else timeout_ticks)
     result = _build_call("nav.build_preview" if preview else "nav.build", spec)
     return {"imported": {k: imported.get(k) for k in REPORT_KEYS if k in imported}, "request": _echo(spec),
             "preview" if preview else "result": result}
@@ -694,8 +663,7 @@ def mb_schematic_build(path: str, origin: list[int] | None = None, include_air: 
 def mb_copy(bounds: dict, origin: list[int] | None = None, include_air: bool = False,
             at: list[int] | None = None, preview: bool = False, build: bool = False,
             allow_break: bool = False, allow_place: bool = False, replace_existing: bool = False,
-            override_protection: bool = False, settings: dict | None = None,
-            timeout_ticks: int = 12000) -> Any:
+            override_protection: bool = False, timeout_ticks: int = 12000) -> Any:
     """Copy loaded blocks inside inclusive bounds {min,max} into a build plan; optionally rebuild it elsewhere.
 
     Java returns {plan:{cells,origin,size},size,count,skipped,tileEntities} with cell positions
@@ -712,7 +680,7 @@ def mb_copy(bounds: dict, origin: list[int] | None = None, include_air: bool = F
     if not (preview or build):
         return plan
     spec = _spec(plan, origin=at, allowBreak=allow_break, allowPlace=allow_place, replaceExisting=replace_existing,
-                 overrideProtection=override_protection, settings=settings, timeoutTicks=timeout_ticks if build else None)
+                 overrideProtection=override_protection, timeoutTicks=timeout_ticks if build else None)
     result = _build_call("nav.build" if build else "nav.build_preview", spec)
     return {"copied": {k: plan.get(k) for k in REPORT_KEYS if k in plan}, "request": _echo(spec),
             "result" if build else "preview": result}
@@ -782,7 +750,7 @@ def _untranslated(name: str | None) -> bool:
 
 @tool(rung=1, lane="control", coverage=["machine"])
 def mb_build_pause() -> Any:
-    """Pause active build work and return its terminal receipt for this request."""
+    """Pause the active build and return its receipt (stopped.reason requested); mb_work_resume continues it."""
     return kernel().call("nav.build_pause")
 
 
@@ -799,8 +767,8 @@ def mb_work_status(job_id: str) -> Any:
     Active execution is also visible in nav.status. Job identity and
     checkpoints survive a client restart; active execution does not. Resume performs
     fresh observation before continuing and never assumes an in-flight effect failed.
-    The complete plan and per-click ledger stay on disk; large collections are
-    reported as {omitted: true, count: N} to keep million-cell jobs inspectable.
+    The complete plan and per-click ledger stay on disk; large collections are reported as
+    {omitted: true, count: N}.
     """
     return kernel().call("nav.work_status", jobId=job_id)
 
@@ -814,8 +782,8 @@ def mb_work_resume(job_id: str, options: dict | None = None) -> Any:
     as it is, and returns at once with its outcome if it already finished. resume=N steps it.
 
     Options may supply a fresh timeoutTicks (the job's own budget when not given) and explicit per-attempt permissions,
-    including overrideProtection, a stallTicks for this session, and retry: true to try
-    again the mining targets earlier sessions found unreachable (skipped otherwise).
+    including overrideProtection, a stallTicks for this session, and (mining) retry: true to
+    try again the targets earlier sessions found unreachable (skipped otherwise).
     Native recovery re-observes world and inventory; already delivered placement/mining
     input is not blindly replayed.
     """

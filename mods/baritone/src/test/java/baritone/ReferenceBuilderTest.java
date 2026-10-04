@@ -21,12 +21,6 @@ public class ReferenceBuilderTest {
         net.minecraft.init.Bootstrap.func_151354_b();
     }
     @Before public void defaults(){Baritone.settings().allSettings.forEach(s->s.reset());}
-    @Test public void nativePlacementGoalRetainsSourceGeometryAndHeuristic(){
-        var source=new BuilderProcess.GoalAdjacent(new BlockPos(3,70,4),new BlockPos(3,69,4),false);
-        var goal=new NativePlacementGoal(source,Set.of(new BlockPos(3,70,3),new BlockPos(3,69,4)));
-        assertTrue(goal.isInGoal(3,70,3));assertFalse(goal.isInGoal(2,70,4));
-        assertFalse(goal.isInGoal(3,69,4));assertEquals(source.heuristic(0,65,0),goal.heuristic(0,65,0),0);
-    }
     @Test public void futureBuildFeetAndPlayerFeetShareSlabConvention(){
         java.util.function.Predicate<BlockPos> lowerSlab=p->p.getY()==64;
         assertEquals(new BetterBlockPos(-2,65,-4),NavigationCoordinates.feet(-1.5,64.5,-3.5,lowerSlab));
@@ -96,23 +90,20 @@ public class ReferenceBuilderTest {
         var stack=new net.minecraft.item.ItemStack(net.minecraft.init.Blocks.stone_slab,1,0);
         var expected=StackIdentity.capture(stack);
         var desired=IBlockState.of(net.minecraft.init.Blocks.stone_slab,8);
-        assertTrue(LegacyStateProperties.hasOrientation(desired.getBlock()));
-        assertFalse(LegacyStateProperties.hasOrientation(net.minecraft.init.Blocks.double_stone_slab));
         assertFalse(LegacyStateProperties.same(IBlockState.of(desired.getBlock(),0),desired,true,List.of()));
         var lower=IBlockState.of(net.minecraft.init.Blocks.stone_slab,0).withPlacementItem(stack);
         var upper=desired.withPlacementItem(stack);
         var wrongStack=stack.copy();wrongStack.setItemDamage(1);
         var wrongVariant=IBlockState.of(net.minecraft.init.Blocks.stone_slab,1).withPlacementItem(wrongStack).asApproximateMaterial();
         var method=BuilderProcess.class.getDeclaredMethod("valid",IBlockState.class,IBlockState.class,boolean.class,
-            BuilderProcess.StateValidator.class,java.util.function.BiPredicate.class,java.util.function.Predicate.class,java.util.function.BiPredicate.class);
+            BuilderProcess.StateValidator.class,java.util.function.BiPredicate.class,java.util.function.BiPredicate.class);
         method.setAccessible(true);var builder=allocate(BuilderProcess.class);
         BuilderProcess.StateValidator validator=(current,wanted,item)->expected.equals(current.placementIdentity());
         java.util.function.BiPredicate<IBlockState,IBlockState> material=(current,wanted)->current.getBlock()==wanted.getBlock();
-        java.util.function.Predicate<IBlockState> deferred=state->false;
-        assertEquals(true,method.invoke(builder,lower.withPlacementItem(stack).asApproximateMaterial(),desired,true,validator,null,deferred,material));
-        assertEquals(false,method.invoke(builder,wrongVariant,desired,true,validator,null,deferred,material));
-        assertEquals(false,method.invoke(builder,lower,desired,true,validator,null,deferred,material));
-        assertEquals(true,method.invoke(builder,upper,desired,true,validator,null,deferred,material));
+        assertEquals(true,method.invoke(builder,lower.withPlacementItem(stack).asApproximateMaterial(),desired,true,validator,null,material));
+        assertEquals(false,method.invoke(builder,wrongVariant,desired,true,validator,null,material));
+        assertEquals(false,method.invoke(builder,lower,desired,true,validator,null,material));
+        assertEquals(true,method.invoke(builder,upper,desired,true,validator,null,material));
     }
     @Test public void sourcePlacementGoalsExcludeTheBlockAndItsSupport(){
         var goal=new BuilderProcess.GoalAdjacent(new BlockPos(-7,65,8),new BlockPos(-7,64,8),false);

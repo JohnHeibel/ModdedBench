@@ -18,10 +18,9 @@ public final class BuildSteps {
     public static final int STAGES=256;
     private final int[] keys,sizes,index;
     private final Map<BlockPos,Integer> at;
-    /** cells in the order the job walks them each tick; `on` false is the old order: no steps, every cell shown. */
-    public BuildSteps(List<Cell> cells,boolean on) {
+    /** cells in the order the job walks them each tick. */
+    public BuildSteps(List<Cell> cells) {
         index=new int[cells.size()];Arrays.fill(index,-1);
-        if(!on){keys=sizes=new int[0];at=Map.of();return;}
         keys=cells.stream().filter(c->!c.clear()).mapToInt(BuildSteps::key).distinct().sorted().toArray();sizes=new int[keys.length];
         Map<BlockPos,Integer> steps=new HashMap<>();
         for(int i=0;i<index.length;i++){
@@ -47,6 +46,12 @@ public final class BuildSteps {
     public <T> Map<BlockPos,T> schematic(Map<BlockPos,T> desired,int current) {
         if(current>=keys.length)return desired;
         Map<BlockPos,T> shown=new HashMap<>(desired);shown.keySet().removeIf(p->!visible(p,current));return Map.copyOf(shown);
+    }
+    /** {stage, y} of the step `p` belongs to; of step `current` for no cell, or one that has no step. */
+    public Map<String,Object> where(BlockPos p,int current) {
+        if(keys.length==0)return Map.of();
+        Integer own=p==null?null:at.get(p);int step=Math.min(own!=null?own:current,keys.length-1);
+        return Map.of("stage",stage(step),"y",y(step));
     }
     /** Preview: every step in order with the number of cells it holds. */
     public List<Map<String,Object>> list() {

@@ -115,9 +115,9 @@ queries are `obs.scan`, `obs.terrain`, `obs.fluid` and `obs.tools`.
 | `mb_process` | action | Runs one upstream process: `goal`, `explore`, `get_to_block`, `farm`. |
 | `mb_mine` | action | Quantity mining by block/item selectors in bounds or a radius; success is measured inventory gain. |
 | `mb_scan` | read | Paged scan of loaded blocks by selector (`obs.scan`). |
-| `mb_build_preview` | read | Fresh diff of a plan against the world plus material allocation, and the build order as `steps`. |
-| `mb_build` | action | Executes explicit cells, a selection or a drawing with the strict per-cell contract, one step (stage, then layer) at a time; the receipt's `step` names where it stands or stopped. |
-| `mb_build_pause` | control | Pauses active build work; the `jobId` stays resumable. |
+| `mb_build_preview` | read | Fresh diff of a plan against the world as counts and the first few of each list, the material allocation, and the build order as `steps`. |
+| `mb_build` | action | Builds explicit cells, a selection or a drawing (at most 4,096 cells a job) one step (stage, then layer) at a time. There is one behaviour: no mode, no settings. A job that does not finish stops with one reason and one cell (below). |
+| `mb_build_pause` | control | Pauses active build work (`stopped.reason: requested`); the `jobId` stays resumable. |
 | `mb_build_materials` | read | Placeable states currently in inventory. |
 | `mb_schematic_import` | read | Reads an MCEdit `.schematic` or a canonical JSON plan inside the game's `schematics/` directory into `{plan:{cells,origin,size},size,count,skipped,tileEntities}`. Sponge `.schem` and Litematica are not read. |
 | `mb_schematic_build` | read/action | Imports, then previews (default) or builds the nested `plan`. |
@@ -129,8 +129,35 @@ queries are `obs.scan`, `obs.terrain`, `obs.fluid` and `obs.tools`.
 
 Work completions and failures write a small `auto`-tagged note at the job's
 location, so the next session finds where things stopped. Selectors,
-net-gain completion, the two build modes, their settings and limits are in
+net-gain completion, the build contract and its limits are in
 [BARITONE_PORT.md](BARITONE_PORT.md).
+
+A build receipt has `placed`, `removed`, `left {count, first}` (cells still
+wrong, the first 8), `step {stage, y, index, of, left, first}` (where the build
+order stands) and `cost`. One that did not succeed adds
+`stopped {reason, pos, step}`; `pos` is absent only when no cell is to blame.
+The reasons:
+
+| `stopped.reason` | What it says | Comes with |
+| --- | --- | --- |
+| `occupied` | `pos` wants a block and holds a different one, and `replace_existing` is false. A plan that starts that way is refused before any input. | `occupied {count, first}` |
+| `missing_materials` | Nothing carried goes into any cell the order allows now. Nothing is checked up front: the job builds what it can first. | `missing [{selector, needed, allocated, missing}]` |
+| `attempt_limit` | Eight clicks the game took into `pos` without the block appearing. | |
+| `mismatch` | What is at `pos`, or what the click would make there, is another variant than the plan's (a facing). | |
+| `no_stance` | No standing spot from which a face to place `pos` against is in view. | |
+| `no_route` | Everything reachable was searched and none of it is a place to work `pos` from. | |
+| `stalled` | The stall watchdog (`stallTicks`, 200) fired and neither of the two above explains it. | |
+| `timeout` | `timeout_ticks` ran out. | |
+| `requested` | `mb_build_pause`. | |
+
+Endings every job shares are not build reasons and keep their own words:
+`player_died`; the cancellations `superseded`, `interrupted`,
+`request_deadline_elapsed`, `gui_opened`, `world_or_player_changed`,
+`start_failed`; and a game exception as `<Class>: message`. Every stop is
+resumable with `mb_work_resume`.
+
+`mb_task` says a task's `args` back whole only when they are small; a large
+plan comes back as `{omitted, bytes, sha256, keys}`.
 
 `mb_fight(override_protection=True)` lets one fight block with a sword (or draw
 a bow) inside a protected region: item use whose rays reach no block, which
@@ -295,7 +322,7 @@ result shapes did not change.
 
 | Old | New |
 | --- | --- |
-| raw `baritone.goto`, `mine_block`, `place_block`, `mine`, `build`, `resume`, `build_preview`, `build_stage`, `build_pause`, `build_materials`, `follow`, `process`, `route`, `cache`, `settings`, `status`, `work_status`, `schematic_import`, `copy` | `nav.<same name>` |
+| raw `baritone.goto`, `mine_block`, `place_block`, `mine`, `build`, `resume`, `build_preview`, `build_pause`, `build_materials`, `follow`, `process`, `route`, `cache`, `settings`, `status`, `work_status`, `schematic_import`, `copy` | `nav.<same name>` |
 | raw `baritone.scan`, `baritone.terrain`, `baritone.fluid`, `baritone.tools` | `obs.scan`, `obs.terrain`, `obs.fluid`, `obs.tools` |
 | raw `inv.find` | `obs.find` |
 | raw `keys.list` | `obs.keys` |

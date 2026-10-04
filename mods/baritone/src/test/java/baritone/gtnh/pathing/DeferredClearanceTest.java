@@ -10,7 +10,7 @@ import static org.junit.Assert.*;
 import static baritone.gtnh.pathing.WorkSpec.*;
 
 public class DeferredClearanceTest {
-    private Cell cell(int x,boolean clear){return new Cell(new BlockPos(x,64,0),clear?"minecraft:air":"minecraft:stone",0,clear,Map.of(),Map.of(),Map.of(),Map.of());}
+    private Cell cell(int x,boolean clear){return new Cell(new BlockPos(x,64,0),clear?"minecraft:air":"minecraft:stone",0,clear);}
     @Test public void occupiedAndUnknownClearanceRemainInConstruction(){
         var solid=cell(0,false);var air=cell(1,true);var obstruction=cell(2,true);var unknown=cell(3,true);
         var cells=List.of(solid,air,obstruction,unknown);

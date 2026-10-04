@@ -44,41 +44,40 @@ public final class WorkSpec {
         public boolean contains(BlockPos p){return p.getX()>=min.getX()&&p.getX()<=max.getX()&&p.getY()>=min.getY()&&p.getY()<=max.getY()&&p.getZ()>=min.getZ()&&p.getZ()<=max.getZ();}
     }
     public static Bounds bounds(Map<String,Object> p) {return new Bounds(pos(p.get("min")),pos(p.get("max")));}
-    /** stage: the part of the plan this block belongs to, 0 first (see BuildSteps). */
-    public record Cell(BlockPos pos,String id,int meta,boolean clear,Map<String,Object> item,Map<String,Object> placement,Map<String,Object> replace,Map<String,Object> verify,int stage) {
-        public Cell(BlockPos pos,String id,int meta,boolean clear,Map<String,Object> item,Map<String,Object> placement,Map<String,Object> replace,Map<String,Object> verify){this(pos,id,meta,clear,item,placement,replace,verify,0);}
-        public Cell(BlockPos pos,String id,int meta,boolean clear,Map<String,Object> item,Map<String,Object> placement,Map<String,Object> replace){this(pos,id,meta,clear,item,placement,replace,Map.of(),0);}
+    /**
+     * The most cells one construction job takes. The job looks at every cell of its plan on every game tick (is it
+     * loaded, does it match, what stands in it), a few world reads each; at this many that walk is of the order of a
+     * millisecond, which is the whole of what a job may cost the game thread. A larger build is several jobs.
+     */
+    public static final int CELLS=4096;
+    /** The largest box a selection is cut from (a shell or a sphere keeps few of its cells; CELLS bounds what is kept). */
+    public static final int SELECTION=262144;
+    /**
+     * stage: the part of the plan this block belongs to, 0 first (see BuildSteps). anyMeta: the cell named no meta,
+     * so any variant of the block satisfies it (a block that faces the way it is placed has no meta to ask for).
+     */
+    public record Cell(BlockPos pos,String id,int meta,boolean clear,Map<String,Object> item,Map<String,Object> replace,Map<String,Object> verify,int stage,boolean anyMeta) {
+        public Cell(BlockPos pos,String id,int meta,boolean clear){this(pos,id,meta,clear,Map.of(),Map.of(),Map.of(),0,false);}
     }
     public static void verification(Map<String,Object> verify) {
         fields(verify,Set.of("pickedItem"));
         if(verify.containsKey("pickedItem")){var item=child(verify,"pickedItem");fields(item,Set.of("id","meta","nbt","ore"));if(!item.containsKey("id")&&!item.containsKey("ore"))throw new IllegalArgumentException("pickedItem needs id or ore");integer(item,"meta",0,0,32767);}
     }
-    public static void placement(Map<String,Object> p) {
-        fields(p,Set.of("face","hit","yaw","pitch","verifyAfterPlacement"));
-        if(p.containsKey("face"))integer(p,"face",0,0,5);
-        number(p,"yaw",0,-360000,360000);number(p,"pitch",0,-90,90);bool(p,"verifyAfterPlacement",false);
-        if(p.containsKey("hit")){var hit=list(p.get("hit"));if(hit.size()!=3)throw new IllegalArgumentException("hit needs three coordinates");for(Object value:hit)number(Map.of("hit",value),"hit",0,-16,16);}
-    }
     public static List<Cell> cells(Map<String,Object> spec) {
-        fields(spec,Set.of("name","cells","selection","origin","size","mode","settings","replaceExisting","timeoutTicks","overrideProtection","allowBreak","allowPlace","jobId","_timeout_ms"));
+        // stallTicks and retry are what a resume may add to any job's saved spec (BaritoneNavigation.resume).
+        fields(spec,Set.of("name","cells","selection","origin","size","replaceExisting","timeoutTicks","overrideProtection","allowBreak","allowPlace","jobId","stallTicks","retry","_timeout_ms"));
         for(String key:List.of("replaceExisting","overrideProtection","allowBreak","allowPlace"))bool(spec,key,false);
         integer(spec,"timeoutTicks",12000,1,72000);
-        String mode=string(spec,"mode","blueprint");if(!Set.of("blueprint","builder").contains(mode))throw new IllegalArgumentException("unknown construction mode");
-        ConstructionSettings settings=new ConstructionSettings(child(spec,"settings"));
-        // Metadata masks say which variants satisfy a cell, which a strict blueprint needs too (any-facing furnaces); the rest tune the builder.
-        // The build order and the click interval say how the same strict plan is laid, so a blueprint takes them as well.
-        if(mode.equals("blueprint")&&!Set.of("metadataMasks","buildInSteps","clickInterval").containsAll(settings.values.keySet()))throw new IllegalArgumentException("construction settings require mode builder");
-        int limit=mode.equals("builder")?1048576:16384;
         if(spec.containsKey("size")){List<?> size=list(spec.get("size"));if(size.size()!=3)throw new IllegalArgumentException("size needs three dimensions");for(int i=0;i<3;i++)integer(Map.of("size",size.get(i)),"size",1,1,i==1?256:30000000);}
         List<Map<String,Object>> entries=new ArrayList<>();
         if(spec.containsKey("cells")==spec.containsKey("selection"))throw new IllegalArgumentException("exactly one of cells or selection required");
         if(spec.containsKey("cells")) {
-            List<?> cells=list(spec.get("cells"));if(cells.isEmpty()||cells.size()>limit)throw new IllegalArgumentException("cells must contain 1.."+limit+" entries");
+            List<?> cells=list(spec.get("cells"));if(cells.isEmpty()||cells.size()>CELLS)throw new IllegalArgumentException("cells must contain 1.."+CELLS+" entries; a larger build is several jobs");
             for(Object entry:cells)entries.add(object(entry));
         } else {
             Map<String,Object> sel=object(spec.get("selection"));Bounds bounds=bounds(sel);
             fields(sel,Set.of("min","max","shape","block","replace","axis"));
-            if(bounds.volume()>limit)throw new IllegalArgumentException("selection volume exceeds "+limit);
+            if(bounds.volume()>SELECTION)throw new IllegalArgumentException("selection volume exceeds "+SELECTION);
             String shape=string(sel,"shape","fill"),axis=string(sel,"axis","y");if(!Set.of("fill","replace","walls","shell","clear","sphere","hsphere","cylinder","hcylinder").contains(shape))throw new IllegalArgumentException("unknown selection shape");
             if(!Set.of("x","y","z").contains(axis))throw new IllegalArgumentException("invalid cylinder axis");
             if(shape.equals("replace")&&!sel.containsKey("replace"))throw new IllegalArgumentException("replace selector required");
@@ -88,14 +87,14 @@ public final class WorkSpec {
                 if(shape.equals("walls")&&!sides||shape.equals("shell")&&!sides&&p.getY()!=bounds.min.getY()&&p.getY()!=bounds.max.getY())continue;
                 if(Set.of("sphere","hsphere","cylinder","hcylinder").contains(shape)&&!ConstructionMask.contains(shape,axis,p.getX()-bounds.min.getX(),p.getY()-bounds.min.getY(),p.getZ()-bounds.min.getZ(),bounds.max.getX()-bounds.min.getX()+1,bounds.max.getY()-bounds.min.getY()+1,bounds.max.getZ()-bounds.min.getZ()+1))continue;
                 Map<String,Object> e=new LinkedHashMap<>(block);e.put("pos",point(p));if(sel.containsKey("replace"))e.put("replace",sel.get("replace"));entries.add(e);
+                if(entries.size()>CELLS)throw new IllegalArgumentException("selection holds more than "+CELLS+" cells; a larger build is several jobs");
             }
         }
         BlockPos origin=spec.containsKey("origin")?pos(spec.get("origin")):new BlockPos(0,0,0);
         Set<BlockPos> seen=new HashSet<>();List<Cell> cells=new ArrayList<>();
         for(Map<String,Object> e:entries) {
             if(e.containsKey("tileNbt")||e.containsKey("nbt"))throw new IllegalArgumentException("tile state requires an explicit normal-interaction adapter; do not silently discard schematic NBT");
-            fields(e,Set.of("pos","id","meta","clear","item","placement","replace","verify","stage","tile","name"));  // tile, name: what nav.copy saw, so a copy builds as it is; never read
-            placement(child(e,"placement"));
+            fields(e,Set.of("pos","id","meta","clear","item","replace","verify","stage","tile","name"));  // tile, name: what nav.copy saw, so a copy builds as it is; never read
             verification(child(e,"verify"));
             BlockPos local=pos(e.get("pos"));long x=(long)local.getX()+origin.getX(),y=(long)local.getY()+origin.getY(),z=(long)local.getZ()+origin.getZ();
             if(Math.abs(x)>30000000||y<1||y>254||Math.abs(z)>30000000)throw new IllegalArgumentException("translated cell outside world bounds");
@@ -104,8 +103,7 @@ public final class WorkSpec {
             if(clear&&!child(e,"verify").isEmpty())throw new IllegalArgumentException("clear cells cannot require a picked item");
             int stage=integer(e,"stage",0,0,BuildSteps.STAGES-1);
             if(stage>0&&clear)throw new IllegalArgumentException("a clear cell has no stage: emptying is never delayed");
-            if(stage>0&&!settings.steps())throw new IllegalArgumentException("stages need the stepped build order: settings.buildInSteps is off (or buildInLayers is on)");
-            cells.add(new Cell(p,id,integer(e,"meta",0,0,15),clear,child(e,"item"),child(e,"placement"),child(e,"replace"),child(e,"verify"),stage));
+            cells.add(new Cell(p,id,integer(e,"meta",0,0,15),clear,child(e,"item"),child(e,"replace"),child(e,"verify"),stage,!clear&&!e.containsKey("meta")));
         }
         cells.sort(Comparator.comparingInt((Cell c)->c.clear?0:1).thenComparingInt(c->c.clear?-c.pos.getY():c.pos.getY()).thenComparingInt(c->c.pos.getX()).thenComparingInt(c->c.pos.getZ()));
         return List.copyOf(cells);

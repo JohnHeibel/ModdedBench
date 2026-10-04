@@ -1239,13 +1239,13 @@ and list what is loaded, with load errors.
 | `mb_settings` | Read, atomically set, or reset pinned source settings while the source engine is idle |
 | `mb_cache` | Inspect or administer the source terrain cache; cached cells are approximate evidence |
 | `mb_mine` | Run bounded native quantity mining and return its terminal receipt |
-| `mb_build_preview` | Read-only fresh build diff and shared-inventory material allocation |
-| `mb_build` | Execute a bounded, explicit-cell or selection build and return its receipt |
+| `mb_build_preview` | Read-only: what mb_build would find and need for the same plan |
+| `mb_build` | Build a plan of blocks and return the job's receipt |
 | `mb_schematic_import` | Import a file under the game's schematics/ directory without building: MCEdit .schematic or a canonical JSON plan |
-| `mb_schematic_build` | Import a schematic, then preview (default) or build it with the strict build contract |
+| `mb_schematic_build` | Import a schematic, then preview (default) or build it as mb_build does (at most 4096 cells a job) |
 | `mb_copy` | Copy loaded blocks inside inclusive bounds {min,max} into a build plan; optionally rebuild it elsewhere |
 | `mb_scan` | Scan loaded blocks in bounds {min:[x,y,z],max:[x,y,z]} for selectors {id, meta?} / {ore:"oreIron"} / {item:{...}} |
-| `mb_build_pause` | Pause active build work and return its terminal receipt for this request |
+| `mb_build_pause` | Pause the active build and return its receipt (stopped.reason requested); mb_work_resume continues it |
 | `mb_build_materials` | Read approximate placeable states in current inventory without changing work |
 | `mb_work_status` | Read a bounded durable mining/build summary, progress and last receipt |
 | `mb_work_resume` | Resume a durable blocked/interrupted mining or build job, or wait again on a suspended one |

@@ -13,7 +13,7 @@ without it; only `nav.*` and `obs.scan`/`terrain`/`fluid`/`tools` need it.
 | `src/upstream/java` | 156 upstream files, adapted in place. `UPSTREAM_SOURCES.json` records each file's original path and SHA-256; the Gradle build verifies them. Modified files carry a notice. The hash pins provenance, not text identity after adaptation. |
 | `src/main/java/baritone/compat` | Version boundary: coordinates, vectors, block state as registry id plus metadata, loaded-chunk index, native placement, inventory swaps, events, rendering. No fake `net.minecraft` classes. |
 | `src/main/java/baritone/gtnh` | ModdedBench side: `BaritoneNavigation` (the `Navigation` implementation the client registers), job wrappers (`Reference*Job`, `MiningProcess`, `ReferenceConstructionProcess`), the validated build plan (`ConstructionPlan`), `PlanImport`, `WorkJournal`, tool and placement adapters. |
-| package `baritone.gtnh.pathing` | Minecraft-free code written for this project and unit tested without a game: work and construction spec validation (`WorkSpec`, `ConstructionSettings`, `ConstructionMask`), `DeferredClearance`, the corridor constraint (`Corridor`), `GoalRange`, and terrain observation helpers (`TerrainGrid`, `CollisionBox`, `LadderFacing`, `FluidPolicy`). There is no second path search; all routing is upstream's. |
+| package `baritone.gtnh.pathing` | Minecraft-free code written for this project and unit tested without a game: work and construction spec validation (`WorkSpec`, `ConstructionMask`), the build order and break rule (`BuildSteps`, `PlanBreaks`), `DeferredClearance`, the corridor constraint (`Corridor`), `GoalRange`, and terrain observation helpers (`TerrainGrid`, `CollisionBox`, `LadderFacing`, `FluidPolicy`). There is no second path search; all routing is upstream's. |
 
 The GUI input transformer and widget inspection in `mods/core` and
 `mods/client` are this project's own code, not Baritone's; the client has no
@@ -25,7 +25,7 @@ dependency on the Baritone jar.
 | --- | --- |
 | `nav.goto`, route legs, travel inside work jobs | `CustomGoalProcess`, `PathingControlManager`, `PathingBehavior`, `AStarPathFinder`, `Path`, `PathExecutor`, and the real movement classes (traverse, ascend, descend, fall, downward, pillar, diagonal, parkour) with their costs, lookahead, splicing, revalidation and timeouts. |
 | `nav.mine` | `MineProcess`: multi-target goals, upward mining, pruning, blacklisting, drop collection. `WorldScanner` and the persistent location cache back discovery. |
-| `nav.build` with `mode: "builder"` | `BuilderProcess` (`onTick`, `recalc`, `assemble`) with `InventoryBehavior`, `InventoryPauserProcess`, `BlockBreakHelper`, `BlockPlaceHelper`, `InputOverrideHandler`. |
+| `nav.build` | `BuilderProcess` (`onTick`, `recalc`, `assemble`) with `InventoryBehavior`, `InventoryPauserProcess`, `BlockBreakHelper`, `BlockPlaceHelper`, `InputOverrideHandler`. |
 | `nav.process` | `goal` (the upstream goal family), `explore`, `get_to_block`, `farm`. Backfill is compiled in. |
 | `nav.follow`, `nav.cache`, `nav.settings` | `FollowProcess`; cached world and regions; `SettingsUtil` behind a structured endpoint that applies typed edits atomically while the engine is idle. |
 | In game | Path, goal and selection rendering, the event bus, free-look (visible aim is the default), a local `/baritone` command. |
@@ -93,81 +93,103 @@ cancelled and a superseded search cannot install its result into a newer job.
 
 Exactly one of explicit `cells` or a `selection` (`fill`, `replace`, `walls`,
 `shell`, `clear`, `sphere`, `hsphere`, `cylinder`, `hcylinder` with an `axis`).
-A cell is `{pos, id, meta}` or `{pos, clear: true}`, with optional `item`
+A cell is `{pos, id, meta?}` or `{pos, clear: true}`, with optional `item`
 (the inventory selector used to place it: `id`, `meta`, `nbt`, `ore`),
-`placement` hints and `verify: {pickedItem}`. Block state and placement item
-are separate because a machine's item metadata is often not its block
-metadata. `tileNbt` and `nbt` on a cell are rejected, never dropped silently.
+`verify: {pickedItem}`, `replace` and `stage`. A cell, or a selection's
+`block`, that names no `meta` accepts any variant of its block (the facing a
+furnace, chest or machine takes from how it is placed); one that names it is
+exact. Block state and placement item are separate because a machine's item
+metadata is often not its block metadata. `tileNbt` and `nbt` on a cell are
+rejected, never dropped silently, and so is every field the job would ignore:
+there is no `mode`, no `settings` and no per-cell `placement`.
 
-| | `mode: "blueprint"` (default) | `mode: "builder"` |
+A build runs one way (`ReferenceConstructionProcess` around upstream
+`BuilderProcess` scheduling):
+
+| | |
+| --- | --- |
+| Engine settings | Upstream's builder defaults for the length of the job, whatever `nav.settings` holds (saved and restored around it); the whole inventory is usable |
+| Cell limit | 4,096 cells a job (`WorkSpec.CELLS`). A selection's box may span up to 262,144 cells as long as its shape keeps no more than the limit |
+| Edits outside the plan | Placing (scaffold, bridge, pillar) needs `allowPlace`; breaking needs `allowBreak`. Inside the plan neither is needed |
+| Wrong block in a plan cell | Dug out only with `replaceExisting` (or when a placement would replace it anyway, see Occupied cells). A cell that already matches is never dug through |
+| Materials | Nothing is checked up front. The job builds what it can; when nothing carried goes into any cell it is shown, it pauses as `missing_materials` with the list |
+| Attempts | Eight clicks the game took into one cell without the block being seen there |
+| Completion | Fresh comparison of every cell: block identity, metadata where the cell named one, and `verify.pickedItem` |
+
+The cell limit is the game thread's budget. The job walks every plan cell once
+a tick (`survey()`: block and metadata of each, the step counts, the receipt's
+counts), and that walk is its standing cost. At an estimated 200 ns a cell the
+limit is about 0.8 ms a tick; that figure is an estimate, not a measurement.
+The measurement is the receipt's `cost` (`tickNsMax`, `tickNsMean`: Baritone's
+game-thread time per client tick over the job, the survey included).
+
+Placement goes through native right-click handling and never writes blocks.
+Preview is a fresh loaded-world diff judged as the job judges it: counts
+(`total`, `correct`, `mismatched`, `unloaded`, `conflicts`, `protected`,
+`unsupported`, `missingItems`), a shared-stack material allocation, the first
+8 differences and the steps; lists are short and the counts say how much there
+is. A `replace` selection is filtered once at job creation and journaled.
+Requested air that starts empty is deferred while temporary supports are
+needed, then cleared in a final phase; status exposes `buildPhase` and
+`deferredAirCells`.
+
+Build order (`BuildSteps`, always on). Every cell that must hold a block has a
+step: its `stage` (a cell field, 0 first; a drawing's `stages` list assigns it
+by legend character), then its height. Each tick the job counts the wrong
+cells of every step in the walk over the plan it already makes, takes the
+first step with one left as current, and shows upstream `BuilderProcess` only
+the cells of steps up to it: later cells are out of its schematic and refused
+to movement placement, so neither a plan block nor a throwaway lands in one
+early. When the step moves on the source pass is restarted with the larger
+schematic. The step is never stored: a resumed job reads it from the world,
+and within a job it only moves forward (a cell of an earlier step that breaks
+stays shown and is repaired). Cells that must be empty have no step, and
+removal is not delayed: the walk may still dig a wrong block out of a later
+cell, but the builder replaces it only in its step. Upstream's own layering
+(`buildInLayers` and its companions) is held off for the job. Preview lists
+`steps` as `{stage, y, cells}`.
+
+Stops. A job that does not succeed ends with `stopped {reason, pos, step}`:
+one reason, the one cell it is about (absent only when no cell is to blame)
+and that cell's `{stage, y}`. `left {count, first}` is every cell still wrong
+(the first 8) and `step {stage, y, index, of, left, first}` where the order
+stands. The reasons a build has of its own:
+
+| Reason | Meaning | State |
 | --- | --- | --- |
-| Engine | Upstream `BuilderProcess`, strict profile: confined to plan cells, no settings | Upstream `BuilderProcess` |
-| Cell limit | 16,384 | 1,048,576 (Python stages 4,096 per `nav.build_stage` call) |
-| Edits outside the plan | None | With `allowBreak`/`allowPlace`; `settings.restricted: true` confines them to plan cells |
-| Settings | Only `metadataMasks`, `buildInSteps`, `clickInterval` | Validated and frozen into the job |
-| Retry | At most two placement attempts per cell; an attempted cell that later differs pauses the job for inspection, it is never destroyed and retried | Eight attempts; `repairPlaced` (default true) allows correction |
-| Completion | Fresh comparison of every cell's registry id and metadata, plus `verify.pickedItem` | Predicate based (see settings) |
+| `occupied` | `pos` wants a block and holds a different one the job may not remove (`replaceExisting` false). At begin: before any input, with `occupied {count, first}`. Mid-run: once nothing else of the steps so far can be placed or cleared | failed at begin, else paused if the session did something |
+| `missing_materials` | Upstream has nothing it can do for the cells it is shown and `pos` is one no carried item places; `missing` lists up to 16 `{selector, needed, allocated, missing}` | paused |
+| `attempt_limit` | The eighth click the game took into `pos` still did not make the block appear | paused |
+| `mismatch` | The click about to be taken would make another variant at `pos` than the plan's (nothing is placed), or a block this job placed came out as another variant, or upstream holds every shown cell done and the plan's own comparison does not | paused |
+| `no_stance` | The stall watchdog fired and every cell still workable has no standing spot from which a face to place it against is in view; `pos` is the first | paused if the session did something, else failed |
+| `no_route` | The watchdog fired and the last path search covered everything reachable without finding a place to work from | as above |
+| `stalled` | The watchdog fired (`stallTicks`, 200) and neither of the two above explains it, or upstream paused with material in hand | as above |
+| `timeout` | `timeoutTicks` ran out | as above |
+| `requested` | `nav.build_pause` | paused |
 
-Both modes place through native right-click handling and never write blocks.
-Python build tools default builder mode to `settings.restricted: true`; explicitly
-set false to authorize edits outside plan cells. Raw Java builder defaults are unchanged.
-Preview is a fresh loaded-world diff with conflicts, protection, unsupported
-mappings and a shared-stack material allocation. A `replace` selection is
-filtered once at job creation and journaled. Requested air that starts empty is deferred while temporary
-supports are needed, then cleared in a final phase; status exposes
-`buildPhase` and `deferredAirCells`.
-
-Build order (`BuildSteps`, both modes, on by default). Every cell that must
-hold a block has a step: its `stage` (a cell field, 0 first; a drawing's
-`stages` list assigns it by legend character), then its height. Each tick the
-job counts the wrong cells of every step in the walk over the plan it already
-makes, takes the first step with one left as current, and shows upstream
-`BuilderProcess` only the cells of steps up to it: later cells are out of its
-schematic and refused to movement placement, so neither a plan block nor a
-throwaway lands in one early. When the step moves on the source pass is
-restarted with the larger schematic. The step is never stored: a resumed job
-reads it from the world, and within a job it only moves forward (a cell of an
-earlier step that breaks stays shown and is repaired). Cells that must be
-empty have no step, and removal is not delayed: the walk may still dig a wrong
-block out of a later cell, as it could before, but the builder replaces it only
-in its step. A step that cannot be finished ends the job through the stall
-watchdog as before, and the receipt's `step {stage, y, index, of, left, first}`
-names it; nothing skips ahead. `settings.buildInSteps: false` restores the old
-order; `buildInLayers: true` (upstream's own layering) turns steps off too, and
-the two together are refused. Preview lists `steps` as `{stage, y, cells}`.
-`settings.clickInterval` (1 to 20 ticks, default the engine's 5) sets
-`rightClickSpeed` for the job.
+Any job can also end `player_died` (failed), cancelled (`superseded`,
+`interrupted`, `request_deadline_elapsed`, `gui_opened`,
+`world_or_player_changed`, `start_failed`), or failed with the game's exception
+as the reason. Success is `schematic_verified` (or `empty_selected_schematic`).
+Every stop leaves the job resumable through `nav.resume`.
 
 Occupied cells. One meaning of an empty cell is used everywhere
 (`LegacyPlacement.empty`): air, or a block the game replaces when another is
 placed into it (tall grass, a snow layer, water). Such a cell needs no
 `replaceExisting`: the job may break what is in it, and a click on it is
 counted for the cell itself, where the block lands. A cell that wants a block
-and holds a different solid one is `occupied`. Without `replaceExisting` the
-job refuses to start (`reason: occupied`, `stopped.pos` the first such cell,
-`occupied {count, first}` the list), and stops the same way mid-run once
-nothing else of the steps so far can be placed or cleared. Cells to be cleared
-are never a conflict. Preview counts conflicts with the job's own
-`replaceExisting`.
+and holds a different solid one is `occupied`. Cells to be cleared are never a
+conflict. Preview counts conflicts with the job's own `replaceExisting`.
 
 Attempts. A cell is charged for a click only when the game took it
 (`onPlayerRightClick` returned true). The count lives for the session and is
 dropped when the cell is seen to match, so a resume or a later repair starts
-from none. At the limit the job pauses with `reason: attempt_limit` and
-`stopped.pos` the cell.
+from none.
 
-Builder settings: `buildInLayers`, `layerHeight`, `startAtLayer`,
-`layerOrder`, `skipFailedLayers`; `buildRepeat`, `buildRepeatCount` (default 1,
-not upstream's unbounded -1), `buildRepeatSneaky` (default false);
-`schematicOrientationX/Y/Z` (origin shifts, not rotations); `mapArtMode`;
-completion predicates `buildIgnoreExisting`, `buildIgnoreBlocks`,
-`buildSkipBlocks`, `okIfAir`, `okIfWater`; `buildSubstitutes`,
-`buildValidSubstitutes`; `metadataMasks` (significant metadata bits per
-block, replacing upstream's property ignores); `allowInventory`; `restricted`,
-`repairPlaced`; `breakFromAbove`, `goalBreakFromAbove`; `distanceTrim`,
-`incorrectSize`, `builderTickScanRadius`;
-`breakCorrectBlockPenaltyMultiplier` (10); `acceptableThrowawayItems`
-(explicit item selectors; there is no implicit throwaway list).
+Not in the contract: a block's facing. A cell that names `meta` is placed
+from wherever the walk stands, and stops as `mismatch` when that click would
+make another variant; placing a block to face a chosen way is left to the
+precise interaction tools.
 
 `PlacementStateAdapters` predicts the placed metadata for known callbacks,
 including GregTech's machine item registry; anything else is verified after

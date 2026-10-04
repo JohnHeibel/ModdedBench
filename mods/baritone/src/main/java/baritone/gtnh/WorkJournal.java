@@ -48,7 +48,7 @@ final class WorkJournal {
         return value;
     }
     private static Map<String,Object> summary(Map<String,Object> spec) {
-        Map<String,Object> out=new LinkedHashMap<>();for(String key:List.of("name","mode","origin","size","selection","settings","bounds","quantity","replaceExisting","allowBreak","allowPlace"))if(spec.containsKey(key))out.put(key,compact(spec.get(key)));
+        Map<String,Object> out=new LinkedHashMap<>();for(String key:List.of("name","origin","size","selection","bounds","quantity","replaceExisting","allowBreak","allowPlace"))if(spec.containsKey(key))out.put(key,compact(spec.get(key)));
         if(spec.get("cells") instanceof List<?> cells)out.put("cellCount",cells.size());return out;
     }
     static Map<String,Object> load(String id) {
