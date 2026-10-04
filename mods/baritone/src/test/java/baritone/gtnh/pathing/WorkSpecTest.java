@@ -62,6 +62,13 @@ public class WorkSpecTest {
             try{WorkSpec.cells(bad);fail("accepted "+bad);}catch(IllegalArgumentException expected){}
         }
     }
+    @Test public void usesAloneAreAPlanAndNothingAtAllIsNot(){
+        var use=Map.<String,Object>of("pos",List.of(0,64,0),"item",Map.of("empty",true));
+        assertTrue(WorkSpec.cells(Map.of("uses",List.of(use))).isEmpty());
+        var cell=Map.of("pos",List.of(0,64,0),"id","pack:block");var sel=Map.of("min",List.of(0,64,0),"max",List.of(0,64,0),"block",Map.of("id","pack:block"));
+        for(var bad:List.of(Map.<String,Object>of(),Map.<String,Object>of("uses",List.of()),Map.<String,Object>of("cells",List.of(cell),"selection",sel),Map.<String,Object>of("cells",List.of(),"uses",List.of(use))))
+            assertThrows(bad.toString(),IllegalArgumentException.class,()->WorkSpec.cells(bad));
+    }
     @Test public void aJobTakesAtMost256ClickCellsAndUsesTogether(){
         List<Map<String,Object>> cells=new ArrayList<>();
         for(int i=0;i<StepPlan.CLICKS;i++)cells.add(Map.of("pos",List.of(i%16,64,i/16),"id","pack:block","click",Map.of("face","up")));
