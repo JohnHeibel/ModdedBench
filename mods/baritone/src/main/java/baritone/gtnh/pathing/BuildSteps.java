@@ -99,13 +99,16 @@ public final class BuildSteps {
     }
     /**
      * The air that stays air around the cells still to be filled: empty cells no step fills, reached from the player or
-     * from the edge of the box one cell around those cells (beyond it the world goes on). An empty cell closed in by cells
-     * to be filled is not among them: the space kept free over a chest in a lined corner is no way to the corner above it.
+     * from the edge of a box AROUND cells wider than those cells (beyond it the world goes on). An empty cell closed in by
+     * cells to be filled is not among them: the space kept free over a chest in a lined corner is no way to the corner
+     * above it. The box is wider than one cell because a step is one layer: the closed-in space lies in the layer under
+     * it, and on the edge of a box one cell around it would count as open.
      */
+    private static final int AROUND=3;
     public static Set<BlockPos> air(Set<BlockPos> pending,Predicate<BlockPos> empty,BlockPos... player) {
         if(pending.isEmpty())return Set.of();
         int[] lo={Integer.MAX_VALUE,Integer.MAX_VALUE,Integer.MAX_VALUE},hi={Integer.MIN_VALUE,Integer.MIN_VALUE,Integer.MIN_VALUE};
-        for(BlockPos p:pending){int[] v={p.getX(),p.getY(),p.getZ()};for(int i=0;i<3;i++){lo[i]=Math.min(lo[i],v[i]-1);hi[i]=Math.max(hi[i],v[i]+1);}}
+        for(BlockPos p:pending){int[] v={p.getX(),p.getY(),p.getZ()};for(int i=0;i<3;i++){lo[i]=Math.min(lo[i],v[i]-AROUND);hi[i]=Math.max(hi[i],v[i]+AROUND);}}
         Predicate<BlockPos> inside=p->p.getX()>=lo[0]&&p.getX()<=hi[0]&&p.getY()>=lo[1]&&p.getY()<=hi[1]&&p.getZ()>=lo[2]&&p.getZ()<=hi[2];
         Set<BlockPos> air=new HashSet<>();ArrayDeque<BlockPos> queue=new ArrayDeque<>();
         java.util.function.Consumer<BlockPos> reach=p->{if(inside.test(p)&&!pending.contains(p)&&!air.contains(p)&&empty.test(p)){air.add(p);queue.add(p);}};

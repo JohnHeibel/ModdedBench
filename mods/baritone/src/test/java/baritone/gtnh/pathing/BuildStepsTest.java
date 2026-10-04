@@ -221,4 +221,15 @@ public class BuildStepsTest {
         assertTrue(air.contains(at(1,66,1)));
         assertSame(BuildSteps.Held.NONE,BuildSteps.held(slab,slab,air::contains));
     }
+    @Test public void theClosedInCellUnderTheLastLayerIsNoWayInEither(){
+        // The same lining with its two lower layers built: only the top layer is left, and the space over the chest lies
+        // in the layer under it, one cell from the cells still to be filled.
+        Set<BlockPos> top=new HashSet<>(),built=new HashSet<>();
+        for(int y=65;y<=67;y++)for(int x=1;x<=5;x++)for(int z=1;z<=5;z++)if(x==1||x==5||z==1||z==5)(y==67?top:built).add(at(x,y,z));
+        built.remove(at(1,66,5));
+        java.util.function.Predicate<BlockPos> empty=p->p.getY()>=65&&p.getY()<=67&&p.getX()>=1&&p.getX()<=5&&p.getZ()>=1&&p.getZ()<=5&&!built.contains(p);
+        Set<BlockPos> air=BuildSteps.air(top,empty,at(3,65,3),at(3,66,3));
+        assertTrue(air.contains(at(3,66,3)));assertFalse(air.contains(at(1,66,5)));
+        assertTrue(BuildSteps.held(top,top,air::contains).first().contains(at(1,67,5)));
+    }
 }
