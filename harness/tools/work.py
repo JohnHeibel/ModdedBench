@@ -659,7 +659,8 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
                          (stopped.click.blocking names what is in the way; allow_break may open it).
       look_unreachable   a click: the face can be clicked, but not while facing the way look asks.
       support_missing    a click: no block stands where the click would have to land.
-      hit_not_on_face    a click: the hit point is not on the face named.
+      hit_not_on_face    a click: the game's look did not land on the hit point (stopped.click.shape:
+                         [min, max] of what the block fills of its cell, as it showed then).
       no_route_from_here a click: a stance exists and no walk reaches it (allow_place may).
       aim_mismatch       a click: aimed at the point from 16 stances and the game's ray hit elsewhere.
       placement_rejected a click: the game took 3 clicks and no block appeared.
