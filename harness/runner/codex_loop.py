@@ -161,8 +161,11 @@ def run(repo=REPO, prompt=None, max_turns=50, state=None, codex=None, extra=(), 
             cmd = [*codex, "exec", "--json", "-C", str(repo), *extra, *(["resume", thread] if thread else []), "-"]
             log.write("# %s %s\n" % (time.strftime("%Y-%m-%dT%H:%M:%S"), " ".join(cmd)))
             body = _body(folder)
-            again = CONTINUE + (" Your background task %s (%s) is still running: mb_task shows it." % (body["task"], body["name"] or "unnamed") if body else "")
+            word = repo / ".state" / "operator-message.txt"  # the operator's words open the next turn, once
+            said = word.read_text(encoding="utf-8").strip() if thread and word.exists() else ""
+            again = (f"The operator says: {said}\n\n" if said else "") + CONTINUE + (" Your background task %s (%s) is still running: mb_task shows it." % (body["task"], body["name"] or "unnamed") if body else "")
             code, found, last, spent = turn(cmd, again if thread else prompt.read_text(encoding="utf-8"), repo, log, feed, over)
+            if said: word.unlink(missing_ok=True)
             if found and not thread:
                 thread = found; state.write_text(json.dumps({"thread": thread}), encoding="utf-8")
             if spent: return end(spent)
