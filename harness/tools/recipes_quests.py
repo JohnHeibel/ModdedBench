@@ -190,7 +190,7 @@ def mb_recipes(id: str = "", meta: int | None = None, nbt: str | None = None, mo
                handler: str = "", offset: int = 0, limit: int = 0,
                alternatives_offset: int = 0, alternatives_limit: int = 32,
                timeout_s: float = 60.0, fluid: str = "", amount: int = 1000,
-               detail: str = "summary", index: int = -1) -> Any:
+               detail: str = "summary", index: int = -1, query: str = "") -> Any:
     """Browse every way to make an item, or mode='uses' for what consumes it.
 
     Default limit=0 returns a category overview with counts and known GT base EU/t
@@ -216,8 +216,13 @@ def mb_recipes(id: str = "", meta: int | None = None, nbt: str | None = None, mo
     Base power/time is before overclocking. Fake recipes may describe information
     rather than an executable process; inspect their native page.
     Custom non-GT handlers may expose additional requirements only through their GUI.
-    Summaries name the stations once per handler under "stations". detail='full' returns ONE recipe whatever limit says:
-    pick it with index.
+    A summary page says once what its recipes share: under "shared" the handlerKey, coverage and preview note (a key that
+    differs within the page stays on its recipes), under "stations" the stations per handler. A position with one possible
+    item is that item; one with several is {alternativeCount, exampleOffset, examples}.
+    query="steel plate" keeps the summaries whose shown output and input names hold every word (the recipe view's
+    search box), before offset and limit (default 20) page them; matched says how many of total, and at most 1000
+    are searched, so pick a handler first.
+    detail='full' returns ONE recipe whatever limit says: pick it with index.
     This observes recipes; it does not craft, spawn items or alter the current GUI.
     Your notes on the item and on any ingredient shown come back under "notes": read them before making an ingredient by hand.
     """
@@ -228,17 +233,48 @@ def mb_recipes(id: str = "", meta: int | None = None, nbt: str | None = None, mo
         keys = [h["key"] for h in found.get("handlers", []) if handler.lower() in h["key"].lower()]
         if len(keys) != 1: raise ValueError(f"index needs ONE handler; pass one of these as handler, exactly: {keys or [h['key'] for h in found.get('handlers', [])]}")
         handler = keys[0]
-    result = kernel().call("nei.recipes", id=id, meta=meta, nbt=nbt, mode=mode, handler=handler,
-                           offset=offset, limit=limit, alternativesOffset=alternatives_offset,
-                           alternativesLimit=alternatives_limit, timeout=timeout_s, fluid=fluid, amount=amount, detail=detail, index=index)
+    page = lambda offset, limit: kernel().call("nei.recipes", id=id, meta=meta, nbt=nbt, mode=mode, handler=handler,
+                                               offset=offset, limit=limit, alternativesOffset=alternatives_offset,
+                                               alternativesLimit=alternatives_limit, timeout=timeout_s, fluid=fluid, amount=amount, detail=detail, index=index)
+    words = query.casefold().split()
+    if words and (detail == "full" or index >= 0): raise ValueError("query narrows summaries: find the recipe's index with it, then ask for detail='full' with that index")
+    result = page(0, 20) if words else page(offset, limit)
+    if words:  # the bridge pages 20 at a time and knows no text filter: read the handler through, keep what matches, page that
+        if result["total"] > QUERY_SCAN: raise ValueError(f"query searches at most {QUERY_SCAN} recipes and this selects {result['total']}: narrow it with handler, one of {[h['key'] for h in result['handlers']]}")
+        found, more = result["recipes"], result
+        while more.get("nextOffset") is not None: more = page(more["nextOffset"], 20); found += more["recipes"]
+        found = [r for r in found for shown in [_names([r.get(part) for part in ("inputs", "result", "other", "gregtech")]).casefold()] if all(w in shown for w in words)]
+        end = offset + (limit or 20)
+        result.update(query=query, matched=len(found), offset=offset, recipes=found[offset:end], nextOffset=end if end < len(found) else None)
     if detail != "full" and isinstance(result.get("recipes"), list):
         # Every recipe of a handler repeats that handler's station list (dozens of crafting-table variants): say it once, by name.
-        stations = result.setdefault("stations", {})
-        for recipe in result["recipes"]:
+        stations, recipes = result.setdefault("stations", {}), result["recipes"]
+        for recipe in recipes:
             names = [e["name"] for c in recipe.pop("catalysts", None) or [] for e in c.get("examples", [])[:1]]
             stations.setdefault(recipe.get("handlerKey"), names[:6] + ([f"+{len(names) - 6} more (detail='full' lists them)"] if len(names) > 6 else []))
+            for part in ("inputs", "other"): recipe[part] = [_only(position) for position in recipe.get(part) or []]
+            if "result" in recipe: recipe["result"] = _only(recipe["result"])
+        # So does what the handler and the summary form fix (its key, coverage, the preview note): once for the page, where the page agrees.
+        shared = {key: recipes[0][key] for key in SHARED if recipes and key in recipes[0] and all(r.get(key) == recipes[0][key] for r in recipes)}
+        if shared: result.update(shared=shared, recipes=[{key: value for key, value in r.items() if key not in shared} for r in recipes])
     # Notes on the ingredients matter as much as notes on the target: "the base already makes this" belongs to the ingredient.
     return notes.with_item_notes(result)
+
+
+QUERY_SCAN = 1000  # recipes a query reads through, 20 a bridge call
+SHARED = ("handlerKey", "handler", "name", "nativeRecipesPerPage", "structuredCoverage", "detailsRequired", "summaryNote")
+
+
+def _only(position):
+    """A summary position with a single possible item is that item, not a list of one alternative."""
+    examples = position.get("examples") if isinstance(position, dict) else None
+    return examples[0] if examples and position.get("alternativeCount") == 1 else position
+
+
+def _names(value) -> str:
+    """Every display name of the stacks under a value, as one string."""
+    if isinstance(value, dict): return " ".join([str(value.get("name") or "")] + [_names(v) for v in value.values()])
+    return " ".join(_names(v) for v in value) if isinstance(value, list) else ""
 
 
 @tool(lane="read", coverage=["recipes"])
