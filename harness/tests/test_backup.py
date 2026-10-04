@@ -22,6 +22,20 @@ class BackupTests(unittest.TestCase):
             with self.assertRaises(Done): backup.loop(30)
         self.assertIn("no snapshot: OSError: docker is not answering", err.getvalue())
 
+    def test_a_snapshot_holds_the_world_as_its_own_and_leaves_another_hold_alone(self):
+        def snapshot(free):
+            ran = []
+            def sh(*args, to=None):
+                ran.append(args[-1])
+                if to: to.write_bytes(b"x")
+                return free or args[-1] != backup.runtime.hold_cmd("backup", True)
+            with tempfile.TemporaryDirectory() as tmp, patch.object(backup, "OUT", Path(tmp)), patch.object(backup, "sh", sh), patch.object(backup.time, "sleep"), patch("builtins.print"):
+                self.assertIsNotNone(backup.snapshot())
+            return ran
+        take, release = backup.runtime.hold_cmd("backup", True), backup.runtime.hold_cmd("backup", False)
+        self.assertEqual(snapshot(free=True), [take, backup.WORLD, backup.NOTES, release])
+        self.assertEqual(snapshot(free=False), [take, backup.WORLD, backup.NOTES])  # the operator's or the guard's hold was in force: it is not this snapshot's to end
+
     def test_a_snapshot_that_fails_says_what_docker_said_and_leaves_no_folder(self):
         ran = []
         def run(cmd, **kw):

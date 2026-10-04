@@ -8,6 +8,7 @@ import tempfile
 import unittest
 import zipfile
 import hashlib
+import shutil
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import patch
@@ -366,6 +367,20 @@ class RuntimeTests(unittest.TestCase):
             done = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", "[void][scriptblock]::Create($env:MB_SCRIPT)"],
                                   env={**os.environ, "MB_SCRIPT": runtime.CLIENT_JAVA + then}, capture_output=True, text=True, timeout=60)  # parsed, never run
             self.assertEqual((done.returncode, done.stderr), (0, ""))
+
+    @unittest.skipUnless(shutil.which("sh"), "runs the hold's shell lines")
+    def test_a_hold_is_taken_when_there_is_none_and_released_only_by_its_owner(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp, patch.object(runtime, "HOLD", (Path(tmp) / "modbench-hold").as_posix()):
+            hold = Path(tmp) / "modbench-hold"
+            def did(owner, take, force=False): return subprocess.run(["sh", "-c", runtime.hold_cmd(owner, take, force)], capture_output=True).returncode == 0
+            self.assertFalse(did("backup", False))                                                    # nothing to release
+            self.assertTrue(did("backup", True)); self.assertEqual(hold.read_text().strip(), "backup")
+            self.assertFalse(did("compaction", True)); self.assertEqual(hold.read_text().strip(), "backup")  # one hold at a time
+            self.assertFalse(did("compaction", False)); self.assertFalse(did("operator", False)); self.assertTrue(hold.exists())
+            self.assertTrue(did("operator", True, force=True)); self.assertEqual(hold.read_text().strip(), "operator")  # Pause takes over
+            self.assertFalse(did("backup", False)); self.assertTrue(hold.exists())                    # the backup's end leaves the operator's pause
+            self.assertTrue(did("operator", False)); self.assertFalse(hold.exists())
 
     def test_only_one_process_holds_a_lock_and_its_end_releases_it(self):
         import subprocess
