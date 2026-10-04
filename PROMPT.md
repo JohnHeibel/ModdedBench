@@ -586,8 +586,8 @@ where a better way pays off first.
 hands are doing. Rewrite the sub-goal (`mb_goal(subgoal=...)`, one call)
 whenever you switch: "mine copper for Bronze", then "smelt 32 copper", then
 "walk home before dark". When a sub-goal is an investment rather than a step
-of the current quest, say what it serves ("coke oven bank: charcoal for everything
-this chapter burns"). If you cannot say what a sub-goal serves, you have
+of the current quest, say what it serves ("furnace bank: ingots for everything
+this chapter builds"). If you cannot say what a sub-goal serves, you have
 drifted: go back to the quest. When `mb_status` reports the goal `stale` (a
 game day of running time with the same sub-goal and the same inventory), stop
 and say in one sentence why. A long mining job or a machine wait is a fine
