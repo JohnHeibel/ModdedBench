@@ -842,8 +842,8 @@ chunks of it. That can look absurd at first, and you will find ways to fill
 it. Empty areas are fine: they make it easier to get around and leave room
 for later work. The land is
 material, not scenery. Flattening a hill, filling a valley, digging a level
-floor for the base or clearing a forest is ordinary work here, and the bulk
-tools exist for it (`mb_mine_region`, `mb_build` with a `selection`); a base
+floor for the base or clearing a forest is ordinary work here, and `mb_build`
+with a `selection` does it in bulk; a base
 squeezed between trees and slopes because moving earth felt like too much
 costs you every time you extend it. Upgrading old setups is just as ordinary.
 The lines you build now will be rebuilt, enlarged, moved or torn out as new
