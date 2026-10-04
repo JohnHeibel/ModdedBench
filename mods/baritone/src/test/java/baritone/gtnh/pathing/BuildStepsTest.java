@@ -159,4 +159,66 @@ public class BuildStepsTest {
             try{WorkSpec.cells(bad);fail("accepted "+bad);}catch(IllegalArgumentException expected){}
         }
     }
+    private static BlockPos at(int x,int y,int z){return new BlockPos(x,y,z);}
+    @Test public void cellsWithAnOpenSideEachHoldNothingBack(){
+        // A row on the ground under open sky.
+        Set<BlockPos> row=new HashSet<>();for(int x=0;x<8;x++)row.add(at(x,65,0));
+        assertSame(BuildSteps.Held.NONE,BuildSteps.held(row,p->p.getY()>=65));
+    }
+    @Test public void theCornerOfALiningUnderACeilingGoesBeforeTheTwoCellsBesideIt(){
+        // A room x 1..5, z 1..5 at y 65 under a ceiling, rock all round: the ring of cells along its walls is to be filled.
+        Set<BlockPos> ring=new HashSet<>();
+        for(int x=1;x<=5;x++)for(int z=1;z<=5;z++)if(x==1||x==5||z==1||z==5)ring.add(at(x,65,z));
+        var held=BuildSteps.held(ring,p->p.getY()==65&&p.getX()>=1&&p.getX()<=5&&p.getZ()>=1&&p.getZ()<=5);
+        assertEquals(Set.of(at(1,65,1),at(5,65,1),at(1,65,5),at(5,65,5)),held.first());
+        assertEquals(Set.of(at(2,65,1),at(1,65,2),at(4,65,1),at(5,65,2),at(1,65,4),at(2,65,5),at(5,65,4),at(4,65,5)),held.held());
+        // The corners are in: what was held is free.
+        Set<BlockPos> left=new HashSet<>(ring);left.removeAll(held.first());
+        assertSame(BuildSteps.Held.NONE,BuildSteps.held(left,p->!ring.contains(p)&&p.getY()==65&&p.getX()>=1&&p.getX()<=5&&p.getZ()>=1&&p.getZ()<=5));
+    }
+    @Test public void aBlindPassageIsFilledFromItsEnd(){
+        // x 0..3 at y 65, z 0, open only past x 3.
+        Set<BlockPos> passage=Set.of(at(0,65,0),at(1,65,0),at(2,65,0),at(3,65,0));
+        var held=BuildSteps.held(passage,p->p.equals(at(4,65,0)));
+        assertEquals(Set.of(at(1,65,0),at(2,65,0),at(3,65,0)),held.held());
+        assertEquals(Set.of(at(0,65,0),at(1,65,0),at(2,65,0)),held.first());
+    }
+    @Test public void cellsWithNoWayOutAtAllNeitherWaitNorAreWaitedFor(){
+        // A closed pocket of two cells, and a cell in the open beside nothing of it.
+        var held=BuildSteps.held(Set.of(at(0,65,0),at(1,65,0),at(9,65,0)),p->p.equals(at(9,66,0)));
+        assertSame(BuildSteps.Held.NONE,held);
+    }
+    @Test public void anEmptyCellALaterStepFillsIsNoOpenSide(){
+        // The same lining three high under a ceiling at y 68, built a level at a time: on the middle level the cell above each
+        // corner is empty, and is itself a cell of the lining.
+        Set<BlockPos> lining=new HashSet<>(),level=new HashSet<>();
+        for(int y=65;y<=67;y++)for(int x=1;x<=5;x++)for(int z=1;z<=5;z++)if(x==1||x==5||z==1||z==5){lining.add(at(x,y,z));if(y<=66)level.add(at(x,y,z));}
+        java.util.function.Predicate<BlockPos> room=p->p.getY()>=65&&p.getY()<=67&&p.getX()>=1&&p.getX()<=5&&p.getZ()>=1&&p.getZ()<=5;
+        var held=BuildSteps.held(lining,level,room);
+        assertEquals(Set.of(at(1,65,1),at(5,65,1),at(1,65,5),at(5,65,5),at(1,66,1),at(5,66,1),at(1,66,5),at(5,66,5)),held.first());
+        assertTrue(held.held().contains(at(4,66,1))&&held.held().contains(at(5,66,2)));
+        assertTrue(held.held().stream().allMatch(level::contains));
+    }
+    @Test public void anEmptyCellClosedInByTheLiningIsNoWayToTheCornerAboveIt(){
+        // The lining of a room x 1..5, z 1..5, y 65..67 under a ceiling, with one cell left out: (1,66,5), the space over a
+        // chest that stands in the corner at (1,65,5). The player stands in the middle.
+        Set<BlockPos> lining=new HashSet<>();
+        for(int y=65;y<=67;y++)for(int x=1;x<=5;x++)for(int z=1;z<=5;z++)if(x==1||x==5||z==1||z==5)lining.add(at(x,y,z));
+        lining.remove(at(1,65,5));lining.remove(at(1,66,5));
+        java.util.function.Predicate<BlockPos> empty=p->p.getY()>=65&&p.getY()<=67&&p.getX()>=1&&p.getX()<=5&&p.getZ()>=1&&p.getZ()<=5&&!p.equals(at(1,65,5));
+        Set<BlockPos> air=BuildSteps.air(lining,empty,at(3,65,3),at(3,66,3));
+        assertTrue(air.contains(at(3,67,3)));assertFalse(air.contains(at(1,66,5)));
+        var held=BuildSteps.held(lining,lining,air::contains);
+        assertTrue(held.first().contains(at(1,67,5)));
+        assertTrue(held.held().contains(at(2,67,5))&&held.held().contains(at(1,67,4)));
+        // With the empty cell counted as a way in, the corner over it would wait for nothing and be closed off.
+        assertFalse(BuildSteps.held(lining,lining,empty).first().contains(at(1,67,5)));
+    }
+    @Test public void airBeyondThePlanIsAWayInWithoutThePlayer(){
+        // A slab on open ground: everything over it is air, and the player is far off.
+        Set<BlockPos> slab=new HashSet<>();for(int x=0;x<4;x++)for(int z=0;z<4;z++)slab.add(at(x,65,z));
+        Set<BlockPos> air=BuildSteps.air(slab,p->p.getY()>=65,at(100,65,100));
+        assertTrue(air.contains(at(1,66,1)));
+        assertSame(BuildSteps.Held.NONE,BuildSteps.held(slab,slab,air::contains));
+    }
 }
