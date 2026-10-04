@@ -194,6 +194,41 @@ public class ReferenceBuilderTest {
         assertEquals(new BlockPos(10,64,0),offset.getGoalPos());
         assertTrue(offset.isInGoal(10,66,0));assertFalse(offset.isInGoal(10,67,0));
     }
+    /** A floor, and on it two blocks that meet only at the vertical edge x=5,z=5: the walls either side of the corner cell 5,65,5. */
+    static class EdgeSeam extends net.minecraft.world.World {
+        EdgeSeam(){super((net.minecraft.world.storage.ISaveHandler)null,(String)null,(net.minecraft.world.WorldProvider)null,(net.minecraft.world.WorldSettings)null,(net.minecraft.profiler.Profiler)null);}
+        @Override public net.minecraft.block.Block getBlock(int x,int y,int z){
+            return y<=64||y==65&&(x==4&&z==5||x==5&&z==4)?net.minecraft.init.Blocks.stone:net.minecraft.init.Blocks.air;
+        }
+        @Override public int getBlockMetadata(int x,int y,int z){return 0;}
+        @Override protected net.minecraft.world.chunk.IChunkProvider createChunkProvider(){return null;}
+        @Override protected int func_152379_p(){return 0;}
+        @Override public net.minecraft.entity.Entity getEntityByID(int id){return null;}
+    }
+    @Test public void aStanceSeenOnlyThroughAnEdgeSeamIsNotSteady() throws Exception {
+        var world=allocate(EdgeSeam.class);
+        // The corner cell is placed against the floor under it. The click as the builder aims it: sneaking eye to the
+        // middle of that face, look vector from the native sine table, native ray trace.
+        java.util.function.DoubleFunction<baritone.gtnh.pathing.PlacementGoalSupport.Probe> floorFaceFrom=eyeY->(x,z)->{
+            var eye=new Vec3d(x,eyeY,z);
+            var look=RotationUtils.calcLookDirectionFromRotation(RotationUtils.calcRotationFromVec3d(eye,new Vec3d(5.5,65,5.5),new Rotation(0,0)));
+            var hit=world.func_147447_a(eye.nativeVector(),eye.add(look.scale(4.5)).nativeVector(),false,false,true);
+            return hit!=null&&hit.typeOfHit==net.minecraft.util.MovingObjectPosition.MovingObjectType.BLOCK
+                &&hit.blockX==5&&hit.blockY==64&&hit.blockZ==5&&hit.sideHit==1;
+        };
+        // From the centre of a floor cell on the corner's diagonal the ray runs exactly along the seam between the two
+        // walls, and the native tracer lets it through. No player stands there: a pixel off, a wall is in the way.
+        var inside=floorFaceFrom.apply(65+1.54);
+        for(double centre:new double[]{4.5,3.5}){
+            assertTrue(inside.at(centre,centre));
+            assertFalse(inside.at(centre+1/16.0,centre));assertFalse(inside.at(centre,centre+1/16.0));
+            assertFalse(baritone.gtnh.pathing.PlacementGoalSupport.steady(centre,centre,inside));
+        }
+        // On top of either wall the face is in plain view.
+        var onWall=floorFaceFrom.apply(66+1.54);
+        assertTrue(baritone.gtnh.pathing.PlacementGoalSupport.steady(4.5,5.5,onWall));
+        assertTrue(baritone.gtnh.pathing.PlacementGoalSupport.steady(5.5,4.5,onWall));
+    }
     private static <T>T allocate(Class<T> type) throws Exception {
         Class<?> unsafeClass=Class.forName("sun.misc.Unsafe",true,ClassLoader.getSystemClassLoader());
         Field field=unsafeClass.getDeclaredField("theUnsafe");field.setAccessible(true);

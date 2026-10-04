@@ -212,10 +212,12 @@ final class ReferenceConstructionProcess extends BulkJob {
                 // otherwise a boundary-overlapping player can be declared ready
                 // to place its neighbor forever, while native collision rejects it.
                 boolean here=pose.feet().equals(currentFeet);
-                double x=here?mc.thePlayer.posX:pose.feet().getX()+.5;
                 double y=here?mc.thePlayer.boundingBox.minY:pose.standingY();
-                double z=here?mc.thePlayer.posZ:pose.feet().getZ()+.5;
-                if(engine.getBuilderProcess().canPlaceFrom(schematicStates.get(cell.pos()),x,y,z,slot)){
+                PlacementGoalSupport.Probe probe=(x,z)->engine.getBuilderProcess().canPlaceFrom(schematicStates.get(cell.pos()),x,y,z,slot);
+                // Any other cell is promised from its centre, where the player will not be standing. A view that exists
+                // only from the exact centre (a ray through the seam of two blocks meeting at an edge) is no stance:
+                // on arrival the real position refutes it and the next such cell becomes the goal, back and forth.
+                if(here?probe.at(mc.thePlayer.posX,mc.thePlayer.posZ):PlacementGoalSupport.steady(pose.feet().getX()+.5,pose.feet().getZ()+.5,probe)){
                     legal.add(sourceFeet);if(goal.isInGoal(sourceFeet))adjacent.add(sourceFeet);
                 }
             }
