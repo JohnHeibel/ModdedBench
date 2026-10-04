@@ -60,8 +60,10 @@ COMPACTIONS = "f=$(ls -t /home/agent/.codex/sessions/*/*/*/rollout-*.jsonl 2>/de
 OWN_HOLD, OPERATOR_HOLD = "compaction", "operator"
 TOKEN = secrets.token_urlsafe(24)
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+# The end of a file under .state, read by seeking: the page asks every 3 s, and the loop's log grows by megabytes over a long run.
+TAIL = "r=lambda n,k=24000:(lambda f:(f.seek(max(0,f.seek(0,2)-k)),f.read().decode(errors='replace'),f.close())[1])(open(s/n,'rb')) if (s/n).exists() else ''"
 # One line of JSON about the loop, produced inside the agent container.
-AGENT_PROBE = ("import json,subprocess,pathlib;s=pathlib.Path('.state');r=lambda n:(s/n).read_text(errors='replace') if (s/n).exists() else '';"
+AGENT_PROBE = ("import json,subprocess,pathlib;s=pathlib.Path('.state');" + TAIL + ";"
                "print(json.dumps({'running':subprocess.run(['pgrep','-f','[c]odex_loop.py'],capture_output=True).returncode==0,"
                "'stopRequested':(s/'STOP').exists(),'thread':r('codex-loop.json'),'run':r('run.json'),'prompt':pathlib.Path('/brief/PROMPT.md').exists(),"
                "'commits':subprocess.run(['git','rev-list','--count','modbench-base..HEAD'],capture_output=True,text=True).stdout.strip(),"
