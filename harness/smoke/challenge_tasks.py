@@ -99,8 +99,9 @@ class Tasks(bs.Shells):
         "hut": "Build a small closed hut on the open floor in front of you from the dirt you carry: 5 by 5 inside, 3 high inside, "
                "with a floor, a roof and one doorway two blocks high.",
         "annex": "Add a room to the east side of the stone brick house in front of you: 5 by 5 inside, as high as the house, sharing its east wall, "
-                 "with a doorway between the two. Nothing that exists may be broken, moved, opened or cut off, and the hopper line that "
-                 "enters the house through that wall must stay as it is.",
+                 "with a doorway between the two, two blocks high. The two wall blocks taken out for that doorway are the only existing "
+                 "blocks that may change: nothing else may be broken, moved, opened or cut off, and the hopper line that enters the "
+                 "house through that wall must stay as it is.",
         "lining": "Give the stone brick house an inner lining of bricks: a brick on every inside wall face from floor to ceiling, wherever "
                   "nothing stands. Everything that is there must stay as it is and stay usable (a chest must still open), and the doorway "
                   "must stay open.",
