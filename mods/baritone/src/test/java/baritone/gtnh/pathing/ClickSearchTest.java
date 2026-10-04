@@ -86,6 +86,14 @@ public class ClickSearchTest {
         for(var o:open.openings()){assertTrue(o.remove().size()<=Access.MAX_CELLS);assertFalse("never the clicked block",o.remove().contains(p(4,66,0)));}
         assertTrue("a job whose rule keeps every cell is offered none",ClickSearch.look(w,use,null,use.target(),BODY,Set.of(),null,p->false).openings().isEmpty());
     }
+    @Test public void theOneBlockThatCanBePutBackIsAmongTheOpeningsHoweverManyNearerOnesThereAre(){
+        // A cell walled in by stone on three sides and above, and by one block of another kind to the west.
+        ClickSpace w=new Spaces(-6,60,-6,10,70,10,false).floor(64).solid(3,65,3).solid(2,66,3).solid(2,65,2).solid(2,65,4).solid(1,65,3).build();
+        var place=StepPlan.places(WorkSpec.cells(Map.of("cells",List.of(Map.of("pos",List.of(2,65,3),"id","mod:log","click",Map.of("face","west")))))).get(0);
+        var found=ClickSearch.pick(List.of(place),w,BODY,BODY,new HashMap<>(),q->Access.refusal(w,q,Set.of(place.pos()),k->false)==null);
+        assertTrue(found.vantages().isEmpty());
+        assertTrue(found.openings().stream().anyMatch(o->o.remove().equals(List.of(p(1,65,3)))));
+    }
     @Test public void aRememberedWayThatIsGoneIsForgottenAndThePickMadeAgain(){
         ClickSpace w=new Spaces(-6,62,-6,6,70,6,false).floor(63).floor(64).build();
         // The first cell hangs in the air with nothing to click against; the second lies on the ground.

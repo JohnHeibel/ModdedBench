@@ -15,6 +15,8 @@ import static baritone.gtnh.pathing.WorkSpec.*;
  */
 public final class ClickSearch {
     private ClickSearch() {}
+    /** The most openings one search hands back, fewest cells first. */
+    static final int OPENINGS=64;
     /** step, hides: of a pick. vantages, or the problem with its diagnosis and the cells whose removal would open a view. */
     public record Found(StepPlan.Step step,StepPlan.Step hides,List<Vantages.Vantage> vantages,String problem,Map<String,Object> diagnosis,List<Vantages.Opening> openings) {}
     /**
@@ -40,8 +42,9 @@ public final class ClickSearch {
             &&(breaking==null||!v.feet().equals(ClickSpec.offset(breaking,1))||Double.isFinite(s.with(breaking,Voxel.air()).standingY(breaking)))).limit(8).toList();
         if(!found.isEmpty())return new Found(step,hides,found,null,Map.of(),List.of());
         String problem=Vantages.problem(s,target,tally);
+        // Every distinct way, not the nearest few: which of them can be put back is the game's to say, after the search.
         List<Vantages.Opening> openings=removable==null||problem.equals("support_missing")||problem.equals("hit_not_on_face")?List.of()
-            :Vantages.openings(s,target,body,removable,null,3).stream().filter(o->o.remove().size()<=Access.MAX_CELLS).toList();
+            :Vantages.openings(s,target,body,removable,null,OPENINGS).stream().filter(o->o.remove().size()<=Access.MAX_CELLS).toList();
         return new Found(step,hides,List.of(),problem,diagnosis(s,target,tally),openings);
     }
     /** What a click with no stance is about: the faces that would do and what stands at each, the cells in the way (most often first), and why stances fell away. */

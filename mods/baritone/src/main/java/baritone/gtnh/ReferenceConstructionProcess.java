@@ -429,6 +429,7 @@ final class ReferenceConstructionProcess extends BulkJob {
             &&pathing.lastCalculation().get("search") instanceof Map<?,?> search&&"exhausted".equals(search.get("why"))?"no_route":"stalled";
     }
     /** A click of this job opened the screen: it is closed and the build stops on that click. Any other screen takes the controls. */
+    @Override boolean awaitsScreen(){return clicks.awaitsScreen();}
     @Override void guiOpened(){if(clicks.guiOpened()){blamed=clicks.blame();finish("paused","gui_opened");}else super.guiOpened();}
     /** Ending with a living player and no screen: cells out for access are put back and scaffold outside the plan taken away first. */
     @Override boolean closing(String terminal,String why){
