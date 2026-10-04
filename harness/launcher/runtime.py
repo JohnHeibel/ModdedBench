@@ -494,6 +494,7 @@ def set_server_properties(server: Path, accept_eula: bool, server_ip: str = "127
     # The pack ships difficulty=3 (hard); runs are played on easy unless MB_DIFFICULTY says otherwise.
     wanted = {"server-ip": server_ip, "server-port": "25575", "online-mode": "false", "white-list": "false", "enable-rcon": "false",
               "difficulty": os.environ.get("MB_DIFFICULTY", "1")}
+    if os.environ.get("MB_SEED"): wanted["level-seed"] = os.environ["MB_SEED"]  # a test run on the terrain of an earlier one; read when the world is first made
     seen: set[str] = set()
     out = []
     for line in lines:
