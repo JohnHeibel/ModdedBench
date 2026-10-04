@@ -75,7 +75,9 @@ public final class InventoryBehavior extends Behavior implements Helper {
             return;
         }
         ticksSinceLastInventoryMove++;
-        if (firstValidThrowaway() >= 9) { // aka there are none on the hotbar, but there are some in main inventory
+        // ModdedBench: never over what is in hand. select() puts a tool there when the hotbar is full, and with the throwaway
+        // held in slot 8 the two swaps took turns for good while the job waited on a pending move (run of 2026-10-04).
+        if (firstValidThrowaway() >= 9 && ctx.player().inventory.currentItem != 8) { // aka there are none on the hotbar, but there are some in main inventory
             requestSwapWithHotBar(firstValidThrowaway(), 8);
         }
         if (lastTickRequestedMove != null) {
