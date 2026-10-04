@@ -262,8 +262,9 @@ class Kernel:
         r = self.call_reply(method, timeout, **params)
         if not r.ok and str((r.error or {}).get("msg", "")).startswith("pause has not settled") and self._await_settled():
             r = self.call_reply(method, timeout, **params)  # refused before it ran: this is still its first run
-        if wanted is not None and isinstance(r.raw.get("resumedWorld"), dict):
-            wanted.update(r.raw["resumedWorld"], resumed=True)
+        asked = r.raw.get("resumedWorld")
+        if wanted is not None and isinstance(asked, dict):
+            wanted.update(asked, resumed=not asked.get("stayedPaused"))  # stayedPaused: the action failed at once, so the client sent no resume
         if not r.ok and wanted is not None and not wanted.get("resumed") and str((r.error or {}).get("msg", "")).startswith("time_paused"):
             params.pop("_resume", None)  # a client without resume-and-act: resume first, then send it again
             self._resume_for(wanted)  # the refused request never ran, so sending it again is its first run
@@ -272,6 +273,8 @@ class Kernel:
             msg = (r.error or {}).get("msg", "")
             if wanted is None and msg.startswith("time_paused"):
                 msg += " (or call the tool again with resume=True: it resumes the world and acts in one step)"
+            if isinstance(asked, dict) and asked.get("stayedPaused"):
+                msg += " (the action ended at once, so the world was not resumed: it is still paused)"
             raise BridgeError((r.error or {}).get("code", "?"), msg, method, r.raw)
         return r.data
 

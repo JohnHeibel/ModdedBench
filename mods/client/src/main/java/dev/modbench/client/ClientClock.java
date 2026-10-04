@@ -32,6 +32,8 @@ public final class ClientClock implements ClockHooks.Driver {
      */
     private boolean resuming, creditTick, resumeSent;
     private int resumeTicks, creditRan;
+    private Request resumer;
+    private Thread resumerThread;
     private Session agent;
     final PausedFrame presentation=new PausedFrame(this);
     private final SmoothView view=new SmoothView();
@@ -80,10 +82,20 @@ public final class ClientClock implements ClockHooks.Driver {
         if(agent!=null && agent.connected && agent!=r.session) throw new IllegalArgumentException("time control belongs to another connected agent session");
         if(Json.bool(state,"held",false)) throw new IllegalArgumentException("the operator is holding the world paused; wait for the release");
         if(!"paused".equals(Json.string(state,"mode",""))) throw new IllegalArgumentException("pause has not settled; inspect time.status before resuming");
-        agent=r.session;resuming=creditTick=true;resumeSent=false;resumeTicks=ticks;
+        agent=r.session;resuming=creditTick=true;resumeSent=false;resumeTicks=ticks;resumer=r;resumerThread=Thread.currentThread();
         JsonObject record=Json.object("pausedBy",pauseReason(),"threats",state.has("threats")?state.get("threats"):new com.google.gson.JsonArray());
         if(ticks>0) record.addProperty("ticks",ticks);
         r.resumed=record;
+    }
+    /**
+     * The action that asked for the resume ended in an error before the resume was sent: refused outright, or failed
+     * on its own first tick (outcomes are collected at the end of that tick, ahead of the resume). It did nothing, so
+     * the resume is withdrawn and the world stays paused; a step would otherwise run its ticks with the body idle.
+     */
+    void failed(Request r) {
+        if(r!=resumer || !resuming || resumeSent || Thread.currentThread()!=resumerThread) return;
+        resuming=creditTick=false;creditRan=0;resumer=null;planHold.reset();
+        r.resumed.addProperty("stayedPaused",true);
     }
     private void sendResume() {
         resumeSent=true;
