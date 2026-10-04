@@ -19,7 +19,9 @@ import runtime
 from kernel import Kernel
 
 DOCKER = shutil.which("docker") or "C:/Program Files/Docker/Docker/resources/bin/docker.exe"  # a shell opened before the install lacks the PATH entry
-COMPOSE = [DOCKER, "compose", "-f", str(REPO / "docker" / "compose.yaml"), "--env-file", str(REPO / "docker" / ".env")]
+PROJECT = os.environ.get("MB_COMPOSE_PROJECT", "")  # a second stack beside the real one: docker/compose.side.yaml
+COMPOSE = [DOCKER, "compose", *(["-p", PROJECT] if PROJECT else []), "-f", str(REPO / "docker" / "compose.yaml"),
+           *(["-f", str(REPO / "docker" / "compose.side.yaml")] if PROJECT else []), "--env-file", str(REPO / "docker" / ".env")]
 PY = [sys.executable, "-u"]
 LAUNCHER, DEPLOY = str(REPO / "harness" / "launcher" / "runtime.py"), str(REPO / "harness" / "launcher" / "deploy.py")
 BRIEF = REPO / ".runtime" / "brief"
@@ -180,7 +182,7 @@ class Console:
             req, res = runtime.load_json(folder / "request.json"), runtime.load_json(folder / "result.json")
             deploys.append({"time": folder.name, "components": req.get("components"), "reason": req.get("reason"), "ok": res.get("ok"), "error": res.get("error")})
         return {"docker": ps.returncode == 0, "dockerError": ps.stderr[-300:], "services": services, "agent": agent, "game": self.game(), "deploys": deploys,
-                "supervisor": serving("deploy-supervisor"), "backups": serving("backup-" + os.environ.get("MB_COMPOSE_PROJECT", "moddedbench")), "job": self.job}
+                "supervisor": serving("deploy-supervisor"), "backups": serving("backup-" + (PROJECT or "moddedbench")), "job": self.job}
 
     def context(self):
         """(tokens in context, context window) of the newest thread, read at most every 5 s."""
@@ -380,8 +382,8 @@ class Console:
             prompt = fill_prompt((REPO / "PROMPT.md").read_text(encoding="utf-8"), str(a.get("targetQuest", "")).strip(), str(a.get("targetChapter", "")).strip())
             up = "agent" in sh([*COMPOSE, "ps", "--services", "--status", "running"]).stdout.split()
             steps = [[*agent, "sh", "-c", "pkill -f '[c]odex_loop.py'; pkill -x codex; true"]] if up else []
-            if a.get("freshWorld"): steps += [[*COMPOSE, "rm", "-sf", "server"], [DOCKER, "volume", "rm", "-f", "moddedbench_server-data"]]
-            if a.get("freshAgent"): steps += [[*COMPOSE, "rm", "-sf", "agent"], [DOCKER, "volume", "rm", "-f", "moddedbench_agent-work"]]
+            if a.get("freshWorld"): steps += [[*COMPOSE, "rm", "-sf", "server"], [DOCKER, "volume", "rm", "-f", f"{PROJECT or 'moddedbench'}_server-data"]]
+            if a.get("freshAgent"): steps += [[*COMPOSE, "rm", "-sf", "agent"], [DOCKER, "volume", "rm", "-f", f"{PROJECT or 'moddedbench'}_agent-work"]]
             # The brief lives on the host and is mounted read-only at /brief: the agent can read its mission and rules but not rewrite them.
             shutil.rmtree(OVERLAY, ignore_errors=True)  # a new run starts a new feed and new totals
             BRIEF.mkdir(parents=True, exist_ok=True); (BRIEF / "PROMPT.md").write_text(prompt, encoding="utf-8", newline="")
