@@ -10,6 +10,7 @@ Two rules sit above the agent. Time control belongs to the bridge session that
 last used it, and losing that session pauses the world (`agent_disconnected`).
 An operator hold (the file `modbench-hold` in the server directory, status
 `held`) pauses the world and refuses `time.resume` until the file is removed.
+A hold that interrupts a step gives the step its remaining ticks back on release.
 
 ## Contract
 
@@ -19,7 +20,7 @@ An operator hold (the file `modbench-hold` in the server directory, status
 | Client simulation | The client gates its own simulation ticks while the server is paused. |
 | Still live | Networking, keepalives, bridge requests, reconnect negotiation, chunk delivery, observations, screenshots, NEI inspection. |
 | Gameplay packets | Deferred, then released in per-connection order at the network stage of the first resumed tick, after world updates. |
-| Actions | `act.*` and `gui.*` actions are rejected before any input unless they carry `_resume`. A running action can still be stopped. |
+| Actions | `act.*` and `gui.*` actions are rejected before any input unless they carry `_resume`; the refusal (`time_paused`) names the pause's reason, and says so when a guard made it. A running action can still be stopped. |
 
 ## Stepping
 
@@ -48,7 +49,10 @@ resumed tick, so the action starts on that tick, and the client counts its
 early tick as the first of a step. The reply carries `resumedWorld` (the pause
 it lifted). The client refuses up front when the pause is unsettled or held; if
 the server still refuses, the action ends with `resume_refused` and the world
-stays paused. Tools expose this as `resume=True` or `resume=N`.
+stays paused. Tools expose this as `resume=True` or `resume=N`: only the tool
+call's first acting request carries the directive, so a pause that comes later
+in the same call (a guard) stands, and a call whose resume lifted nothing says
+`resumeUnused`. A request the game thread refuses resumes nothing.
 
 A navigation job still running when its step ends is suspended, not cancelled:
 the request is answered with state `suspended` and a `suspendedJobId`, and the
@@ -58,7 +62,10 @@ its outcome if it finished meanwhile). A guard pause or any new action ends it.
 
 Guards (`healthDrop`, `healthBelow`, `airBelow`, `foodBelow`, `burning`,
 `pauseOnDisconnect`, and `actionFailed`, which pauses when a caller sends
-`time.report_failure`) pause at a tick boundary. They never act. While a
+`time.report_failure`) pause at a tick boundary. They never act. A guard's
+reason stays the pause reason until the resume, whatever pauses after it; one
+that fires on a step's last tick ends the step and is its `endedBy`; and each
+threshold is reported by its own pause, once, until the value recovers. While a
 fight job runs, `healthDrop` and `threat` from mobs within its range (4 blocks,
 8 standing) stay quiet; the rest stay armed.
 
