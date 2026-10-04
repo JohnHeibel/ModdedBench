@@ -119,4 +119,39 @@ class RecipeSummaryTests(unittest.TestCase):
         self.assertEqual(len(self.k.calls), 1)
 
 
+class QuestTests(unittest.TestCase):
+    def setUp(self):
+        from mbtools_gtnh import recipes_quests
+        self.quests = recipes_quests; mbtool.state.pop("quest_titles", None); self.addCleanup(mbtool.state.pop, "quest_titles", None)
+        self.book = {f"q{n:03d}": f"Quest {n}" for n in range(250)}
+
+    def reply(self, method, p):
+        if method == "quest.search":
+            ids = sorted(self.book)[p["offset"]:p["offset"] + p["limit"]]; end = p["offset"] + len(ids)
+            return {"quests": [{"id": i, "name": self.book[i], "description": "long " * 50} for i in ids], "nextOffset": end if end < len(self.book) else None}
+        if method == "quest.lines":
+            return {"lines": [{"id": "line", "name": "Tier 1", "quests": 2, "locked": 1, "entries": [{"questId": i, "x": 540, "y": 516, "sizeX": 24, "sizeY": 24, "state": s} for i, s in self.entries]}], "total": 1}
+        return {"id": "q001", "tasks": [{"id": 0, "config": "{requiredItems:[0:{id:\"minecraft:stick\",Damage:0s}],consume:1b}", "items": [{"name": "Stick", "need": 1, "submitted": 0, "have": 0}]}],
+                "rewards": [{"id": 0, "type": "bq_standard:item", "config": "{rewards:[0:{id:\"minecraft:apple\"}]}"},
+                            {"id": 1, "type": "bq_standard:choice", "config": "{choices:[0:{id:\"minecraft:diamond\"}]}", "choice": {"selectedIndex": -1, "options": [{"choiceIndex": 0, "stack": {"id": "minecraft:diamond", "meta": 0, "count": 9}}]}}]}
+
+    def test_line_entries_carry_titles_not_layout_and_the_book_is_read_once(self):
+        self.entries = [("q007", "UNLOCKED"), ("q249", "LOCKED")]
+        k = FakeKernel(self.reply)
+        with patch.object(self.quests, "kernel", lambda: k):
+            line = self.quests.mb_quest_lines("Tier 1")["lines"][0]
+            self.assertEqual(line["entries"], [{"questId": "q007", "name": "Quest 7", "state": "UNLOCKED"}, {"questId": "q249", "name": "Quest 249", "state": "LOCKED"}])
+            self.assertEqual((line["name"], line["locked"]), ("Tier 1", 1))
+            self.assertEqual([c[1]["offset"] for c in k.calls if c[0] == "quest.search"], [0, 100, 200])
+            self.quests.mb_quest_lines("Tier 1")
+            self.assertEqual(len(k.calls), 5)  # titles are kept: the second read is the one bridge call
+            self.book["q250"] = "A quest synced later"; self.entries.append(("q250", "LOCKED"))
+            self.assertEqual(self.quests.mb_quest_lines()["lines"][0]["entries"][2]["name"], "A quest synced later")
+
+    def test_observe_drops_raw_config_only_where_the_structured_form_says_as_much(self):
+        with patch.object(self.quests, "kernel", lambda: FakeKernel(self.reply)): quest = self.quests.mb_quest_observe("q001")
+        self.assertEqual(["config" in r for r in quest["rewards"]], [True, False])  # an item reward has no other description; a choice's options are its config
+        self.assertIn("consume:1b", quest["tasks"][0]["config"])  # items name the stacks; their id, meta and the consume rule are only here
+
+
 if __name__ == "__main__": unittest.main()

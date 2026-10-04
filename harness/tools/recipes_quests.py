@@ -10,7 +10,7 @@ from typing import Any
 
 from mcp.types import CallToolResult, TextContent, ImageContent
 
-from mbtool import kernel, tool
+from mbtool import kernel, state, tool
 from mbtools_gtnh import notes
 
 
@@ -39,8 +39,16 @@ def mb_quest_search(query: str = "", offset: int = 0, limit: int = 20) -> Any:
 
 @tool(lane="read", coverage=["progression"])
 def mb_quest_lines(query: str = "", offset: int = 0, limit: int = 10) -> Any:
-    """Read native quest-line order, layout and per-player state totals."""
-    return kernel().call("quest.lines", query=query, offset=offset, limit=limit)
+    """Read quest lines in book order: per-player state totals and every quest's id, title and state."""
+    k = kernel(); found = k.call("quest.lines", query=query, offset=offset, limit=limit)
+    titles = state.setdefault("quest_titles", {})  # the bridge's entries are an id and pixel layout: the book's titles are read once, 100 a call
+    at = None if all(e["questId"] in titles for line in found["lines"] for e in line["entries"]) else 0
+    while at is not None:
+        page = k.call("quest.search", query="", offset=at, limit=100); at = page.get("nextOffset")
+        titles.update((quest["id"], quest["name"]) for quest in page["quests"])
+    for line in found["lines"]:
+        line["entries"] = [{"questId": e["questId"], "name": titles.get(e["questId"]), "state": e["state"]} for e in line["entries"]]
+    return found
 
 
 @tool(lane="read", coverage=["progression"])
@@ -49,10 +57,14 @@ def mb_quest_observe(quest_id: str) -> Any:
 
     A retrieval task lists items: each required item with need, submitted (already
     handed in) and have (what you carry that the task's own matcher accepts, ore
-    dictionary and NBT rules included). Reward choices expose native indices.
+    dictionary and NBT rules included). Reward choices expose native indices, and
+    their options stand for that reward's config.
     Task/reward NBT is descriptive SNBT and never authorizes direct state mutation.
     """
-    return kernel().call("quest.observe", questId=quest_id)
+    quest = kernel().call("quest.observe", questId=quest_id)
+    for reward in quest.get("rewards") or []:
+        if "choice" in reward: reward.pop("config", None)  # the same stacks as the options, as raw SNBT
+    return quest
 
 
 @tool(rung=1, coverage=["progression"])
