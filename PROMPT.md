@@ -29,15 +29,10 @@ noise either: see "The side branches are the book's advice" below. How you
 arrive counts: equipped, housed, with storage and tools that work, or scraping
 by.
 
-**In this run raw materials are supplied.** Anything you would otherwise take
-from the world by mining, digging, chopping, farming, hunting or scooping
-comes from `mb_request`: say what you need, and the operator puts it in your
-inventory. Nothing made is supplied: no crafted, smelted or processed item, no
-tool, no machine. So finding and gathering are not what this run is about, and
-where this file talks about veins, mines and trips for materials, read it as a
-request. Everything else is yours, exactly as it would be otherwise: the base,
-the storage, the power, every machine and every line that turns raw materials
-into what the book asks for.
+**The operator has set this run's task: "Your task is now to make a base for LV.
+Request any resources you need."** Requests go through `mb_request`, and the
+operator puts what you ask for in your inventory. This task replaces the target
+above: no quest ends the run, and the operator stops it.
 
 This is meant to be hard: GT New Horizons is considered one of the most
 demanding modpacks, and most of what it asks for is infrastructure at scale.
@@ -1035,8 +1030,8 @@ can defend yourself, keep food varied and stocked, keep the guards armed.
 
 ## 6. Rules
 
-- Survival only, with one exception in this run: raw materials come from the
-  operator through `mb_request`. Beyond that, no `/give`, no creative mode,
+- Survival only, with one exception in this run: what you ask the operator for
+  through `mb_request`. Beyond that, no `/give`, no creative mode,
   no development fixtures, no direct NBT edits, no forced quest completion,
   no editing the world save.
   Quest actions send only the normal Better Questing packets.
@@ -1127,7 +1122,7 @@ shipped: once you start editing tools, `mb_tools_status` (what is loaded) and
 | Complete a quest | `mb_quest_detect` | `mb_quest_select_choice`, `mb_quest_claim`, then observe the quest and your inventory |
 | Wait for something | `mb_interrupt` (add a watch with a deadline) | `mb_wait`; `mb_interrupt_events` to replay what you missed |
 | Deal with a hostile mob | the clock's `threats`, `mb_obs` entities | `mb_fight` (one named mob, `hold=True` at a chokepoint, `swarm=True` for many small ones); `mb_process` goal `run_away` to leave |
-| Get raw materials (this run) | `mb_request` | nothing made is supplied |
+| Get resources (this run) | `mb_request` | the operator supplies what you ask for |
 | Stop something now | `mb_stop`, `mb_build_pause`, `mb_task(cancel=True)` for a background task | `mb_time` pause when you need to think |
 | Remember something | `mb_note_write` (after `mb_notes` capture) | `mb_goal` for where you are; `mb_memory` for waypoints, routes, protected regions |
 | Learn how the pack works | `mb_wiki_search` | `mb_wiki_read`, then a topic note |
@@ -1172,11 +1167,11 @@ and list what is loaded, with load errors.
 | `mb_time` | Control GTNH world time: status, pause, resume, step, configure, report_failure |
 | `mb_memory` | Persistent server-world/dimension memory: status, get, waypoint, route, protect, remove, record |
 
-**`harness/tools/dev.py`**: Supplied-materials test runs: the model asks the operator for raw materials instead of gathering them.
+**`harness/tools/dev.py`**: Supplied-materials test runs: the model asks the operator for items instead of gathering or making them.
 
 | Tool | What it does |
 | --- | --- |
-| `request` | Ask the operator for raw materials: anything you would otherwise take from the world by mining, digging, chopping, farming, hunting or scooping |
+| `request` | Ask the operator for resources |
 
 **`harness/tools/interrupts.py`**: Composable, process-local interrupt watches for the GTNH bridge, and the mb_interrupt tools.
 

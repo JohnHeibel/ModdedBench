@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 # Copyright (c) 2026 ModdedBench contributors
-"""Supplied-materials test runs: the model asks the operator for raw materials instead of gathering them.
+"""Supplied-materials test runs: the model asks the operator for items instead of gathering or making them.
 
 A request is a file in ``$MODBENCH_OUTBOX/requests`` (the same folder-as-mailbox pattern as the deploy supervisor,
 harness/launcher/deploy.py); the operator answers with ``<id>.result.json`` (harness/launcher/supply.py). The
@@ -22,14 +22,12 @@ REQUESTS = Path(os.environ.get("MODBENCH_OUTBOX") or ("/outbox" if os.path.isdir
 
 @tool(lane="read", name="mb_request")
 def request(items: list | None = None, reason: str = "", wait_seconds: int = 600, request: str = "") -> dict:
-    """Ask the operator for raw materials: anything you would otherwise take from the world by mining, digging,
-    chopping, farming, hunting or scooping. items is a list of {"id": registry name, "meta": damage value,
-    "count": n}, named the way the game names them (mb_recipes and your inventory show the ids). Nothing made is
-    supplied: no crafted, smelted or processed item. The operator reads the request and answers in a minute or
-    two of real time; the game clock is left as you set it. Granted items go into your inventory, and what does
-    not fit drops at your feet; given while the world is paused, they show in your inventory once it ticks.
-    Returns what was given and what was refused, with the reason. If the answer has not come within
-    wait_seconds, returns status "pending": call again with request=<id> to go on waiting."""
+    """Ask the operator for resources. items is a list of {"id": registry name, "meta": damage value, "count": n},
+    named the way the game names them (mb_recipes and your inventory show the ids). The operator reads the
+    request and answers in a minute or two of real time; the game clock is left as you set it. Granted items go
+    into your inventory, and what does not fit drops at your feet; given while the world is paused, they show in
+    your inventory once it ticks. Returns what was given and what was refused, with the reason. If the answer
+    has not come within wait_seconds, returns status "pending": call again with request=<id> to go on waiting."""
     REQUESTS.mkdir(parents=True, exist_ok=True)
     if request: rid = request
     else:
