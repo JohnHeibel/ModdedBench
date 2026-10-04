@@ -209,7 +209,8 @@ class Tasks(bs.Shells):
         before = state["before"]
         walls = [(x, y, z) for x in range(9) for z in range(1, 8) for y in (5, 6) if x in (0, 8) or z in (1, 7)]
         roof = [(x, 7, z) for x in range(9) for z in range(1, 8)]
-        built = sum(after.get(self.key(c)) == f"{BRICK}:0" for c in walls + roof)
+        # The test hall's lamps hang in two cells of the new roof: left where they are, they are roof.
+        built = sum(after.get(self.key(c)) == f"{BRICK}:0" or (self.key(c) in before and after.get(self.key(c)) == before[self.key(c)]) for c in walls + roof)
         ladders = {self.cell(k) for k, v in after.items() if v.startswith("minecraft:ladder:")}
         open_ = lambda c: self.key(c) not in after or c in ladders
         # A way up: ladders from the ground floor through the old roof in one column, and room to step off above it.
