@@ -74,6 +74,17 @@ def _mark_run(path, started, max_minutes):
         started = old["startedAt"]
     path.write_text(json.dumps({"startedAt": started, "endsAt": ends}), encoding="utf-8")
 
+def _saved_thread(state):
+    """The thread id an earlier start left. A file that cannot be read is put aside (``.bad``) and counts as absent, so one bad write does not fail every start."""
+    try: thread = json.loads(state.read_text(encoding="utf-8"))["thread"]
+    except FileNotFoundError: return None
+    except (OSError, ValueError, KeyError, TypeError): thread = None
+    if isinstance(thread, str) and thread: return thread
+    print("codex_loop: %s is unreadable: kept as .bad, starting a new thread" % state, file=sys.stderr)
+    try: os.replace(state, state.with_name(state.name + ".bad"))
+    except OSError: pass
+    return None
+
 def _git(repo, *args):
     try: return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, timeout=20).stdout.strip() or None
     except Exception: return None
@@ -117,7 +128,7 @@ def run(repo=REPO, prompt=None, max_turns=50, state=None, codex=None, extra=(), 
     repo = Path(repo); prompt = Path(prompt or repo / "PROMPT.md"); state = Path(state or repo / ".state" / "codex-loop.json")
     codex = list(codex or [shutil.which("codex") or "codex"])  # the npm shim is codex.cmd on Windows
     for d in (repo / ".state", state.parent): d.mkdir(parents=True, exist_ok=True)
-    thread = json.loads(state.read_text(encoding="utf-8")).get("thread") if state.exists() else None
+    thread = _saved_thread(state)
     failures = 0; feed = Feed(Path(os.environ.get("MODBENCH_OUTBOX", repo / ".state")) / "overlay")
     effort = [x.split("=", 1)[1].strip('"') for x in extra if x.startswith("model_reasoning_effort=")]  # what the viewer is watching, from the arguments for codex
     feed.live["run"] = {"model": extra[extra.index("-m") + 1] if "-m" in extra[:-1] else "", "effort": effort[-1] if effort else ""}
@@ -190,7 +201,8 @@ def main(argv=None):
     ap.add_argument("--max-minutes", type=float, help="wall-clock budget for this start; the turn is ended where it stands")
     ap.add_argument("--max-tokens", type=int, help="input tokens for this start, cached ones included (~100k a call at full context), estimated mid-turn")
     a = ap.parse_args(argv[:argv.index("--")] if "--" in argv else argv)
-    reason = run(a.repo, a.prompt, a.max_turns, a.state, extra=extra, max_minutes=a.max_minutes, max_tokens=a.max_tokens)
+    try: reason = run(a.repo, a.prompt, a.max_turns, a.state, extra=extra, max_minutes=a.max_minutes, max_tokens=a.max_tokens)
+    except BaseException: print("# %s codex_loop died:" % time.strftime("%Y-%m-%dT%H:%M:%S"), file=sys.stderr); raise  # the console sends stderr to .state/codex-loop.err
     print("codex_loop: " + reason); return 0 if reason in ("complete", "stop_file") else 1
 
 if __name__ == "__main__": sys.exit(main())

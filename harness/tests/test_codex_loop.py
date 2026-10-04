@@ -118,6 +118,26 @@ class CodexLoopTests(unittest.TestCase):
         reason, _ = self.loop([{"events": [{"type": "thread.started", "thread_id": "T-1"}, {"type": "turn.started", "sleep": 40}]}])
         self.assertEqual(("stop_file", [json.dumps({"thread": "T-1"})]), (reason, saved))
 
+    def test_an_unreadable_state_file_is_put_aside_and_the_run_starts_a_new_thread(self):
+        state = self.repo / ".state" / "codex-loop.json"; state.parent.mkdir()
+        for bad in ('{"thread": "T-', "[]", '{"thread": 7}'):
+            state.write_text(bad); (self.repo / "calls.json").unlink(missing_ok=True)
+            with contextlib.redirect_stderr(io.StringIO()) as err: reason, calls = self.loop([{"events": [{"type": "thread.started", "thread_id": "T-2"}]}], max_turns=1)
+            self.assertEqual(("max_turns", "the mission", bad), (reason, calls[0]["stdin"], (self.repo / ".state" / "codex-loop.json.bad").read_text()))
+            self.assertEqual({"thread": "T-2"}, json.loads(state.read_text())); self.assertIn("unreadable", err.getvalue())
+
+    def test_an_outbox_that_cannot_be_written_costs_the_feed_not_the_run(self):
+        from feed import Feed
+        with tempfile.TemporaryDirectory() as d:
+            f = Feed(Path(d)); (Path(d) / "live.tmp").mkdir(); (Path(d) / "feed.jsonl").mkdir()  # every write now raises OSError
+            f.status("game_down"); f.body({"task": "t1"}); f.add("mark", "MISSION COMPLETE"); f.event({"type": "turn.started"})
+            self.assertEqual("thinking", f.live["status"]["state"])
+
+    def test_a_loop_that_dies_says_when_on_stderr(self):
+        with contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(OSError):
+            codex_loop.main(["--repo", str(self.repo), "--prompt", str(self.repo / "no-such-prompt.md")])
+        self.assertRegex(err.getvalue(), r"# \d{4}-\d\d-\d\dT[\d:]{8} codex_loop died")
+
     def test_stop_file_ends_the_loop(self):
         reason, calls = self.loop([{"events": [{"type": "thread.started", "thread_id": "T-1"}], "stop": True}])
         self.assertEqual(("stop_file", 1), (reason, len(calls)))

@@ -184,14 +184,15 @@ class Feed:
         stats["activeSince"] = None
 
     def _save(self):
-        tmp = self.folder / "live.tmp"; tmp.write_text(json.dumps(self.live), encoding="utf-8")
-        try: tmp.replace(self.folder / "live.json")
-        except OSError: pass  # the console has it open for a read (Windows refuses the swap); the next save lands
+        try: tmp = self.folder / "live.tmp"; tmp.write_text(json.dumps(self.live), encoding="utf-8"); tmp.replace(self.folder / "live.json")
+        except OSError: pass  # the console has it open for a read (Windows refuses the swap), or the outbox is away: the next save lands, and the feed never ends a run
 
     def add(self, kind, text, **more):
         text = re.sub("§.", "", text)  # Minecraft colour codes in quest titles
         if not text: return
-        with open(self.folder / "feed.jsonl", "a", encoding="utf-8") as f: f.write(json.dumps({"ts": time.time(), "kind": kind, "text": text, **more}) + "\n")
+        try:
+            with open(self.folder / "feed.jsonl", "a", encoding="utf-8") as f: f.write(json.dumps({"ts": time.time(), "kind": kind, "text": text, **more}) + "\n")
+        except OSError: pass  # a line the viewer misses, not a run that ends
 
     def body(self, value):
         """The background task the body is working on ({task, name, for, now}, None when idle): for the overlay and the console."""
