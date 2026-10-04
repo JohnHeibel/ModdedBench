@@ -30,4 +30,22 @@ public class FaceSamplesTest {
             }
         }
     }
+    /** Run of 2026-10-04: a chest's top (0.875 high, 1/16 in from each side) from 2.6 blocks away and 0.75 above it. A look
+     *  toward the middle of the cell's top lands on the far edge of the chest's, and the click's own look went past it. */
+    @Test public void aLowLookAtAChestAimsWhereItsTopGoesOnToEverySide() {
+        double[] eye={2.6672,1.62,-.4591},lo={.0625,0,.0625},hi={.9375,.875,.9375},centre={.5,.875,.5};
+        assertEquals(lo[0],top(eye,FaceSamples.points(1,centre).get(0),lo,hi)[0],.002);   // what was aimed at
+        double[] aim=FaceSamples.aim(1,centre,h->top(eye,h,lo,hi));
+        assertEquals(hi[1],aim[1],0);
+        for(int i:new int[]{0,2})assertTrue(aim[i]-lo[i]>=FaceSamples.MARGIN&&hi[i]-aim[i]>=FaceSamples.MARGIN);
+        double[] left={.49,0,.0625},right={.51,.875,.9375};                              // narrower than the margin: still clicked
+        assertArrayEquals(centre,FaceSamples.aim(1,centre,h->top(eye,h,left,right)),1e-9);
+        assertNull(FaceSamples.aim(1,centre,h->null));
+    }
+    /** Where the look from an eye above a box toward h lands on the box's top, or null. */
+    private static double[] top(double[] eye,double[] h,double[] lo,double[] hi) {
+        double t=(hi[1]-eye[1])/(h[1]-eye[1]);
+        double[] at={eye[0]+t*(h[0]-eye[0]),hi[1],eye[2]+t*(h[2]-eye[2])};
+        return t>0&&at[0]>=lo[0]&&at[0]<=hi[0]&&at[2]>=lo[2]&&at[2]<=hi[2]?at:null;
+    }
 }

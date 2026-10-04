@@ -217,7 +217,7 @@ own opt-ins. The receipt's settings show
 | `mb_quest_observe` | read | One quest: prerequisites, tasks with progress, rewards and choices. |
 | `mb_quest_detect` | action | Asks the server to detect task completion. |
 | `mb_quest_select_choice` | action | Selects a reward option. |
-| `mb_quest_claim` | action | Claims rewards; verify by re-observing the quest and inventory. |
+| `mb_quest_claim` | action | Claims all of a quest's rewards and reports what arrived. |
 
 Recipe workflow: `mb_item_search` (keep `id`, `meta`, `nbt` together), then
 `mb_recipes` with the default `limit=0` for the per-category overview, again
