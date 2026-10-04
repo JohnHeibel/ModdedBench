@@ -336,13 +336,24 @@ final class ClickRun {
             v=task.vantages.get(0);
         }
         task.at=v;
+        // Where the face lies is the game's to say: its ray can find the block on another shape than the copy showed.
+        var over=mc.objectMouseOver;
+        if(!task.breaking()&&task.step.click().hit()!=null&&over!=null&&over.typeOfHit==MovingObjectPosition.MovingObjectType.BLOCK&&over.sideHit==v.click().face()
+            &&over.blockX==v.click().block().getX()&&over.blockY==v.click().block().getY()&&over.blockZ==v.click().block().getZ()) {
+            ClickSpec.Vec moved=Vantages.onPlane(v.point(),v.click().face(),over.hitVec.xCoord,over.hitVec.yCoord,over.hitVec.zCoord);
+            if(moved!=v.point()){Vantages.Vantage old=v,now=new Vantages.Vantage(v.feet(),v.standingY(),v.eye(),v.click(),moved,v.yaw(),v.pitch());
+                task.vantages=task.vantages.stream().map(x->x==old?now:x).toList();task.at=v=now;}
+        }
         var eye=mc.thePlayer.getPosition(1);
         double dx=v.point().x()-eye.xCoord,dy=v.point().y()-eye.yCoord,dz=v.point().z()-eye.zCoord;
         float yaw=(float)Math.toDegrees(Math.atan2(-dx,dz)),pitch=(float)-Math.toDegrees(Math.atan2(dy,Math.hypot(dx,dz)));
         Set<Integer> keys=task.sneak()?Set.of(mc.gameSettings.keyBindSneak.getKeyCode()):Set.of();
+        // The click of a tick goes out before that tick's look does: the server places by the look of the tick before, so
+        // the look has to have stood for a tick already (a body still sliding to rest turns it a little every tick).
+        boolean sent=mc.thePlayer.rotationYaw==yaw&&mc.thePlayer.rotationPitch==pitch;
         job.lease.look(yaw,pitch);job.lease.setKeys(keys);
         ClickSpec.Look look=task.breaking()?ClickSpec.Look.ANY:task.step.click().look();
-        boolean ready=look.accepts(mc.thePlayer.rotationYaw,mc.thePlayer.rotationPitch)&&mc.thePlayer.isSneaking()==task.sneak()
+        boolean ready=sent&&look.accepts(mc.thePlayer.rotationYaw,mc.thePlayer.rotationPitch)&&mc.thePlayer.isSneaking()==task.sneak()
             &&Math.hypot(mc.thePlayer.motionX,mc.thePlayer.motionZ)<.02&&mc.thePlayer.onGround;
         ControlRegistry.targeting().refresh();var hit=mc.objectMouseOver;BlockPos b=v.click().block();
         boolean on=hit!=null&&hit.typeOfHit==MovingObjectPosition.MovingObjectType.BLOCK&&hit.blockX==b.getX()&&hit.blockY==b.getY()&&hit.blockZ==b.getZ()
@@ -379,6 +390,12 @@ final class ClickRun {
         var hit=mc.objectMouseOver;boolean block=hit!=null&&hit.typeOfHit==MovingObjectPosition.MovingObjectType.BLOCK;
         task.diagnosis=Map.of("aimedAt",Map.of("block",point(task.at.click().block()),"face",ClickSpec.NAMES[task.at.click().face()],"stand",point(task.at.feet())),
             "nativeHit",block?Map.of("pos",List.of(hit.blockX,hit.blockY,hit.blockZ),"face",ClickSpec.NAMES[hit.sideHit]):"none");
+        // A hit beside the shape the block showed, and the game's ray did not land on it either: the block is not there.
+        if(!task.breaking()&&task.step.target().hit()!=null&&space!=null&&!Vantages.shown(space,task.at.click(),task.step.target().hit())) {
+            var d=new LinkedHashMap<String,Object>(task.diagnosis);BlockPos o=task.at.click().block();var boxes=space.at(o).selection();
+            if(!boxes.isEmpty()){var u=boxes.get(0);d.put("shape",List.of(List.of(round(u.minX()-o.getX()),round(u.minY()-o.getY()),round(u.minZ()-o.getZ())),List.of(round(u.maxX()-o.getX()),round(u.maxY()-o.getY()),round(u.maxZ()-o.getZ()))));}
+            task.diagnosis=d;fail("hit_not_on_face");return;
+        }
         task.tried.add(task.at.feet());task.age=0;
         task.vantages=task.vantages.stream().filter(x->!task.tried.contains(x.feet())).toList();
         if(!task.vantages.isEmpty()){route();return;}
