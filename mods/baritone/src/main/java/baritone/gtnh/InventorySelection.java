@@ -14,7 +14,7 @@ final class InventorySelection {
     private final Minecraft mc=Minecraft.getMinecraft();
     final int source,hotbar;
     final ItemStack expected;
-    private final ItemStack displaced;
+    private ItemStack displaced;
     private boolean started;
     private dev.modbench.api.Controls.InventorySession screen;
     private boolean opened;
@@ -22,7 +22,6 @@ final class InventorySelection {
     InventorySelection(int source) {
         this.source=source;hotbar=hotbarSlot(source);
         ItemStack stack=mc.thePlayer.inventory.getStackInSlot(source);expected=stack==null?null:stack.copy();
-        ItemStack old=mc.thePlayer.inventory.getStackInSlot(hotbar);displaced=old==null?null:old.copy();
     }
     private int hotbarSlot(int source) {
         if(source<9)return source;
@@ -47,7 +46,9 @@ final class InventorySelection {
             if(mc.thePlayer.openContainer!=mc.thePlayer.inventoryContainer || mc.thePlayer.inventory.getItemStack()!=null)
                 throw new IllegalArgumentException("inventory_must_be_closed_with_empty_cursor");
             if(!ItemStack.areItemStacksEqual(expected,mc.thePlayer.inventory.getStackInSlot(source))) throw new IllegalArgumentException("inventory_changed_before_selection");
-            if(source>=9 && !ItemStack.areItemStacksEqual(displaced,mc.thePlayer.inventory.getStackInSlot(hotbar))) throw new IllegalArgumentException("hotbar_changed_before_selection");
+            // What the swap moves out of the hotbar is read now, not when the slot was chosen: an item picked up in between
+            // lands in the first empty hotbar slot, which is the slot chosen.
+            ItemStack old=mc.thePlayer.inventory.getStackInSlot(hotbar);displaced=old==null?null:old.copy();
             mc.playerController.resetBlockRemoving();
             if(source>=9) {
                 // Resolve actual slots: packs can add slots to the player container.
