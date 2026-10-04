@@ -33,7 +33,7 @@ REPO = Path(__file__).resolve().parents[2]
 DOCKER = shutil.which("docker") or "C:/Program Files/Docker/Docker/resources/bin/docker.exe"
 PROJECT = os.environ.get("MB_COMPOSE_PROJECT", "moddedbench")  # a test stack is `-p mbtest`
 COMPOSE = [DOCKER, "compose", "-p", PROJECT, "-f", str(REPO / "docker" / "compose.yaml"), "--env-file", str(REPO / "docker" / ".env")]
-OUT, KEEP = REPO / ".runtime" / "snapshots", 48
+OUT, KEEP, OWNER = REPO / ".runtime" / "snapshots", 48, "backup"
 ALPINE = "alpine:3.20"  # the image the build already pulls (docker/Dockerfile); a restore must not depend on what `alpine` is that day
 # The hold file stays out: restored, it would hold the world with nobody left to release it.
 WORLD = "tar -C /data --exclude=./mods --exclude=./libraries --exclude=./logs --exclude=./crash-reports --exclude='./*.jar' --exclude=./modbench-hold -czf - ."
@@ -56,13 +56,13 @@ def sh(*args, to: Path | None = None) -> bool:
 def snapshot() -> Path | None:
     folder = OUT / time.strftime("%Y%m%d-%H%M%S"); folder.mkdir(parents=True)
     try:
-        held = sh("server", "test", "-f", "/data/modbench-hold")  # an operator pause already in force stays in force
-        if not held: sh("server", "touch", "/data/modbench-hold"); time.sleep(5)  # the hold lands on the next tick; let chunk IO drain
+        held = not sh("server", "sh", "-c", runtime.hold_cmd(OWNER, True))  # a hold already in force (the operator's, the compaction guard's) stays in force and is not ours to end
+        if not held: time.sleep(5)  # the hold lands on the next tick; let chunk IO drain
         try:
             world = sh("server", "sh", "-c", WORLD, to=folder / "world.tar.gz")
             notes = sh("agent", "python3", "-c", NOTES, to=folder / "notes.tar.gz")
         finally:
-            if not held: sh("server", "rm", "-f", "/data/modbench-hold")
+            if not held: sh("server", "sh", "-c", runtime.hold_cmd(OWNER, False))  # only our own: an operator's Pause during the copy took it over
     except BaseException:
         shutil.rmtree(folder, ignore_errors=True); raise  # an empty folder would count as a snapshot and push a real one out
     if not world:
@@ -129,4 +129,5 @@ if __name__ == "__main__":
         restore(Path(args.folder), args.reason.strip()); sys.exit()
     only = args.mode != "loop" or runtime.only_one(f"backup-{PROJECT}")  # a second loop would hold and release the world under the first one's copy
     if not only: sys.exit("another backup loop is already running for this stack")
+    if args.mode == "loop": sh("server", "sh", "-c", runtime.hold_cmd(OWNER, False))  # a hold left by a loop that was killed mid-copy: this is now the only loop
     loop(args.every if args.mode == "loop" else None)

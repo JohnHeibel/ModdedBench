@@ -55,9 +55,9 @@ for path in glob.glob(os.path.join(sessions, "*", "*", "*", "rollout-*.jsonl")):
 print(json.dumps(out))
 """
 COMPACTIONS = "f=$(ls -t /home/agent/.codex/sessions/*/*/*/rollout-*.jsonl 2>/dev/null | head -1); [ -n \"$f\" ] && grep -c '\"type\":\"compacted\"' \"$f\""
-# The operator hold is a file in the server directory: the server only asks whether it exists, and what it says is whose
-# hold it is, so that the compaction guard ends only its own.
-HOLD, OWN_HOLD, OPERATOR_HOLD = "/data/modbench-hold", "compaction", "operator"
+# The hold is a file in the server directory: the server only asks whether it exists, and what it says is whose hold it is
+# (runtime.hold_cmd: the operator's, the compaction guard's, a backup's), so that each ends only its own.
+OWN_HOLD, OPERATOR_HOLD = "compaction", "operator"
 TOKEN = secrets.token_urlsafe(24)
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 # One line of JSON about the loop, produced inside the agent container.
@@ -210,7 +210,7 @@ class Console:
         Only a world the guard finds running and unheld; it lets go when the compaction ends, when the model acts again
         (it was a long think), or after ten minutes, and never ends a hold that is not its own. While a background task has
         the body (live.json body) it does not hold: that would freeze the task; it holds once the task has ended."""
-        if self.hold_file(f"[ \"$(cat {HOLD} 2>/dev/null)\" = {OWN_HOLD} ] && rm -f {HOLD}").returncode == 0:
+        if self.hold_file(runtime.hold_cmd(OWN_HOLD, False)).returncode == 0:
             print("[ModdedBench] released a compaction hold left by an earlier console", flush=True)
         while True:
             time.sleep(every)
@@ -224,13 +224,13 @@ class Console:
                     clock = self.call("time.status")["state"]
                     if clock.get("held") or clock.get("paused"): continue  # someone else's hold, or the agent's own pause
                     count = int(self.agent_sh(COMPACTIONS).stdout.strip() or 0)
-                    if self.hold_file(f"[ -e {HOLD} ] || echo {OWN_HOLD} > {HOLD}").returncode == 0:
+                    if self.hold_file(runtime.hold_cmd(OWN_HOLD, True)).returncode == 0:
                         self.guard = (count, time.monotonic(), status.get("since")); print("[ModdedBench] compaction: world held", flush=True)
                     continue
                 done = int(self.agent_sh(COMPACTIONS).stdout.strip() or 0) > self.guard[0]
                 acted = status.get("state") != "thinking"
                 if done or acted or time.monotonic() - self.guard[1] > 600:
-                    self.hold_file(f"[ \"$(cat {HOLD} 2>/dev/null)\" = {OWN_HOLD} ] && rm -f {HOLD}")
+                    self.hold_file(runtime.hold_cmd(OWN_HOLD, False))
                     print(f"[ModdedBench] compaction: world released ({'compacted' if done else 'the model acted' if acted else 'ten minutes'})", flush=True)
                     self.guard_done, self.guard, self.ctx = self.guard[2], None, (0.0, None)  # read the context afresh
             except Exception as e: print(f"[ModdedBench] compaction guard: {type(e).__name__}: {e}", flush=True)
@@ -303,10 +303,13 @@ class Console:
         agent = [*COMPOSE, "exec", "-T", "agent"]
         if name == "server.start": self.run_job(name, [[*COMPOSE, "up", "-d", "server"]])
         elif name == "server.stop": self.run_job(name, [[*COMPOSE, "stop", "server"]])
-        elif name in ("time.pause", "time.resume"):  # the operator hold: a file in the server directory, which outranks every bridge session
-            done = self.hold_file(f"echo {OPERATOR_HOLD} > {HOLD}" if name == "time.pause" else f"rm -f {HOLD}")
+        elif name == "time.pause":  # the operator hold: a file in the server directory, which outranks every bridge session and takes over any other hold
+            done = self.hold_file(runtime.hold_cmd(OPERATOR_HOLD, True, force=True))
             if done.returncode: raise RuntimeError((done.stderr or done.stdout).strip()[-300:])
-            if name == "time.resume": self.guard = None  # the release resumes only the hold's own pause: an agent's pause stays its own to end
+        elif name == "time.resume":  # ends the operator's hold only, and the release resumes only the hold's own pause: an agent's pause stays its own to end
+            done = self.hold_file(runtime.hold_cmd(OPERATOR_HOLD, False) + f"; [ ! -e {runtime.HOLD} ] || echo \"the world is still held by '$(cat {runtime.HOLD})', "
+                                  "which ends its hold by itself; Pause takes the hold over, and then Resume releases it\"")
+            if done.returncode or done.stdout.strip(): raise RuntimeError((done.stdout or done.stderr).strip()[-300:])
         elif name == "client.launch": self.run_job(name, [[*PY, LAUNCHER, "launch-client", "--installed-as-is"]])
         elif name == "client.stop": self.run_job(name, [[*PY, LAUNCHER, "stop-client"]])
         elif name == "client.install":  # the host's own build of this checkout, client side only

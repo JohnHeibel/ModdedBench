@@ -42,6 +42,21 @@ class ConsoleTests(unittest.TestCase):
             self.assertEqual(["harness/runner/codex_loop.py", "--prompt", "PROMPT.md", "--max-minutes", "5", "--", "-c", "two words"], Path(tmp, "argv.txt").read_text().splitlines())
             self.assertNotIn("STOP", Path(tmp, "state.txt").read_text()); self.assertEqual("trace\n", Path(tmp, ".state", "codex-loop.err").read_text())
 
+    @unittest.skipUnless(shutil.which("sh"), "runs the hold's shell lines")
+    def test_pause_takes_the_hold_over_and_resume_ends_only_the_operators(self):
+        import subprocess, tempfile
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(console.runtime, "HOLD", (Path(tmp) / "modbench-hold").as_posix()):
+            hold = Path(tmp) / "modbench-hold"; c = object.__new__(console.Console)
+            c.hold_file = lambda cmd: subprocess.run(["sh", "-c", cmd], capture_output=True, text=True)
+            c.act("time.resume", {})  # nothing held: nothing to say
+            c.act("time.pause", {}); self.assertEqual(hold.read_text().strip(), "operator")
+            c.act("time.resume", {}); self.assertFalse(hold.exists())
+            hold.write_text("backup")
+            with self.assertRaisesRegex(RuntimeError, "still held by 'backup'"): c.act("time.resume", {})
+            self.assertTrue(hold.exists())  # a snapshot in progress keeps its world still
+            c.act("time.pause", {}); c.act("time.resume", {}); self.assertFalse(hold.exists())  # the operator's way out of a hold nobody ends
+
     def test_the_shipped_prompt_has_every_placeholder_the_console_fills(self):
         text = console.fill_prompt((REPO / "PROMPT.md").read_text(encoding="utf-8"), "Steam Macerator", "Tier 0.5 - Steam Age")
         self.assertIn('TARGET_QUEST      = "Steam Macerator"', text); self.assertIn('REPO              = "/work/modbench"', text)

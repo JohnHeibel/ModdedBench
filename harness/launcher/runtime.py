@@ -102,6 +102,17 @@ def only_one(name: str, runtime: Path = RUNTIME):
     return lock
 
 
+HOLD = "/data/modbench-hold"  # in the server container; the server asks only whether it exists (ServerClock)
+
+
+def hold_cmd(owner: str, take: bool, force: bool = False) -> str:
+    """Shell line for the server container that takes or releases the world hold as ``owner`` (operator, compaction, backup);
+    exit 0 means it did. The file says whose hold it is: a hold is taken only when there is none (``force``, the operator's
+    alone, takes over any) and released only by its owner, so no holder sets running a world that another one holds."""
+    if not take: return f'[ "$(cat {HOLD} 2>/dev/null)" = {owner} ] && rm -f {HOLD}'
+    return f"echo {owner} > {HOLD}" if force else f"set -C; echo {owner} > {HOLD}"
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as source:
