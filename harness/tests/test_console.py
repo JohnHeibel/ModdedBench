@@ -33,6 +33,21 @@ class ConsoleTests(unittest.TestCase):
         args = start({"maxMinutes": 90, "maxTokens": 2e6, "model": "gpt-x"})[2]
         self.assertEqual(args[:8], ["--max-turns", "200", "--max-minutes", "90.0", "--max-tokens", "2000000", "--", "-m"])
 
+    def test_init_is_refused_while_a_job_runs_before_it_touches_the_feed_or_the_brief(self):
+        import tempfile, types
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(console, "OVERLAY", Path(tmp, "overlay")), mock.patch.object(console, "BRIEF", Path(tmp, "brief")), \
+                mock.patch.object(console, "sh", lambda *a, **k: types.SimpleNamespace(stdout="agent\n")):
+            console.OVERLAY.mkdir(); (console.OVERLAY / "live.json").write_text("{}")
+            c = object.__new__(console.Console); c.job = {"name": "agent.start", "running": True}
+            ask = {"targetQuest": "Steam Macerator", "targetChapter": "Tier 0.5 - Steam Age"}
+            with self.assertRaisesRegex(RuntimeError, "still running"): c.act("run.init", ask)
+            self.assertTrue((console.OVERLAY / "live.json").exists()); self.assertFalse(console.BRIEF.exists())
+            c.job = {"name": "", "running": False}; steps = []; c.run_job = lambda name, s: steps.extend(s)
+            c.act("run.init", ask)
+            self.assertFalse(console.OVERLAY.exists()); self.assertIn("Steam Macerator", (console.BRIEF / "PROMPT.md").read_text(encoding="utf-8"))
+            self.assertIn(".state/run.json", steps[-1][-1])  # the old run's start, end and token cap do not carry into the new one
+
     @unittest.skipUnless(shutil.which("sh"), "runs the loop's shell line")
     def test_the_loop_line_passes_the_prompt_and_arguments_and_keeps_what_the_loop_writes_as_it_dies(self):
         import os, subprocess, tempfile
