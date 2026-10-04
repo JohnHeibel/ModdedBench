@@ -25,7 +25,8 @@ final class MiningObservation extends BlockOptionalMetaLookup {
         super(new BlockOptionalMeta[0]);this.world=world;this.bounds=bounds;this.selectors=selectors;this.items=items;
     }
     void tick(){
-        long until=System.nanoTime()+2_000_000L;int budget=2048;
+        // The first pass is what the job waits for. Every later one only refreshes it, on ticks that also path and dig.
+        long until=System.nanoTime()+(passes==0?2_000_000L:250_000L);int budget=passes==0?2048:256;
         while(cursor<bounds.volume()&&budget-->0&&System.nanoTime()<until){
             BlockPos p=bounds.at(cursor++);
             if(WorkAccess.block(world,p,selectors)&&!world.isAirBlock(p.getX(),p.getY(),p.getZ())&&!ForgeFluids.fluid(world.getBlock(p.getX(),p.getY(),p.getZ()))){
