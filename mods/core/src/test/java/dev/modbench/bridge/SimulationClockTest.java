@@ -219,6 +219,21 @@ public class SimulationClockTest {
     }
 
     @Test
+    public void aGuardsReasonIsKeptWhileItsPauseLasts() {
+        SimulationClock clock = new SimulationClock(() -> 0L);
+        clock.pause("health_dropped");
+        clock.pause("client_disconnected");
+        clock.pause("requested_pause");
+        clock.pause("action_failed");
+        assertEquals("health_dropped", clock.reason());
+        assertEquals(1, clock.status().getAsJsonArray("events").size());
+        clock.resume();
+        clock.pause("requested_pause");
+        clock.pause("action_failed"); // A pause that is only waited out still gives way to one that wants attention.
+        assertEquals("action_failed", clock.reason());
+    }
+
+    @Test
     public void invalidConfigurationLeavesEveryConditionUntouched() {
         SimulationClock clock = new SimulationClock(() -> 0L);
         JsonObject valid = new JsonObject();
@@ -261,7 +276,7 @@ public class SimulationClockTest {
         assertEquals(25L, clock.policy.status().get("pausedMs").getAsLong());
         assertEquals(0L, clock.policy.status().get("simulationTicks").getAsLong());
 
-        for (int i = 0; i < 40; i++) clock.policy.pause("event-" + i);
+        for (int i = 0; i < 40; i++) { clock.policy.resume(); clock.policy.pause("event-" + i); }
         JsonArray events = clock.policy.status().getAsJsonArray("events");
         assertEquals(32, events.size());
         assertEquals("event-8", events.get(0).getAsJsonObject().get("reason").getAsString());
