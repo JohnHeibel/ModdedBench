@@ -506,6 +506,18 @@ final class ClickRun {
             default->stop(reason);
         }
     }
+    /** The watchdog stopped the job during a click: the click in full as for a stop of its own, with the stances and the walk it was on. */
+    void stalled(String reason) {
+        if(task==null)return;
+        Map<String,Object> d=new LinkedHashMap<>(task.diagnosis);
+        if(task.vantages!=null&&!task.vantages.isEmpty())d.put("stances",task.vantages.stream().limit(4).map(v->point(v.feet())).toList());
+        if(nav!=null) {
+            var s=nav.status();Map<String,Object> walk=new LinkedHashMap<>();
+            for(String k:List.of("state","reason","ticks","calculations","planning","failure","goal"))if(s.get(k)!=null)walk.put(k,s.get(k));
+            walk.put("lastSearch",engine.getPathingBehavior().lastCalculation());d.put("walk",walk);
+        }
+        task.diagnosis=d;failed=row(task,reason);job.journal.recordClick(failed);
+    }
     /** A plan click cannot be made, or did not do what was asked: the job stops on it, with the click in full. */
     private void stop(String reason){Task t=task;failed=row(t,reason);job.journal.recordClick(failed);job.stop(reason,t.pos());}
     private void stop(StepPlan.Step s,String reason,Object present) {
