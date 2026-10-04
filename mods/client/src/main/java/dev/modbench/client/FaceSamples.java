@@ -14,6 +14,28 @@ final class FaceSamples {
         for(int i=0;i<3;i++)if(i!=axis&&(Math.abs(hit[i])<1e-4||Math.abs(hit[i]-1)<1e-4))return false;
         return true;
     }
+    /** How far along the face the surface has to go on to each side of a hit. A hit on the very edge of what is there (a
+     *  chest's top, seen low, is hit at its far edge) is where the look of the click itself can pass it by. */
+    static final double MARGIN=.02;
+    static double[][] beside(int face,double[] hit) {
+        int axis=face<2?1:face<4?2:0;
+        double[][] out=new double[4][];
+        for(int i=0;i<4;i++){out[i]=hit.clone();out[i][(axis+1+i/2)%3]+=i%2==0?MARGIN:-MARGIN;}
+        return out;
+    }
+    /** Where to aim on a face, block-local: the first sample whose hit has surface on every side of it, else the first hit
+     *  there is, else null. seen is the game's ray: given a point to look toward, where that look lands on this face. */
+    static double[] aim(int face,double[] selectedCentre,java.util.function.UnaryOperator<double[]> seen) {
+        double[] edge=null;
+        for(double[] h:points(face,selectedCentre)) {
+            double[] hit=seen.apply(h);
+            if(hit==null||!stableHit(face,hit[0],hit[1],hit[2]))continue;
+            boolean wide=true;for(double[] near:beside(face,hit))wide&=seen.apply(near)!=null;
+            if(wide)return hit;
+            if(edge==null)edge=hit;
+        }
+        return edge;
+    }
     static List<double[]> points(int face,double[] selectedCentre) {
         List<double[]> out=new ArrayList<>();
         int axis=face<2?1:face<4?2:0;

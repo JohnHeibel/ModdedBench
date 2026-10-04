@@ -104,20 +104,21 @@ def mb_quest_detect(quest_id: str, task_ids: list[int] | None = None, wait_s: fl
 def mb_quest_select_choice(quest_id: str, reward_id: int, choice_index: int) -> Any:
     """Select one observed native reward option through the normal BQ packet.
 
-    Re-observe the selected index before claiming. Packet queueing is not a server
-    acknowledgement.
+    mb_quest_claim's choices does this as part of the claim; this is for choosing
+    without claiming.
     """
     return kernel().call("quest.select_choice", questId=quest_id, rewardId=reward_id,
                          choiceIndex=choice_index)
 
 
 @tool(rung=1, coverage=["progression"])
-def mb_quest_claim(quest_id: str, reward_ids: list[int],
+def mb_quest_claim(quest_id: str, reward_ids: list[int] | None = None,
                    choices: dict[str, int] | None = None, wait_s: float = 10.0) -> Any:
-    """Request a normal quest-wide claim with explicit reward IDs and choices.
+    """Claim a quest's rewards, all of them at once, as the book's claim button does.
 
     choices maps rewardId strings to observed choice indices and must cover every
-    choice reward. The claim itself is only queued: this then watches the quest for up
+    choice reward; the claim selects them. reward_ids is not needed and changes
+    nothing: the game claims a quest whole. The claim itself is only queued: this then watches the quest for up
     to wait_s seconds (0 disables, at most 60) and returns claimed true/false with the observed
     state, so one call usually settles it. claimed false is not a failure: the server
     has not answered yet (always the case while time is paused). Observe again later;
@@ -125,7 +126,7 @@ def mb_quest_claim(quest_id: str, reward_ids: list[int],
     across the claim, by name: that is the rewards arriving, no separate check needed.
     """
     k = kernel(); before = _held(k)
-    receipt = k.call("quest.claim", questId=quest_id, rewardIds=reward_ids, choices=choices or {})
+    receipt = k.call("quest.claim", questId=quest_id, rewardIds=[], choices=choices or {})
     deadline, state, clamped = time.monotonic() + max(0.0, min(wait_s, 60.0)), None, _clamped(wait_s)
     while wait_s > 0:
         state = k.call("quest.observe", questId=quest_id)

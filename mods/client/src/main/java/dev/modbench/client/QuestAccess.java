@@ -152,7 +152,7 @@ public final class QuestAccess {
             for (Map.Entry<Integer, Integer> choice : choices.entrySet()) requestChoice(id, choice.getKey(), choice.getValue());
             Map<String, Object> receipt = action(player, questId, List.of(), rewardIds, "requestClaim");
             receipt.put("choices", choiceProjection(choices));
-            receipt.put("receipt", "choice packets and claim packet queued; pending client synchronization; re-observe quest and inventory");
+            receipt.put("receipt", "choice packets and claim packet queued; pending client synchronization");
             return receipt;
         } catch (ReflectiveOperationException ex) { throw unavailable(ex); }
     }
@@ -167,7 +167,7 @@ public final class QuestAccess {
             requestChoice(id, rewardId, choiceIndex);
             return map("accepted", true, "nativeMethod", "NetRewardChoice.requestChoice", "questId", id.toString(),
                     "rewardId", rewardId, "choiceIndex", choiceIndex, "requestScope", "choice", "serverAcknowledged", false,
-                    "receipt", "packet_queued; pending client synchronization; re-observe reward selection before claim");
+                    "receipt", "packet_queued; pending client synchronization");
         } catch (ReflectiveOperationException ex) { throw unavailable(ex); }
     }
 
@@ -182,7 +182,7 @@ public final class QuestAccess {
             Class.forName(ACTIONS).getMethod(nativeMethod, Collection.class).invoke(null, List.of(id));
             return map("accepted", true, "nativeMethod", nativeMethod, "questId", id.toString(),
                     "taskIds", List.copyOf(taskIds), "rewardIds", List.copyOf(rewardIds), "requestScope", "quest",
-                    "serverAcknowledged", false, "receipt", "packet_queued; pending client synchronization; re-observe quest progress");
+                    "serverAcknowledged", false, "receipt", "packet_queued; pending client synchronization");
         } catch (ReflectiveOperationException ex) { throw unavailable(ex); }
     }
 

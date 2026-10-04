@@ -1235,7 +1235,7 @@ and list what is loaded, with load errors.
 | `mb_quest_observe` | Observe one quest UUID: prerequisites, task progress/config and rewards |
 | `mb_quest_detect` | Hand a quest its tasks: the quest book's detect button, checkboxes included |
 | `mb_quest_select_choice` | Select one observed native reward option through the normal BQ packet |
-| `mb_quest_claim` | Request a normal quest-wide claim with explicit reward IDs and choices |
+| `mb_quest_claim` | Claim a quest's rewards, all of them at once, as the book's claim button does |
 | `mb_recipe_status` | Check whether GTNH NEI's full item catalogue and recipe handlers are ready |
 | `mb_item_search` | Search the full native NEI catalogue, with pagination and exact variant identities |
 | `mb_item_info` | Inspect an exact item variant, including tooltips, ore/fluid data and ItemBlock placement metadata |

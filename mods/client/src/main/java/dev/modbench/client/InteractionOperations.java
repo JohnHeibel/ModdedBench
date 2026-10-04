@@ -160,17 +160,19 @@ final class InteractionOperations {
         }
         /** Selection boxes can span several blocks or enclose empty space. Only a native ray decides what is clickable. */
         Vec3 visiblePoint(int f) {
-            double[] centre=facePoint(f);Vec3 eye=eyes();double reach=mc.playerController.getBlockReachDistance();
-            for(double[] h:FaceSamples.points(f,centre)) {
-                double dx=x+h[0]-eye.xCoord,dy=y+h[1]-eye.yCoord,dz=z+h[2]-eye.zCoord;
-                double distance=Math.sqrt(dx*dx+dy*dy+dz*dz);if(distance<.0001)continue;
-                Vec3 end=eye.addVector(dx*reach/distance,dy*reach/distance,dz*reach/distance);
-                // World ray traversal mutates its start vector. Every candidate starts at the same eye.
-                MovingObjectPosition m=(MovingObjectPosition)ControlRegistry.targeting().trace(world,Vec3.createVectorHelper(eye.xCoord,eye.yCoord,eye.zCoord),end,false,false,false);
-                if(m!=null&&m.typeOfHit==MovingObjectPosition.MovingObjectType.BLOCK&&m.blockX==x&&m.blockY==y&&m.blockZ==z&&m.sideHit==f
-                        &&FaceSamples.stableHit(f,m.hitVec.xCoord-x,m.hitVec.yCoord-y,m.hitVec.zCoord-z))return m.hitVec;
-            }
-            return null;
+            double[] hit=FaceSamples.aim(f,facePoint(f),h->seen(f,h));
+            return hit==null?null:Vec3.createVectorHelper(x+hit[0],y+hit[1],z+hit[2]);
+        }
+        /** Where a look from the eye toward a block-local point lands, when that is face f of the target. */
+        double[] seen(int f,double[] h) {
+            Vec3 eye=eyes();double reach=mc.playerController.getBlockReachDistance();
+            double dx=x+h[0]-eye.xCoord,dy=y+h[1]-eye.yCoord,dz=z+h[2]-eye.zCoord;
+            double distance=Math.sqrt(dx*dx+dy*dy+dz*dz);if(distance<.0001)return null;
+            Vec3 end=eye.addVector(dx*reach/distance,dy*reach/distance,dz*reach/distance);
+            // World ray traversal mutates its start vector. Every candidate starts at the same eye.
+            MovingObjectPosition m=(MovingObjectPosition)ControlRegistry.targeting().trace(world,Vec3.createVectorHelper(eye.xCoord,eye.yCoord,eye.zCoord),end,false,false,false);
+            return m!=null&&m.typeOfHit==MovingObjectPosition.MovingObjectType.BLOCK&&m.blockX==x&&m.blockY==y&&m.blockZ==z&&m.sideHit==f
+                    ?new double[]{m.hitVec.xCoord-x,m.hitVec.yCoord-y,m.hitVec.zCoord-z}:null;
         }
         /** What a player looking from here would see instead: where the look stopped, how far the target is, and which faces are in sight. */
         String unseen(MovingObjectPosition hit) {
