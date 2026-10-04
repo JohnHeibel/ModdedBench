@@ -549,13 +549,15 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
         cylinder|hcylinder (with axis), block {id, meta?} and an optional replace selector.
       drawing: {origin: [x,y,z], layers, legend, stages?} in the format mb_view returns: layers
         bottom first, rows north to south, one character per block west to east, legend
-        {char: {id, meta?, item?, click?, expect?}}; '.', ' ' and '+' are left alone. Dictionary layers with y use that
-        absolute height, including subsets or gaps; plain row lists use consecutive heights from origin.
+        {char: {id, meta?, item?, click?, expect?}}; '.', ' ' and '+' are left alone. Dictionary
+        layers with y use that absolute height, including subsets or gaps; plain row lists use
+        consecutive heights from origin.
     Registry ids are required. A cell, legend entry or selection block without meta accepts any
     variant of the block, which is what you want for blocks that face the way they are placed
     (furnace, chest, machines); give meta to demand one. The receipt's anyMeta lists the ids read
-    that way. Tile NBT is refused, not ignored: the job only places blocks, so whether a piece
-    joined its neighbours, and anything set with a tool or in a GUI, is yours to check and do after.
+    that way. Tile NBT is refused, not ignored: the job places blocks and makes the clicks you
+    name, so whether a piece joined its neighbours is yours to check (an expect can), and anything
+    set in a GUI is yours to do after.
 
     What the job does. It walks, places from the inventory you carry with ordinary clicks, and digs
     out the cells marked clear. Inside the plan it needs no permission. allow_place lets it put
@@ -645,7 +647,7 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
                          cell and `missing` lists {selector, needed, allocated, missing}.
       attempt_limit      8 clicks the game took into pos without the block appearing there.
       mismatch           what is at pos, or what the click would make there, is another variant than
-                         the plan's (a facing): place it with the precise tools, or leave its meta out.
+                         the plan's (a facing): give the cell a click with a look, or leave its meta out.
       no_stance          no standing spot from which a face to place pos against is in view; often
                          there is nothing to place it against yet (stage it later, or allow_place).
       no_route           everything reachable was searched and none of it is a place to work pos from.
