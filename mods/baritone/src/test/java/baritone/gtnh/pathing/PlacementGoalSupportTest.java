@@ -35,4 +35,18 @@ public class PlacementGoalSupportTest {
         assertEquals(3,PlacementGoalSupport.reachUp(1.54,3));
         assertEquals(1,PlacementGoalSupport.reachUp(1.54,.5));
     }
+    @Test public void aViewOnlyFromTheExactCentreIsNotAStance() {
+        // Two blocks meeting at an edge let a ray through only along the exact diagonal: the line x-z=const.
+        PlacementGoalSupport.Probe seam=(x,z)->x-10.5==z-20.5;
+        assertTrue(seam.at(10.5,20.5));
+        assertFalse(PlacementGoalSupport.steady(10.5,20.5,seam));
+        // A seam along one axis keeps the nudge along it in view; the other nudge leaves it.
+        assertFalse(PlacementGoalSupport.steady(10.5,20.5,(x,z)->x==10.5));
+        assertFalse(PlacementGoalSupport.steady(10.5,20.5,(x,z)->z==20.5));
+        assertTrue(PlacementGoalSupport.steady(10.5,20.5,(x,z)->Math.abs(x-10.5)<.3&&Math.abs(z-20.5)<.3));
+        // A stance blocked at its centre costs one probe, as before.
+        int[] probes={0};
+        assertFalse(PlacementGoalSupport.steady(10.5,20.5,(x,z)->{probes[0]++;return false;}));
+        assertEquals(1,probes[0]);
+    }
 }
