@@ -163,8 +163,7 @@ public final class ServerClock implements ClockHooks.Driver, PauseCoordinator.Ho
         runtime.simulationTick();return true;
     }
     @Override public void after() {
-        coordinator.after();
-        observe();
+        coordinator.after(this::observe);
         coordinator.broadcast(false);
     }
 }

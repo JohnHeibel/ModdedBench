@@ -49,19 +49,19 @@ public final class SimulationClock {
     }
     /**
      * Thresholds and burning pause once, as the value crosses into danger, and re-arm only when it has recovered:
-     * a guard that re-paused every tick while air stayed low would leave no ticks to swim out with.
+     * a guard that re-paused every tick while air stayed low would leave no ticks to swim out with. Only the guard
+     * that paused counts as reported: a value in danger under another pause (a step's end, another guard) pauses in its turn.
      */
     public void observe(float health, int air, int food, boolean onFire) {
         boolean lowHealth=healthBelow>=0 && health<=healthBelow, lowAir=airBelow>=0 && air<=airBelow;
         boolean lowFood=foodBelow>=0 && food<=foodBelow, fire=burning && onFire;
         if(!paused) {
-            if(healthDrop && !fighting() && lastHealth!=null && health<lastHealth) pause("health_dropped");
-            else if(lowHealth && !inDanger[0]) pause("health_threshold");
-            else if(lowAir && !inDanger[1]) pause("air_threshold");
-            else if(fire && !inDanger[2]) pause("burning");
-            else if(lowFood && !inDanger[3]) pause("food_threshold");
+            if(healthDrop && !fighting() && lastHealth!=null && health<lastHealth) { pause("health_dropped"); inDanger[0]=lowHealth; } // the hit reports the health it left
+            else if(lowHealth && !inDanger[0]) { pause("health_threshold"); inDanger[0]=true; }
+            else if(lowAir && !inDanger[1]) { pause("air_threshold"); inDanger[1]=true; }
+            else if(fire && !inDanger[2]) { pause("burning"); inDanger[2]=true; }
+            else if(lowFood && !inDanger[3]) { pause("food_threshold"); inDanger[3]=true; }
         }
-        if(paused) { inDanger[0]|=lowHealth; inDanger[1]|=lowAir; inDanger[2]|=fire; inDanger[3]|=lowFood; }
         inDanger[0]&=lowHealth; inDanger[1]&=lowAir; inDanger[2]&=fire; inDanger[3]&=lowFood;
         lastHealth=health;
     }

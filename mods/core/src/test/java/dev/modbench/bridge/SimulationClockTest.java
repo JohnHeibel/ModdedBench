@@ -196,6 +196,29 @@ public class SimulationClockTest {
     }
 
     @Test
+    public void aGuardIsReportedByItsOwnPauseAndNotSilencedByAnother() {
+        SimulationClock clock = new SimulationClock(() -> 0L);
+        clock.configure(Json.object("airBelow", 100, "burning", true, "healthDrop", true, "healthBelow", 8.0));
+        clock.observe(20.0F, 300);
+        clock.pause("step"); // A step ends, or the model pauses, with a value in danger that no pause has reported.
+        clock.observe(20.0F, 90);
+        clock.resume();
+        clock.observe(20.0F, 90, 20, true);
+        assertEquals("air_threshold", clock.status().get("reason").getAsString());
+        clock.resume();
+        clock.observe(20.0F, 80, 20, true); // Air is reported; the fire that came with it gets its own pause.
+        assertEquals("burning", clock.status().get("reason").getAsString());
+        clock.resume();
+        clock.observe(20.0F, 70, 20, true);
+        assertFalse(clock.paused());
+        clock.observe(6.0F, 70, 20, true); // A hit that takes health under its floor is one event, reported once.
+        assertEquals("health_dropped", clock.status().get("reason").getAsString());
+        clock.resume();
+        clock.observe(6.0F, 70, 20, true);
+        assertFalse(clock.paused());
+    }
+
+    @Test
     public void invalidConfigurationLeavesEveryConditionUntouched() {
         SimulationClock clock = new SimulationClock(() -> 0L);
         JsonObject valid = new JsonObject();

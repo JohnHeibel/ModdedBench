@@ -211,8 +211,10 @@ public final class PauseCoordinator {
         if(clock.paused()) return false;
         simulating=true;return true;
     }
-    public void after() {
-        simulating=false;clock.tickFinished();
-        if(stepTicks>0 && --stepTicks==0) { clock.pause(stepReason);endStep(stepReason); }
+    public void after() { after(()->{}); }
+    /** observe looks at the host's guards before a step's own pause: one that fires on the step's last tick ends the step and is the reason. */
+    public void after(Runnable observe) {
+        simulating=false;clock.tickFinished();observe.run();
+        if(stepTicks>0 && --stepTicks==0) { if(!clock.paused()) clock.pause(stepReason);endStep(clock.reason()); }
     }
 }
