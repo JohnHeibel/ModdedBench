@@ -67,9 +67,11 @@ final class WorkAccess {
         for(String key:List.of("id","ore"))if(s.containsKey(key)&&string(s,key,"").isBlank())throw new IllegalArgumentException("empty block selector "+key);
         if(s.containsKey("item"))validateItemSelector(child(s,"item"));
     }
-    static ItemStack picked(World world,BlockPos p) {
-        Block block=world.getBlock(p.getX(),p.getY(),p.getZ());
-        return block.getPickBlock(new MovingObjectPosition(p.getX(),p.getY(),p.getZ(),1,Vec3.createVectorHelper(p.getX()+.5,p.getY()+.5,p.getZ()+.5)),world,p.getX(),p.getY(),p.getZ(),MC.thePlayer);
+    static ItemStack picked(World world,BlockPos p){return picked(world.getBlock(p.getX(),p.getY(),p.getZ()),world,p,MC.thePlayer);}
+    /** The stack the block's own pick hook names. A mod's hook that throws (a tile it expected is not there) names none. */
+    static ItemStack picked(Block block,World world,BlockPos p,net.minecraft.entity.player.EntityPlayer player) {
+        try{return block.getPickBlock(new MovingObjectPosition(p.getX(),p.getY(),p.getZ(),1,Vec3.createVectorHelper(p.getX()+.5,p.getY()+.5,p.getZ()+.5)),world,p.getX(),p.getY(),p.getZ(),player);}
+        catch(RuntimeException|LinkageError failed){return null;}
     }
     static boolean block(World world,BlockPos p,Map<String,Object> s) {
         if(!ForgeSnapshot.loaded(world,p.getX(),p.getY(),p.getZ()))return false;

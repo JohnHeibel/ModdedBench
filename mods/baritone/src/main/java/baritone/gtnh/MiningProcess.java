@@ -44,13 +44,15 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
     private int unplugged;
     // What each swing broke besides the block it was aimed at. The job knows no tool by name, so a 3x3 hammer or a vein
     // miner shows up here as a measurement, and a swing that took a protected block ends the job. A swing is one unbroken
-    // hold of the attack on one block with one tool; start and limit time it against the game's own break estimate.
-    private record Swing(BlockPos target,net.minecraft.block.Block block,Map<BlockPos,net.minecraft.block.Block> around,int due,int start,String tool,int limit){}
+    // hold of the attack on one block with one tool; start times it against the game's own break estimate, asked every
+    // tick and kept at its longest (afloat or in the air the game breaks slower). `open` is false in a region the harness
+    // refuses to edit.
+    private record Swing(BlockPos target,net.minecraft.block.Block block,Map<BlockPos,net.minecraft.block.Block> around,int due,int start,String tool,boolean open){}
     private final List<Map<String,Object>> ineffective=new ArrayList<>();
     private Swing swing;
     private final List<Swing> settling=new ArrayList<>();
     private final Set<BlockPos> aimed=new HashSet<>();
-    private int broken,extraBroken,reachableAttackTicks;
+    private int broken,extraBroken,reachableAttackTicks,swingLimit,swingBudget;
     private final List<List<Integer>> extraAt=new ArrayList<>();
     private Integer dropsLeft;
     MiningProcess(BaritoneNavigation nav,WorkJournal journal,Map<String,Object> options){
@@ -73,7 +75,7 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
         // the resume still counts and ore fetched from a chest meanwhile does not.
         int now=have(),legacy=journal.progress.containsKey("initialCount")?Math.max(0,now-integer(journal.progress,"initialCount",now,0,1000000)):0;
         gainedBefore=integer(journal.progress,"gained",legacy,0,1000000);baseline=now-gainedBefore;
-        observation=new MiningObservation(world,bounds,blocks,items);
+        observation=new MiningObservation(world,bounds,blocks,items,WorkAccess::feet);
         if(!bool(options,"retry",false))for(Object p:list(journal.progress.getOrDefault("unreachable",List.of())))unreachable.add(pos(p));
         rejectedSeen=unreachable.size();
     }
@@ -110,9 +112,11 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
         return out;
     }
     @Override int progress(){return mc.thePlayer==player?gained():progressSeen;}
-    // Digging toward a target is work before any ore arrives, and so is the first scan of the bounds, which stands still,
-    // and so is holding a swing the game promised to finish (its own limit ends a useless one): a slow block is no stall.
-    @Override long activity(){return progress()+(long)broken+(observation.passes==0?observation.cursor:0)+(swing==null?0:ticks-swing.start());}
+    // Digging toward a target is work before any ore arrives, and so is the first scan of the bounds, which stands still.
+    @Override long activity(){return progress()+(long)broken+(observation.passes==0?observation.cursor:0);}
+    // Holding a swing the game promised to finish is waiting for as long as that promise runs: a slow block is no stall.
+    // A block the game will never break, a protected one, or a swing past its limit is excused nothing.
+    @Override int excused(){return Math.max(super.excused(),swingBudget);}
     @Override String phase(){return "reference_mine";}
     @Override public boolean planningWhilePaused(){return !done()&&ticks==0&&!started&&observation.passes==0;}
     @Override public void planWhilePaused(){
@@ -152,17 +156,19 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
                     &&observation.has(drop.getEntityItem())
                     &&observation.acceptsDrop(new baritone.compat.BlockPos(drop.posX,drop.boundingBox.minY,drop.posZ))
                     &&retriedDrops.add(new DropLocation(drop.getEntityId(),new baritone.compat.BlockPos(drop.posX,drop.boundingBox.minY,drop.posZ))))newDrop=true;
-            if(newDrop){engine.bsi=new baritone.utils.BlockStateInterface(engine.getPlayerContext());process.mine(0,observation);process.avoid(unreachable);}
+            // The engine was offered only the nearest matches: before its stopping is read as nothing left, it is offered more.
+            if(newDrop||observation.widen()){engine.bsi=new baritone.utils.BlockStateInterface(engine.getPlayerContext());process.mine(0,observation);process.avoid(unreachable);}
             if(!process.isActive()){
                 state="awaiting_inventory";
-                if(inactiveTicks>Math.max(20,(Baritone.settings().mineDropLoiterDurationMSThanksLouca.value+49)/50))finish("failed","no_remaining_reachable_targets_or_drops");
+                if(inactiveTicks>Math.max(20,(Baritone.settings().mineDropLoiterDurationMSThanksLouca.value+49)/50))finish("failed",naming("no_remaining_reachable_targets_or_drops"));
                 return;
             }
         }
         inactiveTicks=0;
         if(besideFluid&&(unconfirmedPlug()||plug()))return; // this tick belongs to the plug
         engine.tickStart(this::mineAtReachedGoal);
-        if(engine.snags.failure()!=null){finish("failed",engine.snags.failure());return;}
+        // Judged as the deadline is: a session that gained something pauses, and a resume starts with no bans.
+        if(engine.snags.failure()!=null){finish(session()>0?"paused":"failed",engine.snags.failure());return;}
         if(besideFluid)watch();
         if(measure())return;
         if(process.isActive()){
@@ -175,10 +181,10 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
         if(lastRejected.size()>rejectedSeen){
             rejectedSeen=lastRejected.size();int have=have();
             rejections=have==haveAtReject?rejections+1:1;haveAtReject=have;
-            if(rejections>=4){finish("failed","no_path_to_targets");return;}
+            if(rejections>=4){finish("failed",naming("no_path_to_targets"));return;}
             // Unreachable targets among reachable ones (the tops of trees) reset that count with every block gained, and the
             // job spends most of its time on searches that fail. More failed searches than blocks gained ends it the same way.
-            if(rejectedSeen>Math.max(8,gained())){finish("failed","no_path_to_most_targets");return;}
+            if(rejectedSeen>Math.max(8,gained())){finish("failed",naming("no_path_to_most_targets"));return;}
         }
         state=engine.getInputOverrideHandler().isInputForcedDown(baritone.api.utils.input.Input.CLICK_LEFT)?"mining":"pathing";
         // MineProcess keeps its goal while every remaining target is one it may not break (beside still water, say) or
@@ -186,22 +192,44 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
         // planned is that case: end with the reason instead.
         boolean pathless=state.equals("pathing")&&engine.getPathingBehavior().getCurrent()==null&&!engine.getPathingBehavior().getInProgress().isPresent();
         pathlessTicks=pathless?pathlessTicks+1:0;
-        if(pathlessTicks>100)finish("failed","no_path_to_remaining_targets");
+        if(pathlessTicks>100)finish("failed",naming("no_path_to_remaining_targets"));
+    }
+    /** An end for want of targets names the nearest one still standing and why it was left: the cell and cause to act on. */
+    static String naming(String why,BlockPos feet,Collection<BlockPos> standing,java.util.function.Function<BlockPos,String> left){
+        var nearest=standing.stream().min(Comparator.comparingDouble(feet::distanceSq)).orElse(null);
+        if(nearest==null)return why;
+        String cause=left.apply(nearest);
+        return why+": nearest target "+nearest.getX()+","+nearest.getY()+","+nearest.getZ()+(cause==null?"":" "+cause);
+    }
+    private String naming(String why){
+        if(mc.thePlayer!=player)return why;
+        var bsi=new baritone.utils.BlockStateInterface(engine.getPlayerContext());
+        return naming(why,WorkAccess.feet(),observation.observedLocations().stream().filter(p->observation.has(bsi.get0(p))).toList(),p->{
+            String known=unreachable.contains(p)?"unreachable":skippedNow.get(p);
+            if(known!=null)return known;
+            // The engine forgets what it skipped when it stops itself: ask what it asked, and keep the answer for the receipt.
+            var costs=new baritone.pathing.movement.CalculationContext(engine);
+            known=!costs.toolSet.canHarvest(costs.get(p))?"no_tool_in_inventory_harvests_it":!baritone.process.MineProcess.plausibleToBreak(costs,p)?"will_not_break_here":null;
+            if(known!=null){skippedNow=new LinkedHashMap<>(skippedNow);skippedNow.put(p,known);}
+            return known;
+        });
     }
     /** An exposed target need not obstruct a movement or stand directly over the player. */
     private void mineAtReachedGoal(){
         var pathing=engine.getPathingBehavior();var goal=pathing.getGoal();var feet=WorkAccess.feet();
         if(goal==null||!goal.isInGoal(feet)||!mc.thePlayer.onGround||!pathing.isSafeToCancel()
                 ||engine.getInputOverrideHandler().isInputForcedDown(baritone.api.utils.input.Input.CLICK_LEFT))return;
+        var eye=mc.thePlayer.getPosition(1);double reach=mc.playerController.getBlockReachDistance();
         for(var p:engine.getMineProcess().knownLocations().stream().sorted(Comparator.comparingDouble(feet::distanceSq)).toList()){
             if(p.getY()<feet.getY())continue; // Never turn an idle stance into a downward dig.
+            if(!MiningJob.near(eye,p,reach))continue; // nothing is read or traced for a target no ray could reach
             var block=engine.bsi.get0(p);
             if(!observation.has(block)||baritone.pathing.movement.MovementHelper.avoidBreaking(engine.bsi,p.getX(),p.getY(),p.getZ(),block))continue;
-            var point=MiningJob.reachable(mc,world,p);if(point==null)continue;
+            var point=MiningJob.reachable(mc,world,p,eye);if(point==null)continue;
             var input=engine.getInputOverrideHandler();input.clearAllKeys();
             baritone.pathing.movement.MovementHelper.switchToBestToolFor(engine.getPlayerContext(),block);
             if(engine.getInventoryBehavior().hasPendingMove())return;
-            var eye=mc.thePlayer.getPosition(1);double dx=point.xCoord-eye.xCoord,dy=point.yCoord-eye.yCoord,dz=point.zCoord-eye.zCoord;
+            double dx=point.xCoord-eye.xCoord,dy=point.yCoord-eye.yCoord,dz=point.zCoord-eye.zCoord;
             lease.look((float)Math.toDegrees(Math.atan2(-dx,dz)),(float)-Math.toDegrees(Math.atan2(dy,Math.hypot(dx,dz))));
             dev.modbench.api.ControlRegistry.targeting().refresh();var hit=mc.objectMouseOver;
             if(hit!=null&&hit.typeOfHit==net.minecraft.util.MovingObjectPosition.MovingObjectType.BLOCK
@@ -231,7 +259,7 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
         Integer count=done()?finalCount:mc.thePlayer==player?have():null;out.put("items",start==null?items:"any");
         out.put("currentCount",count);out.put("gained",count==null?null:Math.max(0,count-baseline));
         out.put("scanPasses",observation==null?0:observation.passes);out.put("scannedWhilePaused",scannedWhilePaused);out.put("scanCursor",observation==null?0:observation.cursor);
-        out.put("scanVolume",bounds==null?0:bounds.volume());out.put("targets",lastKnown);out.put("bounds",journal.spec.get("bounds"));
+        out.put("scanVolume",bounds==null?0:bounds.volume());out.put("scanMatches",observation==null?0:observation.matches());out.put("scanOffered",observation==null?0:observation.observedLocations().size());out.put("targets",lastKnown);out.put("bounds",journal.spec.get("bounds"));
         out.put("initialTargetDiagnostics",diagnostics);
         out.put("reachableAttackTicks",reachableAttackTicks);
         // Targets it left, and why: will_not_break_here names the fluid beside it (plug or drain that, or pass besideFluid).
@@ -255,14 +283,21 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
         var over=mc.objectMouseOver;var held=mc.thePlayer.getHeldItem();var tool=held==null?null:MiningTools.toolKind(held);
         BlockPos aim=engine.getInputOverrideHandler().isInputForcedDown(baritone.api.utils.input.Input.CLICK_LEFT)&&over!=null
             &&over.typeOfHit==net.minecraft.util.MovingObjectPosition.MovingObjectType.BLOCK?new BlockPos(over.blockX,over.blockY,over.blockZ):null;
+        swingBudget=0;
         if(swing!=null){
             var t=swing.target();
-            if(world.getBlock(t.getX(),t.getY(),t.getZ())!=swing.block()){broken++;settling.add(new Swing(t,swing.block(),swing.around(),ticks+5,swing.start(),swing.tool(),0));swing=null;}
+            if(world.getBlock(t.getX(),t.getY(),t.getZ())!=swing.block()){broken++;settling.add(new Swing(t,swing.block(),swing.around(),ticks+5,swing.start(),swing.tool(),false));swing=null;}
             else if(aim==null||!aim.equals(t)||!Objects.equals(tool,swing.tool()))swing=null; // let go, looked away or changed tool: that swing ended short
-            else if(ticks-swing.start()>swing.limit()){
-                if(tool!=null&&MiningTools.ineffective.add(tool)&&ineffective.size()<8)ineffective.add(Map.of("tool",tool,
-                    "block",String.valueOf(net.minecraft.block.Block.blockRegistry.getNameForObject(swing.block())),"at",point(t),"heldTicks",ticks-swing.start()));
-                swing=null;return false;
+            else{
+                // Only a break the game promised can fail: an unbreakable block, or one in a region the harness refuses to edit,
+                // stays for reasons that say nothing about the tool.
+                swingLimit=Math.max(swingLimit,swing.open()?MiningTools.swingLimit(swing.block().getPlayerRelativeBlockHardness(mc.thePlayer,world,t.getX(),t.getY(),t.getZ())):Integer.MAX_VALUE);
+                if(ticks-swing.start()>swingLimit){
+                    if(tool!=null&&MiningTools.ineffective.add(tool)&&ineffective.size()<8)ineffective.add(Map.of("tool",tool,
+                        "block",String.valueOf(net.minecraft.block.Block.blockRegistry.getNameForObject(swing.block())),"at",point(t),"heldTicks",ticks-swing.start()));
+                    swing=null;return false;
+                }
+                if(swingLimit!=Integer.MAX_VALUE)swingBudget=swingLimit;
             }
         }
         for(var it=settling.iterator();it.hasNext();){
@@ -281,12 +316,7 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
             var b=world.getBlock(aim.getX()+dx,aim.getY()+dy,aim.getZ()+dz);
             if((dx|dy|dz)!=0&&b.getMaterial()!=net.minecraft.block.material.Material.air)around.put(new BlockPos(aim.getX()+dx,aim.getY()+dy,aim.getZ()+dz),b);}
         if(aimed.size()>4096)aimed.clear();aimed.add(aim);
-        var block=world.getBlock(aim.getX(),aim.getY(),aim.getZ());
-        double expected=MiningTools.breakTicks(block.getPlayerRelativeBlockHardness(mc.thePlayer,world,aim.getX(),aim.getY(),aim.getZ()));
-        // Only a break the game promised can fail: an unbreakable block, or one in a region the harness refuses to edit,
-        // stays for reasons that say nothing about the tool.
-        int limit=Double.isInfinite(expected)||WorkAccess.protection(aim,override)!=null?Integer.MAX_VALUE:(int)Math.min(72000,Math.max(60,3*expected+20));
-        swing=new Swing(aim,block,around,0,ticks,tool,limit);return false;
+        swing=new Swing(aim,world.getBlock(aim.getX(),aim.getY(),aim.getZ()),around,0,ticks,tool,WorkAccess.protection(aim,override)==null);swingLimit=0;return false;
     }
     private boolean wet(BlockPos p){
         for(int[] d:new int[][]{{0,1,0},{1,0,0},{-1,0,0},{0,0,1},{0,0,-1}})if(world.getBlock(p.getX()+d[0],p.getY()+d[1],p.getZ()+d[2]).getMaterial().isLiquid())return true;

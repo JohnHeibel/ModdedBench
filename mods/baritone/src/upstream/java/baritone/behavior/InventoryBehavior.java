@@ -24,7 +24,6 @@ import baritone.compat.LegacyInventorySwap;
 import baritone.Baritone;
 import baritone.api.event.events.TickEvent;
 import baritone.api.utils.Helper;
-import baritone.gtnh.ReferenceToolPolicy;
 import net.minecraft.block.Block;
 import baritone.compat.IBlockState;
 import net.minecraft.client.entity.EntityPlayerSP;
@@ -61,7 +60,6 @@ public final class InventoryBehavior extends Behavior implements Helper {
 
     @Override
     public void onTick(TickEvent event) {
-        ReferenceToolPolicy.answer();
         if(swap!=null){
             if(swap.tick()!=LegacyInventorySwap.Outcome.WAITING){swap=null;lastTickRequestedMove=null;requestedStack=null;selectionPending=false;}
             else {baritone.getInventoryPauserProcess().stationaryForInventoryMove();return;}

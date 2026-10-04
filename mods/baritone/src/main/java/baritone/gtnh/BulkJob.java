@@ -36,7 +36,7 @@ abstract class BulkJob implements Navigation.Job {
     void begin() {
         lease=ControlRegistry.controls().arbiter().acquire("baritone_"+journal.kind,this::revoked,override,true);
         sessionStart=progress();
-        journal.save(status());
+        journal.save(status());journal.prune();
     }
     final void tick() {
         if(done())return;
@@ -54,7 +54,7 @@ abstract class BulkJob implements Navigation.Job {
             // The upstream engine re-plans for ever around a target it cannot reach (bobbing in a pond, pacing a ledge): the
             // shared watchdog ends that with where it happened, judged the same way as the deadline.
             progressSeen=progress();
-            if(stall.tick(activity(),(int)Math.floor(mc.thePlayer.posX),(int)Math.floor(mc.thePlayer.boundingBox.minY+.001),(int)Math.floor(mc.thePlayer.posZ),WorkAccess.searchBudget(navigation.reference()))){finish(session()>0?"paused":"failed",stall.reason());return;}
+            if(stall.tick(activity(),(int)Math.floor(mc.thePlayer.posX),(int)Math.floor(mc.thePlayer.boundingBox.minY+.001),(int)Math.floor(mc.thePlayer.posZ),excused())){finish(session()>0?"paused":"failed",stall.reason());return;}
             for(int transitions=0;transitions<8&&!done();transitions++) {
                 String oldPhase=phase();step();
                 if(oldPhase.equals(phase()))return;
@@ -69,6 +69,8 @@ abstract class BulkJob implements Navigation.Job {
     final int session(){return progress()-sessionStart;}
     /** What the stall watchdog counts as work besides new ground: progress, and whatever else this job changes on its way. */
     long activity(){return progress();}
+    /** The ticks the watchdog excuses, once per watch, while the job waits on something with an end of its own: a path search in flight. */
+    int excused(){return WorkAccess.searchBudget(navigation.reference());}
     void releaseProcess() {}
     /** The controls were taken away. For a screen this job's own click opened, the job answers in its next tick: it closes the screen and says which click. */
     private void revoked(String reason){if(reason.endsWith("gui_open")&&awaitsScreen())return;cancel(reason);}

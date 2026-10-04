@@ -18,6 +18,12 @@ final class MiningTools {
     static double breakTicks(double strength) {
         return Double.isNaN(strength)||strength<=0?Double.POSITIVE_INFINITY:Math.max(1,Math.ceil(1/strength));
     }
+    /** The ticks one swing may be held before its tool is measured useless: three times the game's estimate at this
+     *  strength and a second. No limit when the game promises no break at all. */
+    static int swingLimit(double strength) {
+        double expected=breakTicks(strength);
+        return Double.isInfinite(expected)?Integer.MAX_VALUE:(int)Math.min(72000,Math.max(60,3*expected+20));
+    }
     /** Tools the running mining job measured breaking nothing the game said they break. The job fills and clears it.
      *  A tool is its item and, when the item has subtypes (one GregTech item is every GregTech tool), its meta: durability
      *  changes with every swing and must not make the same tool look new. */
