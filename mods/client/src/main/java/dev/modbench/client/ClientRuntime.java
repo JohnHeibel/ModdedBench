@@ -618,6 +618,7 @@ public final class ClientRuntime extends BridgeRuntime {
         if (navigationRequest != null) { navigationJob.cancel("resume_refused"); navigationRequest.fail("resume_refused", why, refused(navigationJob.status())); }
         controlsChanged("resume_refused");
     }
+    @Override protected void failed(Request r) { clock.failed(r); }
     @Override protected void admit(Request r) {
         interrupts.admit(r);
         var resume=r.params.remove("_resume"); // true resumes, N steps N ticks; the first tick is this action's
