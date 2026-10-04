@@ -37,7 +37,7 @@ services:
   asker:                                  # the chat bot: docker compose --profile chat up -d asker. See docs/CONTAINERS.md.
     profiles: [chat]
     build: {context: .., dockerfile: docker/Dockerfile, target: asker}
-    environment: {MB_TWITCH_CHANNEL: "${TWITCH_CHANNEL:-}", MB_TWITCH_NICK: "${TWITCH_NICK:-}", MB_TWITCH_TOKEN: "${TWITCH_TOKEN:-}", MB_ASK_MODEL: "${ASK_MODEL:-gpt-5.6-luna}"}
+    environment: {MB_TWITCH_CHANNEL: "${TWITCH_CHANNEL:-}", MB_TWITCH_NICK: "${TWITCH_NICK:-}", MB_TWITCH_TOKEN: "${TWITCH_TOKEN:-}", MB_ASK_MODEL: "${ASK_MODEL:-gpt-6-luna}", MB_ASK_EFFORT: "${ASK_EFFORT:-high}"}
     networks: [chat]                      # the internet, and no route to the game, the agent or the gateway
     volumes:
       - agent-work:/work:ro               # the run's log and the agent's journal, read only
