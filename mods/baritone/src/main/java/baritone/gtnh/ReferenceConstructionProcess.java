@@ -420,7 +420,7 @@ final class ReferenceConstructionProcess extends BulkJob {
         if(why.startsWith("timeout_"))return "timeout";
         if(!why.startsWith("stalled_"))return why;
         // A stall during a click is that click's, in the word of what it was stuck at.
-        if(clicking()){blamed=clicks.at();if(blamed==null)blamed=next();return ClickLog.stalled(clicks.phase());}
+        if(clicking()){blamed=clicks.at();if(blamed==null)blamed=next();String click=ClickLog.stalled(clicks.phase());clicks.stalled(click);return click;}
         var blind=noVantage.stream().filter(p->Boolean.FALSE.equals(correct.get(p))&&plan.steps.visible(p,buildStep)).toList();
         if(!blind.isEmpty()&&blind.size()>=open){blamed=blind.get(0);return "no_stance";}
         blamed=next();
