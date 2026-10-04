@@ -26,7 +26,7 @@ Conventions that hold across all tools:
 | Tool | Effect | What it does |
 | --- | --- | --- |
 | `mb_status` | read | Bridge capabilities and connection state; surfaces notes near the player (session start). |
-| `mb_methods` | read | Lists the raw bridge methods with descriptions and effects. |
+| `mb_methods` | read | Lists the raw bridge methods, one line each; `name="gui."` (any part of a method name) returns the matches whole: full description with the parameter schema, effect, thread. |
 | `mb_call` | any | Calls any raw method with JSON params; the escape hatch when no wrapper fits. |
 | `mb_obs` | read | Observations: `player`, `players`, `world`, `block`, `entities`, `entity`, `inventory`, `container`, `gui`, `tooltip`, `find`, `keys`, `tile`, `nbt`, `waila`, `batch`, and the engine's world reads `scan`, `terrain`, `fluid`, `tools`. Block, tile and entity reads surface attached notes. |
 | `mb_act` | action | Native actions: raw `input`, `look`, `use_block`, `use_entity`, `attack_entity`, `use_item`, `eat`, `select_hotbar`, bounded `combat`, `status`, `stop`. |

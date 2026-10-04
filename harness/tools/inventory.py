@@ -22,7 +22,7 @@ from mbtools_gtnh.core import lane_by_method, method_name, no_threat
 def mb_gui(method: str, params: dict | None = None) -> Any:
     """General UI primitives: click_slot, transfer, return_cursor, click_at, drag,
     scroll, key, type, text_field, button, container_button, hover, hit_test, status,
-    open_inventory, close. Use mb_methods for parameter schemas. Native event clicks
+    open_inventory, close. mb_methods(name="gui.") has the parameter schemas. Native event clicks
     reach modded/ghost slots; structured clicks and exact transfers use ordinary slots.
     Observe windowId/epoch and pass expected stacks/cursor to guard stale state.
     Inspect receipts after partial effects; never retry a click merely because its

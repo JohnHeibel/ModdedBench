@@ -54,12 +54,22 @@ def methods_map(raw: Any) -> dict:
     raise ValueError("sys.methods must be a method map or array")
 
 
+def _line(desc: str, width: int = 100) -> str:
+    """A description's first sentence, clipped: enough to choose a method by."""
+    first = desc.split(". ")[0]
+    return first if len(first) <= width else first[:width - 3] + "..."
+
+
 @tool(lane="read", coverage=["meta"])
-def mb_methods() -> Any:
-    """List bridge methods advertised by the GTNH profile; also caches their effects for lane routing of mb_call."""
-    raw = kernel().call("sys.methods")
-    state["methods"] = methods_map(raw)
-    return raw
+def mb_methods(name: str = "") -> Any:
+    """List the bridge's raw methods with one line each, or with name the matching ones whole; also caches their effects for lane routing of mb_call.
+
+    name is any part of a method name ("gui.", "nav.mine", "status"): each match comes back
+    with its full description (the parameter schema), effect, thread and watchable.
+    """
+    methods = state["methods"] = methods_map(kernel().call("sys.methods"))
+    if name: return {"methods": {n: m for n, m in methods.items() if name in n}}
+    return {"methods": {n: _line(m.get("desc") or "") for n, m in methods.items()}}
 
 
 @tool(lane="read", coverage=["meta"])

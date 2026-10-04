@@ -163,4 +163,21 @@ class InventoryDefaultTests(unittest.TestCase):
         self.assertEqual(k.calls, [("obs.inventory", {"detail": "compact"}), ("obs.container", {"detail": "compact"}), ("obs.container", {"detail": "full"})])
 
 
+class MethodListTests(unittest.TestCase):
+    def test_methods_are_listed_by_one_line_and_read_whole_by_name(self):
+        from mbtools_gtnh import core
+        fight = {"name": "nav.fight", "desc": "One fight as a job: {entityId or target:{...}, hold:false}. " + "Paths to the mob. " * 40, "effect": "interaction", "thread": "client", "watchable": False}
+        click = {"name": "gui.click_slot", "desc": "Click " + "{windowId,epoch,slot,button} " * 6, "effect": "interaction", "thread": "client", "watchable": False}
+        ping = {"name": "sys.ping", "effect": "read", "thread": "transport"}
+        k = FakeKernel(lambda method, params: [fight, click, ping])
+        with patch.object(core, "kernel", lambda: k), patch.dict(mbtool.state, {}):
+            listed, one = core.mb_methods(), core.mb_methods("fight")
+            self.assertEqual(mbtool.state["methods"]["sys.ping"]["effect"], "read")  # lane routing still reads the whole list
+        self.assertEqual(listed["methods"]["nav.fight"], "One fight as a job: {entityId or target:{...}, hold:false}")
+        self.assertEqual(len(listed["methods"]["gui.click_slot"]), 100); self.assertTrue(listed["methods"]["gui.click_slot"].endswith("..."))
+        self.assertEqual(listed["methods"]["sys.ping"], "")
+        self.assertEqual(one, {"methods": {"nav.fight": fight}})
+        self.assertLess(len(json.dumps(listed)), len(json.dumps([fight, click, ping])) // 4)
+
+
 if __name__ == "__main__": unittest.main()
