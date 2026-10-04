@@ -248,6 +248,15 @@ def log_counts(start: int | None) -> dict | None:
 
 # ---------------------------------------------------------------- the course
 
+# Tests walk as a fresh client does: these are put back to their defaults for this session (the saved file is not touched),
+# whatever a run left in the client's settings file. A run that saved sprint off once slowed every test and failed the long gaps.
+BASELINE = ("allowSprint", "sprintAscends", "strictLiquidCheck")
+
+
+def baseline(client):
+    client.call("nav.settings", operation="reset", values={name: None for name in BASELINE}, save=False)
+
+
 class Course:
     def __init__(self, args):
         self.args = args
@@ -297,6 +306,7 @@ class Course:
         # Baritone saves settings changed at run time (nav.settings) in the client instance, and they persist across runs
         # and into this course: every non-default is recorded and printed (a saved strictLiquidCheck once blocked a dam).
         try:
+            baseline(self.c)
             rows = self.c.call("nav.settings", operation="get")["settings"]
             self.evidence["settings"] = {r["name"]: r["value"] for r in rows if r.get("value") != r.get("default")}
             print("non-default settings:", self.evidence["settings"] or "none", flush=True)

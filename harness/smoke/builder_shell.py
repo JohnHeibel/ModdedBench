@@ -69,6 +69,7 @@ class Shells(Course):
         except BridgeError: pass
         try: self.s.call(FIX + ".status"); self.active = True     # a course left by an interrupted run
         except BridgeError: pass
+        mc.baseline(self.c)
         rows = self.c.call("nav.settings", operation="get")["settings"]
         self.evidence["settings"] = {r["name"]: r["value"] for r in rows if r.get("value") != r.get("default")}
         print("non-default settings:", self.evidence["settings"] or "none", flush=True)
