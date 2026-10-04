@@ -776,12 +776,27 @@ public interface MovementHelper extends ActionCosts, Helper {
         return speed <= 0 ? ActionCosts.COST_INF : OWN_SWIM / speed;
     }
 
+    /** ModdedBench: walk towards the room a body has in `dest` coming from `src` beside it (BlockShapes.room), not the
+     *  cell's middle: an open door's leaf, or anything else that takes a side of the cell, moves the two apart, and a
+     *  body that heads for the middle catches the edge. Returns the room, null when there is none to measure. */
+    static double[] moveInto(IPlayerContext ctx, MovementState state, BlockPos src, BlockPos dest) {
+        boolean alongX = dest.getX() != src.getX();
+        double[] room = baritone.gtnh.BlockShapes.room(ctx.world().nativeWorld, ctx.player(), dest.getX(), dest.getY(), dest.getZ(), alongX);
+        moveTowards(ctx, state, alongX ? dest.getX() + 0.5 : baritone.gtnh.BlockShapes.aim(room, dest.getX() + 0.5),
+                alongX ? baritone.gtnh.BlockShapes.aim(room, dest.getZ() + 0.5) : dest.getZ() + 0.5);
+        return room;
+    }
+
     static void moveTowards(IPlayerContext ctx, MovementState state, BlockPos pos) {
+        moveTowards(ctx, state, pos.getX() + 0.5, pos.getZ() + 0.5);
+    }
+
+    static void moveTowards(IPlayerContext ctx, MovementState state, double x, double z) {
         // ModdedBench: straight above or below the target (a swimmer the water lifted past it) the yaw towards its centre
         // swings with every hundredth of a block; keep the one the player has
-        double dx = pos.getX() + 0.5 - ctx.player().posX, dz = pos.getZ() + 0.5 - ctx.player().posZ;
+        double dx = x - ctx.player().posX, dz = z - ctx.player().posZ;
         Rotation toward = dx * dx + dz * dz < 0.25 * 0.25 ? ctx.playerRotations()
-                : RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.getBlockPosCenter(pos), ctx.playerRotations());
+                : RotationUtils.calcRotationFromVec3d(ctx.playerHead(), new Vec3d(x, ctx.playerHead().y, z), ctx.playerRotations());
         state.setTarget(new MovementTarget(toward.withPitch(ctx.playerRotations().getPitch()), false)).setInput(Input.MOVE_FORWARD, true);
     }
 

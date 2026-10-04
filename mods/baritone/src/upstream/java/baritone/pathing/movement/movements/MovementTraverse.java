@@ -175,6 +175,10 @@ public class MovementTraverse extends Movement {
                 if (srcDownBlock == Blocks.SOUL_SAND || (srcDownBlock instanceof BlockSlab && !srcDown.isDoubleSlab())) {
                     return COST_INF; // can't sneak and backplace against soul sand or half slabs (regardless of whether it's top half or bottom half) =/
                 }
+                BlockShapes.Shape floor = BlockShapes.of(srcDown);
+                if (floor != null && floor.low()) {
+                    return COST_INF; // ModdedBench: the same for any floor measured lower than a whole block (a chest): the body is in the cell to fill
+                }
                 if (!standingOnABlock) { // standing on water / swimming
                     return COST_INF; // this is obviously impossible
                 }
@@ -323,17 +327,26 @@ public class MovementTraverse extends Movement {
                     return state.setStatus(MovementStatus.UNREACHABLE);
                 }
             }
-            MovementHelper.moveTowards(ctx, state, against);
+            if (against.getX() == dest.x && against.getZ() == dest.z) {
+                MovementHelper.moveInto(ctx, state, src, dest); // ModdedBench: towards the room in the cell, not its middle
+            } else {
+                MovementHelper.moveTowards(ctx, state, against);
+            }
             return state;
         } else {
             wasTheBridgeBlockAlwaysThere = false;
             Block standingOn = BlockStateInterface.get(ctx, feet.down()).getBlock();
-            if (standingOn.equals(Blocks.SOUL_SAND) || standingOn instanceof BlockSlab) { // see issue #118
+            // ModdedBench: upstream knew the two floors a body sinks into by name. Any floor lower than a whole block
+            // leaves a body that leans over its edge inside the cell to fill, and the game puts no block there: feet
+            // under the top of that cell are the measure. Sneaking, so backing out does not go over the other edge.
+            boolean low = ctx.player().boundingBox.minY < dest.getY();
+            if (low || standingOn.equals(Blocks.SOUL_SAND) || standingOn instanceof BlockSlab) { // see issue #118
                 double dist = Math.max(Math.abs(dest.getX() + 0.5 - ctx.player().posX), Math.abs(dest.getZ() + 0.5 - ctx.player().posZ));
                 if (dist < 0.85) { // 0.5 + 0.3 + epsilon
                     MovementHelper.moveTowards(ctx, state, dest);
                     return state.setInput(Input.MOVE_FORWARD, false)
-                            .setInput(Input.MOVE_BACK, true);
+                            .setInput(Input.MOVE_BACK, true)
+                            .setInput(Input.SNEAK, low);
                 }
             }
             double dist1 = Math.max(Math.abs(ctx.player().posX - (dest.getX() + 0.5D)), Math.abs(ctx.player().posZ - (dest.getZ() + 0.5D)));

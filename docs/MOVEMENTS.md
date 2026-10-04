@@ -77,6 +77,10 @@ bash harness/smoke/mbtest.sh harness/smoke/glide_course.py
 - Cost is ticks. A step that cannot be taken costs `ActionCosts.COST_INF`; a cost of zero or less is an error.
 - A step may end anywhere (`dynamicXZ`, `dynamicY`); its offsets then only say which way it goes.
 - The executor gives a step its cost plus `movementTimeoutTicks` before it gives up on it.
+- A cell is not a whole block and its middle is not always free: an open door's leaf, a ladder, a chest take part of
+  theirs. `BlockShapes.room` measures, from the game's own collision boxes, where across its way a body has room in
+  a cell, and `BlockShapes.aim` is the point in it to head for; the walker's own steps steer there
+  (`MovementHelper.moveInto`). A move that steers a body into a cell does the same instead of heading for the middle.
 - Guards (health, threats, time) pause the world; they never fly the body. A movement must be able to carry on from
   whatever tick it was paused in.
 

@@ -23,7 +23,7 @@ class Scaffolds(bs.Shells):
         for y in range(UP): self.set_block((5, y, 1), POLE)
         self.set_block((5, UP, 1), TARGET)
         self.stand([origin[0] + 2.5, bs.FLOOR, origin[2] + 1.5])
-        lo, hi = (0, 0, -3), (10, UP + 4, 5)
+        lo, hi = (1, 0, -3), (9, UP + 4, 5)
         before = self.region(lo, hi)
         bounds = {"min": [origin[0] + 5, bs.FLOOR + UP, origin[2] + 1], "max": [origin[0] + 5, bs.FLOOR + UP, origin[2] + 1]}
         try:

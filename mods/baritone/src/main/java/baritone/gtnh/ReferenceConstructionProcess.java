@@ -87,6 +87,7 @@ final class ReferenceConstructionProcess extends BulkJob {
      */
     private final Map<BlockPos,Set<BlockPos>> noWay=new HashMap<>(),offered=new HashMap<>();
     private long offeredSearches;
+    private Map<String,Object> walk; // the walk as the watchdog found it, for the stop it then reports
     private int[] stepLeft=new int[0];
     private BlockPos[] stepFirst=new BlockPos[0];
     ReferenceConstructionProcess(BaritoneNavigation navigation,WorkJournal journal,Map<String,Object> options){
@@ -532,6 +533,19 @@ final class ReferenceConstructionProcess extends BulkJob {
         inTheWay=null;
         blamed=next();
         var pathing=engine.getPathingBehavior();
+        // What the walk was at when the watchdog stopped it: where the body stood, what it was sent to, and the last search.
+        var goal=pathing.getGoal();String sent=String.valueOf(goal);
+        walk=new LinkedHashMap<>();walk.put("feet",point(feet));walk.put("onGround",mc.thePlayer.onGround);
+        walk.put("at",List.of(Math.round(mc.thePlayer.posX*1000)/1000.0,Math.round(mc.thePlayer.boundingBox.minY*1000)/1000.0,Math.round(mc.thePlayer.posZ*1000)/1000.0));
+        walk.put("touching",BlockShapes.touching(mc.thePlayer));
+        walk.put("goal",sent.length()>240?sent.substring(0,240)+"...":sent);walk.put("inGoal",goal!=null&&goal.isInGoal(engine.getPlayerContext().playerFeet()));
+        var on=pathing.getCurrent();
+        if(on!=null&&on.getPosition()<on.getPath().movements().size()){
+            var move=on.getPath().movements().get(on.getPosition());
+            walk.put("movement",move.getClass().getSimpleName()+" "+point(move.getSrc())+" -> "+point(move.getDest()));
+        }
+        walk.put("keys",java.util.Arrays.stream(baritone.api.utils.input.Input.values()).filter(engine.getInputOverrideHandler()::isInputForcedDown).map(Enum::name).toList());
+        walk.put("searching",pathing.getInProgress().isPresent());walk.put("searches",pathing.calculationsStarted());walk.put("lastSearch",pathing.lastCalculation());
         return pathing.calculationsStarted()>searchesBefore&&"FAILURE".equals(pathing.lastCalculation().get("type"))
             &&pathing.lastCalculation().get("search") instanceof Map<?,?> search&&"exhausted".equals(search.get("why"))?"no_route":"stalled";
     }
@@ -631,6 +645,7 @@ final class ReferenceConstructionProcess extends BulkJob {
             if(blamed!=null)stop.put("pos",point(blamed));
             if(inTheWay!=null&&reason.equals("no_stance"))stop.put("blockedBy",Map.of("pos",point(inTheWay),"id",baritone.compat.Registry.name(world.getBlock(inTheWay.getX(),inTheWay.getY(),inTheWay.getZ()))));
             var at=plan.steps.where(blamed,buildStep);if(!at.isEmpty())stop.put("step",at);
+            if(walk!=null&&(reason.equals("stalled")||reason.equals("no_route")))stop.put("walk",walk);
             out.put("stopped",stop);
             if(!missing.isEmpty())out.put("missing",missing);
             if(reason.equals("occupied")&&!plan.replace()){var held=held();out.put("occupied",Map.of("count",held.size(),"first",held.stream().limit(ConstructionPlan.FIRST).map(WorkSpec::point).toList()));}

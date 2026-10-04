@@ -200,7 +200,7 @@ public class MovementAscend extends Movement {
 
             return state;
         }
-        MovementHelper.moveTowards(ctx, state, dest);
+        double[] room = MovementHelper.moveInto(ctx, state, src, dest); // ModdedBench: towards the room in the cell, not its middle
         if (ctx.player().isInWater()) {
             // ModdedBench: a player in water rises only while jump is held, and climbs out when it swims into the ledge
             // (the game's water-exit boost); the one-press timing below, tuned for land, leaves it bobbing in a flooded hole.
@@ -223,6 +223,13 @@ public class MovementAscend extends Movement {
         double lateralMotion = xAxis * ctx.player().motionZ + zAxis * ctx.player().motionX;
         if (Math.abs(lateralMotion) > 0.1) {
             return state;
+        }
+
+        if (room != null) { // ModdedBench: a jump that drifts out of the room lands on what bounds it (a doorway's side, an open door's leaf)
+            double side = xAxis * ctx.player().posZ + zAxis * ctx.player().posX + 4 * lateralMotion;
+            if (side < room[0] || side > room[1]) {
+                return state;
+            }
         }
 
         if (headBonkClear()) {
