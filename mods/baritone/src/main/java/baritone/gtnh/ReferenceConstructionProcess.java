@@ -70,6 +70,8 @@ final class ReferenceConstructionProcess extends BulkJob {
     /** The current build step (BuildSteps), the one the running pass was started at, and this tick's wrong cells per step. */
     private int buildStep,passStep=-1,liftedStep=-1;
     private BuildSteps.Held held=BuildSteps.Held.NONE;
+    /** Cells with no standing spot level with them or above: these are filled from below, where a face for them is in view. */
+    private final Set<BlockPos> fromBelow=new HashSet<>();
     private int[] stepLeft=new int[0];
     private BlockPos[] stepFirst=new BlockPos[0];
     ReferenceConstructionProcess(BaritoneNavigation navigation,WorkJournal journal,Map<String,Object> options){
@@ -206,6 +208,7 @@ final class ReferenceConstructionProcess extends BulkJob {
             Cell cell=cells.get(new BlockPos(wanted.x,wanted.y,wanted.z));
             return cell!=null&&cell.anyMeta()||actual.meta==wanted.meta;
         };
+        builder.placeFromBelow=p->fromBelow.contains(new BlockPos(p.getX(),p.getY(),p.getZ()));
         builder.placementGoalAdapter=(target,goal)->{
             Cell cell=cells.get(new BlockPos(target.getX(),target.getY(),target.getZ()));
             if(cell==null||cell.clear())return goal;
@@ -227,8 +230,9 @@ final class ReferenceConstructionProcess extends BulkJob {
                 // cell, while searchForPlaceables refuses every upward click.
                 // Egress must reach a height where this cell becomes actionable.
                 boolean covered=world.getBlock(at.getX(),at.getY()+1,at.getZ())!=net.minecraft.init.Blocks.air;int up=reachUp();
-                var out=stands.around(at).stream().map(pose->pose.feet()).filter(f->PlacementGoalSupport.egress(at,f,covered,up)&&ForgeSnapshot.liveStandable(world,f))
-                    .map(f->(Goal)new GoalBlock(f)).toArray(Goal[]::new);
+                var out=egress(at,covered,up);
+                // Nowhere level with the cell to step to (the last cell of a course, stood in): down beside it, and it is filled from there.
+                if(out.length==0&&!covered)out=egress(at,true,up);
                 return out.length==0?goal:new GoalComposite(out);
             }
             // Existing work poses supplement the source goal, never replace it: removing a future goal would keep A*
@@ -323,12 +327,24 @@ final class ReferenceConstructionProcess extends BulkJob {
         return mc.thePlayer.boundingBox.intersectsWith(net.minecraft.util.AxisAlignedBB.getBoundingBox(at.getX(),at.getY(),at.getZ(),at.getX()+1,at.getY()+1,at.getZ()+1));
     }
     /** The feet positions, among these poses, from which a face to place this cell against is in view. */
+    private Goal[] egress(BlockPos at,boolean covered,int up){
+        return stands.around(at).stream().map(pose->pose.feet()).filter(f->PlacementGoalSupport.egress(at,f,covered,up)&&ForgeSnapshot.liveStandable(world,f))
+            .map(f->(Goal)new GoalBlock(f)).toArray(Goal[]::new);
+    }
     private Set<BlockPos> vantages(Cell cell,int slot,List<WorkAccess.Pose> poses,BlockPos currentFeet){
+        boolean below=fromBelow.contains(cell.pos());
+        Set<BlockPos> legal=vantages(cell,slot,poses,currentFeet,below);
+        // The source builder fills a cell from level with it or above, and from below only under a ceiling. Where no such
+        // spot exists (the neighbours it would stand on are filled, or there is no headroom), the cell is filled from below.
+        if(legal.isEmpty()&&!below){legal=vantages(cell,slot,poses,currentFeet,true);if(!legal.isEmpty())fromBelow.add(cell.pos());}
+        return legal;
+    }
+    private Set<BlockPos> vantages(Cell cell,int slot,List<WorkAccess.Pose> poses,BlockPos currentFeet,boolean below){
         var builder=engine.getBuilderProcess();Set<BlockPos> legal=new HashSet<>();
         for(var pose:poses){
             var sourceFeet=baritone.compat.NavigationCoordinates.feet(pose.feet().getX()+.5,pose.standingY(),pose.feet().getZ()+.5,
                 p->world.getBlock(p.getX(),p.getY(),p.getZ()) instanceof net.minecraft.block.BlockSlab);
-            if(!sourcePlacementHeight(cell,sourceFeet))continue;
+            if(!sourcePlacementHeight(cell,sourceFeet,below))continue;
             // PathExecutor reaches a block goal before necessarily reaching
             // its center. At the current cell use the real body position:
             // otherwise a boundary-overlapping player can be declared ready
@@ -355,11 +371,11 @@ final class ReferenceConstructionProcess extends BulkJob {
             return PlanBreaks.allowed(cell.clear(),verified.getOrDefault(pos,false),deferred.contains(pos),replace||soft.contains(pos),pending.contains(pos));
         };
     }
-    private boolean sourcePlacementHeight(Cell cell,BlockPos sourceFeet){
+    private boolean sourcePlacementHeight(Cell cell,BlockPos sourceFeet,boolean below){
         // A goal must be actionable by searchForPlaceables, not merely within
         // native click reach. Unsupported vertical construction remains the
         // responsibility of MovementPillar; a ceiling can supply support.
-        return PlacementGoalSupport.actionableHeight(cell.pos().getY(),sourceFeet.getY(),world.getBlock(cell.pos().getX(),cell.pos().getY()+1,cell.pos().getZ())!=net.minecraft.init.Blocks.air,reachUp());
+        return PlacementGoalSupport.actionableHeight(cell.pos().getY(),sourceFeet.getY(),below||world.getBlock(cell.pos().getX(),cell.pos().getY()+1,cell.pos().getZ())!=net.minecraft.init.Blocks.air,reachUp());
     }
     /** The source scan's upward limit, from this player's sneaking eye and native reach. */
     private int reachUp(){
@@ -374,7 +390,7 @@ final class ReferenceConstructionProcess extends BulkJob {
         // Future roof cells must not pull the player back from a wall traversal.
         for(var target:engine.getBuilderProcess().incorrectPositions()){
             Cell cell=plan.schematic.get(new BlockPos(target.getX(),target.getY(),target.getZ()));if(cell==null)continue;
-            if(cell.clear()||correct.getOrDefault(cell.pos(),false)||!sourcePlacementHeight(cell,feet))continue;
+            if(cell.clear()||correct.getOrDefault(cell.pos(),false)||!sourcePlacementHeight(cell,feet,fromBelow.contains(cell.pos())))continue;
             var p=cell.pos();
             if(!mc.thePlayer.boundingBox.intersectsWith(net.minecraft.util.AxisAlignedBB.getBoundingBox(p.getX(),p.getY(),p.getZ(),p.getX()+1,p.getY()+1,p.getZ()+1)))continue;
             int slot=plan.slot(cell);if(slot<0)continue;
@@ -401,9 +417,12 @@ final class ReferenceConstructionProcess extends BulkJob {
         Map<BlockPos,IBlockState> shown=plan.steps.schematic(DeferredClearance.schematic(states,deferredAir,cleanupPhase),buildStep);
         passStep=buildStep;
         // Of the cells shown, those between a deeper one and the open wait for it (BuildSteps.held); step() starts a new pass when one is in.
-        Set<BlockPos> pending=new HashSet<>();
-        for(Cell c:plan.cells){BlockPos p=c.pos();if(!c.clear()&&shown.containsKey(p)&&Boolean.FALSE.equals(correct.get(p))&&baritone.compat.LegacyPlacement.empty(world,p.getX(),p.getY(),p.getZ()))pending.add(p);}
-        held=cleanupPhase||liftedStep==buildStep?BuildSteps.Held.NONE:BuildSteps.held(pending,p->baritone.compat.LegacyPlacement.empty(world,p.getX(),p.getY(),p.getZ()));
+        Set<BlockPos> toFill=new HashSet<>(),now=new HashSet<>();
+        for(Cell c:plan.cells){
+            BlockPos p=c.pos();if(c.clear()||!Boolean.FALSE.equals(correct.get(p))||!baritone.compat.LegacyPlacement.empty(world,p.getX(),p.getY(),p.getZ()))continue;
+            toFill.add(p);if(shown.containsKey(p))now.add(p);
+        }
+        held=cleanupPhase||liftedStep==buildStep?BuildSteps.Held.NONE:BuildSteps.held(toFill,now,p->baritone.compat.LegacyPlacement.empty(world,p.getX(),p.getY(),p.getZ()));
         Map<BlockPos,IBlockState> frozen=new HashMap<>(shown);frozen.keySet().removeAll(held.held());
         ISchematic schematic=new ISchematic(){
             public int widthX(){return width;}public int heightY(){return height;}public int lengthZ(){return length;}
