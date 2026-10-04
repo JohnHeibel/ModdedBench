@@ -33,8 +33,9 @@ class BackupTests(unittest.TestCase):
                 self.assertIsNotNone(backup.snapshot())
             return ran
         take, release = backup.runtime.hold_cmd("backup", True), backup.runtime.hold_cmd("backup", False)
-        self.assertEqual(snapshot(free=True), [take, backup.WORLD, backup.NOTES, release])
-        self.assertEqual(snapshot(free=False), [take, backup.WORLD, backup.NOTES])  # the operator's or the guard's hold was in force: it is not this snapshot's to end
+        work = [backup.BUNDLE, backup.STATE]  # the agent's commits and loop state, read once the world runs again
+        self.assertEqual(snapshot(free=True), [take, backup.WORLD, backup.NOTES, release, *work])
+        self.assertEqual(snapshot(free=False), [take, backup.WORLD, backup.NOTES, *work])  # the operator's or the guard's hold was in force: it is not this snapshot's to end
 
     def test_a_snapshot_that_fails_says_what_docker_said_and_leaves_no_folder(self):
         ran = []
@@ -56,6 +57,19 @@ class BackupTests(unittest.TestCase):
             done = subprocess.run(["sh", "-c", backup.WORLD.replace("/data", Path(tmp).as_posix())], capture_output=True)
             with tarfile.open(fileobj=io.BytesIO(done.stdout)) as tar: names = {n for n in tar.getnames() if n != "."}
         self.assertEqual(names, {"./world", "./world/level.dat", "./server.properties"})
+
+    @unittest.skipUnless(shutil.which("sh") and shutil.which("tar") and shutil.which("git"), "runs the bundle and state lines")
+    def test_a_snapshot_holds_the_agents_commits_and_its_state_without_the_logs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            git = lambda *a, cwd=tmp: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t.invalid", *a], cwd=cwd, capture_output=True, text=True, check=True).stdout
+            git("init", "-q"); Path(tmp, "tool.py").write_text("x"); git("add", "tool.py"); git("commit", "-qm", "the agent's fix"); git("branch", "side")
+            for name in ("codex-loop.json", "run.json", "codex-loop.log", "codex-loop.err", "loop.lock", "tasks/t1.json", "tasks/t1.log", "notes/notes.sqlite3"):
+                Path(tmp, ".state", name).parent.mkdir(parents=True, exist_ok=True); Path(tmp, ".state", name).write_text("x")
+            out = lambda line: subprocess.run(["sh", "-c", line], cwd=tmp, capture_output=True, check=True).stdout
+            Path(tmp, "agent.bundle").write_bytes(out(backup.BUNDLE)); heads = git("bundle", "list-heads", "agent.bundle")
+            self.assertIn("refs/heads/side", heads); self.assertIn(git("rev-parse", "HEAD").strip(), heads)
+            with tarfile.open(fileobj=io.BytesIO(out(backup.STATE))) as tar: names = {n for n in tar.getnames() if n != "."}
+        self.assertEqual(names, {"./codex-loop.json", "./run.json", "./tasks", "./tasks/t1.json"})
 
     def test_a_restore_checks_the_archives_before_it_stops_or_deletes_anything(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(backup, "OUT", Path(tmp)), patch.object(backup.subprocess, "run") as run, patch("builtins.print"):

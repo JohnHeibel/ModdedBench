@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Operator-only snapshots of a contained run: the world and the agent's notes, taken together, kept on the host.
+"""Operator-only snapshots of a contained run: the world and the agent's notes, taken together, and the agent's work, kept on the host.
 
 python harness/launcher/backup.py once              one snapshot now
 python harness/launcher/backup.py loop --every 30   one every 30 minutes until interrupted (the console runs this with a run)
@@ -8,6 +8,11 @@ python harness/launcher/backup.py restore <folder> --reason "..."   put a snapsh
 A snapshot holds the world with the operator hold (no ticks, so no saves in flight; it is the
 last autosave, at most 45 s of game time old), streams the server's data folder without the
 pack's own files, copies the notes databases through SQLite's backup API, and releases the hold.
+It then saves what else lives only in the agent's volume: agent.bundle, every commit and ref of
+its checkout (`git bundle --all`; uncommitted edits are not in it), and state.tar.gz, its .state
+without the logs (thread id, run budget, tasks, call log). `restore` puts back the world and the
+notes only; the other two are put back by hand, inside the agent container, when they are wanted:
+`git fetch <agent.bundle> 'refs/heads/*:refs/heads/*'` (or `git clone` it), `tar -xzf <state.tar.gz> -C .state`.
 Snapshots land in .runtime/snapshots, which no container mounts: the agent cannot see, make or
 restore them, and nothing in its brief mentions them. Restoring is an operator decision for
 infrastructure faults only (a corrupted world, a lost disk, a harness bug that damaged state),
@@ -42,6 +47,10 @@ NOTES = ("import sqlite3,pathlib,tarfile,sys,tempfile\n"
          "    for p in pathlib.Path('.state/notes').glob('*.sqlite3'):\n"
          "        s,d=sqlite3.connect(p),sqlite3.connect(pathlib.Path(t)/p.name);s.backup(d);d.close();s.close()\n"
          "    with tarfile.open(fileobj=sys.stdout.buffer,mode='w|gz') as tar: tar.add(t,arcname='notes')\n")
+# What else exists only in the agent's volume, where one `git clean -fdx` or a lost volume ends it. Read without the hold: neither
+# depends on the world's tick. tar's exit 1 is "a file changed as it was read" (the call log, mid-run), and the archive is whole.
+BUNDLE = "git bundle create -q - --all"
+STATE = "tar -C .state --exclude='*.log' --exclude='*.err' --exclude='*.lock' --exclude=./notes -czf - .; [ $? -le 1 ]"
 
 
 def sh(*args, to: Path | None = None) -> bool:
@@ -67,7 +76,8 @@ def snapshot() -> Path | None:
         shutil.rmtree(folder, ignore_errors=True); raise  # an empty folder would count as a snapshot and push a real one out
     if not world:
         shutil.rmtree(folder); print("no snapshot: the world could not be archived (the cause is the line above)", file=sys.stderr); return None
-    print(f"{folder.name}: world {(folder / 'world.tar.gz').stat().st_size >> 20} MiB, notes {'ok' if notes else 'MISSING (the cause is the line above)'}")
+    extra = {"notes": notes, "commits": sh("agent", "sh", "-c", BUNDLE, to=folder / "agent.bundle"), "state": sh("agent", "sh", "-c", STATE, to=folder / "state.tar.gz")}
+    print(f"{folder.name}: world {(folder / 'world.tar.gz').stat().st_size >> 20} MiB, " + ", ".join(f"{k} {'ok' if v else 'MISSING (the cause is the line above)'}" for k, v in extra.items()))
     return folder
 
 
