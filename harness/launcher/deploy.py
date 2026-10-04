@@ -18,6 +18,8 @@ from runtime import REPO, RuntimeError_, load_json, save_json
 
 COMPONENTS = ("core", "baritone", "client")
 MAX_JAR = 64 << 20
+JOIN_S, STOP_S = 420, 60  # what the supervisor gives a launched client to join the world, and a running one to shut down
+WORST_S = 2 * (STOP_S + JOIN_S) + 120  # stop, launch, and when that fails stop, roll back and launch again: a request waits this long for its verdict
 
 
 def outbox() -> Path:
@@ -47,7 +49,8 @@ def request(args: argparse.Namespace) -> int:
     save_json(box / "request.json", {"id": ident, "components": args.components, "commit": git("rev-parse", "HEAD").strip(), "reason": args.reason})
     deadline = time.monotonic() + args.timeout
     while time.monotonic() < deadline:
-        result = load_json(box / "result.json")
+        try: result = load_json(box / "result.json")
+        except (OSError, ValueError): result = {}  # read while the supervisor writes it: the next look is a second away
         if result.get("id") == ident:
             print(json.dumps(result)); return 0 if result.get("ok") else 1
         time.sleep(1)
@@ -74,10 +77,10 @@ def accept(req: dict, box: Path, archive: Path) -> dict[str, Path]:
 def deploy(jars: dict[str, Path], root: Path, timeout: float) -> dict:
     cfg = runtime.load_config(root)
     launch = SimpleNamespace(runtime=str(root), username="", timeout=timeout, installed_as_is=True)
-    stop = SimpleNamespace(runtime=str(root), timeout=60)
-    if runtime.client_instance_is_running(runtime.instance_dir(cfg)): runtime.stop_client(stop)
+    stop = SimpleNamespace(runtime=str(root), timeout=STOP_S)
     installed = []
     try:
+        if runtime.client_instance_is_running(runtime.instance_dir(cfg)): runtime.stop_client(stop)  # a client that will not stop is a failed deploy like any other: relaunched as it was
         for kind in COMPONENTS:
             if kind in jars: runtime.install_jar(kind, cfg, root, "client", jars[kind]); installed.append(kind)
         runtime.launch_client(launch)
@@ -111,7 +114,7 @@ def serve(args: argparse.Namespace) -> int:
         if claim(box):
             archive = root / "deploys" / time.strftime("%Y%m%d-%H%M%S")
             try: req = load_json(taken)
-            except ValueError: req = {}
+            except (OSError, ValueError): req = {}
             if not isinstance(req, dict): req = {}
             try:
                 result = deploy(accept(req, box, archive), root, args.timeout)
@@ -128,8 +131,8 @@ def serve(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    p = sub.add_parser("request"); p.add_argument("components", nargs="+", choices=COMPONENTS); p.add_argument("--reason", default=""); p.add_argument("--timeout", type=float, default=900); p.set_defaults(func=request)
-    p = sub.add_parser("serve"); p.add_argument("--runtime", default=str(runtime.RUNTIME)); p.add_argument("--timeout", type=float, default=420); p.add_argument("--once", action="store_true"); p.set_defaults(func=serve)
+    p = sub.add_parser("request"); p.add_argument("components", nargs="+", choices=COMPONENTS); p.add_argument("--reason", default=""); p.add_argument("--timeout", type=float, default=WORST_S); p.set_defaults(func=request)
+    p = sub.add_parser("serve"); p.add_argument("--runtime", default=str(runtime.RUNTIME)); p.add_argument("--timeout", type=float, default=JOIN_S); p.add_argument("--once", action="store_true"); p.set_defaults(func=serve)
     args = parser.parse_args(argv)
     try:
         return args.func(args)

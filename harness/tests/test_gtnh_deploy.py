@@ -50,6 +50,17 @@ class DeployTests(unittest.TestCase):
         self.assertEqual(calls, [("install", "core", "client"), ("install", "client", "client"), "launch",
                                  ("rollback", "client", "client"), ("rollback", "core", "client"), "launch"])
 
+    def test_a_client_that_does_not_stop_in_time_is_stopped_again_and_relaunched_as_it_was(self):
+        calls = []
+        def stop(args):
+            calls.append("stop")
+            if calls.count("stop") == 1: raise runtime.RuntimeError_("shutdown requested but client is still live")
+        with patch.object(runtime, "load_config", return_value={}), patch.object(runtime, "instance_dir", return_value=Path(".")), \
+             patch.object(runtime, "client_instance_is_running", return_value=True), patch.object(runtime, "stop_client", stop), \
+             patch.object(runtime, "launch_client", lambda args: calls.append("launch")), patch.object(runtime, "install_jar", lambda *a: calls.append("install")):
+            result = deploy.deploy({"client": Path("c.jar")}, Path("."), 1)
+        self.assertEqual((result, calls), ({"ok": False, "error": "shutdown requested but client is still live", "rolledBack": []}, ["stop", "stop", "launch"]))
+
     def test_a_request_is_claimed_by_one_supervisor_and_a_second_supervisor_does_not_start(self):
         import json, os
         from types import SimpleNamespace

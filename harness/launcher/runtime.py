@@ -396,7 +396,7 @@ def client_instance_is_running(instance: Path) -> bool:
     env = os.environ.copy(); env["MODBENCH_INSTANCE"] = str(instance.resolve())
     try:
         result = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], env=env,
-                                capture_output=True, text=True, timeout=5, check=False)
+                                capture_output=True, text=True, timeout=20, check=False)  # a loaded host answers slowly, and no answer counts as running
         if result.returncode != 0:
             return True
         answer = result.stdout.strip().lower()
@@ -460,7 +460,7 @@ def install_jar(kind: str, cfg: dict[str, Any], runtime: Path, only: str = "", s
         backup = backup_path(kind, side, runtime)
         temp = target.with_suffix(".jar.new")
         shutil.copy2(source, temp)
-        if target.exists():
+        if target.exists() and sha256_file(target) != sha256_file(source):  # the same jar again (a replayed deploy) must not replace the backup with the jar it is the backup for
             backup.parent.mkdir(parents=True, exist_ok=True)
             backup_new = backup.with_suffix(".jar.new")
             shutil.copy2(target, backup_new)
