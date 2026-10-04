@@ -800,14 +800,14 @@ purpose, every quest item stands on a recipe tree that wants its inputs by the
 hundred, and the answer the pack intends is many copies running side by side.
 The first copy costs the design, the trip and the debugging; the next ten cost
 only materials. Rebuilding something too small costs more than building it too
-big. What players end up with looks like this: a dozen coke ovens or more in a
-bank, not two; a field for each crop that is a full plot of its own, not a
-patch by the water.
+big. What players end up with looks like this: a dozen or more of the same
+machine in a bank, not two; a field for each crop that is a full plot of its
+own, not a patch by the water.
 
 Size by arithmetic, and write the number down. The quest book asks for one of a
-thing; the scale is in the recipe tree behind it. Two rubber trees can finish a
-quest; they cannot feed the cables, circuits and machine hulls that follow,
-which want rubber by the hundred. So count what will consume this over the next
+thing; the scale is in the recipe tree behind it. A source that is enough to
+finish a quest is rarely enough to feed what the next tier builds out of it,
+which wants the same material by the hundred. So count what will consume this over the next
 tier from the recipe trees in NEI, not from the quest's count; measure how fast
 one unit makes it; and build as many units as it takes never to wait on it. If
 you cannot do the arithmetic, take the size that feels right and build several
