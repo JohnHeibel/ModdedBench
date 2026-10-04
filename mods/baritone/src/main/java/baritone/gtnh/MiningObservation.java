@@ -30,6 +30,13 @@ final class MiningObservation extends BlockOptionalMetaLookup {
     MiningObservation(World world,WorkSpec.Bounds bounds,List<Map<String,Object>> selectors,List<Map<String,Object>> items,java.util.function.Supplier<BlockPos> centre){
         super(new BlockOptionalMeta[0]);this.world=world;this.bounds=bounds;this.selectors=selectors;this.items=items;this.centre=centre;
     }
+    /** Exactly these cells, each while it holds what it held then (the job's own scaffold, to break again); never rescanned. */
+    static MiningObservation cells(World world,Map<baritone.compat.BlockPos,IBlockState.StateKey> cells){
+        int[] lo={Integer.MAX_VALUE,255,Integer.MAX_VALUE},hi={Integer.MIN_VALUE,0,Integer.MIN_VALUE};
+        for(var p:cells.keySet()){int[] c={p.getX(),p.getY(),p.getZ()};for(int i=0;i<3;i++){lo[i]=Math.min(lo[i],c[i]);hi[i]=Math.max(hi[i],c[i]);}}
+        var out=new MiningObservation(world,new WorkSpec.Bounds(new BlockPos(lo[0],lo[1],lo[2]),new BlockPos(hi[0],hi[1],hi[2])),List.of(),List.of());
+        out.published=Map.copyOf(cells);out.passes=1;return out;
+    }
     void tick(){
         // The first pass is what the job waits for. Every later one only refreshes it, on ticks that also path and dig.
         long until=System.nanoTime()+(passes==0?2_000_000L:250_000L);int budget=passes==0?2048:256;
