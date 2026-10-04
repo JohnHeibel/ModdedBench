@@ -39,7 +39,6 @@ public interface Navigation {
     default Job build(Map<String,Object> params){throw new UnsupportedOperationException("schematic building unavailable");}
     default Map<String,Object> pauseBuild(){throw new UnsupportedOperationException("builder pause unavailable");}
     default Map<String,Object> buildMaterials(){throw new UnsupportedOperationException("builder materials unavailable");}
-    default Map<String,Object> stageBuild(Map<String,Object> params){throw new UnsupportedOperationException("schematic staging unavailable");}
     default Job resume(String jobId,Map<String,Object> options){throw new UnsupportedOperationException("work resume unavailable");}
     default Map<String,Object> previewBuild(Map<String,Object> params){throw new UnsupportedOperationException("build preview unavailable");}
     default Map<String,Object> scan(Map<String,Object> params){throw new UnsupportedOperationException("block scan unavailable");}

@@ -362,7 +362,7 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual(fake.calls[-1][0], "nav.build_preview")
         work.mb_build(cells=cells, timeout_ticks=500)
         self.assertEqual(fake.last("nav.build"), ("nav.build", {"replaceExisting":False,
-            "overrideProtection":False,"allowBreak":False,"allowPlace":False,"mode":"blueprint",
+            "overrideProtection":False,"allowBreak":False,"allowPlace":False,
             "timeoutTicks":500,"cells":cells,"timeout":67.5}))
         # One mb_scan covers a volume above the bridge's per-scan cap: layers of <=262144 cells, each paged to its end.
         def scan(method, params):
@@ -551,38 +551,20 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertIsInstance(inspect.content[1], ImageContent)
         self.assertEqual(fake.calls[2], ("nei.inspect", {"x": 31, "y": 47, "scroll": -1}))
 
-    def test_builder_defaults_confine_edits_but_preserve_explicit_opt_out(self):
+    def test_a_build_has_one_behaviour_and_no_knobs_that_select_another(self):
         tools = module_with(self.loaded(), "mb_build")
+        for name in ("mb_build", "mb_build_preview", "mb_schematic_build", "mb_copy"):
+            self.assertFalse({"mode", "settings", "stall_ticks"} & set(inspect.signature(getattr(tools, name)).parameters), name)
+        self.assertEqual(list(inspect.signature(tools.mb_build).parameters), ["cells", "selection", "origin", "replace_existing",
+                         "override_protection", "timeout_ticks", "allow_break", "allow_place", "size", "drawing"])
         fake = self.use(FakeKernel(lambda method, params: {"state":"completed"}))
-        cells = [{"pos":[0,0,0], "id":"minecraft:stone", "meta":0}]
+        cells = [{"pos":[i,0,0], "id":"minecraft:stone", "meta":0} for i in range(4097)]
         for call, method in ((tools.mb_build, "nav.build"), (tools.mb_build_preview, "nav.build_preview")):
-            settings = {"breakFromAbove":True}
-            call(cells=cells, mode="builder", settings=settings)
-            self.assertEqual(fake.last(method)[1]["settings"], {"restricted":True, "breakFromAbove":True})
-            self.assertEqual(settings, {"breakFromAbove":True})
-            call(cells=cells, mode="builder", settings={"restricted":False})
-            self.assertFalse(fake.last(method)[1]["settings"]["restricted"])
-            call(cells=cells)
-            self.assertNotIn("settings", fake.last(method)[1])
-
-    def test_large_build_staging_uses_guarded_offsets_without_truncation(self):
-        tools = module_with(self.loaded(), "mb_build")
-        count = [0]
-        def reply(method, params):
-            if method == "nav.build_stage" and params["operation"] == "begin": return {"stageId":"s", "count":0}
-            if method == "nav.build_stage" and params["operation"] == "append":
-                count[0] += len(params["cells"]); return {"stageId":"s", "count":count[0]}
-            if method == "nav.build_stage": return {"stageId":"s", "count":count[0], "planId":"p"}
-            return {"state":"completed"}
-        fake = self.use(FakeKernel(reply)); cells=[{"pos":[i,0,0],"id":"minecraft:stone"} for i in range(4097)]
-        tools.mb_build(cells=cells, origin=[0,1,0], mode="builder", allow_break=True)
-        appends=[p for m,p in fake.calls if m=="nav.build_stage" and p["operation"]=="append"]
-        self.assertEqual([x["offset"] for x in appends],[0,4096])
-        self.assertEqual(sum(len(x["cells"]) for x in appends),4097)
-        begin=fake.calls[0][1]; self.assertNotIn("cells",begin["spec"]); self.assertEqual(begin["spec"]["mode"],"builder")
-        self.assertTrue(begin["spec"]["settings"]["restricted"])
-        build = fake.last("nav.build")[1]
-        self.assertEqual(build["planId"],"p"); self.assertTrue(build["allowBreak"])
+            call(cells=cells, origin=[0,1,0], allow_break=True)
+            # One request, whatever the size: the cell cap is the game's to state, and nothing is uploaded in pieces.
+            self.assertEqual([m for m, _ in fake.calls if m.startswith("nav.")], [method]); sent = fake.last(method)[1]; fake.calls.clear()
+            self.assertEqual(len(sent["cells"]), 4097)
+            self.assertFalse({"mode", "settings", "stallTicks", "planId"} & set(sent))
 
     def test_drawing_subsets_keep_world_layer_heights(self):
         import mbtools_gtnh.work as work
@@ -632,11 +614,10 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual(result["imported"], {"size":[1,1,1],"count":1,"skipped":{"air":3,"unknown":1},"tileEntities":0})
         self.assertEqual(result["request"]["cells"], 1)
         self.assertIn("preview", result)
-        result = tools.mb_schematic_build("x", preview=False, replace_existing=False, allow_break=False, allow_place=True,
-                                          settings={"restricted":False}, timeout_ticks=77)
+        result = tools.mb_schematic_build("x", preview=False, replace_existing=False, allow_break=False, allow_place=True, timeout_ticks=77)
         request = fake.last("nav.build")[1]
         self.assertFalse(request["replaceExisting"]); self.assertFalse(request["allowBreak"]); self.assertTrue(request["allowPlace"])
-        self.assertEqual((request["settings"], request["timeoutTicks"], request["timeout"]), ({"restricted":False}, 77, 35.775))
+        self.assertEqual((request.get("settings"), request["timeoutTicks"], request["timeout"]), (None, 77, 35.775))
         self.assertEqual(result["result"], {"state":"succeeded"})
         fake.reply = lambda method, params: {"count": 0, "cells": []}   # cells only count inside the nested plan
         with self.assertRaises(ValueError): tools.mb_schematic_build("x")
@@ -705,8 +686,11 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual(fake.last("act.use_block")[1], {"x": 1, "y": 64, "z": 1})  # no face: the bridge clicks the visible one
         with self.assertRaises(ValueError): tools.mb_craft(pattern=[[cobble]], inputs=[cobble])
         build = module_with(self.srv, "mb_build")
-        build.mb_build_preview(cells=[{"pos": [0, 0, 0], "id": "minecraft:furnace"}, {"pos": [1, 0, 0], "id": "minecraft:wool", "meta": 3}])
-        self.assertEqual(fake.last("nav.build_preview")[1]["settings"], {"metadataMasks": {"minecraft:furnace": 0}})
+        cells = [{"pos": [0, 0, 0], "id": "minecraft:furnace"}, {"pos": [1, 0, 0], "id": "minecraft:wool", "meta": 3}]
+        seen = build.mb_build_preview(cells=cells)
+        # A cell without meta goes to the game as written (the job reads it as any variant); the receipt says which ids.
+        self.assertEqual((fake.last("nav.build_preview")[1]["cells"], seen["anyMeta"]["ids"]), (cells, ["minecraft:furnace"]))
+        self.assertNotIn("settings", fake.last("nav.build_preview")[1])
 
     def test_harness_defaults_are_said_back_and_overridable(self):
         work = module_with(self.loaded(), "mb_mine")
@@ -731,9 +715,9 @@ class GTNHProfileTests(unittest.TestCase):
         work.mb_mine(vein=[33, 56, -70], vein_grid={"height": 2})
         self.assertEqual(fake.last("nav.mine")[1]["bounds"], {"min": [0, 54, -80], "max": [47, 58, -33]})
         self.assertEqual(work.vein_bounds([33, 56, -70]), {"min": [0, 48, -80], "max": [47, 64, -33]})
-        built = work.mb_build_preview(cells=[{"pos": [0, 0, 0], "id": "minecraft:furnace"}, {"pos": [1, 0, 0], "id": "minecraft:chest"}],
-                                      settings={"metadataMasks": {"minecraft:chest": 3}})
-        self.assertEqual(built["anyMeta"]["ids"], ["minecraft:furnace"])  # the chest's mask was the model's own, not a guess
+        built = work.mb_build_preview(cells=[{"pos": [0, 0, 0], "id": "minecraft:furnace"}, {"pos": [1, 0, 0], "id": "minecraft:chest", "meta": 3}])
+        self.assertEqual(built["anyMeta"]["ids"], ["minecraft:furnace"])  # the chest named its meta: that one is exact
+        self.assertEqual(work.mb_build_preview(selection={"min": [0, 0, 0], "max": [1, 0, 0], "block": {"id": "minecraft:log"}})["anyMeta"]["ids"], ["minecraft:log"])
         self.assertNotIn("anyMeta", work.mb_build_preview(cells=[{"pos": [0, 0, 0], "id": "minecraft:stone", "meta": 0}]))
         scanned = work.mb_scan(None, {"min": [0, 0, 0], "max": [1, 1, 1]}, limit=999, max_s=0.5, detail="full")
         self.assertEqual(scanned["clamped"], {"limit": {"asked": 999, "used": 256}, "max_s": {"asked": 0.5, "used": 1.0}})

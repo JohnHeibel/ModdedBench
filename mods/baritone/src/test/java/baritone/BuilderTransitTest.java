@@ -108,11 +108,10 @@ public class BuilderTransitTest {
             public IBlockState desiredState(int x,int y,int z,IBlockState current,List<IBlockState> materials){return new IBlockState(cobble(),0,null,x+ox,y+oy,z+oz);}
         };
         BuilderProcess.StateValidator validator=(current,wanted,item)->true;
-        Predicate<IBlockState> deferred=s->false;
         Map<String,Object> fields=new HashMap<>();
         fields.put("this$0",allocate(BuilderProcess.class));fields.put("placeable",List.of(new IBlockState(cobble(),0,null,0,0,0)));fields.put("schematic",schematic);
         fields.put("originX",ox);fields.put("originY",oy);fields.put("originZ",oz);fields.put("validatorSnapshot",validator);
-        fields.put("inventorySnapshot",List.of());fields.put("breakAllowed",mayBreak);fields.put("placementAllowed",mayPlace);fields.put("deferredSnapshot",deferred);
+        fields.put("inventorySnapshot",List.of());fields.put("breakAllowed",mayBreak);fields.put("placementAllowed",mayPlace);
         for(var e:fields.entrySet()){
             Field f=BuilderProcess.BuilderCalculationContext.class.getDeclaredField(e.getKey());f.setAccessible(true);f.set(context,e.getValue());
         }

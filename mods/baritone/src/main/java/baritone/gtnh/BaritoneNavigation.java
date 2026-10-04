@@ -118,11 +118,10 @@ public final class BaritoneNavigation implements Navigation {
         active=new ReferenceProcessJob(reference,params);return active;
     }
     @Override public Job mine(Map<String,Object> params) {return process(new WorkJournal("mine",params),params);}
-    @Override public Job build(Map<String,Object> params) {params=ConstructionPlans.resolve(params);return process(new WorkJournal("build",params),params);}
-    @Override public Map<String,Object> stageBuild(Map<String,Object> params){return ConstructionPlans.stage(params);}
+    @Override public Job build(Map<String,Object> params) {return process(new WorkJournal("build",params),params);}
     @Override public Map<String,Object> pauseBuild() {
         if(!(active instanceof BulkJob job)||!job.journal.kind.equals("build"))throw new IllegalArgumentException("no construction process");
-        job.finish("paused","requested_by_model");return job.status();
+        job.finish("paused","requested");return job.status();
     }
     @Override public Map<String,Object> buildMaterials() {
         WorkAccess.player();List<Map<String,Object>> stacks=new ArrayList<>();
@@ -142,7 +141,7 @@ public final class BaritoneNavigation implements Navigation {
         active=job;try{job.begin();}catch(Exception error){job.cancel("start_failed");throw error;}return job;
     }
     @Override public Map<String,Object> workStatus(String id) {var data=WorkJournal.status(id);if(!Objects.equals(data.get("scope"),ControlRegistry.memory().memory().scope()))throw new IllegalArgumentException("work belongs to another world/dimension");return data;}
-    @Override public Map<String,Object> previewBuild(Map<String,Object> params){params=ConstructionPlans.resolve(params);WorkAccess.player();return new ConstructionPlan(params,new LinkedHashMap<>(),mc.theWorld).preview(WorkSpec.bool(params,"overrideProtection",false));}
+    @Override public Map<String,Object> previewBuild(Map<String,Object> params){WorkAccess.player();return new ConstructionPlan(params,new LinkedHashMap<>(),mc.theWorld).preview(WorkSpec.bool(params,"overrideProtection",false));}
     @Override public Map<String,Object> importSchematic(Map<String,Object> params){try{return PlanImport.schematic(params);}catch(java.io.IOException error){throw new IllegalArgumentException("schematic: "+error.getMessage(),error);}}
     @Override public Map<String,Object> copy(Map<String,Object> params){WorkAccess.player();return PlanImport.copy(mc.theWorld,params);}
     @Override public Map<String,Object> scan(Map<String,Object> params) {

@@ -10,7 +10,8 @@ them at the case's start; afterwards every cell is read back from the server.
   door_inside    that shell, started from the middle of its floor; passes only if all 119 cells are dirt
   door_outside   that shell, started two cells west of the door; passes only if all 119 cells are dirt
   sealed_inside  the same without the door gap (121 cells), started inside; passes if all 121 are dirt, or if the job
-                 ended paused or failed and its receipt's `incorrect` is exactly the cells the server still finds wrong
+                 ended paused or failed and its receipt counts (`left`) exactly the cells the server still finds wrong
+                 and names one of them as the cell it stopped on (`stopped`)
 
 Needs the throwaway mbtest stack with the dev fixtures; run it from a container on the server's network:
 
@@ -113,18 +114,19 @@ class Shells(Course):
         t = time.monotonic()
         try:   # the call of job 9d600db0, cell for cell
             receipt = work.mb_build(cells=cells, origin=origin, replace_existing=True, allow_break=True, allow_place=False,
-                                    mode="blueprint", timeout_ticks=12000)
+                                    timeout_ticks=12000)
         except BridgeError as e:
             err = (e.reply or {}).get("error") or {}
             receipt = {**(err.get("receipt") if isinstance(err.get("receipt"), dict) else {}), "errorCode": e.code, "errorMsg": e.msg}
         found = self.blocks(world + gap); player = self.s.call("dev.replay.status")
         wrong = sorted(c for c in world if found.get(tuple(c)) != BLOCK)
         blocked = [c for c in gap if found.get(tuple(c)) != "minecraft:air"]
-        said = sorted([int(v) for v in c] for c in receipt.get("incorrect") or [])
+        left, stop = receipt.get("left") or {}, receipt.get("stopped") or {}
         row.update(wallS=round(time.monotonic() - t, 1), receipt=receipt, wrong=wrong, doorBlocked=blocked,
                    end={"pos": player["pos"], "health": player["health"], "dead": player["dead"]})
         built = receipt.get("state") == "succeeded" and not wrong
-        told = receipt.get("state") in ("paused", "failed") and bool(receipt.get("reason")) and said == wrong
+        told = (receipt.get("state") in ("paused", "failed") and bool(stop.get("reason")) and left.get("count") == len(wrong)
+                and all(c in wrong for c in left.get("first") or []) and stop.get("pos") in wrong)
         row["outcome"] = "built" if built else "honest_receipt" if told else "unfinished"
         row["passed"] = not blocked and not player["dead"] and (built or bool(spec.get("honest")) and told)
         return row
@@ -141,7 +143,7 @@ class Shells(Course):
                 r = row.get("receipt") or {}
                 print(f"{name:14} {'PASS' if row['passed'] else 'FAIL'} {row['outcome']:14} state={r.get('state')} reason={r.get('reason')} "
                       f"ticks={r.get('ticks')} placed={r.get('placed')} wrong={len(row.get('wrong') or [])}/{row.get('cells')} "
-                      f"noVantage={len(r.get('noVantage') or [])} moves={r.get('movementTypes')} {row.get('error') or ''}", flush=True)
+                      f"stopped={r.get('stopped')} cost={r.get('cost')} {row.get('error') or ''}", flush=True)
             self.evidence["ok"] = all(self.evidence["cases"][n]["passed"] for n in names)
         finally:
             self.teardown()

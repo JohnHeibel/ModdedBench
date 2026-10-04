@@ -11,12 +11,12 @@ What it cannot say is how far the player walked: the ledger has cells, not posit
 honest thing: two cells clicked one after the other more than JUMP blocks apart cannot both have been in reach
 from one spot, so the player crossed at least that distance less two reaches between them.
 The ledger spans every session of a job but the receipt's ticks are the last session's, so ticksPerClick and
-cellsPerMinute are only right for a job that ran once (below clickInterval ticks a click, it was resumed).
+cellsPerMinute are only right for a job that ran once.
 
-Comparing click intervals (settings.clickInterval, 5 when not set): a click the game did not take, or one made
-before the placed block was seen, shows as a second click into the same cell. reclicks counts those clicks,
-reclickedCells the cells they went into and maxAttempts the most any one cell took (a job pauses at its attempt
-limit: 8, or 2 for a blueprint). The same plan run at each interval is compared on those and on ticksPerClick.
+A click made before the placed block was seen, or one that made nothing, shows as a second click into the same
+cell. reclicks counts those clicks, reclickedCells the cells they went into and maxAttempts the most any one cell
+took (a job stops at 8). overGap knows the cells still wrong at the end only as far as the receipt lists them
+(left.first, at most 8).
 """
 import json
 import math
@@ -56,10 +56,10 @@ def read(base: Path) -> dict:
     rows = [json.loads(line) for line in Path(f"{base}.attempts.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
     clicks = [tuple(int(v) for v in r["key"].split(",")) for r in rows]
     journal = json.loads(Path(f"{base}.json").read_text(encoding="utf-8"))
-    receipt, settings = journal.get("receipt", {}), (journal.get("specSummary") or {}).get("settings") or {}
+    receipt = journal.get("receipt", {})
     return {"job": base.name[:8], "state": receipt.get("state"), "reason": receipt.get("reason"),
-            "clickInterval": settings.get("clickInterval", 5), **({"step": receipt["step"]} if receipt.get("step") else {}),
-            **metrics(clicks, receipt.get("ticks"), receipt.get("incorrect"))}
+            **({"step": receipt["step"]} if receipt.get("step") else {}),
+            **metrics(clicks, receipt.get("ticks"), (receipt.get("left") or {}).get("first"))}
 
 
 if __name__ == "__main__":

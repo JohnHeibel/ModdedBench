@@ -31,7 +31,7 @@ class BuildOrderTests(unittest.TestCase):
         self.assertEqual((out["clicks"], out["cells"], out["reclicks"]), (8, 1, 7))
         self.assertEqual((out["reclickedCells"], out["maxAttempts"]), (1, 8))
 
-    def test_repeated_clicks_are_counted_per_cell_for_comparing_click_intervals(self):
+    def test_repeated_clicks_are_counted_per_cell(self):
         out = build_order.metrics([(0, 64, 0), (0, 64, 0), (1, 64, 0), (2, 64, 0), (2, 64, 0), (2, 64, 0)])
         self.assertEqual((out["reclicks"], out["reclickedCells"], out["maxAttempts"]), (3, 2, 3))
         self.assertEqual(build_order.metrics([])["maxAttempts"], 0)
@@ -40,14 +40,14 @@ class BuildOrderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             base = Path(d) / "0123456789abcdef"
             Path(f"{base}.attempts.jsonl").write_text('{"count":1,"key":"1,64,-2"}\n{"count":1,"key":"2,64,-2"}\n', encoding="utf-8")
-            Path(f"{base}.json").write_text(json.dumps({"receipt": {"state": "succeeded", "ticks": 10, "incorrect": []}}), encoding="utf-8")
+            Path(f"{base}.json").write_text(json.dumps({"receipt": {"state": "succeeded", "ticks": 10, "left": {"count": 0, "first": []}}}), encoding="utf-8")
             out = build_order.read(base)
             step = {"stage": 0, "y": 64, "index": 1, "of": 3, "left": 4, "first": [3, 64, -2]}
-            Path(f"{base}.json").write_text(json.dumps({"specSummary": {"settings": {"clickInterval": 2}}, "receipt": {"state": "paused", "ticks": 4, "step": step}}), encoding="utf-8")
+            Path(f"{base}.json").write_text(json.dumps({"receipt": {"state": "paused", "ticks": 4, "step": step, "left": {"count": 4, "first": [[1, 63, -2]]}}}), encoding="utf-8")
             fast = build_order.read(base)
         self.assertEqual((out["job"], out["state"], out["clicks"], out["ticksPerClick"]), ("01234567", "succeeded", 2, 5.0))
-        self.assertEqual((out["clickInterval"], "step" in out), (5, False))
-        self.assertEqual((fast["clickInterval"], fast["ticksPerClick"], fast["step"]), (2, 2.0, step))
+        self.assertEqual(("step" in out, out["overGap"]), (False, 0))
+        self.assertEqual((fast["ticksPerClick"], fast["step"], fast["overGap"]), (2.0, step, 1))  # laid over a cell still wrong at the end
 
 
 if __name__ == "__main__":

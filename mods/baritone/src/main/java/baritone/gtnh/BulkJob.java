@@ -67,8 +67,10 @@ abstract class BulkJob implements Navigation.Job {
     /** What the stall watchdog counts as work besides new ground: progress, and whatever else this job changes on its way. */
     long activity(){return progress();}
     void releaseProcess() {}
+    /** The reason a job ends for, as that kind of job says it: the shared deadline and watchdog have one wording for all. */
+    String named(String why){return why;}
     final void finish(String terminal,String why) {
-        if(done())return;state=terminal;reason=why;
+        if(done())return;state=terminal;reason=named(why);
         try{releaseProcess();}finally{if(lease!=null)lease.close();}
         journal.progress.put("lastTicks",ticks);
         try{journal.save(status());}catch(Exception error){state="failed";reason+="; checkpoint_failed: "+error.getMessage();}

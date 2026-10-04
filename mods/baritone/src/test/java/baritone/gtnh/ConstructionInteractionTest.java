@@ -34,8 +34,8 @@ public class ConstructionInteractionTest {
         assertEquals(new BlockPos(3,65,5),LegacyPlacement.landing(false,clicked,EnumFacing.UP));
         assertEquals(new BlockPos(3,64,4),LegacyPlacement.landing(false,clicked,EnumFacing.NORTH));
     }
-    private static Cell block(int x,int y,int z){return new Cell(new BlockPos(x,y,z),"minecraft:stone",0,false,Map.of(),Map.of(),Map.of());}
-    private static Cell clear(int x,int y,int z){return new Cell(new BlockPos(x,y,z),"",0,true,Map.of(),Map.of(),Map.of());}
+    private static Cell block(int x,int y,int z){return new Cell(new BlockPos(x,y,z),"minecraft:stone",0,false);}
+    private static Cell clear(int x,int y,int z){return new Cell(new BlockPos(x,y,z),"",0,true);}
     /** The rule the job installs for the builder and for every path search, asked the way they ask it. */
     @Test public void theJobsBreakRuleIsPlanBreaksForItsCellsAndTheTerrainPermissionOutside(){
         BlockPos done=new BlockPos(0,64,0),wrong=new BlockPos(1,64,0),grass=new BlockPos(2,64,0),dig=new BlockPos(3,64,0),support=new BlockPos(4,64,0),clicked=new BlockPos(5,64,0),outside=new BlockPos(9,64,9);

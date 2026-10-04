@@ -20,14 +20,6 @@ public final class LegacyStateProperties {
         register(BlockLadder.class,Map.of("facing",7),7);
     }
     private LegacyStateProperties(){}
-    public static boolean hasOrientation(Block block){
-        var p=PROPERTIES.get(block.getClass());
-        // Native single slabs choose their half from the clicked face/height.
-        // Keep this placement fact separate from upstream buildIgnoreDirection,
-        // whose ignored property set does not include the slab half.
-        boolean singleSlab=(block.getClass()==BlockStoneSlab.class||block.getClass()==BlockWoodSlab.class)&&!block.isOpaqueCube();
-        return singleSlab||p!=null&&p.orientation()!=0;
-    }
     public static void register(Class<? extends Block> type,Map<String,Integer> fields,int orientation){
         PROPERTIES.put(type,new Properties(Map.copyOf(fields),orientation));
     }
