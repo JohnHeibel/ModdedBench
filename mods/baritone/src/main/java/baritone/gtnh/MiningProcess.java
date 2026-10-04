@@ -160,7 +160,7 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
             if(newDrop||observation.widen()){engine.bsi=new baritone.utils.BlockStateInterface(engine.getPlayerContext());process.mine(0,observation);process.avoid(unreachable);}
             if(!process.isActive()){
                 state="awaiting_inventory";
-                if(inactiveTicks>Math.max(20,(Baritone.settings().mineDropLoiterDurationMSThanksLouca.value+49)/50))finish("failed","no_remaining_reachable_targets_or_drops");
+                if(inactiveTicks>Math.max(20,(Baritone.settings().mineDropLoiterDurationMSThanksLouca.value+49)/50))finish("failed",naming("no_remaining_reachable_targets_or_drops"));
                 return;
             }
         }
@@ -181,10 +181,10 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
         if(lastRejected.size()>rejectedSeen){
             rejectedSeen=lastRejected.size();int have=have();
             rejections=have==haveAtReject?rejections+1:1;haveAtReject=have;
-            if(rejections>=4){finish("failed","no_path_to_targets");return;}
+            if(rejections>=4){finish("failed",naming("no_path_to_targets"));return;}
             // Unreachable targets among reachable ones (the tops of trees) reset that count with every block gained, and the
             // job spends most of its time on searches that fail. More failed searches than blocks gained ends it the same way.
-            if(rejectedSeen>Math.max(8,gained())){finish("failed","no_path_to_most_targets");return;}
+            if(rejectedSeen>Math.max(8,gained())){finish("failed",naming("no_path_to_most_targets"));return;}
         }
         state=engine.getInputOverrideHandler().isInputForcedDown(baritone.api.utils.input.Input.CLICK_LEFT)?"mining":"pathing";
         // MineProcess keeps its goal while every remaining target is one it may not break (beside still water, say) or
@@ -192,7 +192,27 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
         // planned is that case: end with the reason instead.
         boolean pathless=state.equals("pathing")&&engine.getPathingBehavior().getCurrent()==null&&!engine.getPathingBehavior().getInProgress().isPresent();
         pathlessTicks=pathless?pathlessTicks+1:0;
-        if(pathlessTicks>100)finish("failed","no_path_to_remaining_targets");
+        if(pathlessTicks>100)finish("failed",naming("no_path_to_remaining_targets"));
+    }
+    /** An end for want of targets names the nearest one still standing and why it was left: the cell and cause to act on. */
+    static String naming(String why,BlockPos feet,Collection<BlockPos> standing,java.util.function.Function<BlockPos,String> left){
+        var nearest=standing.stream().min(Comparator.comparingDouble(feet::distanceSq)).orElse(null);
+        if(nearest==null)return why;
+        String cause=left.apply(nearest);
+        return why+": nearest target "+nearest.getX()+","+nearest.getY()+","+nearest.getZ()+(cause==null?"":" "+cause);
+    }
+    private String naming(String why){
+        if(mc.thePlayer!=player)return why;
+        var bsi=new baritone.utils.BlockStateInterface(engine.getPlayerContext());
+        return naming(why,WorkAccess.feet(),observation.observedLocations().stream().filter(p->observation.has(bsi.get0(p))).toList(),p->{
+            String known=unreachable.contains(p)?"unreachable":skippedNow.get(p);
+            if(known!=null)return known;
+            // The engine forgets what it skipped when it stops itself: ask what it asked, and keep the answer for the receipt.
+            var costs=new baritone.pathing.movement.CalculationContext(engine);
+            known=!costs.toolSet.canHarvest(costs.get(p))?"no_tool_in_inventory_harvests_it":!baritone.process.MineProcess.plausibleToBreak(costs,p)?"will_not_break_here":null;
+            if(known!=null){skippedNow=new LinkedHashMap<>(skippedNow);skippedNow.put(p,known);}
+            return known;
+        });
     }
     /** An exposed target need not obstruct a movement or stand directly over the player. */
     private void mineAtReachedGoal(){

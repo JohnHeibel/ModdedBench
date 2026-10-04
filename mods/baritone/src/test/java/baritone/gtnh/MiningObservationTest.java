@@ -37,6 +37,15 @@ public class MiningObservationTest {
         assertFalse(new MiningObservation(null,bounds,List.of(),List.of()).widen());
     }
 
+    @Test public void anEndForWantOfTargetsNamesTheNearestOneAndWhyItWasLeft(){
+        var feet=new BlockPos(0,64,0);var far=new BlockPos(9,64,0);var close=new BlockPos(2,63,1);
+        Map<BlockPos,String> left=Map.of(close,"will_not_break_here",far,"unreachable");
+        assertEquals("no_path_to_targets: nearest target 2,63,1 will_not_break_here",MiningProcess.naming("no_path_to_targets",feet,List.of(far,close),left::get));
+        // A target the engine had no reason to leave is still named; with none standing the reason is as it was.
+        assertEquals("no_path_to_remaining_targets: nearest target 9,64,0",MiningProcess.naming("no_path_to_remaining_targets",feet,List.of(far),p->null));
+        assertEquals("no_remaining_reachable_targets_or_drops",MiningProcess.naming("no_remaining_reachable_targets_or_drops",feet,List.of(),left::get));
+    }
+
     @Test public void aTargetBeyondReachPlusOneIsNeverOneARayCouldReach(){
         // reachable() tries 27 points of the block and takes those within reach-.1 of the eye. near() must hold wherever
         // one of them is, so skipping on it changes nothing but the work.
