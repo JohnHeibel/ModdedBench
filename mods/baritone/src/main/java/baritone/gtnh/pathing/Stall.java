@@ -33,6 +33,8 @@ public final class Stall {
         if(excused<searchBudget){excused++;return false;}
         return ++still>=limit;
     }
+    /** Half the way to a stall: time for a job to give up an order of work it chose itself. */
+    public boolean half(){return limit>0&&still*2>=limit;}
     /** Whether the progress measure moved at all under this watch: a stall then pauses the job rather than failing it. */
     public boolean advanced(){return advanced;}
     public String reason(){return "stalled_no_progress_near_"+x+","+y+","+z;}

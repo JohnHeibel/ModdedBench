@@ -5,6 +5,7 @@ package baritone.gtnh.pathing;
 
 import baritone.compat.BlockPos;
 import java.util.*;
+import java.util.function.Predicate;
 import static baritone.gtnh.pathing.WorkSpec.*;
 
 /**
@@ -65,6 +66,54 @@ public final class BuildSteps {
     public Map<String,Object> where(BlockPos p,int current) {
         if(keys.length==0)return Map.of();
         Integer own=p==null?null:at.get(p);return name(Math.min(own!=null?own:current,keys.length-1));
+    }
+    /** held: cells kept from the source builder for now. first: the deeper cells they wait for. */
+    public record Held(Set<BlockPos> held,Set<BlockPos> first){public static final Held NONE=new Held(Set.of(),Set.of());}
+    private static final int[][] SIDES={{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
+    private static BlockPos beside(BlockPos p,int[] side){return new BlockPos(p.getX()+side[0],p.getY()+side[1],p.getZ()+side[2]);}
+    /**
+     * Which of the cells still to be filled wait for now. A cell is reached through an open side; one whose only open
+     * sides are other cells to be filled lies behind them, and filled after them it can no longer be reached (the corner
+     * of a lining under a ceiling, the end of a blind passage). So each pending cell has a depth, the number of pending
+     * cells between it and a side that stays open, and a cell waits while a pending neighbour lies deeper. Cells with open
+     * sides everywhere hold nothing back; cells with no way out at all have no depth, and neither wait nor are waited for.
+     * pending: every cell the plan still fills, later steps too: an empty cell that a later step fills is no side that stays
+     * open. now: the ones this pass may fill; only they wait, and only for each other. open: whether a cell that is not
+     * pending is a way in (air() below: empty, and not closed in).
+     */
+    public static Held held(Set<BlockPos> pending,Predicate<BlockPos> open){return held(pending,pending,open);}
+    public static Held held(Set<BlockPos> pending,Set<BlockPos> now,Predicate<BlockPos> open) {
+        Map<BlockPos,Integer> depth=new HashMap<>();ArrayDeque<BlockPos> queue=new ArrayDeque<>();
+        for(BlockPos p:pending)for(int[] side:SIDES){BlockPos n=beside(p,side);if(!pending.contains(n)&&open.test(n)){depth.put(p,0);queue.add(p);break;}}
+        if(depth.size()==pending.size())return Held.NONE;
+        while(!queue.isEmpty()){
+            BlockPos p=queue.poll();int next=depth.get(p)+1;
+            for(int[] side:SIDES){BlockPos n=beside(p,side);if(pending.contains(n)&&depth.putIfAbsent(n,next)==null)queue.add(n);}
+        }
+        Set<BlockPos> held=new HashSet<>(),first=new HashSet<>();
+        for(var e:depth.entrySet())if(now.contains(e.getKey()))for(int[] side:SIDES){
+            BlockPos n=beside(e.getKey(),side);Integer d=depth.get(n);
+            if(d!=null&&d>e.getValue()&&now.contains(n)){held.add(e.getKey());first.add(n);}
+        }
+        return held.isEmpty()?Held.NONE:new Held(Set.copyOf(held),Set.copyOf(first));
+    }
+    /**
+     * The air that stays air around the cells still to be filled: empty cells no step fills, reached from the player or
+     * from the edge of the box one cell around those cells (beyond it the world goes on). An empty cell closed in by cells
+     * to be filled is not among them: the space kept free over a chest in a lined corner is no way to the corner above it.
+     */
+    public static Set<BlockPos> air(Set<BlockPos> pending,Predicate<BlockPos> empty,BlockPos... player) {
+        if(pending.isEmpty())return Set.of();
+        int[] lo={Integer.MAX_VALUE,Integer.MAX_VALUE,Integer.MAX_VALUE},hi={Integer.MIN_VALUE,Integer.MIN_VALUE,Integer.MIN_VALUE};
+        for(BlockPos p:pending){int[] v={p.getX(),p.getY(),p.getZ()};for(int i=0;i<3;i++){lo[i]=Math.min(lo[i],v[i]-1);hi[i]=Math.max(hi[i],v[i]+1);}}
+        Predicate<BlockPos> inside=p->p.getX()>=lo[0]&&p.getX()<=hi[0]&&p.getY()>=lo[1]&&p.getY()<=hi[1]&&p.getZ()>=lo[2]&&p.getZ()<=hi[2];
+        Set<BlockPos> air=new HashSet<>();ArrayDeque<BlockPos> queue=new ArrayDeque<>();
+        java.util.function.Consumer<BlockPos> reach=p->{if(inside.test(p)&&!pending.contains(p)&&!air.contains(p)&&empty.test(p)){air.add(p);queue.add(p);}};
+        for(int x=lo[0];x<=hi[0];x++)for(int y=lo[1];y<=hi[1];y++)for(int z=lo[2];z<=hi[2];z++)
+            if(x==lo[0]||x==hi[0]||y==lo[1]||y==hi[1]||z==lo[2]||z==hi[2])reach.accept(new BlockPos(x,y,z));
+        for(BlockPos p:player)reach.accept(p);
+        while(!queue.isEmpty()){BlockPos p=queue.poll();for(int[] side:SIDES)reach.accept(beside(p,side));}
+        return air;
     }
     /** Preview: every step in order with the number of cells (or uses) it holds. */
     public List<Map<String,Object>> list() {

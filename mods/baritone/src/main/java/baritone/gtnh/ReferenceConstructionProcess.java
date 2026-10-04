@@ -70,9 +70,23 @@ final class ReferenceConstructionProcess extends BulkJob {
     private BlockPos inTheWay;
     private long searchesBefore=Long.MAX_VALUE;
     /** The current build step (BuildSteps), the one the running pass was started at, and this tick's wrong cells per step. */
-    private int buildStep,passStep=-1;
+    private int buildStep,passStep=-1,liftedStep=-1;
     /** The step being worked: the first with something left among those so far (an earlier one whose cell broke comes first). */
     private int work;
+    private BuildSteps.Held held=BuildSteps.Held.NONE;
+    /** The air that stays air around what the plan still fills (BuildSteps.air), looked at once a step. */
+    private Set<BlockPos> stays=Set.of();
+    private int staysStep=-1;
+    /** Cells with no standing spot level with them or above: these are filled from below, where a face for them is in view. */
+    private final Set<BlockPos> fromBelow=new HashSet<>();
+    /**
+     * Per cell, standing spots the path search found no way to (one closed in behind what is built, yet with the cell in
+     * view through a gap): they are no spots for that cell. Whether a spot can be walked to is the search's to say, so
+     * every spot handed to it as a goal is noted (offered), and when a search begun after that covers everything
+     * reachable and arrives nowhere, none of them can be.
+     */
+    private final Map<BlockPos,Set<BlockPos>> noWay=new HashMap<>(),offered=new HashMap<>();
+    private long offeredSearches;
     private int[] stepLeft=new int[0];
     private BlockPos[] stepFirst=new BlockPos[0];
     ReferenceConstructionProcess(BaritoneNavigation navigation,WorkJournal journal,Map<String,Object> options){
@@ -201,7 +215,16 @@ final class ReferenceConstructionProcess extends BulkJob {
     }
     private void capture(){
         BlockPos currentFeet=WorkAccess.feet();
+        var searched=engine.getPathingBehavior();
+        // Two searches begun since the last offer, so the last result is of one that had these spots; a search of one node
+        // never left its start, which says nothing of the goals.
+        if(!offered.isEmpty()&&searched.calculationsStarted()>offeredSearches+1&&"FAILURE".equals(searched.lastCalculation().get("type"))
+            &&searched.lastCalculation().get("search") instanceof Map<?,?> search&&"exhausted".equals(search.get("why"))&&!Integer.valueOf(1).equals(search.get("nodes"))){
+            offered.forEach((cell,spots)->{if(Boolean.FALSE.equals(correct.get(cell)))noWay.computeIfAbsent(cell,k->new HashSet<>()).addAll(spots);});
+            offered.clear();placementGoals.clear();
+        }
         if(placementGoalEpoch!=ticks/20||!currentFeet.equals(placementGoalFeet)){
+            offered.clear();
             if(placementGoalEpoch!=ticks/20)stands=null;
             placementGoalEpoch=ticks/20;placementGoalFeet=currentFeet;placementGoals.clear();breakGoals.clear();
         }
@@ -243,6 +266,7 @@ final class ReferenceConstructionProcess extends BulkJob {
             Cell cell=cells.get(new BlockPos(wanted.x,wanted.y,wanted.z));
             return cell!=null&&cell.anyMeta()||actual.meta==wanted.meta;
         };
+        builder.placeFromBelow=p->fromBelow.contains(new BlockPos(p.getX(),p.getY(),p.getZ()));
         builder.placementGoalAdapter=(target,goal)->{
             Cell cell=cells.get(new BlockPos(target.getX(),target.getY(),target.getZ()));
             if(cell==null||cell.clear())return goal;
@@ -251,7 +275,7 @@ final class ReferenceConstructionProcess extends BulkJob {
             // A cell out of reach of every pose near the player keeps the source goal, which is enough to walk towards it:
             // what can be seen of it from where is asked on arrival, so a plan costs the game by its surroundings, not its size.
             if(!stands(currentFeet).covers(cell.pos())){placementGoals.put(cell,goal);return goal;}
-            Set<BlockPos> legal=vantages(cell,slot,stands.around(cell.pos()),currentFeet);
+            Set<BlockPos> legal=vantages(cell,slot,stands.around(cell.pos()),currentFeet);offer(cell.pos(),legal);
             boolean adjacent=legal.stream().anyMatch(goal::isInGoal);
             // No existing vantage is not proof that construction is impossible:
             // the source planner may still build the support it needs to stand on.
@@ -264,8 +288,10 @@ final class ReferenceConstructionProcess extends BulkJob {
                 // cell, while searchForPlaceables refuses every upward click.
                 // Egress must reach a height where this cell becomes actionable.
                 boolean covered=world.getBlock(at.getX(),at.getY()+1,at.getZ())!=net.minecraft.init.Blocks.air;int up=reachUp();
-                var out=stands.around(at).stream().map(pose->pose.feet()).filter(f->PlacementGoalSupport.egress(at,f,covered,up)&&ForgeSnapshot.liveStandable(world,f))
-                    .map(f->(Goal)new GoalBlock(f)).toArray(Goal[]::new);
+                var out=egress(at,covered,up);
+                // Nowhere level with the cell to step to (the last cell of a course, stood in): down beside it, and it is filled from there.
+                if(out.length==0&&!covered)out=egress(at,true,up);
+                offer(at,java.util.Arrays.stream(out).map(g->((GoalBlock)g).getGoalPos()).map(g->new BlockPos(g.getX(),g.getY(),g.getZ())).collect(java.util.stream.Collectors.toSet()));
                 return out.length==0?goal:new GoalComposite(out);
             }
             // Existing work poses supplement the source goal, never replace it: removing a future goal would keep A*
@@ -352,12 +378,31 @@ final class ReferenceConstructionProcess extends BulkJob {
         return mc.thePlayer.boundingBox.intersectsWith(net.minecraft.util.AxisAlignedBB.getBoundingBox(at.getX(),at.getY(),at.getZ(),at.getX()+1,at.getY()+1,at.getZ()+1));
     }
     /** The feet positions, among these poses, from which a face to place this cell against is in view. */
-    private Set<BlockPos> vantages(Cell cell,int slot,List<WorkAccess.Pose> poses,BlockPos currentFeet){
+    private void offer(BlockPos cell,Set<BlockPos> spots){
+        if(!spots.isEmpty()&&!spots.equals(offered.put(cell,spots)))offeredSearches=engine.getPathingBehavior().calculationsStarted();
+    }
+    private Goal[] egress(BlockPos at,boolean covered,int up){
+        Set<BlockPos> no=noWay.getOrDefault(at,Set.of());
+        return stands.around(at).stream().map(pose->pose.feet()).filter(f->!no.contains(f)&&PlacementGoalSupport.egress(at,f,covered,up)&&ForgeSnapshot.liveStandable(world,f))
+            .map(f->(Goal)new GoalBlock(f)).toArray(Goal[]::new);
+    }
+    private Set<BlockPos> vantages(Cell cell,int slot,List<WorkAccess.Pose> poses,BlockPos currentFeet){return vantages(cell,slot,poses,currentFeet,noWay.getOrDefault(cell.pos(),Set.of()));}
+    /** no: spots that do not count (those the search found no way to; none when the question is whether a spot exists at all). */
+    private Set<BlockPos> vantages(Cell cell,int slot,List<WorkAccess.Pose> poses,BlockPos currentFeet,Set<BlockPos> no){
+        boolean below=fromBelow.contains(cell.pos());
+        Set<BlockPos> legal=vantages(cell,slot,poses,currentFeet,below);legal.removeAll(no);
+        // The source builder fills a cell from level with it or above, and from below only under a ceiling. Where no such
+        // spot exists (the neighbours it would stand on are filled, there is no headroom, or there is no way to it), the
+        // cell is filled from below.
+        if(legal.isEmpty()&&!below){legal=vantages(cell,slot,poses,currentFeet,true);legal.removeAll(no);if(!legal.isEmpty())fromBelow.add(cell.pos());}
+        return legal;
+    }
+    private Set<BlockPos> vantages(Cell cell,int slot,List<WorkAccess.Pose> poses,BlockPos currentFeet,boolean below){
         var builder=engine.getBuilderProcess();Set<BlockPos> legal=new HashSet<>();
         for(var pose:poses){
             var sourceFeet=baritone.compat.NavigationCoordinates.feet(pose.feet().getX()+.5,pose.standingY(),pose.feet().getZ()+.5,
                 p->world.getBlock(p.getX(),p.getY(),p.getZ()) instanceof net.minecraft.block.BlockSlab);
-            if(!sourcePlacementHeight(cell,sourceFeet))continue;
+            if(!sourcePlacementHeight(cell,sourceFeet,below))continue;
             // PathExecutor reaches a block goal before necessarily reaching
             // its center. At the current cell use the real body position:
             // otherwise a boundary-overlapping player can be declared ready
@@ -384,11 +429,11 @@ final class ReferenceConstructionProcess extends BulkJob {
             return PlanBreaks.allowed(cell.clear(),verified.getOrDefault(pos,false),deferred.contains(pos),replace||soft.contains(pos),pending.contains(pos));
         };
     }
-    private boolean sourcePlacementHeight(Cell cell,BlockPos sourceFeet){
+    private boolean sourcePlacementHeight(Cell cell,BlockPos sourceFeet,boolean below){
         // A goal must be actionable by searchForPlaceables, not merely within
         // native click reach. Unsupported vertical construction remains the
         // responsibility of MovementPillar; a ceiling can supply support.
-        return PlacementGoalSupport.actionableHeight(cell.pos().getY(),sourceFeet.getY(),world.getBlock(cell.pos().getX(),cell.pos().getY()+1,cell.pos().getZ())!=net.minecraft.init.Blocks.air,reachUp());
+        return PlacementGoalSupport.actionableHeight(cell.pos().getY(),sourceFeet.getY(),below||world.getBlock(cell.pos().getX(),cell.pos().getY()+1,cell.pos().getZ())!=net.minecraft.init.Blocks.air,reachUp());
     }
     /** The source scan's upward limit, from this player's sneaking eye and native reach. */
     private int reachUp(){
@@ -403,7 +448,7 @@ final class ReferenceConstructionProcess extends BulkJob {
         // Future roof cells must not pull the player back from a wall traversal.
         for(var target:engine.getBuilderProcess().incorrectPositions()){
             Cell cell=plan.schematic.get(new BlockPos(target.getX(),target.getY(),target.getZ()));if(cell==null)continue;
-            if(cell.clear()||correct.getOrDefault(cell.pos(),false)||!sourcePlacementHeight(cell,feet))continue;
+            if(cell.clear()||correct.getOrDefault(cell.pos(),false)||!sourcePlacementHeight(cell,feet,fromBelow.contains(cell.pos())))continue;
             var p=cell.pos();
             if(!mc.thePlayer.boundingBox.intersectsWith(net.minecraft.util.AxisAlignedBB.getBoundingBox(p.getX(),p.getY(),p.getZ(),p.getX()+1,p.getY()+1,p.getZ()+1)))continue;
             int slot=plan.slot(cell);if(slot<0)continue;
@@ -429,8 +474,20 @@ final class ReferenceConstructionProcess extends BulkJob {
         int minX=plan.cells.stream().mapToInt(c->c.pos().getX()).min().orElseThrow(),minY=plan.cells.stream().mapToInt(c->c.pos().getY()).min().orElseThrow(),minZ=plan.cells.stream().mapToInt(c->c.pos().getZ()).min().orElseThrow();
         int width=plan.cells.stream().mapToInt(c->c.pos().getX()).max().orElseThrow()-minX+1,height=plan.cells.stream().mapToInt(c->c.pos().getY()).max().orElseThrow()-minY+1,length=plan.cells.stream().mapToInt(c->c.pos().getZ()).max().orElseThrow()-minZ+1;
         // The source builder is shown the plan up to the current step only; step() starts a new pass when the step moves on.
-        Map<BlockPos,IBlockState> frozen=plan.steps.schematic(DeferredClearance.schematic(states,deferredAir,cleanupPhase),buildStep);
+        Map<BlockPos,IBlockState> shown=plan.steps.schematic(DeferredClearance.schematic(states,deferredAir,cleanupPhase),buildStep);
         passStep=buildStep;
+        // Of the cells shown, those between a deeper one and the open wait for it (BuildSteps.held); step() starts a new pass when one is in.
+        Set<BlockPos> toFill=new HashSet<>(),now=new HashSet<>();
+        for(Cell c:plan.cells){
+            BlockPos p=c.pos();if(c.clear()||!Boolean.FALSE.equals(correct.get(p))||!baritone.compat.LegacyPlacement.empty(world,p.getX(),p.getY(),p.getZ()))continue;
+            toFill.add(p);if(shown.containsKey(p))now.add(p);
+        }
+        if(cleanupPhase||liftedStep==buildStep)held=BuildSteps.Held.NONE;
+        else {
+            if(staysStep!=buildStep){BlockPos feet=WorkAccess.feet();stays=BuildSteps.air(toFill,p->baritone.compat.LegacyPlacement.empty(world,p.getX(),p.getY(),p.getZ()),feet,new BlockPos(feet.getX(),feet.getY()+1,feet.getZ()));staysStep=buildStep;}
+            held=BuildSteps.held(toFill,now,stays::contains);
+        }
+        Map<BlockPos,IBlockState> frozen=new HashMap<>(shown);frozen.keySet().removeAll(held.held());
         ISchematic schematic=new ISchematic(){
             public int widthX(){return width;}public int heightY(){return height;}public int lengthZ(){return length;}
             public boolean inSchematic(int x,int y,int z,IBlockState current){return frozen.containsKey(new BlockPos(x+minX,y+minY,z+minZ));}
@@ -468,7 +525,7 @@ final class ReferenceConstructionProcess extends BulkJob {
             if(held&&(!plan.replace()||pending.contains(p)))continue;
             // A block to remove is worked from where it is in view, a cell to fill from where a face to place it against is.
             boolean removes=cell.clear()||held;int slot=removes?-1:plan.slot(cell);
-            if(removes?!views(p,WorkAccess.buildingApproaches(world,p),1).isEmpty():slot<0||inside(p)||!vantages(cell,slot,WorkAccess.buildingApproaches(world,p),feet).isEmpty()){blind=null;break;}
+            if(removes?!views(p,WorkAccess.buildingApproaches(world,p),1).isEmpty():slot<0||inside(p)||!vantages(cell,slot,WorkAccess.buildingApproaches(world,p),feet,Set.of()).isEmpty()){blind=null;break;}
             if(blind==null){blind=p;inTheWay=removes?obstruction(p):null;}
         }
         if(blind!=null){blamed=blind;return "no_stance";}
@@ -524,6 +581,13 @@ final class ReferenceConstructionProcess extends BulkJob {
             return;
         }
         if(passStep!=buildStep){engine.getPathingBehavior().forceCancel();startPass();if(done()||closing())return;}
+        else if(!held.held().isEmpty()){
+            // A deeper cell is in: a new pass, with what that frees. Half a stall with none of them in: nothing waits any more
+            // in this step, so a cell that cannot be made at all does not keep the rest of the plan back.
+            boolean freed=held.first().stream().anyMatch(p->correct.getOrDefault(p,false));
+            if(!freed&&(stall.half()||!builder.isActive()))liftedStep=buildStep;
+            if(freed||liftedStep==buildStep){engine.getPathingBehavior().forceCancel();startPass();if(done()||closing())return;}
+        }
         if(!builder.isActive()){
             // The source builder holds every cell it was shown done. What the plan still finds wrong is a cell it cannot make as asked.
             if(!cleanupPhase&&!deferredAir.isEmpty()){
