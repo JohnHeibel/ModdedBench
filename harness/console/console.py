@@ -288,9 +288,11 @@ class Console:
         return {"now": time.time(), "goal": goal, "status": status, "stats": stats, "run": live.get("run"), "budget": live.get("budget"), "target": target, "feed": feed, "chapters": self.book[1], "clock": why, "pops": pops}
 
     # Actions. Anything slow runs as the single background job; its command lines and output are the job log.
-    def run_job(self, name, steps):
+    def free(self):
         if self.job["running"]: raise RuntimeError(f"'{self.job['name']}' is still running")
-        self.job = job = {"name": name, "running": True, "ok": True, "log": ""}
+
+    def run_job(self, name, steps):
+        self.free(); self.job = job = {"name": name, "running": True, "ok": True, "log": ""}
         def work():
             try:
                 for step in steps:
@@ -345,6 +347,7 @@ class Console:
             if self.backups: self.backups.terminate()
             self.run_job(name, [[*COMPOSE, "stop", "agent", "gateway"]])
         elif name == "run.init":
+            self.free()  # before anything is deleted or written: a refused init leaves the running run's feed and brief alone
             prompt = fill_prompt((REPO / "PROMPT.md").read_text(encoding="utf-8"), str(a.get("targetQuest", "")).strip(), str(a.get("targetChapter", "")).strip())
             up = "agent" in sh([*COMPOSE, "ps", "--services", "--status", "running"]).stdout.split()
             steps = [[*agent, "sh", "-c", "pkill -f '[c]odex_loop.py'; pkill -x codex; true"]] if up else []
@@ -353,7 +356,7 @@ class Console:
             # The brief lives on the host and is mounted read-only at /brief: the agent can read its mission and rules but not rewrite them.
             shutil.rmtree(OVERLAY, ignore_errors=True)  # a new run starts a new feed and new totals
             BRIEF.mkdir(parents=True, exist_ok=True); (BRIEF / "PROMPT.md").write_text(prompt, encoding="utf-8", newline="")
-            steps += [[*COMPOSE, "up", "-d"], [*agent, "sh", "-c", "mkdir -p .state && rm -f .state/STOP .state/codex-loop.json .state/run-prompt.md"]]
+            steps += [[*COMPOSE, "up", "-d"], [*agent, "sh", "-c", "mkdir -p .state && rm -f .state/STOP .state/codex-loop.json .state/run.json .state/run-prompt.md"]]  # run.json: a new run has a new start, end and cap
             self.run_job(name, steps)
         else: raise ValueError(f"unknown action {name}")
         return {"accepted": name}
