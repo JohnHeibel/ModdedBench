@@ -94,7 +94,7 @@ class RecipeSummaryTests(unittest.TestCase):
         page = self.run_tool(recipes, handler="crafting", limit=20)
         self.assertEqual(page["shared"], {"handlerKey": SHAPED, "handler": "codechicken.nei.recipe.ShapedRecipeHandler", "name": "Shaped Crafting", "nativeRecipesPerPage": 2,
                                           "structuredCoverage": recipes[0]["structuredCoverage"], "detailsRequired": True, "summaryNote": NOTE})
-        self.assertEqual(page["stations"], {SHAPED: ["Crafting Table"] * 6 + ["+3 more (detail='full' lists them)"]})
+        self.assertEqual(page["stations"], {SHAPED: ["Crafting Table"] * 6 + ["+3 more (detail='full', stations='all' lists them)"]})
         self.assertEqual(page["recipes"][1], {"index": 1, "inputs": [{"id": "gt:plate", "meta": 0, "name": "Blue Plate", "count": 1}, recipes[1]["inputs"][1], {"id": "gt:ingot", "meta": 0, "name": "Blue Ingot", "count": 1}],
                                               "result": {"id": "gt:tool", "meta": 0, "name": "Wrench", "count": 1}, "other": []})
         sent = json.dumps(nei(recipes)("nei.recipes", self.k.calls[0][1]))
@@ -102,6 +102,27 @@ class RecipeSummaryTests(unittest.TestCase):
         mixed = self.run_tool(recipes[:2] + summaries(LOOT, ["Loot"]), limit=20)  # two handlers on a page: each recipe keeps its own, the note is still said once
         self.assertEqual((mixed["shared"], [r["handlerKey"] for r in mixed["recipes"]]), ({"nativeRecipesPerPage": 2, "structuredCoverage": recipes[0]["structuredCoverage"], "detailsRequired": True, "summaryNote": NOTE}, [SHAPED, SHAPED, LOOT]))
         self.assertNotIn("shared", self.run_tool(recipes))  # the overview has no recipes
+
+    def test_a_full_recipe_names_one_station_for_the_grid_and_every_station_for_a_machine(self):
+        item = lambda id, name, **more: {"id": id, "meta": 0, "count": 1, "name": name, "maxStackSize": 64, "oreNames": [], **more}
+        at = lambda x, y, *items, **more: {"x": x, "y": y, "alternatives": list(items), "alternativeCount": len(items), "alternativesOffset": 0, **more}
+        tables = [at(0, 0, item("minecraft:crafting_table", "Crafting Table"))] + [at(0, 0, item(f"mod:table{n}", f"Table {n}")) for n in range(35)]
+        plank = at(25, 6, item("minecraft:planks", "Oak Planks", oreNames=["plankWood"]), item("mod:planks", "Fir Planks", oreNames=["plankWood"]), alternativeCount=40, nextAlternativesOffset=2)
+        full = lambda key, catalysts: [{"handler": key.split("|")[0], "handlerKey": key, "name": key.split("|")[2], "index": 0, "catalysts": catalysts,
+                                        "inputs": [plank, at(43, 24, item("minecraft:ender_pearl", "Ender Pearl", maxStackSize=16))], "result": at(119, 24, item("gt:tool", "Wrench", maxStackSize=1)), "other": []}]
+        got = self.run_tool(full(SHAPED, tables), handler=SHAPED, detail="full", index=0)["recipes"][0]
+        self.assertEqual((got["catalysts"], got["otherCatalysts"]), ([{"id": "minecraft:crafting_table", "meta": 0, "count": 1, "name": "Crafting Table"}], 35))
+        self.assertEqual(got["inputs"], [{"x": 25, "y": 6, "alternatives": [{"id": "minecraft:planks", "meta": 0, "count": 1, "name": "Oak Planks", "oreNames": ["plankWood"]}, {"id": "mod:planks", "meta": 0, "count": 1, "name": "Fir Planks", "oreNames": ["plankWood"]}],
+                                          "alternativeCount": 40, "nextAlternativesOffset": 2},                      # a paged slot still says how many there are
+                                         {"x": 43, "y": 24, "alternatives": [{"id": "minecraft:ender_pearl", "meta": 0, "count": 1, "name": "Ender Pearl", "maxStackSize": 16}]}])
+        self.assertEqual(got["result"]["alternatives"][0]["maxStackSize"], 1)
+        every = self.run_tool(full(SHAPED, tables), handler=SHAPED, detail="full", index=0, stations="all")["recipes"][0]
+        self.assertEqual(([c["name"] for c in every["catalysts"]], "otherCatalysts" in every), (["Crafting Table"] + [f"Table {n}" for n in range(35)], False))
+        for key in ("codechicken.nei.recipe.FurnaceRecipeHandler|smelting|Smelting", "gregtech.nei.GTNEIDefaultHandler|gt.recipe.alloysmelter|Alloy Smelter"):
+            got = self.run_tool(full(key, tables), handler=key, detail="full", index=0)["recipes"][0]
+            self.assertEqual(len(got["catalysts"]), 1 if "smelting" in key else 36, key)  # a machine's tiers are not one another
+        placed = self.run_tool(full(SHAPED, [at(4, 0, item("mod:table", "Table")), at(0, 0, item("mod:a", "A"), item("mod:b", "B"))]), handler=SHAPED, detail="full", index=0, stations="all")["recipes"][0]
+        self.assertEqual([sorted(c) for c in placed["catalysts"]], [["alternatives", "x", "y"]] * 2)  # a catalyst with a place or a choice stays a slot
 
     def test_query_narrows_a_handler_by_shown_names_before_paging(self):
         recipes = summaries(SHAPED, self.MATERIALS) + summaries(LOOT, ["Steel"])
