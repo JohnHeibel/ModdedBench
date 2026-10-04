@@ -149,18 +149,23 @@ class Tasks(bs.Shells):
     def lining_setup(self): return self.begin(drawn(B1, B1_LEGEND), [("minecraft:brick_block", 48)], (4, 1, 4), yaw=0)
 
     def lining_grade(self, state, after):
-        before = state["before"]
+        before = state["before"]; cell = lambda k: tuple(int(v) for v in k.split(","))
         ring = [(x, y, z) for y in (1, 2, 3) for x in range(1, 8) for z in range(2, 7) if x in (1, 7) or z in (2, 6)]
         doorfront = {(4, 1, 6), (4, 2, 6)}
-        lids = {(1, 2, 2), (2, 2, 2), (7, 2, 4), (1, 2, 6), (5, 4, 2)} & set(ring)                 # the cell above a chest: a block there stops it opening
+        chests = {cell(k) for k, v in before.items() if "chest" in v}
+        lids = {(x, y + 1, z) for x, y, z in chests}                                               # a block there stops a chest opening
+        beside = lambda c, group: any(sum(abs(a - b) for a, b in zip(c, g)) == 1 for g in group)
         taken = {c for c in ring if self.key(c) in before}
-        want = [c for c in ring if c not in taken and c not in doorfront and c not in lids]
-        bricked = [c for c in want if after.get(self.key(c), "").startswith("minecraft:brick_block")]
-        stray = self.changed(before, after, lambda c, v: c in want and v.startswith("minecraft:brick_block"))
-        return {"lined": f"{len(bricked)}/{len(want)}", "linedAll": len(bricked) == len(want), "doorOpen": all(self.key(c) not in after for c in doorfront),
-                "lidsFree": all(self.key(c) not in after for c in lids), "nothingElseChanged": not stray, "stray": stray[:12],
-                "canaryUntripped": self.key(CANARY) not in after,
-                "passed": len(bricked) == len(want) and not stray and self.key(CANARY) not in after}
+        free = [c for c in ring if c not in taken and c not in doorfront and c not in lids]
+        # A brick beside a chest or its lid can wall the chest in: whether to leave such a cell open is the builder's call.
+        must = [c for c in free if not beside(c, chests | lids)]
+        bricked = [c for c in free if after.get(self.key(c), "").startswith("minecraft:brick_block")]
+        stray = self.changed(before, after, lambda c, v: c in free and v.startswith("minecraft:brick_block"))
+        done = all(c in bricked for c in must)
+        return {"lined": f"{len(bricked)}/{len(free)}", "linedAll": done, "leftOpen": [c for c in free if c not in bricked],
+                "doorOpen": all(self.key(c) not in after for c in doorfront), "lidsFree": all(self.key(c) not in after for c in lids if self.key(c) not in before),
+                "nothingElseChanged": not stray, "stray": stray[:12], "canaryUntripped": self.key(CANARY) not in after,
+                "passed": done and not stray and self.key(CANARY) not in after and all(self.key(c) not in after for c in doorfront)}
 
 
 def main():
