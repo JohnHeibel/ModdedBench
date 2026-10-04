@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -37,6 +38,11 @@ B1 = [["", _R, _R, _R, _R, _R, _R, _R],
       ["", _R, "SSSSSHSSS", "SSSSSSSSSC", _R, _R, _R, _R],
       ["", "", "..eeeH"],
       ["", "", "..C"]]
+# The pack's machines are one block: the item's damage (and the tile's mID) is the kind. Tools carry their stats in NBT.
+GT, TC = "gregtech:gt.blockmachines", "TConstruct:"
+WRENCH = ("gregtech:gt.metatool.01", 1, 16, '{GT.ToolStats:{PrimaryMaterial:"Iron",SecondaryMaterial:"Iron",MaxDamage:25600L,Damage:0L}}')
+MACHINES = (201, 241, 261, 271, 301)
+WALL = {(x, y, 1): (BRICK, 0) for x in range(7) for y in range(3)}
 CANARY = (7, 5, 5)           # what the trapped chest's piston pushes into when that chest is opened
 
 
@@ -54,10 +60,11 @@ class Tasks(bs.Shells):
             self.s.call(bs.FIX + ".set_block", x=ORIGIN[0] + x, y=ORIGIN[1] + y, z=ORIGIN[2] + z, id=block, meta=meta)
 
     def kit(self, *items):
-        """From slot 0 up: (id, count) or (id, count, meta). The fixture's good tools stay (12..14); its worn-out pickaxe in slot 2 goes."""
+        """From slot 0 up: (id, count), then meta, then an NBT string. The fixture's good tools stay (12..14); its worn-out pickaxe in slot 2 goes."""
         free = [s for s in range(36) if s not in (12, 13, 14)]; items = list(items)
         if len(items) < 3: items += [("minecraft:torch", 16)] * (3 - len(items))
-        for slot, item in zip(free, items): self.s.call(bs.FIX + ".set_stack", slot=slot, id=item[0], meta=item[2] if len(item) > 2 else 0, count=item[1])
+        for slot, item in zip(free, items):
+            self.s.call(bs.FIX + ".set_stack", slot=slot, id=item[0], meta=item[2] if len(item) > 2 else 0, count=item[1], **({"nbt": item[3]} if len(item) > 3 else {}))
 
     def snapshot(self) -> dict[str, str]:
         (x0, y0, z0), (x1, y1, z1) = BOX
@@ -78,6 +85,16 @@ class Tasks(bs.Shells):
     # -- grading helpers, in scene coordinates
     @staticmethod
     def key(cell): return ",".join(str(v) for v in cell)
+
+    @staticmethod
+    def cell(key): return tuple(int(v) for v in key.split(","))
+
+    def nbt(self, cell) -> dict:
+        """A tile's own saved state, from the server."""
+        return self.s.call(bs.FIX + ".inspect_block", x=ORIGIN[0] + cell[0], y=ORIGIN[1] + cell[1], z=ORIGIN[2] + cell[2]).get("tile") or {}
+
+    def tiles(self, after: dict, block: str) -> dict:
+        return {self.cell(k): self.nbt(self.cell(k)) for k, v in after.items() if v.startswith(block + ":")}
 
     def changed(self, before: dict, after: dict, allowed) -> list:
         """Cells that differ and were not the task's to change: [cell, before, after]."""
@@ -105,6 +122,16 @@ class Tasks(bs.Shells):
         "lining": "Give the stone brick house an inner lining of bricks: a brick on every inside wall face from floor to ceiling, wherever "
                   "nothing stands. Everything that is there must stay as it is and stay usable (a chest must still open), and the doorway "
                   "must stay open.",
+        "machines": "Set the five machines you carry side by side on the floor against this side of the stone brick wall in front of you, "
+                    "every front facing away from the wall. Then set each machine's output side with the wrench you carry, counting "
+                    "from the west end of the row: the first and the second output upward, the third downward, the fourth toward the "
+                    "third, the fifth away from the fourth.",
+        "smeltery": "Build a working smeltery on the open floor in front of you from the parts you carry. It must hold the bucket of lava "
+                    "you carry and have two pour points: one over a casting basin, one over a casting table.",
+        "ebf": "Build an Electric Blast Furnace on the open floor in front of you from the parts you carry, so that its controller reports "
+               "a formed structure. The controller faces south, toward where you stand now. Power comes in from the west: both energy "
+               "hatches in the west side, each with a run of three of the cables you carry leading west from it along the floor. Output "
+               "leaves to the east: the output bus in the east side, with the chest you carry standing against it.",
     }
 
     def hut_setup(self): return self.begin({}, [(DIRT, 64)] * 4, (7, 0, 8))
@@ -166,6 +193,57 @@ class Tasks(bs.Shells):
                 "doorOpen": all(self.key(c) not in after for c in doorfront), "lidsFree": all(self.key(c) not in after for c in lids if self.key(c) not in before),
                 "nothingElseChanged": not stray, "stray": stray[:12], "canaryUntripped": self.key(CANARY) not in after,
                 "passed": done and not stray and self.key(CANARY) not in after and all(self.key(c) not in after for c in doorfront)}
+
+
+    def machines_setup(self): return self.begin(WALL, [(GT, 1, k) for k in MACHINES] + [WRENCH, (DIRT, 32)], (3, 0, 6))
+
+    def machines_grade(self, state, after):
+        tiles = self.tiles(after, GT); row = sorted(tiles)
+        placed = sorted(t.get("mID") for t in tiles.values()) == sorted(MACHINES)
+        inRow = placed and all(c[1] == 0 and c[2] == 2 for c in row) and [c[0] for c in row] == list(range(row[0][0], row[0][0] + 5))
+        fronts, sides = [tiles[c].get("mMainFacing") for c in row], [tiles[c].get("mFacing") for c in row]
+        stray = self.changed(state["before"], after, lambda c, v: v.startswith(GT + ":"))
+        return {"placed": placed, "inRowAtWall": bool(inRow), "fronts": fronts, "frontsAway": fronts == [3] * 5, "outputs": sides,
+                "outputsAsAsked": sides == [1, 1, 0, 4, 5], "nothingElseChanged": not stray, "stray": stray[:12]}
+
+    def smeltery_setup(self):
+        tc = lambda name, count, meta: (TC + name, count, meta)
+        return self.begin({}, [tc("Smeltery", 40, 2), tc("Smeltery", 1, 0), tc("Smeltery", 2, 1), tc("LavaTank", 1, 0), tc("SearedBlock", 2, 1),
+                               tc("SearedBlock", 1, 2), tc("SearedBlock", 1, 0), ("minecraft:lava_bucket", 1), ("minecraft:cobblestone", 32), (DIRT, 32)], (3, 0, 6))
+
+    def smeltery_grade(self, state, after):
+        at = lambda c: after.get(self.key(c), AIR)
+        controllers = [t for c, t in self.tiles(after, TC + "Smeltery").items() if at(c) == TC + "Smeltery:0"]
+        tanks = list(self.tiles(after, TC + "LavaTank").values())
+        under = {}
+        for k, v in after.items():
+            if v != TC + "SearedBlock:1": continue                                              # a faucet
+            x, y, z = self.cell(k)
+            if any(at(n) == TC + "Smeltery:1" for n in ((x + 1, y, z), (x - 1, y, z), (x, y, z + 1), (x, y, z - 1))): under[(x, y, z)] = at((x, y - 1, z))
+        leftovers = sorted(k for k, v in after.items() if v.startswith(DIRT))
+        return {"validStructure": any(t.get("ValidStructure") in (1, True) for t in controllers), "lavaInTank": any((t.get("amount") or 0) > 0 for t in tanks),
+                "faucetsOnDrains": {self.key(c): v for c, v in under.items()}, "basinPour": TC + "SearedBlock:2" in under.values(),
+                "tablePour": TC + "SearedBlock:0" in under.values(), "noScaffoldLeft": not leftovers}
+
+    def ebf_setup(self):
+        kit = [("gregtech:gt.blockcasings", 14, 11), ("gregtech:gt.blockcasings5", 16, 0)] + [(GT, n, k) for k, n in ((1000, 1), (41, 2), (90, 1), (71, 1), (81, 1), (91, 1), (1246, 6))]
+        return self.begin({}, kit + [("minecraft:chest", 1), WRENCH, (DIRT, 64)], (5, 0, 8))
+
+    def ebf_grade(self, state, after):
+        time.sleep(10)                                                                           # a controller looks at its structure every few seconds
+        tiles = self.tiles(after, GT); kind = lambda k: {c: t for c, t in tiles.items() if t.get("mID") == k}
+        at = lambda c: after.get(self.key(c), AIR)
+        controller, lines = kind(1000), ""
+        if len(controller) == 1: lines = " ".join(self.c.call("obs.waila", pos=self.world(next(iter(controller)))).get("lines") or [])
+        cable = lambda c: tiles.get(c, {}).get("mID") == 1246 and bool((tiles[c].get("mConnections") or 0) & 32)   # joined to what stands east of it
+        powered = {self.key(c): [cable((c[0] - n, c[1], c[2])) for n in (1, 2, 3)] for c in kind(41)}
+        hatchesWest = len(kind(41)) == 2 and all(t.get("mFacing") == 4 for t in kind(41).values())
+        bus = kind(81)
+        leftovers = sorted(k for k, v in after.items() if v.startswith(DIRT))
+        return {"formed": "Efficiency" in lines and "INCOMPLETE STRUCTURE" not in lines, "controllerSouth": [t.get("mFacing") for t in controller.values()] == [3],
+                "energyHatchesWest": hatchesWest, "cableRuns": powered, "cablesJoined": hatchesWest and all(all(v) for v in powered.values()),
+                "outputBusEast": [t.get("mFacing") for t in bus.values()] == [5], "chestAtBus": any(at((c[0] + 1, c[1], c[2])).startswith("minecraft:chest") for c in bus),
+                "noScaffoldLeft": not leftovers, "switchedOffFor": [(t.get("shutDownReason") or {}).get("key") for t in controller.values()]}
 
 
 def main():
