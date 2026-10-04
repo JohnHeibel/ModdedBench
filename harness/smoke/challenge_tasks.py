@@ -122,6 +122,9 @@ class Tasks(bs.Shells):
         "lining": "Give the stone brick house an inner lining of bricks: a brick on every inside wall face from floor to ceiling, wherever "
                   "nothing stands. Everything that is there must stay as it is and stay usable (a chest must still open), and the doorway "
                   "must stay open.",
+        "hoppers": "Inside the stone brick house the middle furnace is fed by a hopper standing on it. Give the furnace on each side of it "
+                   "one too: a hopper on top of the furnace, pointing down into it. Then add one more hopper against the east side of "
+                   "the eastern new hopper, pointing into that hopper. Everything that is there must stay as it is.",
         "machines": "Set the five machines you carry side by side on the floor against this side of the stone brick wall in front of you, "
                     "every front facing away from the wall. Then set each machine's output side with the wrench you carry, counting "
                     "from the west end of the row: the first and the second output upward, the third downward, the fourth toward the "
@@ -194,6 +197,16 @@ class Tasks(bs.Shells):
                 "nothingElseChanged": not stray, "stray": stray[:12], "canaryUntripped": self.key(CANARY) not in after,
                 "passed": done and not stray and self.key(CANARY) not in after and all(self.key(c) not in after for c in doorfront)}
 
+
+    def hoppers_setup(self): return self.begin(drawn(B1, B1_LEGEND), [("minecraft:hopper", 4), (DIRT, 16)], (4, 1, 4))
+
+    def hoppers_grade(self, state, after):
+        want = {(4, 2, 2): 0, (6, 2, 2): 0, (7, 2, 2): 4}                                         # down, down, west: a hopper's meta is where it points
+        got = {c: after.get(self.key(c), AIR) for c in want}
+        made = all(v.startswith("minecraft:hopper:") and int(v.rsplit(":", 1)[1]) & 7 == want[c] for c, v in got.items())
+        stray = self.changed(state["before"], after, lambda c, v: c in want and v.startswith("minecraft:hopper:"))
+        return {"hoppersAsAsked": made, "found": {self.key(c): v for c, v in got.items()}, "nothingElseChanged": not stray, "stray": stray[:12],
+                "canaryUntripped": self.key(CANARY) not in after}
 
     def machines_setup(self): return self.begin(WALL, [(GT, 1, k) for k in MACHINES] + [WRENCH, (DIRT, 32)], (3, 0, 6))
 
