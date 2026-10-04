@@ -18,6 +18,7 @@ public final class BaritoneMod {
     @Mod.EventHandler public void init(FMLInitializationEvent event) {
         if(!event.getSide().isClient()) return;
         navigation=new BaritoneNavigation();NavigationRegistry.register(navigation);
+        baritone.gtnh.pathing.MoveRegistry.register("elytra_glide",baritone.gtnh.moves.ElytraGlide.SOURCE);  // added kinds of movement: docs/MOVEMENTS.md
         events=new baritone.compat.NativeEvents(navigation.reference());GameEvents.register(events);
         GameEvents.register(new GameEvents(){@Override public void hurt(String type,String by,float amount){Symptoms.hurt(type,by,amount);}});
         net.minecraftforge.client.ClientCommandHandler.instance.registerCommand(new BaritoneCommand(navigation));
