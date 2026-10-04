@@ -55,17 +55,26 @@ for path in glob.glob(os.path.join(sessions, "*", "*", "*", "rollout-*.jsonl")):
 print(json.dumps(out))
 """
 COMPACTIONS = "f=$(ls -t /home/agent/.codex/sessions/*/*/*/rollout-*.jsonl 2>/dev/null | head -1); [ -n \"$f\" ] && grep -c '\"type\":\"compacted\"' \"$f\""
-# The operator hold is a file in the server directory: the server only asks whether it exists, and what it says is whose
-# hold it is, so that the compaction guard ends only its own.
-HOLD, OWN_HOLD, OPERATOR_HOLD = "/data/modbench-hold", "compaction", "operator"
+# The hold is a file in the server directory: the server only asks whether it exists, and what it says is whose hold it is
+# (runtime.hold_cmd: the operator's, the compaction guard's, a backup's), so that each ends only its own.
+OWN_HOLD, OPERATOR_HOLD = "compaction", "operator"
 TOKEN = secrets.token_urlsafe(24)
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+# The end of a file under .state, read by seeking: the page asks every 3 s, and the loop's log grows by megabytes over a long run.
+TAIL = "r=lambda n,k=24000:(lambda f:(f.seek(max(0,f.seek(0,2)-k)),f.read().decode(errors='replace'),f.close())[1])(open(s/n,'rb')) if (s/n).exists() else ''"
 # One line of JSON about the loop, produced inside the agent container.
-AGENT_PROBE = ("import json,subprocess,pathlib;s=pathlib.Path('.state');r=lambda n:(s/n).read_text(errors='replace') if (s/n).exists() else '';"
+AGENT_PROBE = ("import json,subprocess,pathlib;s=pathlib.Path('.state');" + TAIL + ";"
                "print(json.dumps({'running':subprocess.run(['pgrep','-f','[c]odex_loop.py'],capture_output=True).returncode==0,"
-               "'stopRequested':(s/'STOP').exists(),'thread':r('codex-loop.json'),'prompt':pathlib.Path('/brief/PROMPT.md').exists(),"
+               "'stopRequested':(s/'STOP').exists(),'thread':r('codex-loop.json'),'run':r('run.json'),'prompt':pathlib.Path('/brief/PROMPT.md').exists(),"
                "'commits':subprocess.run(['git','rev-list','--count','modbench-base..HEAD'],capture_output=True,text=True).stdout.strip(),"
-               "'log':r('codex-loop.log')[-6000:]}))")
+               "'log':r('codex-loop.log')[-6000:],'err':r('codex-loop.err')[-2000:]}))")
+# One loop per checkout: two would drive one Codex thread and one body. The lock is flock's, so it lasts exactly as long as the
+# loop, however that ends, and the stop file is cleared only by the start that got it. LOOP_FREE is the same question asked
+# first, where the operator sees the answer; the loop itself starts detached. Its stdout repeats codex-loop.log; its stderr
+# is the only trace of a loop that died, so it is kept.
+LOOP = ("mkdir -p .state; p=PROMPT.md; [ -f /brief/PROMPT.md ] && p=/brief/PROMPT.md; exec flock -n .state/loop.lock sh -c "
+        "'rm -f .state/STOP; exec python3 harness/runner/codex_loop.py \"$@\" >/dev/null 2>>.state/codex-loop.err' sh --prompt $p \"$@\"")
+LOOP_FREE = "mkdir -p .state; flock -n .state/loop.lock true || { echo 'a loop is already running on this checkout: stop it and wait for \"loop idle\", then start'; exit 1; }"
 
 
 def fill_prompt(prompt, quest, chapter):
@@ -115,6 +124,12 @@ class Shortener:
         except Exception: pass  # the original stays on screen; the key stays pending, so this text is not asked about again in this session
 
 
+def serving(name):
+    """Whether a supervisor or a backup loop is running on this host, the console's own child or one that outlived an earlier
+    console: its lock (runtime.only_one) is held."""
+    lock = runtime.only_one(name); return lock is None or lock.close()
+
+
 def sh(cmd, stdin=None, timeout=30):
     return subprocess.run(cmd, cwd=REPO, input=stdin, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, creationflags=NO_WINDOW)
 
@@ -157,13 +172,15 @@ class Console:
             if time.monotonic() - self.login[0] > 60:
                 self.login = (time.monotonic(), sh([*COMPOSE, "exec", "-T", "agent", "codex", "login", "status"]).returncode == 0)
             agent["loggedIn"] = self.login[1]
+            try:  # what the run has been billed so far, as the loop counts it against run.json's tokenCap (feed.Feed.billed)
+                t = json.loads((OVERLAY / "live.json").read_text(encoding="utf-8"))["stats"]["tokens"]; agent["billed"] = t["input"] + t.get("uncounted", 0) + t.get("estimated", 0)
+            except (OSError, ValueError, KeyError, TypeError): pass
         deploys = []
         for folder in sorted((runtime.RUNTIME / "deploys").glob("*"), reverse=True)[:8]:
             req, res = runtime.load_json(folder / "request.json"), runtime.load_json(folder / "result.json")
             deploys.append({"time": folder.name, "components": req.get("components"), "reason": req.get("reason"), "ok": res.get("ok"), "error": res.get("error")})
         return {"docker": ps.returncode == 0, "dockerError": ps.stderr[-300:], "services": services, "agent": agent, "game": self.game(), "deploys": deploys,
-                "supervisor": self.supervisor is not None and self.supervisor.poll() is None,
-                "backups": self.backups is not None and self.backups.poll() is None, "job": self.job}
+                "supervisor": serving("deploy-supervisor"), "backups": serving("backup-" + os.environ.get("MB_COMPOSE_PROJECT", "moddedbench")), "job": self.job}
 
     def context(self):
         """(tokens in context, context window) of the newest thread, read at most every 5 s."""
@@ -198,7 +215,7 @@ class Console:
         Only a world the guard finds running and unheld; it lets go when the compaction ends, when the model acts again
         (it was a long think), or after ten minutes, and never ends a hold that is not its own. While a background task has
         the body (live.json body) it does not hold: that would freeze the task; it holds once the task has ended."""
-        if self.hold_file(f"[ \"$(cat {HOLD} 2>/dev/null)\" = {OWN_HOLD} ] && rm -f {HOLD}").returncode == 0:
+        if self.hold_file(runtime.hold_cmd(OWN_HOLD, False)).returncode == 0:
             print("[ModdedBench] released a compaction hold left by an earlier console", flush=True)
         while True:
             time.sleep(every)
@@ -212,13 +229,13 @@ class Console:
                     clock = self.call("time.status")["state"]
                     if clock.get("held") or clock.get("paused"): continue  # someone else's hold, or the agent's own pause
                     count = int(self.agent_sh(COMPACTIONS).stdout.strip() or 0)
-                    if self.hold_file(f"[ -e {HOLD} ] || echo {OWN_HOLD} > {HOLD}").returncode == 0:
+                    if self.hold_file(runtime.hold_cmd(OWN_HOLD, True)).returncode == 0:
                         self.guard = (count, time.monotonic(), status.get("since")); print("[ModdedBench] compaction: world held", flush=True)
                     continue
                 done = int(self.agent_sh(COMPACTIONS).stdout.strip() or 0) > self.guard[0]
                 acted = status.get("state") != "thinking"
                 if done or acted or time.monotonic() - self.guard[1] > 600:
-                    self.hold_file(f"[ \"$(cat {HOLD} 2>/dev/null)\" = {OWN_HOLD} ] && rm -f {HOLD}")
+                    self.hold_file(runtime.hold_cmd(OWN_HOLD, False))
                     print(f"[ModdedBench] compaction: world released ({'compacted' if done else 'the model acted' if acted else 'ten minutes'})", flush=True)
                     self.guard_done, self.guard, self.ctx = self.guard[2], None, (0.0, None)  # read the context afresh
             except Exception as e: print(f"[ModdedBench] compaction guard: {type(e).__name__}: {e}", flush=True)
@@ -273,9 +290,11 @@ class Console:
         return {"now": time.time(), "goal": goal, "status": status, "stats": stats, "run": live.get("run"), "budget": live.get("budget"), "target": target, "feed": feed, "chapters": self.book[1], "clock": why, "pops": pops}
 
     # Actions. Anything slow runs as the single background job; its command lines and output are the job log.
-    def run_job(self, name, steps):
+    def free(self):
         if self.job["running"]: raise RuntimeError(f"'{self.job['name']}' is still running")
-        self.job = job = {"name": name, "running": True, "ok": True, "log": ""}
+
+    def run_job(self, name, steps):
+        self.free(); self.job = job = {"name": name, "running": True, "ok": True, "log": ""}
         def work():
             try:
                 for step in steps:
@@ -291,10 +310,13 @@ class Console:
         agent = [*COMPOSE, "exec", "-T", "agent"]
         if name == "server.start": self.run_job(name, [[*COMPOSE, "up", "-d", "server"]])
         elif name == "server.stop": self.run_job(name, [[*COMPOSE, "stop", "server"]])
-        elif name in ("time.pause", "time.resume"):  # the operator hold: a file in the server directory, which outranks every bridge session
-            done = self.hold_file(f"echo {OPERATOR_HOLD} > {HOLD}" if name == "time.pause" else f"rm -f {HOLD}")
+        elif name == "time.pause":  # the operator hold: a file in the server directory, which outranks every bridge session and takes over any other hold
+            done = self.hold_file(runtime.hold_cmd(OPERATOR_HOLD, True, force=True))
             if done.returncode: raise RuntimeError((done.stderr or done.stdout).strip()[-300:])
-            if name == "time.resume": self.guard = None  # the release resumes only the hold's own pause: an agent's pause stays its own to end
+        elif name == "time.resume":  # ends the operator's hold only, and the release resumes only the hold's own pause: an agent's pause stays its own to end
+            done = self.hold_file(runtime.hold_cmd(OPERATOR_HOLD, False) + f"; [ ! -e {runtime.HOLD} ] || echo \"the world is still held by '$(cat {runtime.HOLD})', "
+                                  "which ends its hold by itself; Pause takes the hold over, and then Resume releases it\"")
+            if done.returncode or done.stdout.strip(): raise RuntimeError((done.stdout or done.stderr).strip()[-300:])
         elif name == "client.launch": self.run_job(name, [[*PY, LAUNCHER, "launch-client", "--installed-as-is"]])
         elif name == "client.stop": self.run_job(name, [[*PY, LAUNCHER, "stop-client"]])
         elif name == "client.install":  # the host's own build of this checkout, client side only
@@ -315,15 +337,19 @@ class Console:
             # Codex's readable summary of each reasoning step, for the stream's feed; the model's own reasoning is unchanged by it.
             extra = [*(extra or ["--"]), "-c", 'model_reasoning_summary="detailed"']
             # Turns are recovery, not a unit of the run: the run is sized in minutes and tokens, and a turn is cut where it stands.
-            budget = ["--max-turns", "200", "--max-minutes", str(max(1, min(float(a.get("maxMinutes") or 120), 100000))), "--max-tokens", str(max(100000, min(int(a.get("maxTokens") or 50_000_000), 10**11)))]
-            loop = "rm -f .state/STOP; p=PROMPT.md; [ -f /brief/PROMPT.md ] && p=/brief/PROMPT.md; exec python3 harness/runner/codex_loop.py --prompt $p \"$@\" >/dev/null 2>&1"
-            self.run_job(name, [[*COMPOSE, "up", "-d", "gateway", "agent"], [*COMPOSE, "exec", "-d", "agent", "sh", "-c", loop, "sh", *budget, *extra]])
+            # A field left blank is not sent: the loop then continues to the end and the cap the run already has (.state/run.json),
+            # so a restart does not hand the run another full budget. The page fills in 120 min and 50 M when nothing is stored.
+            budget = ["--max-turns", "200"]
+            if a.get("maxMinutes"): budget += ["--max-minutes", str(max(1, min(float(a["maxMinutes"]), 100000)))]
+            if a.get("maxTokens"): budget += ["--max-tokens", str(max(100000, min(int(a["maxTokens"]), 10**11)))]
+            self.run_job(name, [[*COMPOSE, "up", "-d", "gateway", "agent"], [*agent, "sh", "-c", LOOP_FREE], [*COMPOSE, "exec", "-d", "agent", "sh", "-c", LOOP, "sh", *budget, *extra]])
         elif name == "agent.stop": self.run_job(name, [[*agent, "sh", "-c", "mkdir -p .state && touch .state/STOP"]])
         elif name == "agent.kill": self.run_job(name, [[*agent, "sh", "-c", "pkill -f '[c]odex_loop.py'; pkill -x codex; pkill -f '[h]arness/mcp/server.py'; true"]])
         elif name == "agent.down":
             if self.backups: self.backups.terminate()
             self.run_job(name, [[*COMPOSE, "stop", "agent", "gateway"]])
         elif name == "run.init":
+            self.free()  # before anything is deleted or written: a refused init leaves the running run's feed and brief alone
             prompt = fill_prompt((REPO / "PROMPT.md").read_text(encoding="utf-8"), str(a.get("targetQuest", "")).strip(), str(a.get("targetChapter", "")).strip())
             up = "agent" in sh([*COMPOSE, "ps", "--services", "--status", "running"]).stdout.split()
             steps = [[*agent, "sh", "-c", "pkill -f '[c]odex_loop.py'; pkill -x codex; true"]] if up else []
@@ -332,7 +358,7 @@ class Console:
             # The brief lives on the host and is mounted read-only at /brief: the agent can read its mission and rules but not rewrite them.
             shutil.rmtree(OVERLAY, ignore_errors=True)  # a new run starts a new feed and new totals
             BRIEF.mkdir(parents=True, exist_ok=True); (BRIEF / "PROMPT.md").write_text(prompt, encoding="utf-8", newline="")
-            steps += [[*COMPOSE, "up", "-d"], [*agent, "sh", "-c", "mkdir -p .state && rm -f .state/STOP .state/codex-loop.json .state/run-prompt.md"]]
+            steps += [[*COMPOSE, "up", "-d"], [*agent, "sh", "-c", "mkdir -p .state && rm -f .state/STOP .state/codex-loop.json .state/run.json .state/run-prompt.md"]]  # run.json: a new run has a new start, end and cap
             self.run_job(name, steps)
         else: raise ValueError(f"unknown action {name}")
         return {"accepted": name}

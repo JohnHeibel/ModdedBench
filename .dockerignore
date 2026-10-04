@@ -4,3 +4,5 @@
 **/.gradle
 **/__pycache__
 GT_New_Horizons_*.zip
+docker/.env
+**/*.token

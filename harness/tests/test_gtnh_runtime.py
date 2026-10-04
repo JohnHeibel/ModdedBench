@@ -8,6 +8,7 @@ import tempfile
 import unittest
 import zipfile
 import hashlib
+import shutil
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import patch
@@ -294,6 +295,21 @@ class RuntimeTests(unittest.TestCase):
             self.assertNotIn("--offline", command)
             self.assertNotIn("-s", command)
 
+    def test_the_game_is_launched_without_the_operators_keys(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); instance = root / "instances" / runtime.INSTANCE_NAME; instance.mkdir(parents=True)
+            runtime.save_json(instance / runtime.MARKER, {"managedBy": "modbench"})
+            runtime.save_json(root / "config.json", {"prism": sys.executable, "prismData": str(root), "java": sys.executable})
+            secret = {"OPENROUTER_API_KEY": "dummy", "GH_TOKEN": "dummy", "MB_KEPT": "kept"}
+            with patch.dict(os.environ, secret), patch.object(runtime, "instance_dir", return_value=instance), patch.object(runtime.subprocess, "Popen") as popen, \
+                    patch.object(runtime, "wait_for_client_join", return_value={}), patch.object(runtime, "record_joined_client_build"), patch("builtins.print"):
+                runtime.provision_client(Namespace(runtime=str(root)))
+                runtime.launch_client(Namespace(runtime=str(root), username="", timeout=1, installed_as_is=True))
+            self.assertEqual(2, popen.call_count)
+            for call in popen.call_args_list:
+                env = call.kwargs["env"]; self.assertEqual("kept", env["MB_KEPT"]); self.assertIn("PATH", {k.upper() for k in env})
+                self.assertFalse({"OPENROUTER_API_KEY", "GH_TOKEN"} & set(env))
+
     def test_client_wait_connects_only_after_main_menu_and_reports_identity(self):
         class Kernel:
             def __init__(self): self.calls = []; self.gui_calls = 0
@@ -342,6 +358,58 @@ class RuntimeTests(unittest.TestCase):
             with patch.object(runtime.subprocess, "run", return_value=result):
                 self.assertTrue(runtime.client_instance_is_running(Path(tmp)))
 
+    def test_terminating_the_client_names_only_the_managed_instance_and_checks_that_it_ended(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            instance = Path(tmp) / runtime.INSTANCE_NAME; instance.mkdir(); runtime.save_json(instance / runtime.MARKER, {"managedBy": "modbench"})
+            with patch.object(runtime.subprocess, "run", return_value=Namespace(returncode=0, stdout="")) as run, \
+                 patch.object(runtime, "client_instance_is_running", return_value=False), patch("builtins.print"):
+                runtime.kill_client(instance)  # nothing runs: the command is only looked at
+            script, env = run.call_args.args[0][-1], run.call_args.kwargs["env"]
+            self.assertTrue(script.startswith(runtime.CLIENT_JAVA)); self.assertIn("$hit | ForEach-Object {Stop-Process", script)
+            self.assertIn("if(-not $needle){exit 3}", script)  # an empty path would match every java on the host
+            self.assertEqual(env["MODBENCH_INSTANCE"], str(instance.resolve()))
+            with patch.object(runtime.subprocess, "run", return_value=Namespace(returncode=0, stdout="")), patch.object(runtime.time, "sleep"), \
+                 patch.object(runtime, "client_instance_is_running", return_value=True), self.assertRaisesRegex(runtime.RuntimeError_, "still running"):
+                runtime.kill_client(instance, timeout=0)
+            (instance / runtime.MARKER).unlink()
+            with patch.object(runtime.subprocess, "run") as run, self.assertRaises(runtime.RuntimeError_): runtime.kill_client(instance)
+            run.assert_not_called()  # an instance that is not ours is never touched
+
+    @unittest.skipUnless(os.name == "nt", "the client process inspector is PowerShell")
+    def test_the_process_scripts_parse(self):
+        import subprocess
+        for then in ("if ($hit.Count) {'true'} else {'false'}", "$hit | ForEach-Object {Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue}"):
+            done = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", "[void][scriptblock]::Create($env:MB_SCRIPT)"],
+                                  env={**os.environ, "MB_SCRIPT": runtime.CLIENT_JAVA + then}, capture_output=True, text=True, timeout=60)  # parsed, never run
+            self.assertEqual((done.returncode, done.stderr), (0, ""))
+
+    @unittest.skipUnless(shutil.which("sh"), "runs the hold's shell lines")
+    def test_a_hold_is_taken_when_there_is_none_and_released_only_by_its_owner(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp, patch.object(runtime, "HOLD", (Path(tmp) / "modbench-hold").as_posix()):
+            hold = Path(tmp) / "modbench-hold"
+            def did(owner, take, force=False): return subprocess.run(["sh", "-c", runtime.hold_cmd(owner, take, force)], capture_output=True).returncode == 0
+            self.assertFalse(did("backup", False))                                                    # nothing to release
+            self.assertTrue(did("backup", True)); self.assertEqual(hold.read_text().strip(), "backup")
+            self.assertFalse(did("compaction", True)); self.assertEqual(hold.read_text().strip(), "backup")  # one hold at a time
+            self.assertFalse(did("compaction", False)); self.assertFalse(did("operator", False)); self.assertTrue(hold.exists())
+            self.assertTrue(did("operator", True, force=True)); self.assertEqual(hold.read_text().strip(), "operator")  # Pause takes over
+            self.assertFalse(did("backup", False)); self.assertTrue(hold.exists())                    # the backup's end leaves the operator's pause
+            self.assertTrue(did("operator", False)); self.assertFalse(hold.exists())
+
+    def test_only_one_process_holds_a_lock_and_its_end_releases_it(self):
+        import subprocess
+        hold = "import sys; sys.path.insert(0, sys.argv[1]); import runtime; from pathlib import Path; lock = runtime.only_one('x', Path(sys.argv[2])); print(bool(lock), flush=True); sys.stdin.read()"
+        with tempfile.TemporaryDirectory() as tmp:
+            other = subprocess.Popen([sys.executable, "-c", hold, str(Path(runtime.__file__).parent), tmp], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+            try:
+                self.assertEqual(other.stdout.readline().strip(), "True")
+                self.assertIsNone(runtime.only_one("x", Path(tmp)))
+                runtime.only_one("y", Path(tmp)).close()  # another name is another lock
+            finally: other.communicate()
+            mine = runtime.only_one("x", Path(tmp)); self.assertIsNotNone(mine)
+            self.assertIsNone(runtime.only_one("x", Path(tmp))); mine.close()
+
     def test_invalid_explicit_java_does_not_fall_back_to_candidate(self):
         with self.assertRaises(runtime.RuntimeError_):
             runtime.resolve_executable("C:/definitely/not/java.exe", [sys.executable], "Java executable")
@@ -358,6 +426,7 @@ class RuntimeTests(unittest.TestCase):
                     self.assertEqual(runtime.install_jar("server", {}, root)[0].read_bytes(), b"new")
                 self.assertEqual((root / "backups/server/modbench-server.previous.jar").read_bytes(), b"old")
                 with patch.object(runtime, "bridge_is_live", return_value=False):
+                    runtime.install_jar("server", {}, root)  # a deploy replayed: the backup stays the jar before it, not the new jar
                     self.assertEqual(runtime.rollback_jar("server", root)[0].read_bytes(), b"old")
             finally: runtime.REPO = old_repo
 

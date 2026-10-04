@@ -2,7 +2,7 @@
 # Copyright (c) 2026 ModdedBench contributors
 """Offline tests for the operator console: the prompt it writes and who may press its buttons."""
 from __future__ import annotations
-import json, sys, threading, unittest, urllib.error, urllib.request
+import json, shutil, sys, threading, unittest, urllib.error, urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -11,7 +11,84 @@ sys.path.insert(0, str(REPO / "harness" / "console"))
 import console
 
 
+def start(args, job=None):
+    """The steps the console's Start would run, with nothing started: (steps, the shell line of the loop, its arguments)."""
+    import types
+    from unittest import mock
+    c = object.__new__(console.Console); c.job = job or {"name": "", "running": False}
+    c.supervisor = c.backups = types.SimpleNamespace(poll=lambda: None)  # both count as running: Start starts neither
+    steps = []; c.run_job = lambda name, s: steps.extend(s)
+    with mock.patch.object(console.subprocess, "Popen"), mock.patch.object(console, "sh"): c.act("agent.start", args)
+    return steps, steps[-1][steps[-1].index("-c") + 1], steps[-1][steps[-1].index("-c") + 3:]
+
+
 class ConsoleTests(unittest.TestCase):
+    def test_start_asks_for_the_loop_lock_first_and_starts_the_loop_under_it(self):
+        steps, loop, _ = start({})
+        self.assertEqual(([console.LOOP_FREE], console.LOOP), (steps[-2][-1:], loop))
+        self.assertLess(loop.index("flock -n .state/loop.lock"), loop.index("rm -f .state/STOP"))  # a start that is refused leaves the running loop's stop request
+
+    def test_start_sends_only_the_budgets_the_operator_filled_in(self):
+        self.assertEqual(start({})[2][:2], ["--max-turns", "200"]); self.assertNotIn("--max-minutes", start({"maxMinutes": None, "maxTokens": 0})[2])  # blank: the loop keeps the run's stored end and cap
+        args = start({"maxMinutes": 90, "maxTokens": 2e6, "model": "gpt-x"})[2]
+        self.assertEqual(args[:8], ["--max-turns", "200", "--max-minutes", "90.0", "--max-tokens", "2000000", "--", "-m"])
+
+    def test_init_is_refused_while_a_job_runs_before_it_touches_the_feed_or_the_brief(self):
+        import tempfile, types
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(console, "OVERLAY", Path(tmp, "overlay")), mock.patch.object(console, "BRIEF", Path(tmp, "brief")), \
+                mock.patch.object(console, "sh", lambda *a, **k: types.SimpleNamespace(stdout="agent\n")):
+            console.OVERLAY.mkdir(); (console.OVERLAY / "live.json").write_text("{}")
+            c = object.__new__(console.Console); c.job = {"name": "agent.start", "running": True}
+            ask = {"targetQuest": "Steam Macerator", "targetChapter": "Tier 0.5 - Steam Age"}
+            with self.assertRaisesRegex(RuntimeError, "still running"): c.act("run.init", ask)
+            self.assertTrue((console.OVERLAY / "live.json").exists()); self.assertFalse(console.BRIEF.exists())
+            c.job = {"name": "", "running": False}; steps = []; c.run_job = lambda name, s: steps.extend(s)
+            c.act("run.init", ask)
+            self.assertFalse(console.OVERLAY.exists()); self.assertIn("Steam Macerator", (console.BRIEF / "PROMPT.md").read_text(encoding="utf-8"))
+            self.assertIn(".state/run.json", steps[-1][-1])  # the old run's start, end and token cap do not carry into the new one
+
+    def test_the_probe_reads_the_end_of_the_log_and_not_the_whole_file(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "codex-loop.log").write_bytes(b"x" * 3_000_000 + "\u00e9nd of the log".encode()); Path(tmp, "run.json").write_text('{"startedAt": 1}')
+            read = []
+            def spy(path, mode):
+                f = open(path, mode); inner = f.read; f = type("F", (), {"seek": f.seek, "close": f.close, "read": lambda self: read.append(inner()) or read[-1]})(); return f
+            space = {"s": Path(tmp), "open": spy}; exec(console.TAIL, space); r = space["r"]
+            self.assertTrue(r("codex-loop.log").endswith("\u00e9nd of the log")); self.assertEqual(24000, len(read[0]))
+            self.assertEqual(('{"startedAt": 1}', ""), (r("run.json"), r("absent")))
+        self.assertIn(console.TAIL, console.AGENT_PROBE); compile(console.AGENT_PROBE, "probe", "exec")
+
+    @unittest.skipUnless(shutil.which("sh"), "runs the loop's shell line")
+    def test_the_loop_line_passes_the_prompt_and_arguments_and_keeps_what_the_loop_writes_as_it_dies(self):
+        import os, subprocess, tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            bin = Path(tmp, "bin"); bin.mkdir(); Path(tmp, ".state").mkdir(); Path(tmp, ".state", "STOP").write_text("")
+            (bin / "flock").write_text('#!/bin/sh\necho "$1 $2" > flock.txt; shift 2; exec "$@"\n', newline="\n")  # the lock itself is flock's: only what it is asked is checked
+            (bin / "python3").write_text('#!/bin/sh\nfor a in "$@"; do echo "$a"; done > argv.txt; ls .state > state.txt; echo trace >&2; exit 3\n', newline="\n")
+            env = {**os.environ, "PATH": str(bin) + os.pathsep + os.environ["PATH"]}
+            done = subprocess.run(["sh", "-c", console.LOOP, "sh", "--max-minutes", "5", "--", "-c", "two words"], cwd=tmp, env=env, capture_output=True, text=True)
+            self.assertEqual((3, "", ""), (done.returncode, done.stdout, done.stderr))
+            self.assertEqual("-n .state/loop.lock\n", Path(tmp, "flock.txt").read_text())
+            self.assertEqual(["harness/runner/codex_loop.py", "--prompt", "PROMPT.md", "--max-minutes", "5", "--", "-c", "two words"], Path(tmp, "argv.txt").read_text().splitlines())
+            self.assertNotIn("STOP", Path(tmp, "state.txt").read_text()); self.assertEqual("trace\n", Path(tmp, ".state", "codex-loop.err").read_text())
+
+    @unittest.skipUnless(shutil.which("sh"), "runs the hold's shell lines")
+    def test_pause_takes_the_hold_over_and_resume_ends_only_the_operators(self):
+        import subprocess, tempfile
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(console.runtime, "HOLD", (Path(tmp) / "modbench-hold").as_posix()):
+            hold = Path(tmp) / "modbench-hold"; c = object.__new__(console.Console)
+            c.hold_file = lambda cmd: subprocess.run(["sh", "-c", cmd], capture_output=True, text=True)
+            c.act("time.resume", {})  # nothing held: nothing to say
+            c.act("time.pause", {}); self.assertEqual(hold.read_text().strip(), "operator")
+            c.act("time.resume", {}); self.assertFalse(hold.exists())
+            hold.write_text("backup")
+            with self.assertRaisesRegex(RuntimeError, "still held by 'backup'"): c.act("time.resume", {})
+            self.assertTrue(hold.exists())  # a snapshot in progress keeps its world still
+            c.act("time.pause", {}); c.act("time.resume", {}); self.assertFalse(hold.exists())  # the operator's way out of a hold nobody ends
+
     def test_the_shipped_prompt_has_every_placeholder_the_console_fills(self):
         text = console.fill_prompt((REPO / "PROMPT.md").read_text(encoding="utf-8"), "Steam Macerator", "Tier 0.5 - Steam Age")
         self.assertIn('TARGET_QUEST      = "Steam Macerator"', text); self.assertIn('REPO              = "/work/modbench"', text)
