@@ -136,6 +136,52 @@ it (`harness/runner/feed.py`) to `.runtime/outbox/overlay`: `feed.jsonl`, whose
 asked of the model for this: the goal is the one it keeps with `mb_goal`, and
 action lines are templates over its tool calls. Initialize clears both files.
 
+## Chat questions
+
+A viewer types `!ask why did it build tanks by the coke oven?` in Twitch chat and a
+cheap model answers in a sentence or two, as a reply, from the run's own logs
+(`harness/asker`). It says when the thing happened, and it says so when the agent
+never considered something or gave no reason.
+
+- `corpus.py` turns the loop's log, the feed and the agent's journal into a folder
+  of short dated lines, an hour to a file (4 s for a three-day run; redone at most
+  once a minute, and only when someone asks).
+- `ask.py` runs Codex with a fresh context per question (`MB_ASK_MODEL`, default
+  `gpt-5.6-luna`, medium effort). The model has four read-only searches over that
+  folder (`look.py`) and nothing else: no shell, no web, no files, no sub-agents,
+  none of the game's tools. About 15 s and 50,000 input tokens a question.
+- `bot.py` is the chat side. Anyone may ask; one question is answered at a time,
+  three may wait, each viewer may ask every two minutes and the bot takes twenty
+  an hour (`--line`, `--wait`, `--hourly`). The question is given to the model as a
+  stranger's text; the answer is posted as one line with links, commands, mentions
+  and anything key-shaped removed. Every question and answer is kept with its
+  evidence in `asks.jsonl`.
+
+The `asker` service has its own Codex login, the agent's volume and the outbox
+mounted read-only, and no route to the game, the agent or the gateway. The playing
+agent never sees chat. Give the bot its own Twitch account (not a moderator, so
+AutoMod reads what it posts too), put `TWITCH_CHANNEL`, `TWITCH_NICK` and
+`TWITCH_TOKEN` (that account's chat token) in `docker/.env`, then:
+
+```bash
+docker compose -f docker/compose.yaml --env-file docker/.env --profile chat build asker
+```
+
+```bash
+docker compose -f docker/compose.yaml --env-file docker/.env --profile chat run --rm asker codex login --device-auth
+```
+
+```bash
+docker compose -f docker/compose.yaml --env-file docker/.env --profile chat up -d asker
+```
+
+To try it without Twitch, on any machine with a Codex login, feed it lines of
+`name: !ask question`:
+
+```bash
+python harness/asker/bot.py --log codex-loop.log --feed feed.jsonl --notes notes/ --work .runtime/asker --console
+```
+
 ## Operating by hand
 
 | Task | Command |
