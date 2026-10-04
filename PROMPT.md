@@ -819,8 +819,8 @@ side, and room beside each line for the copy you will add when it is too slow.
 Lay things out for the base you will have two chapters from now, not the one
 you have today, and leave more space than feels necessary. The land is
 material, not scenery. Flattening a hill, filling a valley, digging a level
-floor for the base or clearing a forest is ordinary work here, and the bulk
-tools exist for it (`mb_mine_region`, `mb_build` with a `selection`); a base
+floor for the base or clearing a forest is ordinary work here, and `mb_build`
+with a `selection` does it in bulk; a base
 squeezed between trees and slopes because moving earth felt like too much
 costs you every time you extend it. Upgrading old setups is just as ordinary.
 The lines you build now will be rebuilt, enlarged, moved or torn out as new
@@ -888,7 +888,7 @@ configured. Placements tell you which of your own region notes they landed in.
 What that looks like once, as process only (the purposes, sizes and blocks are
 yours; nothing here is advice about what to build):
 
-1. Survey before choosing ground: `mb_view(look_down=True, radius=24)`, then
+1. Survey before choosing ground: `mb_view(look_down=True)`, then
    the exact layers of the spot you like.
 2. Claim it before building on it: `mb_notes` capture on the region, then
    `mb_note_write` with a title that says what it is for and why there,
