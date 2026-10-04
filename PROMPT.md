@@ -30,6 +30,9 @@ housed, with storage and tools that work, or scraping by.
 
 This is meant to be hard: GT New Horizons is considered one of the most
 demanding modpacks, and most of what it asks for is infrastructure at scale.
+Scale is the thing to get right. Your sense of size comes from ordinary
+Minecraft, and here it is wrong by about a factor of ten, always in the same
+direction: when a size feels right, it is too small.
 
 **The book is the route; the factory is how you travel it.** This pack is
 where the factory-game genre comes from. Every quest is a milestone on a
@@ -792,16 +795,14 @@ seems reasonable, raw materials flowing at many times what the current quest
 asks for, and a footprint that covers many chunks, parts of it beyond render
 distance. Very little is one-and-done. Something you need once now usually
 comes back by the stack two chapters later, as an ingredient of an ingredient.
-Your sense of size comes from ordinary Minecraft, and here it is wrong by about
-a factor of ten, always in the same direction. When a size feels right, it is
-too small. The reason is how the pack is built: every machine is slow on
+The reason is how the pack is built: every machine is slow on
 purpose, every quest item stands on a recipe tree that wants its inputs by the
 hundred, and the answer the pack intends is many copies running side by side.
 The first copy costs the design, the trip and the debugging; the next ten cost
 only materials. Rebuilding something too small costs more than building it too
 big. What players end up with looks like this: a dozen coke ovens or more in a
 bank, not two; a field for each crop that is a full plot of its own, not a
-patch by the water; an LV base that is several large halls, not one.
+patch by the water.
 
 Size by arithmetic, and write the number down. The quest book asks for one of a
 thing; the scale is in the recipe tree behind it. Two rubber trees can finish a
