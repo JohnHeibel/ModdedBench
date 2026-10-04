@@ -154,4 +154,13 @@ class QuestTests(unittest.TestCase):
         self.assertIn("consume:1b", quest["tasks"][0]["config"])  # items name the stacks; their id, meta and the consume rule are only here
 
 
+class InventoryDefaultTests(unittest.TestCase):
+    def test_inventory_asks_the_bridge_for_the_compact_form_unless_told_otherwise(self):
+        from mbtools_gtnh import inventory
+        k = FakeKernel(lambda method, params: {"slots": []})
+        with patch.object(inventory, "kernel", lambda: k), patch.object(inventory.notes, "with_item_notes", lambda result: result):
+            inventory.mb_inventory(); inventory.mb_inventory(container=True); inventory.mb_inventory("full", container=True)
+        self.assertEqual(k.calls, [("obs.inventory", {"detail": "compact"}), ("obs.container", {"detail": "compact"}), ("obs.container", {"detail": "full"})])
+
+
 if __name__ == "__main__": unittest.main()
