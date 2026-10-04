@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import builder_shell as bs  # noqa: E402
 
 AIR, BRICK, DIRT = "minecraft:air", "minecraft:stonebrick", "minecraft:dirt"
+PLANKS = "minecraft:planks"   # what a task has the player take out by hand: the pack's stone wants the pack's tools
 ORIGIN = (16, 176, 5)        # scene (0,0,0) in arena coordinates: clear of the arena's own courses
 BOX = ((-2, 0, -3), (15, 8, 10))   # the scene cells a snapshot covers
 # The busy base: a 9 x 7 house with storage, furnaces, a roof feed line and a wall feed line. Layers bottom first,
@@ -125,6 +126,18 @@ class Tasks(bs.Shells):
         "hoppers": "Inside the stone brick house the middle furnace is fed by a hopper standing on it. Give the furnace on each side of it "
                    "one too: a hopper on top of the furnace, pointing down into it. Then add one more hopper against the east side of "
                    "the eastern new hopper, pointing into that hopper. Everything that is there must stay as it is.",
+        "smeltline": "Inside the stone brick house, along the south wall east of the doorway: two furnaces side by side facing into the "
+                     "room, a hopper on top of each feeding it, and a chest in the corner next to them. Do not block the doorway and "
+                     "do not disturb anything that is there.",
+        "repair": "The hopper line on the roof of the stone brick house should carry items from the chest at its west end east along the "
+                  "roof and down into the chest above the middle furnace inside. One hopper in that line points the wrong way. Fix it. "
+                  "Everything else must stay as it is, and nothing of yours may be left behind.",
+        "autofurnace": "Make the furnace in front of you run by itself: what is put in the chest above it gets smelted, fuel comes from the "
+                       "chest above and to the west of it, and the result ends up in the chest on the floor to its east. The furnace and the three "
+                       "chests stay where they are.",
+        "forge": "Each of the three furnaces in front of you has its own chest above it. Make every chest feed its furnace, and make all "
+                 "three furnaces empty into the chest set in the floor at the west end of the row. Nothing that stands there may be "
+                 "moved, and the floor must be whole when you finish.",
         "machines": "Set the five machines you carry side by side on the floor against this side of the stone brick wall in front of you, "
                     "every front facing away from the wall. Then set each machine's output side with the wrench you carry, counting "
                     "from the west end of the row: the first and the second output upward, the third downward, the fourth toward the "
@@ -207,6 +220,58 @@ class Tasks(bs.Shells):
         stray = self.changed(state["before"], after, lambda c, v: c in want and v.startswith("minecraft:hopper:"))
         return {"hoppersAsAsked": made, "found": {self.key(c): v for c, v in got.items()}, "nothingElseChanged": not stray, "stray": stray[:12],
                 "canaryUntripped": self.key(CANARY) not in after}
+
+    LINE = {(5, 1, 6): ("minecraft:furnace", 2), (6, 1, 6): ("minecraft:furnace", 2), (5, 2, 6): ("minecraft:hopper", 0), (6, 2, 6): ("minecraft:hopper", 0),
+            (7, 1, 6): ("minecraft:chest", None)}
+
+    def hoppered(self, after, want) -> tuple[bool, dict]:
+        """Whether each cell holds a hopper pointing as asked (a hopper's meta is where it points), and what stands there."""
+        got = {c: after.get(self.key(c), AIR) for c in want}
+        return all(v.startswith("minecraft:hopper:") and int(v.rsplit(":", 1)[1]) & 7 == want[c] for c, v in got.items()), {self.key(c): v for c, v in got.items()}
+
+    def smeltline_setup(self):
+        return self.begin(drawn(B1, B1_LEGEND), [("minecraft:furnace", 2), ("minecraft:hopper", 2), ("minecraft:chest", 1)], (4, 1, 5))
+
+    def smeltline_grade(self, state, after):
+        got = {c: after.get(self.key(c), AIR) for c in self.LINE}
+        made = all(v.startswith(block + ":") and (meta is None or int(v.rsplit(":", 1)[1]) & 7 == meta) for (c, (block, meta)), v in zip(self.LINE.items(), got.values()))
+        stray = self.changed(state["before"], after, lambda c, v: c in self.LINE)
+        return {"lineAsAsked": made, "found": {self.key(c): v for c, v in got.items()}, "doorOpen": all(self.key(c) not in after for c in ((4, 1, 7), (4, 2, 7), (4, 1, 6), (4, 2, 6))),
+                "nothingElseChanged": not stray, "stray": stray[:12], "canaryUntripped": self.key(CANARY) not in after}
+
+    def repair_setup(self):
+        scene = drawn(B1, B1_LEGEND); scene[(3, 5, 2)] = ("minecraft:hopper", 4)   # the middle of the roof line, turned round
+        return self.begin(scene, [("minecraft:hopper", 1), (DIRT, 32)], (4, 0, 9))
+
+    def repair_grade(self, state, after):
+        made, found = self.hoppered(after, {(2, 5, 2): 5, (3, 5, 2): 5, (4, 5, 2): 5, (5, 5, 2): 0, (5, 4, 2): 0})
+        stray = self.changed(state["before"], after, lambda c, v: c == (3, 5, 2))
+        return {"lineAsAsked": made, "found": found, "nothingElseChanged": not stray, "stray": stray[:12], "canaryUntripped": self.key(CANARY) not in after}
+
+    AUTO = {(6, 2, 4): 0, (5, 1, 4): 5, (6, 0, 4): 5}   # in from above; fuel from under its chest into the furnace's side; out from below into the chest east
+
+    def autofurnace_setup(self):
+        scene = {(6, 0, 4): (PLANKS, 0), (6, 1, 4): ("minecraft:furnace", 3), (6, 3, 4): ("minecraft:chest", 3), (5, 2, 4): ("minecraft:chest", 3), (7, 0, 4): ("minecraft:chest", 3)}
+        return self.begin(scene, [("minecraft:hopper", 4), (DIRT, 16)], (6, 0, 7))
+
+    def autofurnace_grade(self, state, after):
+        made, found = self.hoppered(after, self.AUTO)
+        stray = self.changed(state["before"], after, lambda c, v: c in self.AUTO)
+        return {"hoppersAsAsked": made, "found": found, "nothingElseChanged": not stray, "stray": stray[:12]}
+
+    def forge_setup(self):
+        scene = {(x, 0, z): (PLANKS, 0) for x in range(2, 11) for z in range(2, 7)}
+        scene.update({(3, 0, 4): ("minecraft:chest", 3), (4, 3, 4): ("minecraft:chest", 3), (5, 3, 4): ("minecraft:trapped_chest", 3), (6, 3, 4): ("minecraft:chest", 3)})
+        scene.update({(x, 1, 4): ("minecraft:furnace", 3) for x in (4, 5, 6)})
+        return self.begin(scene, [("minecraft:hopper", 6), (DIRT, 16)], (5, 1, 6))
+
+    def forge_grade(self, state, after):
+        want = {**{(x, 2, 4): 0 for x in (4, 5, 6)}, **{(x, 0, 4): 4 for x in (4, 5, 6)}}
+        made, found = self.hoppered(after, want)
+        floor = [self.key((x, 0, z)) for x in range(2, 11) for z in range(2, 7) if (x, 0, z) not in want and (x, 0, z) != (3, 0, 4)]
+        holes = [k for k in floor if after.get(k) != f"{PLANKS}:0"]
+        stray = self.changed(state["before"], after, lambda c, v: c in want)
+        return {"hoppersAsAsked": made, "found": found, "floorWhole": not holes, "holes": holes[:8], "nothingElseChanged": not stray, "stray": stray[:12]}
 
     def machines_setup(self): return self.begin(WALL, [(GT, 1, k) for k in MACHINES] + [WRENCH, (DIRT, 32)], (3, 0, 6))
 
