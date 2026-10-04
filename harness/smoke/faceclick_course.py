@@ -31,8 +31,8 @@ The pack's own blocks (PACK), each one call:
   click_smeltery   a smeltery with a controller, two drains facing in, a faucet on each, a basin and a table under the
                    faucets and a bucket of lava into the tank: the controller reports a valid structure
   click_ebf        an Electric Blast Furnace: 37 structure cells, six hatches and the controller each facing out, the
-                   muffler in the roof facing up, two cable runs coming in from the west, a chest at the output bus:
-                   kinds and facings from the tiles, and the controller reports a formed structure
+                   muffler in the roof facing up, two cable runs coming in from the west, a chest at the output bus, the
+                   controller last: kinds and facings from the tiles, and the controller reports a formed structure
 
 Needs the throwaway mbtest stack with the dev fixtures; run it from a container on the server's network:
 
@@ -67,7 +67,7 @@ SHAPE = {"casing": {"id": "minecraft:stonebrick"}, "coil": {"id": "minecraft:pla
 
 
 GT, TOOL = "gregtech:gt.blockmachines", "gregtech:gt.metatool.01"   # every machine is one block: the item's damage is the kind
-TOOL_NBT = '{"GT.ToolStats":{PrimaryMaterial:"Iron",SecondaryMaterial:"Iron",MaxDamage:25600L,Damage:0L}}'
+TOOL_NBT = '{GT.ToolStats:{PrimaryMaterial:"Iron",SecondaryMaterial:"Iron",MaxDamage:25600L,Damage:0L}}'
 WRENCH = {"id": TOOL, "meta": 16}
 
 
@@ -288,18 +288,19 @@ class Clicks:
         casing, coil = {"id": "gregtech:gt.blockcasings", "meta": 11}, {"id": "gregtech:gt.blockcasings5", "meta": 0}
         at = (4, 0, 2); cells = []; facing = {}
         def add(pos, block, stage, **more): cells.append({"pos": [at[0] + pos[0], pos[1], at[2] + pos[2]], **block, "stage": stage, **more})
-        look = lambda way: {"click": {"look": {"toward": way}}}
+        look = lambda way, front: {"click": {"look": {"toward": way}}, "expect": [{"method": "obs.tile", "path": "tile.mFacing", "equals": front}]}
         # (kind, how the player faces as it goes in, the front that makes): a machine fronts whoever places it.
         low = {(0, 0, 0): (41, "east", 4), (0, 0, 1): (41, "east", 4), (1, 0, 0): (111, "south", 2), (2, 0, 1): (81, "west", 5),
                (2, 0, 2): (71, "north", 3), (1, 0, 2): (1000, "north", 3)}
         for x in range(3):
             for z in range(3):
-                if (x, 0, z) in low: kind, way, front = low[(x, 0, z)]; add((x, 0, z), part(kind), 1, **look(way)); facing[(x, 0, z)] = (kind, front)
+                # The controller goes in last: one that finds no structure when placed switches itself off.
+                if (x, 0, z) in low: kind, way, front = low[(x, 0, z)]; add((x, 0, z), part(kind), 3 if kind == 1000 else 1, **look(way, front)); facing[(x, 0, z)] = (kind, front)
                 else: add((x, 0, z), casing, 0)
                 if (x, z) != (1, 1):
                     for y in (1, 2): add((x, y, z), coil, 0)
                     add((x, 3, z), casing, 0)
-        add((1, 3, 1), part(91), 1, click={"look": {"pitch": [65, 90]}}); facing[(1, 3, 1)] = (91, 1)   # a steep look down: it faces up
+        add((1, 3, 1), part(91), 1, click={"look": {"pitch": [65, 90]}}, expect=[{"method": "obs.tile", "path": "tile.mFacing", "equals": 1}]); facing[(1, 3, 1)] = (91, 1)   # a steep look down: it faces up
         add((3, 0, 1), {"id": "minecraft:chest"}, 1)
         cables = [(-n, 0, z) for z in (0, 1) for n in (1, 2, 3)]
         for c in cables: add(c, part(1246), 2, click={"face": "west"})   # each on the west face of what stands east of it
@@ -316,12 +317,15 @@ class Clicks:
         box = [(x, y, z) for x in range(0, 9) for y in range(0, 7) for z in range(0, 7)]
         left = sorted((p, b) for p, b in self.seen(origin, box).items() if b[0] != want.get(p, AIR))
         time.sleep(8)   # a structure check comes round within a few seconds
-        controller = rel((1, 0, 2)); waila = call(self.c.call, method="obs.waila", pos=[origin[0] + controller[0], origin[1], origin[2] + controller[2]])
-        formed = find(waila, "incompleteStructure")
+        controller = rel((1, 0, 2)); waila = self.c.call("obs.waila", pos=[origin[0] + controller[0], origin[1], origin[2] + controller[2]])
+        lines = " ".join(waila.get("lines") or [])
+        # Formed is the build's to answer for. A fresh one then switches itself off for want of maintenance (tools into
+        # the hatch's own screen), which no block click does: reported, not required.
+        formed, off = "Efficiency" in lines and "INCOMPLETE STRUCTURE" not in lines, (self.tile(controller).get("shutDownReason") or {}).get("key")
         wired = all(tiles[c].get("mID") == 1246 and (joined[c] or 0) & 32 and not (joined[c] or 0) & ~48 for c in cables)
-        ok = r.get("state") == "succeeded" and got == facing and wired and not left and formed is False and not r.get("scaffoldLeft")
+        ok = r.get("state") == "succeeded" and got == facing and wired and not left and formed and off != "structure_incomplete" and not r.get("scaffoldLeft")
         return {"passed": ok, "receipt": r, "preview": seen, "tiles": {str(k): v for k, v in tiles.items()}, "waila": waila, "strays": left[:16],
-                "why": f"{brief(r)} (kind, front)={got} cables={joined} incompleteStructure={formed} strays={left[:3]} scaffoldLeft={r.get('scaffoldLeft')}"}
+                "why": f"{brief(r)} (kind, front)={got} cables={joined} formed={formed} switchedOffFor={off} strays={left[:3]} scaffoldLeft={r.get('scaffoldLeft')}"}
 
 
 class Course(Clicks, bs.Shells):
