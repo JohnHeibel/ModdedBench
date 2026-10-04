@@ -337,6 +337,8 @@ def mb_time(method: str = "status", params: dict | None = None, timeout_s: float
     a click, a job) stops at the step's end and reports it; step or resume to go on.
     Any acting tool takes resume=N to step N ticks with its action starting on the first,
     and resume=True to resume with it: one call, no tick lost between resume and action.
+    The resume belongs to the call's first action only: a pause later in the same call (a
+    guard) stands, and a call whose resume lifted no pause says so (resumeUnused).
     configure params: healthDrop, burning, actionFailed, pauseOnDisconnect are booleans;
     healthBelow (health points), airBelow (air ticks, 300 is full) and foodBelow (food
     points) are numeric thresholds, and -1 disables one. threatWithin N (blocks, at most 32)

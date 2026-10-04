@@ -32,9 +32,10 @@ public final class ClientClock implements ClockHooks.Driver {
      */
     private boolean resuming, creditTick, resumeSent;
     private int resumeTicks, creditRan;
-    private Request resumer;
-    private Thread resumerThread;
     private Session agent;
+    /** The action whose _resume armed the credit tick, and the thread that admitted it. */
+    private Request armed;
+    private Thread armedThread;
     final PausedFrame presentation=new PausedFrame(this);
     private final SmoothView view=new SmoothView();
     private final PlanHold planHold=new PlanHold();
@@ -60,9 +61,7 @@ public final class ClientClock implements ClockHooks.Driver {
     public void expectThreat(int entityId) { if(supported) send(Json.object("type","expect_threat","entityId",entityId)); }
     /** A fight job started (ticks>0, its mobs within radius) or ended (0): see SimulationClock.fight. */
     public void fight(int ticks, double radius) { if(supported) send(Json.object("type","fight","ticks",ticks,"radius",radius)); }
-    /** Pauses a running job waits out: a request, the operator, a lost connection or a clock fault. */
-    private static final java.util.Set<String> WAITED_OUT=java.util.Set.of("requested_pause","operator_hold","client_disconnected",
-        "client_unresponsive","agent_disconnected","paused_packet_overflow","clock_protocol_error","step");
+    private static final java.util.Set<String> WAITED_OUT=SimulationClock.WAITED_OUT;
     /**
      * Paused by anything that wants the model's attention: a guard, a failed action, or one of its own interrupt watches
      * (interrupt:NAME). Any reason not listed as waited out counts, so a new guard ends work without being added here.
@@ -72,6 +71,10 @@ public final class ClientClock implements ClockHooks.Driver {
     boolean endsWork() { return !resuming && (guardPause() || paused && "step".equals(pauseReason())); }
     /** Paused for the purpose of refusing actions: false once an action has asked to resume. */
     boolean refusesActions() { return paused && !resuming; }
+    /** Why a paused world refuses an action, with the pause's reason: a guard's pause is one to look at, not to resume through. */
+    String refusal(String what) { return refusal(pauseReason(),what); }
+    static String refusal(String reason,String what) { return "time_paused: "+(WAITED_OUT.contains(reason)?"paused by "+reason+"; resume before "+what
+        :"world paused by a guard ("+reason+"): read mb_time status, decide, resume"); }
     /**
      * Admits an action that carries _resume while the world is paused: true (resume) or N (step N ticks). The same
      * checks the server makes are made here first, so a refusal fails the call before anything runs.
@@ -82,7 +85,7 @@ public final class ClientClock implements ClockHooks.Driver {
         if(agent!=null && agent.connected && agent!=r.session) throw new IllegalArgumentException("time control belongs to another connected agent session");
         if(Json.bool(state,"held",false)) throw new IllegalArgumentException("the operator is holding the world paused; wait for the release");
         if(!"paused".equals(Json.string(state,"mode",""))) throw new IllegalArgumentException("pause has not settled; inspect time.status before resuming");
-        agent=r.session;resuming=creditTick=true;resumeSent=false;resumeTicks=ticks;resumer=r;resumerThread=Thread.currentThread();
+        agent=r.session;armed=r;armedThread=Thread.currentThread();resuming=creditTick=true;resumeSent=false;resumeTicks=ticks;
         JsonObject record=Json.object("pausedBy",pauseReason(),"threats",state.has("threats")?state.get("threats"):new com.google.gson.JsonArray());
         if(ticks>0) record.addProperty("ticks",ticks);
         r.resumed=record;
@@ -93,10 +96,12 @@ public final class ClientClock implements ClockHooks.Driver {
      * the resume is withdrawn and the world stays paused; a step would otherwise run its ticks with the body idle.
      */
     void failed(Request r) {
-        if(r!=resumer || !resuming || resumeSent || Thread.currentThread()!=resumerThread) return;
-        resuming=creditTick=false;creditRan=0;resumer=null;planHold.reset();
+        if(r!=armed || !resuming || resumeSent || Thread.currentThread()!=armedThread) return;
+        resuming=creditTick=false;creditRan=0;armed=null;planHold.reset();
         r.resumed.addProperty("stayedPaused",true);
     }
+    /** The session of the action that asked for the resume is gone (sendResume would send as nobody): the world stays paused. */
+    static boolean dropped(Request armed) { return !armed.session.connected; }
     private void sendResume() {
         resumeSent=true;
         Request resume=new Request(new com.google.gson.JsonPrimitive("resume-for-action-"+requestId),"time.resume",
@@ -230,6 +235,7 @@ public final class ClientClock implements ClockHooks.Driver {
         observationFrames.keySet().removeIf(id->!pending.containsKey(id));
         runtime.service(runtime.identity());
         if(paused || stepBudget==0) view.settle();
+        if(creditTick && paused && dropped(armed)) { resuming=creditTick=false;planHold.reset(); }
         if(creditTick && paused) {
             // Plan-while-paused: the action's job plans with the world still paused, and its first tick follows the plan.
             if(planHold.hold(runtime::planningWhilePaused,runtime::whilePaused,System.nanoTime())) {

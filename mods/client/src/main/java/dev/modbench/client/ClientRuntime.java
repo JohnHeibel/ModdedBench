@@ -215,7 +215,7 @@ public final class ClientRuntime extends BridgeRuntime {
             requirePlayer(); if(mc.thePlayer.inventory.getItemStack()!=null&&!Json.bool(r.params,"allowCursorDrop",false)) throw new IllegalArgumentException("cursor_occupied: return cursor before closing"); controlsChanged("gui_changed"); mc.thePlayer.closeScreen(); return gui();
         });
         for(String method:GuiOperations.METHODS) register("gui."+method,GuiOperations.description(method),"interaction",r->{
-            if(clock.refusesActions()) throw new IllegalArgumentException("time_paused: resume before executing native GUI actions");
+            if(clock.refusesActions()) throw new IllegalArgumentException(clock.refusal("executing native GUI actions"));
             controlsChanged("superseded");return ui.start(r);
         });
         for(String method:List.of("mine","build","resume")) register("nav."+method,"Owned, checkpointed "+method+" process; timeoutTicks<=72000. Mine: blocks/items selectors, quantity, bounds/radius, toolSlot (forces the tool in that slot). Build: cells (at most 4096) or selection, a cell may carry click {face,hit,look,sneak} and expect; uses (right clicks on standing blocks); origin, replaceExisting, allowBreak/allowPlace. Resume: jobId. Explicit overrideProtection required each attempt.","interaction",r->{
@@ -629,7 +629,7 @@ public final class ClientRuntime extends BridgeRuntime {
         boolean heldEnded=m.equals("nav.resume")&&suspendedEnd!=null&&suspendedId!=null&&suspendedId.equals(Json.string(r.params,"jobId","")); // only collects an outcome
         if(clock.refusesActions()&&!heldEnded&&(m.startsWith("act.")&&!Set.of("act.stop","act.look").contains(m)
             ||m.startsWith("nav.")&&!Set.of("nav.settings","nav.cache").contains(m)||m.startsWith("quest.")))
-            throw new IllegalArgumentException("time_paused: resume before starting simulation actions");
+            throw new IllegalArgumentException(clock.refusal("starting simulation actions"));
     }
 
     private JsonObject look(Request r) {
