@@ -24,7 +24,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}td{padding:4px 8px 4px 
   <section class="card"><h2>Server (container)</h2><div id="server"></div>
     <div class="row"><button class="go" data-act="server.start">Start</button><button data-act="server.stop">Stop (saves)</button>
     <button data-act="time.pause">Pause time</button><button data-act="time.resume">Resume time</button></div>
-    <div class="note">Pause is an operator hold on the server itself: the agent cannot resume it, and Resume also clears a pause the agent or a disconnect left behind.</div></section>
+    <div class="note">Pause is an operator hold on the server itself: the agent cannot resume it. Resume ends that hold only: a snapshot's or the compaction guard's hold ends by itself (Pause takes it over), and a pause the agent or a disconnect left behind is the agent's to resume.</div></section>
 
   <section class="card"><h2>Client (this desktop)</h2><div id="client"></div>
     <div class="row"><button class="go" data-act="client.launch">Launch and join</button><button data-act="client.stop">Stop</button>

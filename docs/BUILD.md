@@ -133,7 +133,7 @@ The first client launch must be `provision-client` (downloads libraries and
 assets through the signed-in account); wait for the main menu, `stop-client`,
 then use `launch-client` for every later start. `launch-client` waits for the
 player to join the local server (up to 300 seconds). `status` prints what is
-running; each `install-*` keeps the previous jar (per side, under
+running; each `install-*` of a changed jar keeps the previous one (per side, under
 `.runtime/backups/<client|server>/`) for `rollback-*`, and `rollback-core`
 restores both sides or neither. `launch-client` refuses to start unless the
 installed `client` and `core` jars match the local build or a set that joined
