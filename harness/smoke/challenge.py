@@ -80,8 +80,8 @@ def agent(folder: Path, a) -> dict:
            "-v", f"{folder / 'brief'}:/brief:ro", "-v", f"{a.wiki}:/wiki:ro", "-v", f"{tokens}:/run/bridge:ro",
            a.image, "sh", "-c", inner]
     t = time.time()
-    r = sh(cmd, timeout=a.minutes * 60 + 300)
-    (folder / "agent.out").write_text((r.stdout or "")[-20000:] + "\n--- stderr\n" + (r.stderr or "")[-20000:], encoding="utf-8")
+    with open(folder / "agent.jsonl", "w", encoding="utf-8") as out, open(folder / "agent.err", "w", encoding="utf-8") as err:
+        r = subprocess.run(cmd, stdout=out, stderr=err, timeout=a.minutes * 60 + 300)   # the whole event stream: the trial's transcript
     return {"exit": r.returncode, "wallS": round(time.time() - t, 1)}
 
 
