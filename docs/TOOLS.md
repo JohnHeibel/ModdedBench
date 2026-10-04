@@ -113,8 +113,8 @@ queries are `obs.scan`, `obs.terrain`, `obs.fluid` and `obs.tools`.
 | `mb_process` | action | Runs one upstream process: `goal`, `explore`, `get_to_block`, `farm`. |
 | `mb_mine` | action | Quantity mining by block/item selectors in bounds or a radius; success is measured inventory gain. |
 | `mb_scan` | read | Paged scan of loaded blocks by selector (`obs.scan`). |
-| `mb_build_preview` | read | Fresh diff of a plan against the world plus material allocation. |
-| `mb_build` | action | Executes explicit cells or a selection with the strict per-cell contract. |
+| `mb_build_preview` | read | Fresh diff of a plan against the world plus material allocation, and the build order as `steps`. |
+| `mb_build` | action | Executes explicit cells, a selection or a drawing with the strict per-cell contract, one step (stage, then layer) at a time; the receipt's `step` names where it stands or stopped. |
 | `mb_build_pause` | control | Pauses active build work; the `jobId` stays resumable. |
 | `mb_build_materials` | read | Placeable states currently in inventory. |
 | `mb_schematic_import` | read | Reads an MCEdit `.schematic` or a canonical JSON plan inside the game's `schematics/` directory into `{plan:{cells,origin,size},size,count,skipped,tileEntities}`. Sponge `.schem` and Litematica are not read. |

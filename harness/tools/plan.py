@@ -5,6 +5,7 @@
 A drawing is {origin:[x,y,z], layers:[[row, ...], ...], legend:{char: {id, meta?}}}: layers bottom first, rows north
 to south (z grows), one character per block west to east (x grows), origin the bottom north-west corner. mb_view
 produces it from the world, a region note keeps one as a plan (data.drawing), and mb_build(drawing=...) builds it.
+A drawing to build may add stages:[chars, ...]: which legend characters are built after which (mb_build_preview).
 """
 from __future__ import annotations
 
@@ -21,6 +22,7 @@ MAX_CELLS, RARE, LOOKUPS = 9000, 6, 32
 def cells(drawing: dict) -> list[dict]:
     """The drawing's blocks as mb_build cells, relative to its origin. '.', ' ' and '+' are left alone."""
     legend = {c: ({"id": v} if isinstance(v, str) else v) for c, v in (drawing.get("legend") or {}).items()}
+    stage = _stages(drawing.get("stages"), legend)
     out = []
     heights = set()
     for index, layer in enumerate(drawing["layers"]):
@@ -36,8 +38,24 @@ def cells(drawing: dict) -> list[dict]:
             for dx, c in enumerate(row):
                 if c in (AIR, SKIP, PLANNED, PLAYER): continue
                 if c not in legend or not legend[c].get("id"): raise ValueError(f"drawing uses {c!r} at layer {dy} row {dz} column {dx}, which its legend does not define")
-                out.append({"pos": [dx, dy, dz], **{k: v for k, v in legend[c].items() if k in ("id", "meta", "item")}})
+                out.append({"pos": [dx, dy, dz], **{k: v for k, v in legend[c].items() if k in ("id", "meta", "item")},
+                            **({"stage": stage[c]} if stage.get(c) else {})})
     if not out: raise ValueError("the drawing has no blocks: every character is '.', ' ' or '+'")
+    return out
+
+
+def _stages(stages: Any, legend: dict) -> dict:
+    """{char: stage} from a drawing's stages, an ordered list of strings of legend characters. A character no stage
+    names is in the first. The order is the drawing's own: nothing here knows what any block is."""
+    if stages is None: return {}
+    if not isinstance(stages, list) or not stages or not all(isinstance(s, str) and s for s in stages):
+        raise ValueError('drawing stages is a list of strings of legend characters, first stage first, like ["#", "MC", "p"]')
+    out: dict = {}
+    for n, chars in enumerate(stages):
+        for c in chars:
+            if c not in legend: raise ValueError(f"drawing stages names {c!r}, which its legend does not define")
+            if c in out: raise ValueError(f"drawing stages names {c!r} twice: a character is in one stage")
+            out[c] = n
     return out
 
 

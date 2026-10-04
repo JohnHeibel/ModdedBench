@@ -534,6 +534,37 @@ def mb_build_preview(cells: list[dict] | None = None, selection: dict | None = N
     prove reachability or mutate the world.
     Builder mode defaults to settings.restricted=true, confining edits to plan cells;
     explicit false permits outside access excavation/scaffolding with terrain permissions.
+
+    Build order. Every cell that must hold a block has a step: its stage, then its height. The
+    builder is shown only the cells of steps up to the current one and moves on when they all
+    match. With no stages named every cell is stage 0, so a plan goes up one layer at a time from
+    the bottom. Nothing, neither a plan block nor a scaffold, is placed in a cell whose step has
+    not come; cells that must be empty are not delayed. `steps` in the result lists the steps in
+    order as {stage, y, cells}.
+    Stages put one part of a plan after another. A drawing may carry stages: an ordered list of
+    strings of legend characters, first stage first (a character no stage names is in the first).
+    A cell may carry stage: n (0 is first). A selection is one stage. Inside a stage the order is
+    still bottom-up. Stage what must stand before something else is placed against or between
+    it; the builder only places blocks, so whether a piece joined its neighbours, and anything
+    set with a tool or in a GUI, is yours to check and do afterwards.
+    settings.buildInSteps=false is the old order (whatever is nearest; stages are then refused).
+    settings.clickInterval is the ticks from one click to the next: 5 unless set, down to 1.
+
+    Example, no stages: a closed room 5 x 5 and 4 high.
+      {"origin": [100, 64, 200], "legend": {"#": {"id": "minecraft:cobblestone"}},
+       "layers": [["#####", "#####", "#####", "#####", "#####"],
+                  ["#####", "#...#", "#...#", "#...#", "#####"],
+                  ["#####", "#...#", "#...#", "#...#", "#####"],
+                  ["#####", "#####", "#####", "#####", "#####"]]}
+      steps: y64 floor (25 cells), y65 wall row (16), y66 wall row (16), y67 roof (25).
+      Drawn like this it has no way in: put '.' where the door goes.
+    Example, stages: a base, two blocks standing on it and a line of blocks joining them.
+      {"origin": [100, 64, 200], "stages": ["#", "AB", "j"],
+       "legend": {"#": {"id": "minecraft:stonebrick"}, "A": {"id": "mod:machine"},
+                  "B": {"id": "mod:container"}, "j": {"id": "mod:pipe"}},
+       "layers": [["#####"], ["AjjjB"]]}
+      steps: stage 0 y64 base (5), stage 1 y65 the two ends (2), stage 2 y65 the line (3).
+      The line is placed last, so both ends stand when its pieces go in.
     """
     if drawing is not None:
         if cells is not None or selection is not None: raise ValueError("provide exactly one of cells, selection or drawing")
@@ -575,6 +606,12 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
     cell it cannot leave). Holding a break on one block that long counts as stalled too.
     A plan cell that already matches is never dug through to get somewhere, replace_existing or not;
     where finished work is the only way to the rest, the job ends stalled as above.
+    Build order, stages and the two examples: mb_build_preview. The receipt's `step` says where
+    the order stands: {stage, y, index, of, left, first}, the index-th of `of` steps, `left` cells
+    of it (and of earlier steps) still wrong, `first` one of them. A step that cannot be finished
+    ends the job as any stall does, with that step in the receipt: nothing of a later step was
+    begun, and the job does not skip ahead. A resumed or repeated job reads its step from the
+    world, so what is already built is not built again.
     noVantage (present when not empty, first 64): unfinished cells that, when last looked at, had no
     standing spot in the world as it is from which a face to place them against is in view.
     pathSearch (present when the job's last path search found no way): no_route_to_goal means every

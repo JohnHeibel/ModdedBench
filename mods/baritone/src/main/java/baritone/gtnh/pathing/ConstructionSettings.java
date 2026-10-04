@@ -10,15 +10,18 @@ import static baritone.gtnh.pathing.WorkSpec.*;
 /** Frozen per-build settings; equivalent to BuilderProcess's construction settings. */
 public final class ConstructionSettings {
     public final Map<String,Object> values;
-    private static final Set<String> FLAGS=Set.of("buildInLayers","layerOrder","skipFailedLayers","buildRepeatSneaky","mapArtMode","buildIgnoreExisting","okIfWater","schematicOrientationX","schematicOrientationY","schematicOrientationZ","breakFromAbove","goalBreakFromAbove","distanceTrim","allowInventory","restricted","repairPlaced");
+    private static final Set<String> FLAGS=Set.of("buildInLayers","layerOrder","skipFailedLayers","buildRepeatSneaky","mapArtMode","buildIgnoreExisting","okIfWater","schematicOrientationX","schematicOrientationY","schematicOrientationZ","breakFromAbove","goalBreakFromAbove","distanceTrim","allowInventory","restricted","repairPlaced","buildInSteps");
     public ConstructionSettings(Map<String,Object> input) {
-        Set<String> allowed=new HashSet<>(FLAGS);allowed.addAll(Set.of("layerHeight","startAtLayer","buildRepeatCount","incorrectSize","builderTickScanRadius","buildRepeat","breakCorrectBlockPenaltyMultiplier","buildIgnoreBlocks","buildSkipBlocks","okIfAir","buildValidSubstitutes","buildSubstitutes","metadataMasks","acceptableThrowawayItems"));
+        Set<String> allowed=new HashSet<>(FLAGS);allowed.addAll(Set.of("layerHeight","startAtLayer","buildRepeatCount","incorrectSize","builderTickScanRadius","buildRepeat","breakCorrectBlockPenaltyMultiplier","buildIgnoreBlocks","buildSkipBlocks","okIfAir","buildValidSubstitutes","buildSubstitutes","metadataMasks","acceptableThrowawayItems","clickInterval"));
         fields(input,allowed);
         for(String key:FLAGS)WorkSpec.bool(input,key,false);
         WorkSpec.integer(input,"layerHeight",1,1,256);WorkSpec.integer(input,"startAtLayer",0,0,255);
         int count=WorkSpec.integer(input,"buildRepeatCount",1,-1,100000);if(count==0)throw new IllegalArgumentException("buildRepeatCount must be -1 or positive");
         WorkSpec.integer(input,"incorrectSize",100,1,16384);WorkSpec.integer(input,"builderTickScanRadius",5,1,32);
         WorkSpec.number(input,"breakCorrectBlockPenaltyMultiplier",10,1,1e6);
+        // Ticks from one right click to the next: 5 is the engine's own pace, 1 is a click every tick.
+        WorkSpec.integer(input,"clickInterval",5,1,20);
+        if(WorkSpec.bool(input,"buildInSteps",false)&&WorkSpec.bool(input,"buildInLayers",false))throw new IllegalArgumentException("buildInSteps and buildInLayers are two build orders: choose one");
         if(input.containsKey("buildRepeat"))pos(input.get("buildRepeat"));
         for(String key:List.of("buildIgnoreBlocks","buildSkipBlocks","okIfAir"))if(input.containsKey(key))idList(input.get(key));
         if(input.containsKey("buildValidSubstitutes"))for(var e:object(input.get("buildValidSubstitutes")).entrySet()){id(e.getKey());idList(e.getValue());}
@@ -35,6 +38,8 @@ public final class ConstructionSettings {
     static String id(String value){if(!value.matches("[^\\s:]+:[^\\s:]+"))throw new IllegalArgumentException("namespaced block ID required: "+value);return value;}
     static List<String> idList(Object value){List<String> result=new ArrayList<>();for(Object row:list(value)){if(!(row instanceof String s))throw new IllegalArgumentException("block ID string required");result.add(id(s));}return List.copyOf(result);}
     public boolean bool(String key,boolean fallback){return WorkSpec.bool(values,key,fallback);}
+    /** The stepped order (BuildSteps) is the default. Asking for the source builder's own layers is asking for the other order. */
+    public boolean steps(){return bool("buildInSteps",!bool("buildInLayers",false));}
     public int integer(String key,int fallback){return ((Number)values.getOrDefault(key,fallback)).intValue();}
     public double number(String key,double fallback){return ((Number)values.getOrDefault(key,fallback)).doubleValue();}
     public List<String> ids(String key){return values.containsKey(key)?idList(values.get(key)):List.of();}

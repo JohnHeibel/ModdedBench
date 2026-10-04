@@ -593,6 +593,24 @@ class GTNHProfileTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             plan.from_drawing({**drawing, "layers": [{"y": 65, "rows": ["s"]}] * 2})
 
+    def test_drawing_stages_give_each_block_the_stage_of_its_character(self):
+        import mbtools_gtnh.work as work
+        import mbtools_gtnh.plan as plan
+        fake = self.use(FakeKernel(lambda method, params: {}))
+        drawing = {"origin": [100, 64, 200], "stages": ["#", "MC", "p"], "layers": [["#####"], ["MpppC"]],
+                   "legend": {"#": {"id": "pack:base"}, "M": {"id": "pack:machine"}, "C": {"id": "pack:chest"}, "p": {"id": "pack:pipe"}}}
+        work.mb_build(drawing=drawing)
+        cells = fake.last("nav.build")[1]["cells"]
+        self.assertEqual([c.get("stage", 0) for c in cells], [0] * 5 + [1, 2, 2, 2, 1])
+        self.assertNotIn("stage", cells[0])  # the first stage is the default: a drawing without stages sends the same cells as before
+        # A character no stage names is built in the first, with whatever else is there.
+        loose = plan.from_drawing({**drawing, "stages": ["p"]})[0]
+        self.assertEqual({c["id"]: c.get("stage", 0) for c in loose}, {"pack:base": 0, "pack:machine": 0, "pack:chest": 0, "pack:pipe": 0})
+        late = plan.from_drawing({**drawing, "stages": ["#", "p"]})[0]
+        self.assertEqual({c["id"]: c.get("stage", 0) for c in late}, {"pack:base": 0, "pack:machine": 0, "pack:chest": 0, "pack:pipe": 1})
+        for bad in (["#", "x"], ["#p", "p"], "#p", [], ["#", ""], ["#", 1]):
+            with self.assertRaises(ValueError): plan.from_drawing({**drawing, "stages": bad})
+
     def test_schematic_import_and_build_use_java_plan_and_explicit_overrides(self):
         tools = module_with(self.loaded(), "mb_schematic_build")
         plan = {"plan":{"cells":[{"pos":[0,0,0],"id":"a:b"}],"origin":[0,0,0],"size":[1,1,1]},

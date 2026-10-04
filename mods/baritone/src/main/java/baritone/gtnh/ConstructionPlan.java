@@ -31,6 +31,8 @@ final class ConstructionPlan {
     final Map<String,Object> attempts;
     final List<Map<String,Object>> throwaways;
     List<Cell> cells;
+    /** The build order of `cells`, index for index. */
+    BuildSteps steps;
     int layer,repeat,minY,maxY;
 
     /** progress is the journal's map for a job, or a scratch map for a preview. */
@@ -71,11 +73,11 @@ final class ConstructionPlan {
         }
         if(!frozen)progress.put(selectionKey,List.copyOf(selected));
         if(settings.bool("mapArtMode",false))schematic.entrySet().removeIf(e->e.getKey().getY()<tops.getOrDefault(e.getKey().getX()+","+e.getKey().getZ(),Integer.MAX_VALUE));
-        cells=List.copyOf(schematic.values());
+        cells=List.copyOf(schematic.values());steps=new BuildSteps(cells,settings.steps());
         minY=source.stream().mapToInt(c->c.pos().getY()).min().orElse(origin.getY())+(int)dy;
         maxY=params.containsKey("size")?origin.getY()+(int)dy+size[1]-1:source.stream().mapToInt(c->c.pos().getY()).max().orElse(minY)+(int)dy;
     }
-    static Cell at(Cell c,BlockPos p){return new Cell(p,c.id(),c.meta(),c.clear(),c.item(),c.placement(),c.replace(),c.verify());}
+    static Cell at(Cell c,BlockPos p){return new Cell(p,c.id(),c.meta(),c.clear(),c.item(),c.placement(),c.replace(),c.verify(),c.stage());}
     int slot(Cell cell) {
         if(cell.clear())return -1;
         int slot=inventorySlot(cell);return slot>=9&&!settings.bool("allowInventory",true)?-1:slot;
@@ -86,7 +88,7 @@ final class ConstructionPlan {
         for(Object row:list(alternatives)) {
             Map<String,Object> state=row instanceof String s?Map.of("id",s):object(row);String id=string(state,"id","");
             Block block=Registry.block(id);
-            Cell c=new Cell(requested.pos(),id,integer(state,"meta",requested.meta(),0,15),block==net.minecraft.init.Blocks.air,state.containsKey("item")?child(state,"item"):Map.of(),state.containsKey("placement")?child(state,"placement"):requested.placement(),requested.replace(),state.containsKey("verify")?child(state,"verify"):requested.verify());
+            Cell c=new Cell(requested.pos(),id,integer(state,"meta",requested.meta(),0,15),block==net.minecraft.init.Blocks.air,state.containsKey("item")?child(state,"item"):Map.of(),state.containsKey("placement")?child(state,"placement"):requested.placement(),requested.replace(),state.containsKey("verify")?child(state,"verify"):requested.verify(),requested.stage());
             choices.add(c);
             if(loaded(c.pos())&&!world.isAirBlock(c.pos().getX(),c.pos().getY(),c.pos().getZ())&&matches(c))return c;
         }
@@ -160,8 +162,13 @@ final class ConstructionPlan {
     static String key(Cell c){return c.pos().getX()+","+c.pos().getY()+","+c.pos().getZ();}
     /** Fresh diff of the selected cells: blueprint compares every cell, builder only what its schematic predicate rejects. */
     Map<String,Object> preview(boolean override) {
-        if(strict)return inspect(cells,replace(),override,this::correct);
+        if(strict)return stepped(inspect(cells,replace(),override,this::correct));
         var pending=cells.stream().filter(c->!correct(c)).map(this::desired).toList();var out=inspect(pending,true,override);
-        out.put("mode","builder");out.put("selected",cells.size());out.put("acceptedBySchematic",cells.size()-pending.size());out.put("settings",settings.values);return out;
+        out.put("mode","builder");out.put("selected",cells.size());out.put("acceptedBySchematic",cells.size()-pending.size());out.put("settings",settings.values);return stepped(out);
+    }
+    /** The order the job would build in: every step with its cell count, the first 256 of them. */
+    private Map<String,Object> stepped(Map<String,Object> out) {
+        var all=steps.list();if(all.isEmpty())return out;
+        out.put("steps",all.subList(0,Math.min(256,all.size())));if(all.size()>256)out.put("stepsTruncated",all.size());return out;
     }
 }

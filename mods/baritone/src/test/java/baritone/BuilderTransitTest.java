@@ -52,7 +52,7 @@ public class BuilderTransitTest {
     @Before public void reset(){Baritone.settings().allSettings.forEach(s->s.reset());}
     // Not a constant: the block registry is filled by bootstrap(), after this class initialises.
     private static Block cobble(){return net.minecraft.init.Blocks.cobblestone;}
-    private static final class Terrain implements IBlockAccess {
+    static final class Terrain implements IBlockAccess {
         final Map<BlockPos,Block> cells=new HashMap<>();
         int ground=74;
         public Block getBlock(int x,int y,int z){var b=cells.get(new BlockPos(x,y,z));return b!=null?b:y<=ground?Blocks.STONE:Blocks.AIR;}
@@ -85,9 +85,16 @@ public class BuilderTransitTest {
     }
     /** The builder's cost context as the wrapper configures it: free plan placements, and `mayBreak` as the break rule. */
     private static CalculationContext builderContext(Terrain terrain,Set<BlockPos> plan,Predicate<BlockPos> mayBreak) throws Exception {
+        return builderContext(terrain,256,75,-286,28,plan::contains,mayBreak,p->true);
+    }
+    /**
+     * The same for any plan: `shown` is what the source builder's schematic holds, `mayPlace` the wrapper's mayPlace and
+     * movementMayPlace together. The world is loaded `reach` blocks around the origin and nowhere else.
+     */
+    static CalculationContext builderContext(Terrain terrain,int ox,int oy,int oz,int reach,Predicate<BlockPos> shown,Predicate<BlockPos> mayBreak,Predicate<BlockPos> mayPlace) throws Exception {
         Baritone.settings().allowPlace.value=true;
         ItemStack[] hotbar=new ItemStack[9];hotbar[0]=new ItemStack(net.minecraft.init.Items.iron_pickaxe);
-        var base=new CalculationContext(PLANNING_ONLY,true,new CalculationInputs(null,new BlockStateInterface(terrain,(x,z)->x>=240&&x<=296&&z>=-302&&z<=-246),
+        var base=new CalculationContext(PLANNING_ONLY,true,new CalculationInputs(null,new BlockStateInterface(terrain,(x,z)->x>=ox+12-reach&&x<=ox+12+reach&&z>=oz+12-reach&&z<=oz+12+reach),
             new ToolSet(hotbar,0,1,ReferencePathingTest.VANILLA),true,false,true,0,0,new WorldMemory.Snapshot(0,Map.of(),Map.of(),Map.of()),false,p->true));
         var context=allocate(BuilderProcess.BuilderCalculationContext.class);
         for(Field f:CalculationContext.class.getDeclaredFields()){
@@ -97,15 +104,15 @@ public class BuilderTransitTest {
         context.jumpPenalty+=10;context.backtrackCostFavoringCoefficient=1;
         ISchematic schematic=new ISchematic(){
             public int widthX(){return 25;}public int heightY(){return 7;}public int lengthZ(){return 25;}
-            public boolean inSchematic(int x,int y,int z,IBlockState current){return plan.contains(new BlockPos(x+256,y+75,z-286));}
-            public IBlockState desiredState(int x,int y,int z,IBlockState current,List<IBlockState> materials){return new IBlockState(cobble(),0,null,x+256,y+75,z-286);}
+            public boolean inSchematic(int x,int y,int z,IBlockState current){return shown.test(new BlockPos(x+ox,y+oy,z+oz));}
+            public IBlockState desiredState(int x,int y,int z,IBlockState current,List<IBlockState> materials){return new IBlockState(cobble(),0,null,x+ox,y+oy,z+oz);}
         };
         BuilderProcess.StateValidator validator=(current,wanted,item)->true;
-        Predicate<BlockPos> place=p->true;Predicate<IBlockState> deferred=s->false;
+        Predicate<IBlockState> deferred=s->false;
         Map<String,Object> fields=new HashMap<>();
         fields.put("this$0",allocate(BuilderProcess.class));fields.put("placeable",List.of(new IBlockState(cobble(),0,null,0,0,0)));fields.put("schematic",schematic);
-        fields.put("originX",256);fields.put("originY",75);fields.put("originZ",-286);fields.put("validatorSnapshot",validator);
-        fields.put("inventorySnapshot",List.of());fields.put("breakAllowed",mayBreak);fields.put("placementAllowed",place);fields.put("deferredSnapshot",deferred);
+        fields.put("originX",ox);fields.put("originY",oy);fields.put("originZ",oz);fields.put("validatorSnapshot",validator);
+        fields.put("inventorySnapshot",List.of());fields.put("breakAllowed",mayBreak);fields.put("placementAllowed",mayPlace);fields.put("deferredSnapshot",deferred);
         for(var e:fields.entrySet()){
             Field f=BuilderProcess.BuilderCalculationContext.class.getDeclaredField(e.getKey());f.setAccessible(true);f.set(context,e.getValue());
         }
