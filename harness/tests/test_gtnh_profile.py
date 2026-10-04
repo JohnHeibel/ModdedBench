@@ -28,7 +28,7 @@ TOOLS = {
     "mb_interrupt", "mb_interrupt_events", "mb_wait", "mb_wiki_search", "mb_wiki_read", "mb_goal", "mb_move_items", "mb_hold", "mb_craft", "mb_run",
     "mb_act", "mb_call", "mb_cost", "mb_gui", "mb_keys", "mb_map", "mb_methods", "mb_obs", "mb_screenshot", "mb_status", "mb_stop", "mb_time",
     "mb_recipe_status", "mb_item_search", "mb_item_info", "mb_recipes", "mb_fluid_search", "mb_recipe_handlers", "mb_recipe_view", "mb_recipe_inspect",
-    "mb_memory", "mb_route", "mb_inventory", "mb_find", "mb_transfer", "mb_click_slot", "mb_notes", "mb_note_write",
+    "mb_memory", "mb_route", "mb_inventory", "mb_find", "mb_transfer", "mb_click_slot", "mb_notes", "mb_note_write", "mb_note_append",
     "mb_follow", "mb_fight", "mb_view", "mb_process", "mb_settings", "mb_cache",
     "mb_mine", "mb_build_preview", "mb_build", "mb_copy",
     "mb_schematic_import", "mb_schematic_build", "mb_scan", "mb_work_status",
@@ -163,14 +163,14 @@ class GTNHProfileTests(unittest.TestCase):
         lanes = {n: tm.tools[n]["lane"] for tm in srv.modules.values() for n in tm.tools}
         self.assertEqual({lanes[n] for n in ("mb_obs", "mb_inventory", "mb_notes", "mb_item_search", "mb_status", "mb_build_preview")}, {"read"})
         self.assertEqual({lanes[n] for n in ("mb_stop", "mb_build_pause", "mb_interrupt")}, {"control"})
-        self.assertEqual({lanes[n] for n in ("mb_build", "mb_mine", "mb_route", "mb_transfer", "mb_note_write")}, {"act"})
+        self.assertEqual({lanes[n] for n in ("mb_build", "mb_mine", "mb_route", "mb_transfer", "mb_note_write", "mb_note_append")}, {"act"})
         self.assertTrue(all(callable(lanes[n]) for n in ("mb_call", "mb_time", "mb_gui", "mb_copy", "mb_settings")))
         registered = srv._tool_manager._tools["mb_obs"]
         self.assertEqual(registered.meta["moddedbench"]["lane"], "read")
         self.assertTrue(registered.annotations.readOnlyHint)
         self.assertFalse(srv._tool_manager._tools["mb_build"].annotations.readOnlyHint)
         status = srv._tool_manager._tools["mb_tools_status"].fn()
-        self.assertEqual(sum(len(m["tools"]) for m in status["modules"]), 64)
+        self.assertEqual(sum(len(m["tools"]) for m in status["modules"]), 65)
         json.dumps(status)
 
     def test_worker_picks_pool_from_lane_metadata(self):

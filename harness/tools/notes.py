@@ -11,17 +11,24 @@ observing a block/entity, entering a region, session start), most relevant first
 note already shown in the last SHOWN_TTL_S seconds unless the player has moved MOVE_RESET blocks.
 ``tracked()`` wraps ``kernel().call`` for the methods that mark such transitions and attaches the
 notes under a ``"notes"`` key only when non-empty. Terminal work outcomes are journaled as ``auto``
-notes keyed by location (a repeat at the same place updates instead of duplicating).
+notes keyed by location (a repeat at the same place updates instead of duplicating); ``auto`` notes
+never surface and are left out of a search unless it asks for them.
+
+Search is grep: one literal piece of text or a regular expression, matched line by line. Nothing is
+scored or ranked; results come newest-changed first (history sequence), a page at a time. The only
+durable clock is the wall clock written on each revision (createdAt/updatedAt, UTC): memory.context
+carries no game time and the simulation tick counter restarts with the server.
 """
 from __future__ import annotations
 
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import math
 import os
 from pathlib import Path
+import re
 import sqlite3
 import sys
 import time
@@ -35,6 +42,9 @@ SUBJECT_KINDS = ("item", "topic")
 SHOWN_TTL_S = 600.0      # a note shown less than this ago is not repeated...
 MOVE_RESET = 48.0        # ...unless the player has moved this far since it was shown
 GATE_S, GATE_BLOCKS = 3.0, 4.0  # skip the store entirely when polled again from the same spot
+SEARCH_CHARS = 6000      # characters of "notes" one mb_notes search returns (max_chars) unless it asks for another size
+HITS, LINE = 5, 160      # per note in a search: matching lines shown, and characters of each line
+UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
 DEFAULT_DIR = Path(__file__).resolve().parents[2] / ".state" / "notes"
 WORK = {"nav.goto": "goto", "nav.route": "route", "nav.process": "process", "nav.follow": "follow", "nav.fight": "fight",
         "nav.mine": "mine", "nav.build": "build", "nav.resume": "resume"}
@@ -55,6 +65,37 @@ def _text(value, name, maximum, empty=False):
     if not isinstance(value, str) or len(value) > maximum or (not empty and not value.strip()) or "\x00" in value:
         raise ValueError(f"{name} must be {'0' if empty else '1'}..{maximum} characters without NUL")
     return value
+
+
+def _now():
+    return datetime.now(timezone.utc)
+
+
+def _age(then, now):
+    """How long ago in real time, coarsely: 40m, 5h, 3d."""
+    s = max(0, int((now - then).total_seconds()))
+    return f"{s // 60}m" if s < 7200 else f"{s // 3600}h" if s < 172800 else f"{s // 86400}d"
+
+
+def _when(value, name, now):
+    """A time filter: an age ("90m", "5h", "3d": that long before now) or a UTC time ("2026-10-04T12:00")."""
+    try:
+        if isinstance(value, str) and value[-1:] in UNITS and value[:-1].isdigit():
+            return now - timedelta(seconds=int(value[:-1]) * UNITS[value[-1]])
+        at = datetime.fromisoformat(value)
+        return at if at.tzinfo else at.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f'{name} must be an age like "90m", "5h", "3d" or a UTC time like "2026-10-04T12:00"') from None
+
+
+def _grep(lines, hits, pattern, context):
+    """The matching lines and their neighbours as grep -n -C prints them ("12:" a match, "13-" context); a long line is cut around its match."""
+    out = []
+    for j in sorted({j for i in hits for j in range(max(0, i - context), min(len(lines), i + context + 1))}):
+        m = pattern.search(lines[j])
+        start = max(0, m.start() - LINE // 2) if m else 0
+        out.append(f"{j + 1}{':' if m else '-'}{'...' if start else ''}{lines[j][start:start + LINE]}")
+    return "\n".join(out)
 
 
 def _pos(value):
@@ -158,8 +199,10 @@ class NotesStore:
     def write(self, id, expected_revision, operation_id, patch):
         _text(id, "id", 96)
         _text(operation_id, "operation_id", 128)
-        _int(expected_revision, "expected_revision")
-        if not isinstance(patch, dict) or not patch or set(patch) - {"title", "text", "tags", "status", "attachments", "data"}:
+        entry = expected_revision is None  # append(): one dated entry, on whatever revision is current
+        if not entry:
+            _int(expected_revision, "expected_revision")
+        if not isinstance(patch, dict) or not patch or set(patch) - ({"append"} if entry else {"title", "text", "tags", "status", "attachments", "data"}):
             raise ValueError("patch must contain title, text, tags, status, attachments and/or data")
         request_hash = hashlib.sha256(_json([id, expected_revision, patch]).encode()).hexdigest()
         with closing(self.connect()) as db, db:
@@ -171,11 +214,16 @@ class NotesStore:
                 return {"saved": True, "replayed": True, "sequence": prior[2], "note": json.loads(prior[1])}
             row = db.execute("SELECT revision,snapshot FROM notes WHERE id=?", (id,)).fetchone()
             actual = row[0] if row else 0
-            if actual != expected_revision:
+            if entry and not row:
+                raise ValueError("note not found in this world")
+            if not entry and actual != expected_revision:
                 raise ValueError(f"note revision conflict: expected {expected_revision}, current {actual}; read before editing")
-            now = datetime.now(timezone.utc).isoformat()
+            now = _now().isoformat()
             note = json.loads(row[1]) if row else dict(id=id, worldId=self.world_id, createdAt=now, tags=[], status="open", data={})
-            note.update(patch)
+            if entry:
+                note["text"] = "\n".join(filter(None, [note["text"].rstrip(), f"[{now[:16]}] {_text(patch['append'], 'text', 32768).strip()}"]))
+            else:
+                note.update(patch)
             _text(note.get("title"), "title", 256)
             _text(note.get("text"), "text", 32768, empty=True)
             if not isinstance(note["tags"], list) or len(note["tags"]) > 32:
@@ -196,6 +244,10 @@ class NotesStore:
             seq = db.execute("INSERT INTO history(id,revision,operation,request_hash,snapshot) VALUES (?,?,?,?,?)", (id, actual+1, operation_id, request_hash, serialized)).lastrowid
             return {"saved": True, "replayed": False, "sequence": seq, "note": note}
 
+    def append(self, id, operation_id, text):
+        """Add a dated entry ("[2026-10-04T12:00] text", UTC) as a new last line of an existing note. No revision guard: entries only add."""
+        return self.write(id, None, operation_id, {"append": text})
+
     def history(self, id, before_revision=None, limit=20):
         _int(limit, "limit", 1, 100)
         before = _int(before_revision, "before_revision", 1) if before_revision is not None else 2**63-1
@@ -204,16 +256,29 @@ class NotesStore:
         notes = [json.loads(row[0]) for row in rows[:limit]]
         return {"revisions": notes, "nextBeforeRevision": notes[-1]["revision"] if len(rows) > limit else None}
 
-    def search(self, query="", tags=None, status=None, kind=None, dimension=None, near=None, radius=32, region=None, entity_uuid=None, subject=None, cursor=None, limit=20, detail="summary"):
+    def search(self, query="", tags=None, status=None, kind=None, dimension=None, near=None, radius=32, region=None, entity_uuid=None, subject=None, cursor=None, limit=20, detail="summary",
+               regex=False, case=False, context=1, since=None, before=None, author=None, max_chars=None):
+        """Grep over the notes that pass every filter, newest-changed first. A note matches or it does not: nothing is scored."""
         _int(limit, "limit", 1, 100)
+        _int(context, "context", 0, 5)
+        if max_chars is not None:
+            _int(max_chars, "max_chars", 1000, 20000)
         if detail not in ("summary", "full"):
             raise ValueError("detail must be summary or full")
-        terms = _text(query, "query", 512, empty=True).casefold().split()
+        _text(query, "query", 512, empty=True)
+        regex, case = bool(regex), bool(case)
+        try:
+            pattern = re.compile(query if regex else re.escape(query), 0 if case else re.IGNORECASE) if query else None
+        except re.error as error:
+            raise ValueError(f"query is not a valid regular expression: {error}") from None
         if tags is not None and (not isinstance(tags, list) or len(tags) > 32):
             raise ValueError("tags must be a list of at most 32 strings")
         tags = {_text(t, "tag", 96).strip().casefold() for t in tags or []}
         if status not in (None, "open", "done", "archived", "all") or kind not in (None, "block", "entity", "location", "region", *SUBJECT_KINDS):
             raise ValueError("invalid status or attachment kind")
+        if author not in (None, "me", "auto", "all"):
+            raise ValueError("author must be me, auto or all")
+        author = author or ("all" if "auto" in tags else "me")  # asking for the tag is asking for them
         if dimension is not None:
             _int(dimension, "dimension", -2**31, 2**31-1)
         if near is not None:
@@ -226,12 +291,14 @@ class NotesStore:
             raise ValueError("spatial search requires a dimension")
         if entity_uuid is not None:
             entity_uuid = str(uuid.UUID(entity_uuid))
-        fingerprint = hashlib.sha256(_json([self.world_id, terms, sorted(tags), status, kind, dimension, near, radius, region, entity_uuid, subject]).encode()).hexdigest()
-        after, ceiling = "", None
+        fingerprint = hashlib.sha256(_json([self.world_id, query, regex, case, since, before, author, sorted(tags), status, kind, dimension, near, radius, region, entity_uuid, subject]).encode()).hexdigest()
+        now = _now()
+        since, before = (v if v is None else _when(v, name, now) for name, v in (("since", since), ("before", before)))
+        after, ceiling = 2**63-1, None
         if cursor is not None:
             if not isinstance(cursor, dict) or cursor.get("query") != fingerprint:
                 raise ValueError("cursor belongs to another query/world")
-            after = _text(cursor.get("after"), "cursor.after", 96)
+            after = _int(cursor.get("after"), "cursor.after")
             ceiling = _int(cursor.get("sequence"), "cursor.sequence")
         subjects = None if subject is None else {str(v).strip().casefold() for v in ([subject] if isinstance(subject, str) else subject)}
         def matches(a):
@@ -251,24 +318,36 @@ class NotesStore:
         with closing(self.connect()) as db:
             if ceiling is None:
                 ceiling = db.execute("SELECT coalesce(max(seq),0) FROM history").fetchone()[0]
-            rows = db.execute("SELECT h.snapshot FROM notes n JOIN history h ON h.seq=(SELECT max(seq) FROM history WHERE id=n.id AND seq<=?) WHERE n.id>? ORDER BY n.id", (ceiling, after))
-            found = []
-            for row in rows:
-                note = json.loads(row[0])
+            rows = db.execute("SELECT h.seq,h.snapshot FROM notes n JOIN history h ON h.seq=(SELECT max(seq) FROM history WHERE id=n.id AND seq<=?) WHERE h.seq<? ORDER BY h.seq DESC", (ceiling, after))
+            found, size, more = [], 1, False  # size: characters of the "notes" list as the server serialises it
+            for seq, snapshot in rows:
+                note = json.loads(snapshot)
                 if status not in (None, "all") and note["status"] != status or status is None and note["status"] == "archived":
                     continue
-                haystack = " ".join([note["id"], note["title"], note["text"], *note["tags"]]).casefold()
-                if not tags.issubset(note["tags"]) or not all(term in haystack for term in terms) or not any(matches(a) for a in note["attachments"]):
+                changed = datetime.fromisoformat(note["updatedAt"])
+                if author != "all" and ("auto" in note["tags"]) != (author == "auto") or since and changed < since or before and changed >= before:
                     continue
-                found.append(note)
-                if len(found) > limit:
+                if not tags.issubset(note["tags"]) or not any(matches(a) for a in note["attachments"]):
+                    continue
+                lines = note["text"].split("\n")
+                hits = [i for i, line in enumerate(lines) if pattern.search(line)] if pattern else []
+                if pattern and not hits and not pattern.search(" ".join([note["id"], note["title"], *note["tags"]])):
+                    continue
+                result = dict(note, age=_age(changed, now))
+                if detail == "summary":
+                    result = dict({k: v for k, v in result.items() if k not in {"text", "data"}}, bodyCharacters=len(note["text"]),
+                                  excerpt=_grep(lines, hits[:HITS], pattern, context) if hits else note["text"][:280], **({"matchingLines": len(hits)} if hits else {}))
+                cost = len(_json(result)) + 1
+                if len(found) == limit or max_chars and found and size + cost > max_chars:
+                    more = True
                     break
-        more = len(found) > limit
-        results=found[:limit]
-        if detail=="summary":
-            results=[dict({k:v for k,v in n.items() if k not in {"text","data"}},excerpt=n["text"][:280],bodyCharacters=len(n["text"])) for n in results]
-        return {"worldId": self.world_id, "notes": results, "detail": detail, "sequence": ceiling,
-                "nextCursor": {"after": found[limit-1]["id"], "sequence": ceiling, "query": fingerprint} if more else None,
+                if max_chars and size + cost > max_chars:  # one note larger than the whole page: name it, do not send it
+                    result = dict({k: result[k] for k in ("id", "title", "revision", "updatedAt", "age")}, bodyCharacters=len(note["text"]), omitted="larger than max_chars: get reads it")
+                    cost = len(_json(result)) + 1
+                found.append(result)
+                size, after = size + cost, seq
+        return {"worldId": self.world_id, "notes": found, "detail": detail, "sequence": ceiling, "now": now.isoformat()[:16],
+                "nextCursor": {"after": after, "sequence": ceiling, "query": fingerprint} if more else None,
                 "spatialBasis": "stored attachment coordinates; entity lastSeen is historical"}
 
     def backup(self, output):
@@ -345,7 +424,8 @@ def read_notes(kernel, method, params):
     if method == "status":
         return dict(store.status(), context=context)
     if method == "get":
-        return store.get(**params)
+        note, now = store.get(**params), _now()
+        return dict(note, age=_age(datetime.fromisoformat(note["updatedAt"]), now), now=now.isoformat()[:16])
     if method == "history":
         return store.history(**params)
     if method == "search":
@@ -580,6 +660,12 @@ def tracked(method, timeout=None, **params):
 
 # ---- tools ----
 
+def _receipt(done):
+    """What a write answers with: the receipt, not the note again."""
+    note = done["note"]
+    return {**{k: v for k, v in done.items() if k != "note"}, "id": note["id"], "revision": note["revision"], "size": len(note["text"]), "attachments": note["attachments"]}
+
+
 @tool(lane="read", coverage=["memory"])
 def mb_notes(method: str = "search", params: dict | None = None) -> Any:
     """Durable world notes: context, status, capture, search, get, history, resolve.
@@ -596,19 +682,45 @@ def mb_notes(method: str = "search", params: dict | None = None) -> Any:
     found with search {subject:"machine:boiler"} (subject also takes a list). Returns
     worldId and attachment for mb_note_write. Entity UUIDs must come from the server;
     use obs.entities to discover transient IDs. Captures do not save notes.
-    search: {query,tags:[all-required-tags],status:open|done|archived|all,kind,
-    near:[x,y,z]|player,radius:32,region:{min,max},entity_uuid,subject,dimension,limit:20,cursor,detail:summary|full}.
-    Search returns anchors and short excerpts by default; get reads the full note.
+    search: {query,regex:false,case:false,context:1,since,before,author:me|auto|all,
+    tags:[all-required-tags],status:open|done|archived|all,kind,near:[x,y,z]|player,
+    radius:32,region:{min,max},entity_uuid,subject,dimension,limit:20,max_chars:6000,
+    cursor,detail:summary|full}. Every filter given must hold.
+    query works like grep, not like a search engine: it is one piece of text taken
+    literally, spaces included (a regular expression with regex:true), ignoring case
+    unless case:true, looked for in each line of the text and in the id, title and
+    tags. Words are not split and nothing is ranked: "copper vein" matches only where
+    those two words stand together.
+    since/before select by when a note last changed: an age ("90m", "5h", "3d": that
+    long ago, in real time) or a UTC time ("2026-10-04T12:00").
+    author: notes tagged "auto" are journaled by the harness (work outcomes) and never
+    surface; yours are anything else. me (the default) leaves the auto notes out, auto
+    returns only them, all returns both; tags:["auto"] also returns them.
+    Results come newest-changed first, each with its anchors, its age (since it last
+    changed: 40m, 5h, 3d) and an excerpt: the lines that matched (the first 5;
+    matchingLines counts them all) with context lines around each (0..5), as grep -n
+    prints them ("12:" a matching line, "13-" a neighbour, long lines cut around the
+    match), or the first 280 characters when there is no query or it matched only the
+    id, title or tags. get reads the full note.
+    A page ends at limit notes (at most 100) or when the notes would pass max_chars
+    characters of JSON (1000..20000), whichever comes first; a note that is larger
+    alone is listed with "omitted" in place of its content. Follow nextCursor unchanged
+    with the same filters for the next page; pages retain a consistent snapshot.
     Defaults to current dimension and excludes archived notes; dimension:null searches
-    all dimensions (spatial searches require one). Follow nextCursor unchanged with
-    the same filters; pages retain a consistent snapshot. Entity proximity uses lastSeen.
-    get: {id}; history: {id,before_revision?,limit:20}. resolve: {id} inspects currently
-    loaded attachments without overwriting notes; absence never proves destruction.
+    all dimensions (spatial searches require one). Entity proximity uses lastSeen.
+    Changed 2026-10: results used to come in id order with auto notes among them
+    (they surfaced too), a query was split into words that could match anywhere in a
+    note, and a page had no character limit.
+    get: {id} returns the note with createdAt, updatedAt, age and now (UTC); an entry
+    added with mb_note_append starts with its own time.
+    history: {id,before_revision?,limit:20}. resolve: {id} inspects currently loaded
+    attachments without overwriting notes; absence never proves destruction.
     Block identity checks cannot detect replacement by an identical block.
-    Notes tagged "auto" are journaled by the harness (work outcomes); yours are anything else.
     Notes are annotations, not protection rules or verified facts. Keep useful plans,
     machine quirks, adapter source references and construction reservations here.
     """
+    if method == "search":
+        params = dict(params or {}, max_chars=(params or {}).get("max_chars") or SEARCH_CHARS)
     return read_notes(kernel(), method, params)
 
 
@@ -620,8 +732,9 @@ def mb_note_write(world_id: str, id: str, expected_revision: int,
     Use worldId from mb_notes context/capture. Create with expected_revision:0 and
     patch:{title,text,attachments:[capturedAttachment,...],tags?:[],status?:open,data?:{}}.
     Update with the observed revision and only changed fields. Text/arrays replace
-    those fields; read before appending. data holds model-defined JSON, e.g. adapter
-    source paths. Use a distinct operation_id for each edit; after a timeout retry
+    those fields; mb_note_append adds to the text without resending it. data holds
+    model-defined JSON, e.g. adapter source paths.
+    Use a distinct operation_id for each edit; after a timeout retry
     exactly the same arguments and operation_id. A stale revision fails without edits.
     Archive with patch:{status:archived}; restore with status:open. No destructive delete;
     history preserves prior content, which can be copied into a new guarded revision.
@@ -630,9 +743,23 @@ def mb_note_write(world_id: str, id: str, expected_revision: int,
     Returns the receipt, not the note again: saved, replayed, sequence, id, revision,
     size (characters of text) and the attachments as stored.
     """
-    done = write_note(kernel(), world_id, id, expected_revision, operation_id, patch)
-    note = done.pop("note")
-    return {**done, "id": note["id"], "revision": note["revision"], "size": len(note["text"]), "attachments": note["attachments"]}
+    return _receipt(write_note(kernel(), world_id, id, expected_revision, operation_id, patch))
+
+
+@tool(coverage=["memory"])
+def mb_note_append(id: str, text: str, operation_id: str) -> Any:
+    """Add a dated entry to the end of an existing note without reading or resending its text.
+
+    The entry becomes a new last line of the note's text: "[2026-10-04T12:00] " (when it
+    was written, UTC) and then your text, so a reader of the note sees how old each
+    entry is (mb_notes get and search return now to compare with). It needs no world
+    id and no revision: entries only add, and the note's revision goes up by one.
+    Use a distinct operation_id for each entry; after a timeout retry exactly the same
+    arguments and operation_id, and the entry is not added twice. Fails when the note
+    does not exist in this world (create it with mb_note_write) or its text would pass
+    32,768 characters. Returns the same receipt as mb_note_write.
+    """
+    return _receipt(store_for(kernel().call("memory.context")["worldId"]).append(id, operation_id, text))
 
 
 # ---- goal stack ----

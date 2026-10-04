@@ -3,6 +3,7 @@
 """Storage failures, concurrent edits and long-horizon retrieval contracts."""
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sqlite3
@@ -19,6 +20,15 @@ import mbtool  # noqa: E402,F401
 from mbtools_gtnh.notes import NotesStore, attachment, read_notes, write_note
 from mbtools_gtnh import notes
 from kernel import BridgeError
+
+
+def clock(hour, minute=0, day=4):
+    """Pin the notes' wall clock (UTC) for a block of writes or reads."""
+    return patch.object(notes, "_now", lambda: datetime(2026, 10, day, hour, minute, tzinfo=timezone.utc))
+
+
+def ids(found):
+    return [n["id"] for n in found["notes"]]
 
 
 class WorldNotesTests(unittest.TestCase):
@@ -122,16 +132,19 @@ class WorldNotesTests(unittest.TestCase):
         for name in ["a","b","c"]:
             self.save(name)
         first=self.store.search(limit=1)
+        self.assertEqual(first["notes"][0]["id"],"c")  # newest-changed first
         self.store.write("b",1,"done-b",{"status":"archived"})
         self.save("aa")
         second=self.store.search(limit=1,cursor=first["nextCursor"])
         self.assertEqual(second["notes"][0]["id"],"b")
         self.assertEqual(second["notes"][0]["revision"],1)
         third=self.store.search(limit=1,cursor=second["nextCursor"])
-        self.assertEqual(third["notes"][0]["id"],"c")
+        self.assertEqual(third["notes"][0]["id"],"a")
         self.assertIsNone(third["nextCursor"])
-        with self.assertRaisesRegex(ValueError,"another query"):
-            self.store.search(query="changed",cursor=first["nextCursor"])
+        self.assertEqual([n["id"] for n in self.store.search()["notes"]],["aa","c","a"])  # a new search sees the edits
+        for changed in (dict(query="changed"),dict(since="1h"),dict(author="all"),dict(regex=True)):
+            with self.assertRaisesRegex(ValueError,"another query"):
+                self.store.search(cursor=first["nextCursor"],**changed)
 
     def test_search_bounds_text_without_losing_full_note_or_anchors(self):
         self.save(text="machine routine "*1000,data={"source":"my_adapter.py"})
@@ -139,7 +152,9 @@ class WorldNotesTests(unittest.TestCase):
         self.assertEqual(len(summary["excerpt"]),280)
         self.assertNotIn("text",summary)
         self.assertEqual(summary["attachments"][0]["pos"],[10,64,20])
-        self.assertEqual(self.store.search(detail="full")["notes"][0],self.store.get("terminal"))
+        full=self.store.search(detail="full")["notes"][0]
+        self.assertEqual(full.pop("age"),"0m")
+        self.assertEqual(full,self.store.get("terminal"))
 
     def test_backup_copies_committed_wal_and_history(self):
         self.save()
@@ -170,6 +185,98 @@ class WorldNotesTests(unittest.TestCase):
             self.assertEqual(read_notes(game,"get",dict(id="anchor"))["revision"],1)
             with self.assertRaisesRegex(ValueError,"world changed"):
                 write_note(game,str(uuid.uuid4()),"anchor",1,"wrongworld",{"text":"wrong"})
+
+    def test_search_is_grep_literal_by_default_regex_on_request_and_returns_matching_lines(self):
+        body = ["head", "Tin: 12 in chest A.B", "copper 40", "x" * 300 + " TIN dust " + "y" * 300, "tail", "end"]
+        self.save("log", title="Bronze line", text="\n".join(body))
+        self.save("other", title="Steam", text="nothing here")
+        find = lambda **q: ids(self.store.search(**q))
+        self.assertEqual(find(query="tin"), ["log"])                           # a substring, whatever its case
+        self.assertEqual(find(query="tin", case=True), [])
+        self.assertEqual(find(query="TIN dust", case=True), ["log"])
+        self.assertEqual(find(query="copper tin"), [])                         # one literal piece of text: words are not split
+        self.assertEqual(find(query="t.n"), []); self.assertEqual(find(query="a.b"), ["log"])   # a dot is a dot
+        self.assertEqual(find(query="t.n", regex=True), ["log"])
+        self.assertEqual(find(query=r"^copper \d+$", regex=True), ["log"])     # a regular expression is tried on each line
+        self.assertEqual(find(query="("), [])
+        with self.assertRaisesRegex(ValueError, "not a valid regular expression"): self.store.search(query="(", regex=True)
+        hit = self.store.search(query="tin")["notes"][0]
+        lines = hit["excerpt"].split("\n")
+        self.assertEqual((hit["matchingLines"], lines[:3], lines[4:]), (2, ["1-head", "2:Tin: 12 in chest A.B", "3-copper 40"], ["5-tail"]))
+        self.assertTrue(lines[3].startswith("4:...x") and " TIN dust " in lines[3] and len(lines[3]) < 170, lines[3])  # a long line is cut around the match
+        self.assertNotIn("text", hit); self.assertEqual(hit["attachments"][0]["pos"], [10, 64, 20])
+        self.assertEqual(len(self.store.search(query="tin", context=0)["notes"][0]["excerpt"].split("\n")), 2)
+        self.assertEqual(len(self.store.search(query="tin", context=5)["notes"][0]["excerpt"].split("\n")), 6)
+        with self.assertRaises(ValueError): self.store.search(query="tin", context=6)
+        for where in ("bronze", "LOG", "ae2"):                                 # found in the title, id or a tag: the note, with the start of its text
+            named = self.store.search(query=where, subject=None)["notes"]
+            self.assertEqual((named[-1]["id"], named[-1]["excerpt"], "matchingLines" in named[-1]), ("log", "\n".join(body)[:280], False))
+        self.save("many", text="\n".join(f"ore {i}" for i in range(9)))
+        many = self.store.search(query="ore", context=0)["notes"][0]
+        self.assertEqual((many["matchingLines"], many["excerpt"].split("\n")), (9, [f"{i + 1}:ore {i}" for i in range(5)]))
+
+    def test_search_is_newest_changed_first_and_filters_by_time_with_ages(self):
+        with clock(8): self.save("old")
+        with clock(10): self.save("mid", tags=["plan"])
+        with clock(11, 30): self.save("new")
+        with clock(11, 50): self.store.write("old", 1, "touch-old", {"status": "done"})
+        find = lambda **q: ids(self.store.search(status="all", **q))
+        with clock(12):
+            found = self.store.search(status="all")
+            self.assertEqual([(n["id"], n["age"]) for n in found["notes"]], [("old", "10m"), ("new", "30m"), ("mid", "2h")])
+            self.assertEqual(found["now"], "2026-10-04T12:00")
+            self.assertEqual(find(since="45m"), ["old", "new"])
+            self.assertEqual(find(before="45m"), ["mid"])                      # by its last change, not its first
+            self.assertEqual(find(since="2026-10-04T09:00", before="2026-10-04T11:00"), ["mid"])
+            self.assertEqual(find(since="2026-10-04T11:40:00+00:00"), ["old"])
+            self.assertEqual(find(since="1d", tags=["plan"], query="terminal", dimension=0, near=[10, 64, 20], radius=1), ["mid"])  # every filter must hold
+            self.assertEqual(find(since="1h", tags=["plan"]), [])
+            self.assertEqual(ids(self.store.search(before="1h", query="terminal", kind="block", status="open")), ["mid"])
+            for bad in ("yesterday", "5 h", 5, "", {"hours": 5}, ["5h"]):
+                with self.assertRaisesRegex(ValueError, "since must be an age"): self.store.search(since=bad)
+            with self.assertRaisesRegex(ValueError, "before must be an age"): self.store.search(before="h")
+        with clock(15): self.assertEqual([n["age"] for n in self.store.search(status="all")["notes"]], ["3h", "3h", "5h"])
+        with clock(12, day=7): self.assertEqual([n["age"] for n in self.store.search(status="all")["notes"]], ["3d", "3d", "3d"])
+
+    def test_a_page_is_capped_in_characters_and_the_cursor_continues(self):
+        for i in range(12): self.save(f"n{i:02}", text=f"line {i} " + "pad " * 100)
+        size = lambda page: len(json.dumps(page["notes"], separators=(",", ":"), ensure_ascii=False))  # as the MCP server serialises it
+        seen, cursor, pages = [], None, 0
+        while not pages or cursor:
+            page = self.store.search(max_chars=1500, cursor=cursor); pages += 1
+            self.assertLessEqual(size(page), 1500); self.assertTrue(page["notes"])
+            seen += ids(page); cursor = page["nextCursor"]
+        self.assertEqual(seen, [f"n{i:02}" for i in reversed(range(12))]); self.assertGreater(pages, 3)
+        self.assertEqual(len(self.store.search(limit=100)["notes"]), 12)       # the store's own callers (surfacing, mb_view) are not capped
+        self.save("huge", text="x" * 30000)
+        big = self.store.search(detail="full", max_chars=1000)
+        self.assertEqual((ids(big), big["notes"][0]["bodyCharacters"], "text" in big["notes"][0]), (["huge", "n11"], 30000, False))  # named, not sent
+        self.assertIn("get reads it", big["notes"][0]["omitted"]); self.assertLessEqual(size(big), 1000)
+        self.assertEqual(ids(self.store.search(detail="full", max_chars=1000, cursor=big["nextCursor"])), ["n10"])
+        for bad in (999, 20001, "many", True):
+            with self.assertRaises(ValueError): self.store.search(max_chars=bad)
+
+    def test_append_adds_a_dated_entry_without_the_text_and_is_retry_safe(self):
+        with clock(9): self.save("stock", text="Main chest wall.")
+        with clock(12, 5): done = self.store.append("stock", "op-a", " 40 copper ingots in chest 3 \n")
+        self.assertEqual((done["note"]["revision"], done["note"]["text"]), (2, "Main chest wall.\n[2026-10-04T12:05] 40 copper ingots in chest 3"))
+        self.assertEqual((done["note"]["createdAt"][:16], done["note"]["updatedAt"][:16]), ("2026-10-04T09:00", "2026-10-04T12:05"))
+        with clock(13): again = self.store.append("stock", "op-a", " 40 copper ingots in chest 3 \n")   # the retry of a lost reply
+        self.assertEqual((again["replayed"], again["note"], self.store.get("stock")["revision"]), (True, done["note"], 2))
+        with self.assertRaisesRegex(ValueError, "different arguments"): self.store.append("stock", "op-a", "something else")
+        with self.assertRaisesRegex(ValueError, "not found"): self.store.append("missing", "op-b", "x")
+        for bad in ("", "  ", 5, "x" * 40000):
+            with self.assertRaises(ValueError): self.store.append("stock", "op-bad", bad)
+        with self.assertRaisesRegex(ValueError, "patch must contain"): self.store.write("stock", 2, "op-c", {"append": "x"})
+        with self.assertRaisesRegex(ValueError, "patch must contain"): self.store.write("stock", None, "op-d", {"text": "x"})
+        self.assertEqual(self.store.get("stock"), done["note"])
+        with clock(14), ThreadPoolExecutor(max_workers=4) as pool:               # no revision guard: entries from several writers all land
+            list(pool.map(lambda n: self.store.append("stock", f"many-{n}", f"entry {n}"), range(4)))
+        note = self.store.get("stock")
+        self.assertEqual((note["revision"], sorted(note["text"].split("\n")[2:])), (6, [f"[2026-10-04T14:00] entry {n}" for n in range(4)]))
+        self.assertEqual(self.store.search(query="copper ingots", context=0)["notes"][0]["excerpt"], "2:[2026-10-04T12:05] 40 copper ingots in chest 3")
+        self.save("empty", text="")
+        with clock(15): self.assertEqual(self.store.append("empty", "op-e", "first")["note"]["text"], "[2026-10-04T15:00] first")
 
 class Game:
     """Fake kernel: memory.context/obs.player/obs.block/work receipts with a movable player."""
@@ -240,7 +347,7 @@ class NotesSurfacingTests(unittest.TestCase):
         self.put("pig", dict(kind="entity", dimension=0, uuid=entity, uuidScope="server", lastSeen=[30, 64, 20]))
         mbtool.state["kernel"] = self.game
         seen = notes.after("obs.block", {"x": 3, "y": 65, "z": 3}, {"id": "minecraft:stone", "meta": 0, "pos": [3, 65, 3]})
-        self.assertEqual([n["id"] for n in seen["notes"]], ["anchor", "room"])
+        self.assertEqual([n["id"] for n in seen["notes"]], ["room", "anchor"])  # equally near: the newer note first
         self.assertNotIn("notes", notes.after("obs.block", {"x": 40, "y": 65, "z": 40}, {"id": "minecraft:stone", "pos": [40, 65, 40]}))
         found = notes.after("obs.entity", {}, {"found": True, "uuid": entity, "uuidScope": "server", "pos": [30, 64, 20]})
         self.assertEqual([n["id"] for n in found["notes"]], ["pig"])
@@ -268,10 +375,11 @@ class NotesSurfacingTests(unittest.TestCase):
         self.assertEqual((failed["id"], failed["status"], failed["tags"]), ("auto-route-0-8-8-8", "open", ["auto", "failed", "route"]))
         self.assertIn("stuck", failed["title"]); self.assertEqual(json.loads(failed["text"])["jobId"], "j1")
         self.assertIsNone(notes.journal(self.game, "nav.mine", None, error=BridgeError("cancelled", "stopped", "nav.mine", {})))
-        # tracked() wires it together: the receipt is journaled, then the fresh auto note surfaces at the arrival position.
+        # tracked() wires it together: the receipt is journaled; the auto note is kept but does not surface.
         self.game.receipt = {"state": "succeeded", "goal": [40, 64, 40], "blocksMined": 5}
         result = notes.tracked("nav.mine", 30, blocks=[{"id": "a:b"}])
-        self.assertEqual(result["blocksMined"], 5); self.assertEqual([n["id"] for n in result["notes"]], ["auto-mine-0-40-64-40"])
+        self.assertEqual(result["blocksMined"], 5); self.assertNotIn("notes", result)
+        self.assertEqual(self.store.get("auto-mine-0-40-64-40")["revision"], 1)
         self.assertEqual(result["endedAt"], [round(v, 1) for v in self.game.pos])  # where the job left you rides on its receipt
         self.game.receipt = {"state": "running"}
         self.assertNotIn("notes", notes.tracked("nav.mine", 30, blocks=[]))
@@ -307,6 +415,44 @@ class NotesSurfacingTests(unittest.TestCase):
         self.assertEqual(notes.surface(self.game, subjects=notes.item_subjects(result)), [])  # shown once
         with self.assertRaisesRegex(ValueError, "unknown attachment fields"):
             attachment(dict(kind="item", item="a:b", pos=[0, 0, 0]))
+
+    def test_auto_notes_stay_out_of_search_and_surfacing_unless_asked_for(self):
+        mbtool.state["kernel"] = self.game
+        self.put("mine", self.at(10, 64, 20))
+        notes.journal(self.game, "nav.build", {"state": "succeeded", "origin": [10, 64, 20], "blocksPlaced": 10})
+        find = lambda **q: ids(self.store.search(status="all", **q))
+        self.assertEqual((find(), find(author="me")), (["mine"], ["mine"]))
+        self.assertEqual(find(author="auto"), ["auto-build-0-8-64-20"])
+        self.assertEqual(find(author="all"), ["auto-build-0-8-64-20", "mine"])
+        self.assertEqual(find(tags=["auto"]), ["auto-build-0-8-64-20"])            # asking for the tag is asking for them
+        self.assertEqual(find(tags=["auto"], author="me"), [])
+        self.assertEqual((find(query="blocksPlaced"), find(query="blocksPlaced", author="all")), ([], ["auto-build-0-8-64-20"]))
+        with self.assertRaisesRegex(ValueError, "author must be"): self.store.search(author="harness")
+        self.assertEqual(ids(notes.mb_notes("search", {"near": "player", "radius": 8, "status": "all"})), ["mine"])
+        self.assertEqual([n["id"] for n in notes.surface(self.game, reason="session", radius=32)], ["mine"])
+
+    def test_notes_tool_search_is_capped_by_default_and_null_does_not_lift_it(self):
+        mbtool.state["kernel"] = self.game
+        for i in range(30): self.put(f"n{i:02}", self.at(10, 64, 20))
+        for params in ({"limit": 100}, {"limit": 100, "max_chars": None}):
+            page = notes.mb_notes("search", params)
+            self.assertLessEqual(len(json.dumps(page["notes"], separators=(",", ":"), ensure_ascii=False)), notes.SEARCH_CHARS)
+            self.assertTrue(0 < len(page["notes"]) < 30); self.assertIsNotNone(page["nextCursor"])
+        rest = notes.mb_notes("search", {"limit": 100, "max_chars": 20000, "cursor": page["nextCursor"]})
+        self.assertEqual(ids(page) + ids(rest), [f"n{i:02}" for i in reversed(range(30))])
+        self.assertEqual(ids(notes.mb_notes()), ids(page)[:20])  # the bare call still works: a page of the newest
+
+    def test_note_append_tool_and_get_show_when_things_were_written(self):
+        mbtool.state["kernel"] = self.game
+        place = self.at(10, 64, 20)
+        with clock(9): self.put("stock", place)
+        with clock(11): done = notes.mb_note_append("stock", "40 copper", "op-1")
+        text = "details details details stock\n[2026-10-04T11:00] 40 copper"
+        self.assertEqual(done, {"saved": True, "replayed": False, "sequence": 2, "id": "stock", "revision": 2, "size": len(text), "attachments": [place]})
+        self.assertEqual(notes.mb_note_append("stock", "40 copper", "op-1")["replayed"], True)
+        with clock(14, 30): note = notes.mb_notes("get", {"id": "stock"})
+        self.assertEqual((note["age"], note["now"], note["createdAt"][:16], note["updatedAt"][:16], note["text"]), ("3h", "2026-10-04T14:30", "2026-10-04T09:00", "2026-10-04T11:00", text))
+        with self.assertRaisesRegex(ValueError, "not found"): notes.mb_note_append("nope", "x", "op-2")
 
     def test_goal_stack_persists_and_flags_a_stall_only_in_running_game_time(self):
         self.assertIn("unset", notes.goal(self.game))

@@ -128,7 +128,8 @@ queries are `obs.scan`, `obs.terrain`, `obs.fluid` and `obs.tools`.
 | `mb_cache` | action | Inspects or administers the terrain cache. |
 
 Work completions and failures write a small `auto`-tagged note at the job's
-location, so the next session finds where things stopped. Selectors,
+location. These notes do not surface, and a note search leaves them out unless
+it asks for them (`author: "auto"` or `"all"`). Selectors,
 net-gain completion, the build contract and its limits are in
 [BARITONE_PORT.md](BARITONE_PORT.md).
 
@@ -284,6 +285,7 @@ custom-predicate example.
 | --- | --- | --- |
 | `mb_notes` | read | `capture` an attachment (block, entity, location, region, item type, topic), `search`, `get`, `history`, `status`, `resolve`. |
 | `mb_note_write` | action | Creates or updates a note with a revision guard and an operation id. |
+| `mb_note_append` | action | Adds a dated entry (`[2026-10-04T12:00] text`, UTC) as a new last line of an existing note: no world id, no revision, no resending the text; retry-safe by operation id. |
 | `mb_craft` | action | One call per craft at any GUI station: opens `at` (or the inventory grid), then either lays out a shaped `pattern` `times` times and takes the output, or loads machine `inputs` into the slots the machine itself accepts them in and empties its output slots for up to `wait_s`; `at` alone collects. Returns ingredients if the pack has no such recipe; closes what it opened. |
 | `mb_run` | privileged | Runs a model-written Python script (`main(**args)`, every `mb_*` tool in scope, `log`) as one call; stops at the first error with the line and the log. Runs once unless given a `name`, which keeps it under `harness/scripts/` for re-running. Disposable by design: not listed in `mb_status`, no library. |
 | `mb_goal` | action | Reads or updates the goal stack (chapter, quest, sub-goal, serves, and progress: its 0 to 100 guess at the quest, shown on the stream) kept in the note `goal-stack`; `mb_status` returns it with a stall signal. |
@@ -292,7 +294,7 @@ Notes surface as a side effect, under a `notes` key, with at most five
 entries `{id, title, updated}` (`mb_notes` `get` reads one): on `mb_status` (session start), when a block, tile or entity with a
 note is observed, when a position read enters a noted region or comes near a
 note, and when a work call arrives somewhere. A note is not repeated within
-ten minutes unless the player has moved far away.
+ten minutes unless the player has moved far away. `auto` notes never surface.
 
 - `mb_notes("capture", {"kind": "block", "pos": [x, y, z]})` returns the
   `worldId` and `attachment` that `mb_note_write` needs. Entity attachments
@@ -301,9 +303,31 @@ ten minutes unless the player has moved far away.
   fields in `patch` change. Retry a lost reply with the same `operation_id`
   (the original receipt is replayed). `status` is `open`, `done` or
   `archived`; there is no delete.
-- Search is AND-combined, defaults to the current dimension and returns
-  excerpts; `get` returns the full text. `resolve` re-observes loaded
-  attachments; `not_observed` does not mean destroyed.
+- Search is grep over the notes that pass every filter. `query` is one literal
+  piece of text (a regular expression with `regex: true`), case-insensitive
+  unless `case: true`, tried on each line of the text and on the id, title and
+  tags. Nothing is scored or ranked and words are not split. A result's
+  `excerpt` is its matching lines (the first five; `matchingLines` counts them)
+  with `context` lines around each (default 1, at most 5) in `grep -n` form
+  (`12:` a match, `13-` a neighbour), or the first 280 characters when no line
+  of the text matched.
+- Filters combine: `tags`, `status`, `kind`, `subject`, `near`/`radius`,
+  `region`, `dimension` (default: the current one), `entity_uuid`, `since` and
+  `before` (when the note last changed: an age such as `"90m"`, `"5h"`, `"3d"`,
+  or a UTC time), and `author` (`me`, the default, leaves out `auto` notes;
+  `auto`; `all`; `tags: ["auto"]` also returns them).
+- Results come newest-changed first (by history sequence), each with its `age`;
+  the response carries `now`. The only durable clock is the wall clock stored on
+  each revision (`createdAt`, `updatedAt`, UTC): `memory.context` has no game
+  time and the simulation tick counter restarts with the server.
+- A page ends at `limit` notes (default 20, at most 100) or `max_chars`
+  characters of the `notes` JSON (default 6,000 through `mb_notes`, 1,000 to
+  20,000), whichever comes first; a note larger than a whole page is listed
+  with `omitted` instead of its content. `nextCursor`, passed back unchanged
+  with the same filters, continues over the same snapshot. Calls made inside
+  the harness (surfacing, `mb_view`) are not capped in characters.
+- `get` returns the full note with `age` and `now`. `resolve` re-observes
+  loaded attachments; `not_observed` does not mean destroyed.
 - Limits: title 256 characters, text 32,768, 32 tags, 32 attachments, `data`
   16 KiB. One SQLite file per world UUID under `.state/notes`
   (`MODBENCH_NOTES_DIR`); keep it when moving the harness. Notes protect

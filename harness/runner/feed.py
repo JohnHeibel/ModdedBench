@@ -55,6 +55,7 @@ LINES = {  # tool -> line from (arguments, result); anything absent gets the gen
     "mb_inventory": lambda a, r: "checking inventory", "mb_find": lambda a, r: "looking for " + _name(a.get("selector")),
     "mb_transfer": lambda a, r: f"moving {a.get('count', '')} {_name(a.get('expected'))}".replace("  ", " "),
     "mb_note_write": lambda a, r: "note: " + str((a.get("patch") or {}).get("title") or a.get("id")),
+    "mb_note_append": lambda a, r: "note: " + str(a.get("id")),
     "mb_notes": lambda a, r: "reading notes", "mb_memory": lambda a, r: _said(a.get("method") or "status", "map memory: "),
     "mb_quest_claim": lambda a, r: "claimed a quest", "mb_quest_detect": lambda a, r: "handing in a quest",
     "mb_quest_observe": lambda a, r: "reading a quest: " + str(r.get("title") or r.get("name") or ""), "mb_quest_lines": lambda a, r: "reading the quest book",
