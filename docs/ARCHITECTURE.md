@@ -41,7 +41,7 @@ and compose it in Python; add Java only when the game's internals are needed.
 | `core` | `modbench-core` | api | `ClockPlugin` and every class transformer; hook classes that fan out through the api listener types; `UiHooks`; the control implementations; the JSON-RPC transport (`BridgeTransport`, `BridgeRuntime`, `Session`, `Request`); the simulation clock and pause barriers. |
 | `client` | `modbench-client` | api, core | `ClientRuntime` registers the RPC methods; observation, interaction, GUI, inventory, NEI, quest, memory and interrupt implementations. |
 | `server` | `modbench-server` | api, core | `ServerRuntime`, `ServerClock`, tile and NBT observations, Waila; development fixtures live in `src/dev` and are excluded from the jar. |
-| `baritone` | `modbench-baritone` | api | `src/upstream/java`: pinned upstream Baritone files (LGPL-3.0, `UPSTREAM_SOURCES.json`); `src/main/java`: the 1.7.10 port, the work processes and journals. Plain `@Mod`; it subscribes to `GameEvents` and looks up controls in the `ControlRegistry` at init. |
+| `baritone` | `modbench-baritone` | api | `src/upstream/java`: pinned upstream Baritone files (LGPL-3.0, `UPSTREAM_SOURCES.json`); `src/main/java`: the 1.7.10 port, the work processes and journals, and added kinds of movement ([MOVEMENTS.md](MOVEMENTS.md)). Plain `@Mod`; it subscribes to `GameEvents` and looks up controls in the `ControlRegistry` at init. |
 
 The compiler enforces the seam: client and baritone compile against `api`
 only (client also against core for the transport); nothing outside core may
