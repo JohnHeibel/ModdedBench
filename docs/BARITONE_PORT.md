@@ -104,7 +104,7 @@ metadata. `tileNbt` and `nbt` on a cell are rejected, never dropped silently.
 | Engine | Upstream `BuilderProcess`, strict profile: confined to plan cells, no settings | Upstream `BuilderProcess` |
 | Cell limit | 16,384 | 1,048,576 (Python stages 4,096 per `nav.build_stage` call) |
 | Edits outside the plan | None | With `allowBreak`/`allowPlace`; `settings.restricted: true` confines them to plan cells |
-| Settings | Rejected | Validated and frozen into the job |
+| Settings | Only `metadataMasks`, `buildInSteps`, `clickInterval` | Validated and frozen into the job |
 | Retry | At most two placement attempts per cell; an attempted cell that later differs pauses the job for inspection, it is never destroyed and retried | Eight attempts; `repairPlaced` (default true) allows correction |
 | Completion | Fresh comparison of every cell's registry id and metadata, plus `verify.pickedItem` | Predicate based (see settings) |
 
@@ -116,6 +116,27 @@ mappings and a shared-stack material allocation. A `replace` selection is
 filtered once at job creation and journaled. Requested air that starts empty is deferred while temporary
 supports are needed, then cleared in a final phase; status exposes
 `buildPhase` and `deferredAirCells`.
+
+Build order (`BuildSteps`, both modes, on by default). Every cell that must
+hold a block has a step: its `stage` (a cell field, 0 first; a drawing's
+`stages` list assigns it by legend character), then its height. Each tick the
+job counts the wrong cells of every step in the walk over the plan it already
+makes, takes the first step with one left as current, and shows upstream
+`BuilderProcess` only the cells of steps up to it: later cells are out of its
+schematic and refused to movement placement, so neither a plan block nor a
+throwaway lands in one early. When the step moves on the source pass is
+restarted with the larger schematic. The step is never stored: a resumed job
+reads it from the world, and within a job it only moves forward (a cell of an
+earlier step that breaks stays shown and is repaired). Cells that must be
+empty have no step, and removal is not delayed: the walk may still dig a wrong
+block out of a later cell, as it could before, but the builder replaces it only
+in its step. A step that cannot be finished ends the job through the stall
+watchdog as before, and the receipt's `step {stage, y, index, of, left, first}`
+names it; nothing skips ahead. `settings.buildInSteps: false` restores the old
+order; `buildInLayers: true` (upstream's own layering) turns steps off too, and
+the two together are refused. Preview lists `steps` as `{stage, y, cells}`.
+`settings.clickInterval` (1 to 20 ticks, default the engine's 5) sets
+`rightClickSpeed` for the job.
 
 Builder settings: `buildInLayers`, `layerHeight`, `startAtLayer`,
 `layerOrder`, `skipFailedLayers`; `buildRepeat`, `buildRepeatCount` (default 1,

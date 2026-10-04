@@ -44,8 +44,10 @@ public final class WorkSpec {
         public boolean contains(BlockPos p){return p.getX()>=min.getX()&&p.getX()<=max.getX()&&p.getY()>=min.getY()&&p.getY()<=max.getY()&&p.getZ()>=min.getZ()&&p.getZ()<=max.getZ();}
     }
     public static Bounds bounds(Map<String,Object> p) {return new Bounds(pos(p.get("min")),pos(p.get("max")));}
-    public record Cell(BlockPos pos,String id,int meta,boolean clear,Map<String,Object> item,Map<String,Object> placement,Map<String,Object> replace,Map<String,Object> verify) {
-        public Cell(BlockPos pos,String id,int meta,boolean clear,Map<String,Object> item,Map<String,Object> placement,Map<String,Object> replace){this(pos,id,meta,clear,item,placement,replace,Map.of());}
+    /** stage: the part of the plan this block belongs to, 0 first (see BuildSteps). */
+    public record Cell(BlockPos pos,String id,int meta,boolean clear,Map<String,Object> item,Map<String,Object> placement,Map<String,Object> replace,Map<String,Object> verify,int stage) {
+        public Cell(BlockPos pos,String id,int meta,boolean clear,Map<String,Object> item,Map<String,Object> placement,Map<String,Object> replace,Map<String,Object> verify){this(pos,id,meta,clear,item,placement,replace,verify,0);}
+        public Cell(BlockPos pos,String id,int meta,boolean clear,Map<String,Object> item,Map<String,Object> placement,Map<String,Object> replace){this(pos,id,meta,clear,item,placement,replace,Map.of(),0);}
     }
     public static void verification(Map<String,Object> verify) {
         fields(verify,Set.of("pickedItem"));
@@ -64,7 +66,8 @@ public final class WorkSpec {
         String mode=string(spec,"mode","blueprint");if(!Set.of("blueprint","builder").contains(mode))throw new IllegalArgumentException("unknown construction mode");
         ConstructionSettings settings=new ConstructionSettings(child(spec,"settings"));
         // Metadata masks say which variants satisfy a cell, which a strict blueprint needs too (any-facing furnaces); the rest tune the builder.
-        if(mode.equals("blueprint")&&!Set.of("metadataMasks").containsAll(settings.values.keySet()))throw new IllegalArgumentException("construction settings require mode builder");
+        // The build order and the click interval say how the same strict plan is laid, so a blueprint takes them as well.
+        if(mode.equals("blueprint")&&!Set.of("metadataMasks","buildInSteps","clickInterval").containsAll(settings.values.keySet()))throw new IllegalArgumentException("construction settings require mode builder");
         int limit=mode.equals("builder")?1048576:16384;
         if(spec.containsKey("size")){List<?> size=list(spec.get("size"));if(size.size()!=3)throw new IllegalArgumentException("size needs three dimensions");for(int i=0;i<3;i++)integer(Map.of("size",size.get(i)),"size",1,1,i==1?256:30000000);}
         List<Map<String,Object>> entries=new ArrayList<>();
@@ -91,7 +94,7 @@ public final class WorkSpec {
         Set<BlockPos> seen=new HashSet<>();List<Cell> cells=new ArrayList<>();
         for(Map<String,Object> e:entries) {
             if(e.containsKey("tileNbt")||e.containsKey("nbt"))throw new IllegalArgumentException("tile state requires an explicit normal-interaction adapter; do not silently discard schematic NBT");
-            fields(e,Set.of("pos","id","meta","clear","item","placement","replace","verify","tile","name"));  // tile, name: what nav.copy saw, so a copy builds as it is; never read
+            fields(e,Set.of("pos","id","meta","clear","item","placement","replace","verify","stage","tile","name"));  // tile, name: what nav.copy saw, so a copy builds as it is; never read
             placement(child(e,"placement"));
             verification(child(e,"verify"));
             BlockPos local=pos(e.get("pos"));long x=(long)local.getX()+origin.getX(),y=(long)local.getY()+origin.getY(),z=(long)local.getZ()+origin.getZ();
@@ -99,7 +102,10 @@ public final class WorkSpec {
             BlockPos p=new BlockPos((int)x,(int)y,(int)z);if(!seen.add(p))throw new IllegalArgumentException("duplicate cell "+p);
             boolean clear=bool(e,"clear",false);String id=string(e,"id","");if(!clear&&(id.isBlank()||!id.contains(":")))throw new IllegalArgumentException("namespaced block id required");
             if(clear&&!child(e,"verify").isEmpty())throw new IllegalArgumentException("clear cells cannot require a picked item");
-            cells.add(new Cell(p,id,integer(e,"meta",0,0,15),clear,child(e,"item"),child(e,"placement"),child(e,"replace"),child(e,"verify")));
+            int stage=integer(e,"stage",0,0,BuildSteps.STAGES-1);
+            if(stage>0&&clear)throw new IllegalArgumentException("a clear cell has no stage: emptying is never delayed");
+            if(stage>0&&!settings.steps())throw new IllegalArgumentException("stages need the stepped build order: settings.buildInSteps is off (or buildInLayers is on)");
+            cells.add(new Cell(p,id,integer(e,"meta",0,0,15),clear,child(e,"item"),child(e,"placement"),child(e,"replace"),child(e,"verify"),stage));
         }
         cells.sort(Comparator.comparingInt((Cell c)->c.clear?0:1).thenComparingInt(c->c.clear?-c.pos.getY():c.pos.getY()).thenComparingInt(c->c.pos.getX()).thenComparingInt(c->c.pos.getZ()));
         return List.copyOf(cells);

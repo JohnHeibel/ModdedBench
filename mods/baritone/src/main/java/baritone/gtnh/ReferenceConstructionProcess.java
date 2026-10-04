@@ -44,6 +44,10 @@ final class ReferenceConstructionProcess extends BulkJob {
     private baritone.api.pathing.goals.Goal egressGoal;
     private final Map<BlockPos,baritone.api.pathing.goals.Goal> cleanupGoals=new HashMap<>();
     private long searchesBefore=Long.MAX_VALUE;
+    /** The current build step (BuildSteps), the one the running pass was started at, and this tick's wrong cells per step. */
+    private int buildStep,passStep=-1;
+    private int[] stepLeft=new int[0];
+    private BlockPos[] stepFirst=new BlockPos[0];
     ReferenceConstructionProcess(BaritoneNavigation navigation,WorkJournal journal,Map<String,Object> options){
         super(navigation,journal,options);engine=navigation.reference();
         plan=new ConstructionPlan(params,journal.progress,world);repeat=plan.repeat;layer=plan.layer;
@@ -94,6 +98,8 @@ final class ReferenceConstructionProcess extends BulkJob {
             var setting=settings.byLowerName.get(key.toLowerCase(Locale.ROOT));ReferenceSettings.copy(setting,plan.settings.integer(key,(Integer)setting.defaultValue));
         }
         settings.startAtLayer.value=layer;settings.breakCorrectBlockPenaltyMultiplier.value=plan.settings.number("breakCorrectBlockPenaltyMultiplier",10);
+        // BlockPlaceHelper waits rightClickSpeed ticks after a click, so the interval is one more than the setting.
+        if(plan.settings.values.containsKey("clickInterval"))settings.rightClickSpeed.value=plan.settings.integer("clickInterval",5)-1;
         if(cleanupPhase){settings.buildInLayers.value=false;settings.startAtLayer.value=0;}
         settings.buildIgnoreDirection.value=false;settings.buildIgnoreProperties.value=List.of();
         settings.buildIgnoreBlocks.value=blocks(plan.settings.ids("buildIgnoreBlocks"));
@@ -120,8 +126,10 @@ final class ReferenceConstructionProcess extends BulkJob {
         Map<BlockPos,Set<StackIdentity>> materials=new HashMap<>();Map<BlockPos,Map<String,Object>> selectors=new HashMap<>();
         Map<Map<String,Object>,Set<StackIdentity>> matchingInventory=new HashMap<>();
         Map<BlockPos,IBlockState> states=new HashMap<>();Map<net.minecraft.block.Block,Integer> masks=new HashMap<>();
+        // Wrong cells per build step are counted in this same walk over the plan: the order costs no pass of its own.
+        var order=plan.steps;int[] left=new int[order.count()];BlockPos[] first=new BlockPos[left.length];int walked=0;
         for(Cell source:plan.cells){
-            Cell cell=plan.desired(source);BlockPos p=cell.pos();cells.put(p,cell);
+            Cell cell=plan.desired(source);BlockPos p=cell.pos();cells.put(p,cell);int at=order.index(walked++);boolean done=false;
             var block=cell.clear()?net.minecraft.init.Blocks.air:ConstructionPlan.block(cell);
             states.put(p,new IBlockState(block,cell.meta(),null,p.getX(),p.getY(),p.getZ()));
             masks.put(block,plan.settings.metadataMask(cell.id()));
@@ -134,7 +142,7 @@ final class ReferenceConstructionProcess extends BulkJob {
                 }));
             }
             if(plan.loaded(p)){
-                boolean now=plan.correct(source);matches.put(p,now);
+                boolean now=plan.correct(source);matches.put(p,now);done=now;
                 IBlockState.StateKey state=new IBlockState.StateKey(world.getBlock(p.getX(),p.getY(),p.getZ()),world.getBlockMetadata(p.getX(),p.getY(),p.getZ()));
                 var previous=previousObserved.put(p,state);
                 if(!now&&!state.block().isAir(world,p.getX(),p.getY(),p.getZ())&&!plan.repairPlaced()&&attempts.containsKey(ConstructionPlan.key(cell)))pending.add(p);
@@ -144,7 +152,9 @@ final class ReferenceConstructionProcess extends BulkJob {
                 // even though the final block equals its initial state.
                 if(previous!=null&&!state.equals(previous)&&cell.clear()&&now)removedObserved.add(p);
             }
+            if(at>=0&&!done&&left[at]++==0)first[at]=p;
         }
+        stepLeft=left;stepFirst=first;buildStep=BuildSteps.current(buildStep,left);int shown=buildStep;
         desired=Map.copyOf(cells);correct=Map.copyOf(matches);schematicStates=Map.copyOf(states);materialSelectors=Map.copyOf(selectors);
         var snapshot=desired;var verified=correct;var pendingSnapshot=Set.copyOf(pending);
         var materialSnapshot=Map.copyOf(materials);var masksSnapshot=Map.copyOf(masks);
@@ -177,7 +187,8 @@ final class ReferenceConstructionProcess extends BulkJob {
         var sensitive=Set.copyOf(poseSensitive);
         // Movement placement has no final-facing state contract. Let the source
         // builder place these from a verified pose before treating them as terrain.
-        engine.getBuilderProcess().movementMayPlace=p->!sensitive.contains(new BlockPos(p.getX(),p.getY(),p.getZ()));
+        // Nor may a walk bridge or pillar with anything, plan block or throwaway, into a cell whose step has not come.
+        engine.getBuilderProcess().movementMayPlace=p->{BlockPos pos=new BlockPos(p.getX(),p.getY(),p.getZ());return !sensitive.contains(pos)&&order.visible(pos,shown);};
         engine.getBuilderProcess().stateComparison=(actual,wanted)->{
             if(actual.getBlock()!=wanted.getBlock())return false;
             int mask=masksSnapshot.getOrDefault(wanted.getBlock(),15);
@@ -361,8 +372,9 @@ final class ReferenceConstructionProcess extends BulkJob {
         // Canonical cells may have offsets outside the size used for repeat
         // orientation. The source schematic must include every selected cell.
         int width=plan.cells.stream().mapToInt(c->c.pos().getX()).max().orElseThrow()-minX+1,height=Math.max(plan.maxY,plan.cells.stream().mapToInt(c->c.pos().getY()).max().orElseThrow())-minY+1,length=plan.cells.stream().mapToInt(c->c.pos().getZ()).max().orElseThrow()-minZ+1;
-        Map<BlockPos,IBlockState> frozen=DeferredClearance.schematic(schematicStates,deferredAir,cleanupPhase);
-        passCells=desired;
+        // The source builder is shown the plan up to the current step only; step() starts a new pass when the step moves on.
+        Map<BlockPos,IBlockState> frozen=plan.steps.schematic(DeferredClearance.schematic(schematicStates,deferredAir,cleanupPhase),buildStep);
+        passCells=desired;passStep=buildStep;
         ISchematic schematic=new ISchematic(){
             public int widthX(){return width;}public int heightY(){return height;}public int lengthZ(){return length;}
             public boolean inSchematic(int x,int y,int z,IBlockState current){return frozen.containsKey(new BlockPos(x+minX,y+minY,z+minZ));}
@@ -386,9 +398,10 @@ final class ReferenceConstructionProcess extends BulkJob {
             clearanceEgress=false;journal.progress.put("clearanceEgress",false);
             engine.getPathingBehavior().forceCancel();configure();capture();startPass();journal.save(status());return;
         }
-        if(builder.isActive()&&!passCells.equals(desired)){
-            // A material substitution changed. Existing searches retain their
-            // immutable schematic; start a new source plan with the same progress.
+        if(passStep!=buildStep||builder.isActive()&&!passCells.equals(desired)){
+            // The build step moved on (the source builder may already have stopped, its shown cells all done), or a
+            // material substitution changed. Existing searches retain their immutable schematic; start a new source
+            // plan with the same progress.
             engine.getPathingBehavior().forceCancel();startPass();
         }
         journal.progress.put("layer",layer);journal.progress.put("repeat",repeat);
@@ -403,7 +416,7 @@ final class ReferenceConstructionProcess extends BulkJob {
             if(!missing.isEmpty()){finish("paused","source_stopped_with_unverified_cells");return;}
             int max=plan.settings.integer("buildRepeatCount",1);
             if(!plan.settings.repeat().equals(new BlockPos(0,0,0))&&(max==-1||repeat+1<max)){
-                repeat++;layer=plan.settings.integer("startAtLayer",0);plan.repeat=repeat;plan.layer=layer;plan.installSchematic();
+                repeat++;layer=plan.settings.integer("startAtLayer",0);plan.repeat=repeat;plan.layer=layer;plan.installSchematic();buildStep=0;
                 initializeClearance();capture();configure();startPass();journal.save(status());return;
             }
             finish("succeeded","schematic_verified");return;
@@ -411,7 +424,8 @@ final class ReferenceConstructionProcess extends BulkJob {
         if(builder.isPaused()){
             var missing=desired.values().stream().filter(c->!correct.getOrDefault(c.pos(),false)).toList();
             inspection=ConstructionPlan.inspect(missing,true,override);
-            boolean unavailable=missing.stream().filter(c->!c.clear()&&!plan.occupied(c.pos())).allMatch(c->plan.slot(c)<0);
+            // The source builder stopped for want of something for the cells it is shown: those of the steps so far.
+            boolean unavailable=missing.stream().filter(c->!c.clear()&&!plan.occupied(c.pos())&&plan.steps.visible(c.pos(),buildStep)).allMatch(c->plan.slot(c)<0);
             finish("paused",!pending.isEmpty()?"placement_not_verified_inspect_before_retry":unavailable?"missing_materials":"source_builder_requires_materials_or_access");return;
         }
         if(centerForPlacement())return;
@@ -460,6 +474,8 @@ final class ReferenceConstructionProcess extends BulkJob {
         out.put("buildPhase",clearanceEgress?"clearance_egress":cleanupPhase?"clearance":"construction");out.put("deferredAirCells",deferredAir.size());
         out.put("placed",placedObserved.size());out.put("removed",removedObserved.size());out.put("layer",layer);out.put("repeat",repeat);out.put("incorrect",incorrect);
         out.put("selected",plan==null?0:plan.cells.size());out.put("pendingPlacementVerification",pending.size());out.put("movementTypes",List.copyOf(movements));out.put("inspection",inspection);
+        // Where the stepped order stands: a job that ends unfinished stopped on this step, and nothing above it was begun.
+        if(plan!=null){var step=plan.steps.receipt(buildStep,stepLeft,stepFirst);if(!step.isEmpty())out.put("step",step);}
         var blind=noVantage.stream().filter(p->!correct.getOrDefault(p,false)).limit(64).map(p->List.of(p.getX(),p.getY(),p.getZ())).toList();
         if(!blind.isEmpty())out.put("noVantage",blind);
         // This job's last path search found no way at all: the stall that follows then has its cause beside it.

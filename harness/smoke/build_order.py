@@ -11,11 +11,17 @@ What it cannot say is how far the player walked: the ledger has cells, not posit
 honest thing: two cells clicked one after the other more than JUMP blocks apart cannot both have been in reach
 from one spot, so the player crossed at least that distance less two reaches between them.
 The ledger spans every session of a job but the receipt's ticks are the last session's, so ticksPerClick and
-cellsPerMinute are only right for a job that ran once (below 5 ticks a click, the click cadence, it was resumed).
+cellsPerMinute are only right for a job that ran once (below clickInterval ticks a click, it was resumed).
+
+Comparing click intervals (settings.clickInterval, 5 when not set): a click the game did not take, or one made
+before the placed block was seen, shows as a second click into the same cell. reclicks counts those clicks,
+reclickedCells the cells they went into and maxAttempts the most any one cell took (a job pauses at its attempt
+limit: 8, or 2 for a blueprint). The same plan run at each interval is compared on those and on ticksPerClick.
 """
 import json
 import math
 import sys
+from collections import Counter
 from pathlib import Path
 
 JUMP = 8.0   # further apart than this, two consecutive placements needed a walk (reach is about 4.5 each way)
@@ -31,7 +37,9 @@ def metrics(clicks: list[tuple[int, int, int]], ticks: int | None = None, left: 
     # A cell laid while the cell under it was still to come: later in this ledger, or never (still wrong at the end).
     over_gap = sum(1 for c, i in first.items()
                    if first.get((c[0], c[1] - 1, c[2]), -1) > i or (c[0], c[1] - 1, c[2]) in unfinished)
+    counts = Counter(clicks)
     out = {"clicks": len(clicks), "cells": len(first), "reclicks": len(clicks) - len(first),
+           "reclickedCells": sum(1 for n in counts.values() if n > 1), "maxAttempts": max(counts.values(), default=0),
            "meanStep": round(sum(steps) / len(steps), 2) if steps else 0.0,
            "jumps": len(jumps), "jumpBlocks": round(sum(jumps), 1), "longestJump": round(max(jumps, default=0.0), 1),
            "layerChanges": sum(1 for a, b in zip(clicks, clicks[1:]) if a[1] != b[1]),
@@ -47,8 +55,10 @@ def read(base: Path) -> dict:
     """Metrics for the job whose files start with `base` (the path without .json)."""
     rows = [json.loads(line) for line in Path(f"{base}.attempts.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
     clicks = [tuple(int(v) for v in r["key"].split(",")) for r in rows]
-    receipt = json.loads(Path(f"{base}.json").read_text(encoding="utf-8")).get("receipt", {})
+    journal = json.loads(Path(f"{base}.json").read_text(encoding="utf-8"))
+    receipt, settings = journal.get("receipt", {}), (journal.get("specSummary") or {}).get("settings") or {}
     return {"job": base.name[:8], "state": receipt.get("state"), "reason": receipt.get("reason"),
+            "clickInterval": settings.get("clickInterval", 5), **({"step": receipt["step"]} if receipt.get("step") else {}),
             **metrics(clicks, receipt.get("ticks"), receipt.get("incorrect"))}
 
 
