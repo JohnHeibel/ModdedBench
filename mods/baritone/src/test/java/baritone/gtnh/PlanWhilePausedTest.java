@@ -53,11 +53,21 @@ public class PlanWhilePausedTest {
         public boolean extendedLevelsInChunkCache(){return false;}
         public boolean isSideSolid(int x,int y,int z,ForgeDirection side,boolean fallback){return y<64;}
     }
-    private static CalculationContext context(Baritone engine){
+    private static CalculationContext context(Baritone engine){return context(engine,p->true);}
+    private static CalculationContext context(Baritone engine,java.util.function.Predicate<baritone.compat.BlockPos> editAllowed){
         ToolSet.Answers hand=(stacks,state)->{var out=new baritone.gtnh.ReferenceToolPolicy.Answer[stacks.length];
             Arrays.fill(out,new baritone.gtnh.ReferenceToolPolicy.Answer(0.01,true));return out;};
         return new CalculationContext(engine,true,new CalculationInputs(null,new BlockStateInterface(new Flat(),(x,z)->Math.abs(x)<64&&Math.abs(z)<64),
-            new ToolSet(new ItemStack[9],0,1,hand),false,false,true,0,0,new WorldMemory.Snapshot(0,Map.of(),Map.of(),Map.of()),false,p->true));
+            new ToolSet(new ItemStack[9],0,1,hand),false,false,true,0,0,new WorldMemory.Snapshot(0,Map.of(),Map.of(),Map.of()),false,p->true,s->false,new baritone.gtnh.pathing.Snags(),CalculationInputs.FULL_AIR,editAllowed));
+    }
+    @Test public void aWalkInsideAJobNeitherBreaksNorPlacesInTheCellsThatJobKeeps(){
+        Baritone.settings().allowBreak.value=true;
+        var ctx=context(engine,p->!p.equals(new baritone.compat.BlockPos(3,63,0)));
+        assertTrue(ctx.isPossiblyProtected(3,63,0));assertFalse(ctx.isPossiblyProtected(4,63,0));
+        assertTrue("never dug through",ctx.breakCostMultiplierAt(3,63,0,ctx.get(3,63,0))>=baritone.api.pathing.movement.ActionCosts.COST_INF);
+        assertEquals(1,ctx.breakCostMultiplierAt(4,63,0,ctx.get(4,63,0)),0);
+        // Placing is priced through the same question (costOfPlacingAt), so a kept cell is never bridged or pillared into.
+        assertFalse("every cell is free to a walk that belongs to no job",context(engine).isPossiblyProtected(3,63,0));
     }
     private static void awaitPlan(Baritone engine)throws InterruptedException{
         long until=System.nanoTime()+30_000_000_000L;

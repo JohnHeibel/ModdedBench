@@ -55,7 +55,7 @@ final class ClickRun {
     private boolean closing;
     private Task task;
     private ClickWorld capture;
-    private Future<Found> future;
+    private Future<ClickSearch.Found> future;
     private ReferenceNavigationJob nav;
     private InventorySelection selection;
     private StepPlan.Step pressed;
@@ -83,8 +83,6 @@ final class ClickRun {
         Map<String,Object> reply(){return reply;}
         void cancel(){if(cancelled)return;cancelled=true;reply=null;end.run();}
     }
-    /** step, hides: of a pick. vantages, or the problem with its diagnosis and the cells whose removal would open a view. */
-    private record Found(StepPlan.Step step,StepPlan.Step hides,List<Vantages.Vantage> vantages,String problem,Map<String,Object> diagnosis,List<Vantages.Opening> openings) {}
 
     ClickRun(ReferenceConstructionProcess job,baritone.Baritone engine,ConstructionPlan plan) {
         this.job=job;this.engine=engine;this.plan=plan;world=job.world;
@@ -128,7 +126,7 @@ final class ClickRun {
             }
             case "search"->{
                 if(!future.isDone()){searching++;return true;}
-                Found f=result(future);future=null;searching=0;
+                var f=result(future);future=null;searching=0;
                 if(task==null){task=new Task("step",f.step(),null,null,null);task.hides=f.hides();}
                 task.diagnosis=f.diagnosis();
                 if(!f.vantages().isEmpty()){task.vantages=f.vantages();route();return true;}
@@ -140,11 +138,12 @@ final class ClickRun {
             case "moving"->{
                 nav.tick();if(!nav.done())return true;
                 var end=nav.status();nav=null;engine.editAllowed=p->true;
-                // The walk may have changed the blocks the picks were made in.
-                if(job.allowBreak||scaffold.size()!=walkScaffold)space=null;
+                // A walk that left scaffold changed the blocks the picks are made in. One that dug only opened them further:
+                // a way that is gone for it fails at the click or on the way, and what is tried next is looked at afresh.
+                if(scaffold.size()!=walkScaffold)space=null;
                 if(task.fetching){task.fetching=false;enter("fetch");return true;}
                 if("succeeded".equals(end.get("state"))){enter("select");return true;}
-                if(++task.routes<2){observe();return true;}
+                if(++task.routes<2){space=null;observe();return true;}
                 task.diagnosis=Map.of("route",String.valueOf(end.get("reason")),"stances",task.vantages.stream().limit(4).map(v->point(v.feet())).toList());
                 fail("no_route_from_here");
             }
@@ -172,7 +171,7 @@ final class ClickRun {
     }
     private void enter(String next){phase=next;if(task!=null){task.age=0;task.wait=0;}}
     private void idle(){task=null;phase="idle";job.lease.setKeys(Set.of());}
-    private static Found result(Future<Found> f) {
+    private static ClickSearch.Found result(Future<ClickSearch.Found> f) {
         try{return f.get();}catch(ExecutionException e){throw new IllegalStateException("click search failed: "+e.getCause(),e.getCause());}
         catch(InterruptedException e){Thread.currentThread().interrupt();throw new IllegalStateException(e);}
     }
@@ -236,50 +235,12 @@ final class ClickRun {
         // Temporary access is the job's when it may break blocks at all; which cells may go is Access's rule, never a name.
         Predicate<BlockPos> removable=job.allowBreak?p->Access.refusal(s,p,cells,prot::contains)==null:null;
         Task t=task;
-        if(t==null){List<StepPlan.Step> o=List.copyOf(open);var known=ways;future=SEARCH.submit(()->pick(o,s,low,high,known,removable));}
+        if(t==null){List<StepPlan.Step> o=List.copyOf(open);var known=ways;future=SEARCH.submit(()->ClickSearch.pick(o,s,low,high,known,removable));}
         else {
             Set<BlockPos> tried=Set.copyOf(t.tried);var target=t.target();var body=t.sneak()?low:high;BlockPos breaking=t.breaking()?t.block:null;boolean step=t.kind.equals("step");
-            future=SEARCH.submit(()->look(s,null,null,target,body,tried,breaking,step?removable:null));
+            future=SEARCH.submit(()->ClickSearch.look(s,null,null,target,body,tried,breaking,step?removable:null));
         }
         enter("search");
-    }
-    /**
-     * Pure, off the game thread: which open click cell goes next (StepPlan.next) and where it is clicked from. A cell
-     * whose remembered ways are all gone is forgotten and the pick made again, so the answer is for the copy as it is.
-     */
-    static Found pick(List<StepPlan.Step> open,ClickSpace s,Vantages.Body low,Vantages.Body high,Map<String,List<Vantages.Vantage>> ways,Predicate<BlockPos> removable) {
-        for(;;) {
-            var p=StepPlan.next(open,s,low,ways);StepPlan.Step c=p.step();
-            Found f=look(s,c,p.hides(),c.target(),c.sneak()?low:high,Set.of(),null,p.ready()?null:removable);
-            if(!p.ready()||!f.vantages().isEmpty())return f;
-            ways.put(c.key(),List.of());
-        }
-    }
-    /**
-     * Pure, off the game thread: where one click can be made from, else what is wrong and (for a job that may break)
-     * the cells whose removal opens a view. breaking: the block the task removes; it is not stood on unless there is
-     * footing under it.
-     */
-    static Found look(ClickSpace s,StepPlan.Step step,StepPlan.Step hides,Vantages.Target target,Vantages.Body body,Set<BlockPos> tried,BlockPos breaking,Predicate<BlockPos> removable) {
-        var tally=new Vantages.Tally();
-        var found=Vantages.search(s,target,body,8+tried.size(),tally).stream().filter(v->!tried.contains(v.feet())
-            &&(breaking==null||!v.feet().equals(ClickSpec.offset(breaking,1))||Double.isFinite(s.with(breaking,Voxel.air()).standingY(breaking)))).limit(8).toList();
-        if(!found.isEmpty())return new Found(step,hides,found,null,Map.of(),List.of());
-        String problem=Vantages.problem(s,target,tally);
-        List<Vantages.Opening> openings=removable==null||problem.equals("support_missing")||problem.equals("hit_not_on_face")?List.of()
-            :Vantages.openings(s,target,body,removable,null,3).stream().filter(o->o.remove().size()<=Access.MAX_CELLS).toList();
-        return new Found(step,hides,List.of(),problem,diagnosis(s,target,tally),openings);
-    }
-    /** What a click with no stance is about: the faces that would do and what stands at each, the cells in the way (most often first), and why stances fell away. */
-    static Map<String,Object> diagnosis(ClickSpace space,Vantages.Target target,Vantages.Tally tally) {
-        Map<String,Object> out=new LinkedHashMap<>();
-        out.put("clicks",target.clicks().stream().map(c->Map.of("block",point(c.block()),"face",ClickSpec.NAMES[c.face()],"present",space.at(c.block()).id())).toList());
-        List<Map<String,Object>> blocking=new ArrayList<>();
-        tally.occluders.entrySet().stream().sorted(Map.Entry.<BlockPos,Integer>comparingByValue().reversed()).limit(3).forEach(e->{
-            var v=space.at(e.getKey());Map<String,Object> row=new LinkedHashMap<>();row.put("pos",point(e.getKey()));row.put("id",v.id());row.put("tile",v.tile());row.put("rays",e.getValue());blocking.add(row);});
-        out.put("blocking",blocking);
-        out.put("rejected",Map.of("noFooting",tally.stand,"outOfReach",tally.reach,"wrongSideOfFace",tally.side,"lineOfSightBlocked",tally.sight,"lookNotAllowed",tally.look,"bodyInPlacedCell",tally.body));
-        return out;
     }
     private void route() {
         BlockPos feet=WorkAccess.feet();
@@ -410,7 +371,7 @@ final class ClickRun {
         task.tried.add(task.at.feet());task.age=0;
         task.vantages=task.vantages.stream().filter(x->!task.tried.contains(x.feet())).toList();
         if(!task.vantages.isEmpty()){route();return;}
-        if(task.tried.size()<16){observe();return;}
+        if(task.tried.size()<16){space=null;observe();return;}
         fail(task.variant?"mismatch":"aim_mismatch");
     }
     private void breaking() {
@@ -622,7 +583,7 @@ final class ClickRun {
     private static Map<String,Object> problem(ClickSpace w,StepPlan.Step s,Vantages.Body body) {
         Map<String,Object> row=new LinkedHashMap<>();row.put("click",s.label());row.put("pos",point(s.pos()));
         if(s.place()&&!w.at(s.pos()).replaceable()){row.put("reason","occupied");row.put("present",w.at(s.pos()).id());return row;}
-        Found f=look(w,s,null,s.target(),body,Set.of(),null,null);
+        var f=ClickSearch.look(w,s,null,s.target(),body,Set.of(),null,null);
         row.put("reason",f.problem());row.put("blocking",f.diagnosis().get("blocking"));return row;
     }
 }
