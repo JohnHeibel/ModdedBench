@@ -92,7 +92,7 @@ public final class MovementFixture {
     /** Samples live tracked items each server tick: lava contact or fire before they vanish decides 'burned'. */
     @cpw.mods.fml.common.eventhandler.SubscribeEvent public void tick(cpw.mods.fml.common.gameevent.TickEvent.ServerTickEvent event) {
         if(event.phase!=cpw.mods.fml.common.gameevent.TickEvent.Phase.END) return;
-        synchronized(items) {for(Tracked t:items) if(!t.e.isDead) {
+        synchronized(items) {for(Tracked t:new ArrayList<>(items)) if(!t.e.isDead) { // a copy: the lava check reads blocks, which can load a chunk and its items
             t.lava|=t.e.handleLavaMovement();t.fire=Math.max(t.fire,fireTicks(t.e));t.pos=new double[]{t.e.posX,t.e.posY,t.e.posZ};
             if(t.e.getEntityItem()!=null) t.count=t.e.getEntityItem().stackSize;}}
         Case c=armed;
