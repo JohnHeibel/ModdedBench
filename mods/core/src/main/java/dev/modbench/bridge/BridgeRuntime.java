@@ -153,14 +153,16 @@ public abstract class BridgeRuntime {
                 Object result = methods.get(r.method).handler.call(r);
                 if (result != null) r.reply(result); else r.detach();
             } catch (IllegalArgumentException e) {
-                r.fail("bad_request", e.getMessage());
+                refuse(r, "bad_request", e.getMessage());
             } catch (Exception e) {
-                r.fail("game_error", e.toString());
+                refuse(r, "game_error", e.toString());
             } catch (LinkageError e) {
-                r.fail("linkage_error", "installed runtime API is incompatible with this handler: "+e);
+                refuse(r, "linkage_error", "installed runtime API is incompatible with this handler: "+e);
             }
         }
     }
+    /** A request refused here started nothing, so it resumes nothing: the resume admit() armed for it is dropped (see ClientClock.dropped). */
+    private static void refuse(Request r, String code, String message) { r.resumed = null; r.fail(code, message); }
 
     protected final void cancelQueuedInteractions() {
         // Stop is a barrier: work already waiting must not immediately press keys again.

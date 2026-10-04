@@ -18,12 +18,14 @@ public class BridgeRuntimeTest {
     private static final class Runtime extends BridgeRuntime {
         final List<String> controls = new ArrayList<>();
         int maintained;
+        boolean arms;
 
         Runtime() { super("test"); }
         void add(String name, Handler handler) { register(name, name, "interaction", handler); }
         void addRead(String name, Handler handler) { register(name, name, "read", handler); }
         @Override protected void controlsChanged(String reason) { controls.add(reason); }
         @Override protected void maintainControls() { maintained++; }
+        @Override protected void admit(Request r) { if(arms) r.resumed=Json.object("pausedBy","requested_pause"); }
     }
 
     private static Request request(Runtime runtime, Session session, int id, String method,
@@ -48,6 +50,22 @@ public class BridgeRuntimeTest {
             .map(e->e.getAsJsonObject()).filter(e->e.get("name").getAsString().equals("obs.async"))
             .allMatch(e->e.get("watchable").getAsBoolean()&&e.get("thread").getAsString().equals("server_observation")));
         assertFalse(runtime.bridgeId().equals(new Runtime().bridgeId()));
+    }
+
+    @Test
+    public void aRequestRefusedOnTheGameThreadDropsTheResumeItWasAdmittedWith() {
+        Runtime runtime=new Runtime();runtime.arms=true;Object world=new Object();runtime.service(world);
+        runtime.add("act.bad",r->{throw new IllegalArgumentException("slot out of range");});
+        runtime.add("act.broken",r->{throw new IllegalStateException("broken");});
+        runtime.add("act.good",r->"done");
+        Session session=new Session();List<JsonObject> replies=new ArrayList<>();
+        Request bad=request(runtime,session,1,"act.bad",new JsonObject(),replies);
+        runtime.dispatch(bad);runtime.dispatch(request(runtime,session,2,"act.broken",new JsonObject(),replies));
+        runtime.dispatch(request(runtime,session,3,"act.good",new JsonObject(),replies));runtime.service(world);
+        assertEquals("bad_request",replies.get(0).getAsJsonObject("error").get("code").getAsString());
+        assertEquals("game_error",replies.get(1).getAsJsonObject("error").get("code").getAsString());
+        assertFalse(replies.get(0).has("resumedWorld"));assertFalse(replies.get(1).has("resumedWorld"));assertEquals(null,bad.resumed);
+        assertEquals("requested_pause",replies.get(2).getAsJsonObject("resumedWorld").get("pausedBy").getAsString());
     }
 
     @Test
