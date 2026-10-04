@@ -25,6 +25,8 @@ import sys
 import time
 from pathlib import Path
 
+import runtime
+
 REPO = Path(__file__).resolve().parents[2]
 DOCKER = shutil.which("docker") or "C:/Program Files/Docker/Docker/resources/bin/docker.exe"
 PROJECT = os.environ.get("MB_COMPOSE_PROJECT", "moddedbench")  # a test stack is `-p mbtest`
@@ -96,6 +98,8 @@ if __name__ == "__main__":
     if args.mode == "restore":
         if not args.folder or not args.reason.strip(): parser.error("restore needs a snapshot folder and --reason")
         restore(Path(args.folder), args.reason.strip()); sys.exit()
+    only = args.mode != "loop" or runtime.only_one(f"backup-{PROJECT}")  # a second loop would hold and release the world under the first one's copy
+    if not only: sys.exit("another backup loop is already running for this stack")
     while True:
         if snapshot(): prune()
         if args.mode == "once": break

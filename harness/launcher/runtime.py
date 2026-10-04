@@ -84,6 +84,24 @@ def save_json(path: Path, value: dict[str, Any]) -> None:
     os.replace(tmp, path)
 
 
+def only_one(name: str, runtime: Path = RUNTIME):
+    """A lock file as mutex for a host process that must run once: the open file, kept for the life of the process, or None
+    when another process holds it. The OS drops the lock when its holder ends, however it ends, so it is never stale.
+    A file rather than a loopback port: Windows reserves port ranges anew at every boot, and each runtime needs its own."""
+    runtime.mkdir(parents=True, exist_ok=True)
+    lock = (runtime / f"{name}.lock").open("a")
+    try:
+        if os.name == "nt":
+            import msvcrt
+            lock.seek(0); msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        lock.close(); return None
+    return lock
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as source:
