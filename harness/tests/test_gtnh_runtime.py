@@ -342,6 +342,31 @@ class RuntimeTests(unittest.TestCase):
             with patch.object(runtime.subprocess, "run", return_value=result):
                 self.assertTrue(runtime.client_instance_is_running(Path(tmp)))
 
+    def test_terminating_the_client_names_only_the_managed_instance_and_checks_that_it_ended(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            instance = Path(tmp) / runtime.INSTANCE_NAME; instance.mkdir(); runtime.save_json(instance / runtime.MARKER, {"managedBy": "modbench"})
+            with patch.object(runtime.subprocess, "run", return_value=Namespace(returncode=0, stdout="")) as run, \
+                 patch.object(runtime, "client_instance_is_running", return_value=False), patch("builtins.print"):
+                runtime.kill_client(instance)  # nothing runs: the command is only looked at
+            script, env = run.call_args.args[0][-1], run.call_args.kwargs["env"]
+            self.assertTrue(script.startswith(runtime.CLIENT_JAVA)); self.assertIn("$hit | ForEach-Object {Stop-Process", script)
+            self.assertIn("if(-not $needle){exit 3}", script)  # an empty path would match every java on the host
+            self.assertEqual(env["MODBENCH_INSTANCE"], str(instance.resolve()))
+            with patch.object(runtime.subprocess, "run", return_value=Namespace(returncode=0, stdout="")), patch.object(runtime.time, "sleep"), \
+                 patch.object(runtime, "client_instance_is_running", return_value=True), self.assertRaisesRegex(runtime.RuntimeError_, "still running"):
+                runtime.kill_client(instance, timeout=0)
+            (instance / runtime.MARKER).unlink()
+            with patch.object(runtime.subprocess, "run") as run, self.assertRaises(runtime.RuntimeError_): runtime.kill_client(instance)
+            run.assert_not_called()  # an instance that is not ours is never touched
+
+    @unittest.skipUnless(os.name == "nt", "the client process inspector is PowerShell")
+    def test_the_process_scripts_parse(self):
+        import subprocess
+        for then in ("if ($hit.Count) {'true'} else {'false'}", "$hit | ForEach-Object {Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue}"):
+            done = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", "[void][scriptblock]::Create($env:MB_SCRIPT)"],
+                                  env={**os.environ, "MB_SCRIPT": runtime.CLIENT_JAVA + then}, capture_output=True, text=True, timeout=60)  # parsed, never run
+            self.assertEqual((done.returncode, done.stderr), (0, ""))
+
     def test_only_one_process_holds_a_lock_and_its_end_releases_it(self):
         import subprocess
         hold = "import sys; sys.path.insert(0, sys.argv[1]); import runtime; from pathlib import Path; lock = runtime.only_one('x', Path(sys.argv[2])); print(bool(lock), flush=True); sys.stdin.read()"

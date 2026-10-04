@@ -380,23 +380,28 @@ def recorded_process_is_running(record: dict[str, Any]) -> bool:
     return process_identity(pid) == identity
 
 
+# $hit: the java processes whose command line names the managed instance, and no others (no path, no match).
+CLIENT_JAVA = (
+    "$needle=[Environment]::GetEnvironmentVariable('MODBENCH_INSTANCE');if(-not $needle){exit 3};$needle=$needle.Replace('\\','/');"
+    "$hit=@(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |"
+    "Where-Object {$_.Name -in @('java.exe','javaw.exe','java','javaw') -and $_.CommandLine -and $_.CommandLine.Replace('\\','/').IndexOf($needle,[StringComparison]::OrdinalIgnoreCase) -ge 0});"
+)
+
+
+def client_java(instance: Path, then: str) -> subprocess.CompletedProcess:
+    env = os.environ.copy(); env["MODBENCH_INSTANCE"] = str(instance.resolve())
+    return subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", CLIENT_JAVA + then], env=env,
+                          capture_output=True, text=True, timeout=20, check=False)  # a loaded host answers slowly, and no answer counts as running
+
+
 def client_instance_is_running(instance: Path) -> bool:
     """Check a managed-instance lock/process without exposing process arguments."""
     if any((instance / name).exists() for name in ("instance.lock", ".instance.lock")):
         return True
     if os.name != "nt":
         return False
-    # Print a boolean only. Command lines never reach our logs or stdout.
-    script = (
-        "$needle=[Environment]::GetEnvironmentVariable('MODBENCH_INSTANCE').Replace('\\','/');"
-        "$hit=Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |"
-        "Where-Object {$_.Name -in @('java.exe','javaw.exe','java','javaw') -and $_.CommandLine -and $_.CommandLine.Replace('\\','/').IndexOf($needle,[StringComparison]::OrdinalIgnoreCase) -ge 0} |"
-        "Select-Object -First 1; if ($hit) {'true'} else {'false'}"
-    )
-    env = os.environ.copy(); env["MODBENCH_INSTANCE"] = str(instance.resolve())
     try:
-        result = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], env=env,
-                                capture_output=True, text=True, timeout=20, check=False)  # a loaded host answers slowly, and no answer counts as running
+        result = client_java(instance, "if ($hit.Count) {'true'} else {'false'}")  # a boolean only: command lines never reach our logs or stdout
         if result.returncode != 0:
             return True
         answer = result.stdout.strip().lower()
@@ -404,6 +409,20 @@ def client_instance_is_running(instance: Path) -> bool:
     except (OSError, subprocess.TimeoutExpired):
         # An unavailable inspector is not evidence that the game is stopped.
         return True
+
+
+def kill_client(instance: Path, timeout: float = 30) -> None:
+    """Terminate the java that client_instance_is_running sees, for a rollback only: a client that a deploy broke has no bridge
+    left to ask, and without this it would never get its old jars back."""
+    assert_managed_instance(instance)
+    try:
+        client_java(instance, "$hit | ForEach-Object {Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue}")
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError_(f"could not terminate the managed client: {exc}") from exc
+    deadline = time.monotonic() + timeout
+    while client_instance_is_running(instance) and time.monotonic() < deadline: time.sleep(0.5)
+    if client_instance_is_running(instance): raise RuntimeError_("the managed client is still running after it was terminated")
+    print("managed client process terminated")
 
 
 def component_sides(kind: str, only: str = "") -> list[str]:
