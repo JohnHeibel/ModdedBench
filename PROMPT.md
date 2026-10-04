@@ -31,8 +31,9 @@ by.
 
 **The operator has set this run's task: "Your task is now to make a base for LV.
 Request any resources you need."** Requests go through `mb_request`, and the
-operator puts what you ask for in your inventory. This task replaces the target
-above: no quest ends the run, and the operator stops it.
+operator puts what you ask for in your inventory. This task is the priority: it
+replaces the target above and comes ahead of the quest route. No quest ends the
+run; the operator stops it.
 
 This is meant to be hard: GT New Horizons is considered one of the most
 demanding modpacks, and most of what it asks for is infrastructure at scale.
