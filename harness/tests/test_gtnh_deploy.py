@@ -50,6 +50,21 @@ class DeployTests(unittest.TestCase):
         self.assertEqual(calls, [("install", "core", "client"), ("install", "client", "client"), "launch",
                                  ("rollback", "client", "client"), ("rollback", "core", "client"), "launch"])
 
+    def test_a_request_is_claimed_by_one_supervisor_and_a_second_supervisor_does_not_start(self):
+        import json, os
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"MODBENCH_OUTBOX": str(Path(tmp) / "box")}), patch("builtins.print"), \
+             patch.object(deploy, "accept", return_value={}), patch.object(deploy, "deploy", return_value={"ok": True}) as deployed:
+            box = Path(tmp) / "box"; box.mkdir(); args = SimpleNamespace(runtime=tmp, timeout=1, once=True)
+            runtime.save_json(box / "request.json", {"id": "a", "components": ["client"]})
+            self.assertTrue(deploy.claim(box)); self.assertFalse(deploy.claim(box))  # the second supervisor finds nothing to deploy
+            with self.assertRaisesRegex(runtime.RuntimeError_, "already waiting"): deploy.request(SimpleNamespace(components=["client"], reason="", timeout=1))
+            self.assertEqual(deploy.serve(args), 0)  # a claim left by a supervisor that died is served by the next one
+            self.assertEqual((json.loads((box / "result.json").read_text())["id"], deployed.call_count, sorted(p.name for p in box.iterdir())), ("a", 1, ["result.json"]))
+            held = runtime.only_one("deploy-supervisor", Path(tmp))
+            with self.assertRaisesRegex(runtime.RuntimeError_, "another deploy supervisor"): deploy.serve(args)
+            held.close()
+
     def test_core_can_be_installed_on_the_client_alone(self):
         self.assertEqual(runtime.component_sides("core"), ["client", "server"])
         self.assertEqual(runtime.component_sides("core", "client"), ["client"])

@@ -342,6 +342,19 @@ class RuntimeTests(unittest.TestCase):
             with patch.object(runtime.subprocess, "run", return_value=result):
                 self.assertTrue(runtime.client_instance_is_running(Path(tmp)))
 
+    def test_only_one_process_holds_a_lock_and_its_end_releases_it(self):
+        import subprocess
+        hold = "import sys; sys.path.insert(0, sys.argv[1]); import runtime; from pathlib import Path; lock = runtime.only_one('x', Path(sys.argv[2])); print(bool(lock), flush=True); sys.stdin.read()"
+        with tempfile.TemporaryDirectory() as tmp:
+            other = subprocess.Popen([sys.executable, "-c", hold, str(Path(runtime.__file__).parent), tmp], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+            try:
+                self.assertEqual(other.stdout.readline().strip(), "True")
+                self.assertIsNone(runtime.only_one("x", Path(tmp)))
+                runtime.only_one("y", Path(tmp)).close()  # another name is another lock
+            finally: other.communicate()
+            mine = runtime.only_one("x", Path(tmp)); self.assertIsNotNone(mine)
+            self.assertIsNone(runtime.only_one("x", Path(tmp))); mine.close()
+
     def test_invalid_explicit_java_does_not_fall_back_to_candidate(self):
         with self.assertRaises(runtime.RuntimeError_):
             runtime.resolve_executable("C:/definitely/not/java.exe", [sys.executable], "Java executable")

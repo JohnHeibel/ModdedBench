@@ -36,7 +36,7 @@ def end_task(wait: float = 120) -> dict | None:
 
 def request(args: argparse.Namespace) -> int:
     box = outbox(); box.mkdir(parents=True, exist_ok=True)
-    if (box / "request.json").exists(): raise RuntimeError_("a deploy request is already waiting")
+    if (box / "request.json").exists() or (box / "request.taken").exists(): raise RuntimeError_("a deploy request is already waiting")
     end_task()
     ident = uuid.uuid4().hex
     for kind in args.components:
@@ -92,13 +92,25 @@ def deploy(jars: dict[str, Path], root: Path, timeout: float) -> dict:
             return {"ok": False, "error": str(failure), "rollbackError": str(second)}
 
 
+def claim(box: Path) -> bool:
+    """Take the waiting request for this supervisor alone: the rename succeeds for one process, so no request is deployed twice."""
+    try:
+        if (box / "request.json").is_file(): os.replace(box / "request.json", box / "request.taken"); return True
+    except OSError: pass
+    return False
+
+
 def serve(args: argparse.Namespace) -> int:
     root = Path(args.runtime).resolve(); box = outbox(); box.mkdir(parents=True, exist_ok=True)
+    only = runtime.only_one("deploy-supervisor", root)  # two supervisors would stop and start one client against each other
+    if not only: raise RuntimeError_("another deploy supervisor is already serving this runtime")
     print(f"[ModdedBench] deploy supervisor watching {box}", flush=True)
+    taken = box / "request.taken"
+    if taken.is_file() and not (box / "request.json").exists(): os.replace(taken, box / "request.json")  # a supervisor died mid-deploy: its request is served again
     while True:
-        if (box / "request.json").is_file():
+        if claim(box):
             archive = root / "deploys" / time.strftime("%Y%m%d-%H%M%S")
-            try: req = load_json(box / "request.json")
+            try: req = load_json(taken)
             except ValueError: req = {}
             if not isinstance(req, dict): req = {}
             try:
@@ -107,7 +119,7 @@ def serve(args: argparse.Namespace) -> int:
                 result = {"ok": False, "error": str(exc)}
             result["id"] = req.get("id")
             if archive.is_dir(): save_json(archive / "result.json", result)
-            save_json(box / "result.json", result); (box / "request.json").unlink(missing_ok=True)
+            save_json(box / "result.json", result); taken.unlink(missing_ok=True)
             print(json.dumps(result), flush=True)
             if args.once: return 0 if result["ok"] else 1
         time.sleep(1)

@@ -122,6 +122,12 @@ class Shortener:
         except Exception: pass  # the original stays on screen; the key stays pending, so this text is not asked about again in this session
 
 
+def serving(name):
+    """Whether a supervisor or a backup loop is running on this host, the console's own child or one that outlived an earlier
+    console: its lock (runtime.only_one) is held."""
+    lock = runtime.only_one(name); return lock is None or lock.close()
+
+
 def sh(cmd, stdin=None, timeout=30):
     return subprocess.run(cmd, cwd=REPO, input=stdin, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, creationflags=NO_WINDOW)
 
@@ -169,8 +175,7 @@ class Console:
             req, res = runtime.load_json(folder / "request.json"), runtime.load_json(folder / "result.json")
             deploys.append({"time": folder.name, "components": req.get("components"), "reason": req.get("reason"), "ok": res.get("ok"), "error": res.get("error")})
         return {"docker": ps.returncode == 0, "dockerError": ps.stderr[-300:], "services": services, "agent": agent, "game": self.game(), "deploys": deploys,
-                "supervisor": self.supervisor is not None and self.supervisor.poll() is None,
-                "backups": self.backups is not None and self.backups.poll() is None, "job": self.job}
+                "supervisor": serving("deploy-supervisor"), "backups": serving("backup-" + os.environ.get("MB_COMPOSE_PROJECT", "moddedbench")), "job": self.job}
 
     def context(self):
         """(tokens in context, context window) of the newest thread, read at most every 5 s."""
