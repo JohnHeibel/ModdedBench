@@ -50,6 +50,54 @@ class DeployTests(unittest.TestCase):
         self.assertEqual(calls, [("install", "core", "client"), ("install", "client", "client"), "launch",
                                  ("rollback", "client", "client"), ("rollback", "core", "client"), "launch"])
 
+    def test_a_client_that_does_not_stop_in_time_is_stopped_again_and_relaunched_as_it_was(self):
+        calls = []
+        def stop(args):
+            calls.append("stop")
+            if calls.count("stop") == 1: raise runtime.RuntimeError_("shutdown requested but client is still live")
+        with patch.object(runtime, "load_config", return_value={}), patch.object(runtime, "instance_dir", return_value=Path(".")), \
+             patch.object(runtime, "client_instance_is_running", return_value=True), patch.object(runtime, "stop_client", stop), \
+             patch.object(runtime, "launch_client", lambda args: calls.append("launch")), patch.object(runtime, "install_jar", lambda *a: calls.append("install")):
+            result = deploy.deploy({"client": Path("c.jar")}, Path("."), 1)
+        self.assertEqual((result, calls), ({"ok": False, "error": "shutdown requested but client is still live", "rolledBack": []}, ["stop", "stop", "launch"]))
+
+    def test_a_rollback_whose_client_has_no_bridge_terminates_it_and_only_then(self):
+        def run(stop_fails):
+            calls, running = [], [True]
+            def launch(args):
+                calls.append("launch"); running[0] = True
+                if calls.count("launch") == 1: raise runtime.RuntimeError_("did not join")
+            def stop(args):
+                calls.append("stop")
+                if stop_fails: raise runtime.RuntimeError_("could not request authenticated client shutdown")
+                running[0] = False
+            def kill(instance): calls.append("kill"); running[0] = False
+            def stopped(kind, *a): self.assertFalse(running[0]); calls.append(kind)  # jars move only under a client that is down
+            with patch.object(runtime, "load_config", return_value={}), patch.object(runtime, "instance_dir", return_value=Path(".")), \
+                 patch.object(runtime, "client_instance_is_running", lambda instance: running[0]), patch.object(runtime, "launch_client", launch), \
+                 patch.object(runtime, "stop_client", stop), patch.object(runtime, "kill_client", kill), \
+                 patch.object(runtime, "install_jar", lambda kind, *a: calls.append(kind)), patch.object(runtime, "rollback_jar", stopped):
+                running[0] = False; result = deploy.deploy({"client": Path("c.jar")}, Path("."), 1)
+            return result, calls
+        failed = {"ok": False, "error": "did not join", "rolledBack": ["client"]}
+        self.assertEqual(run(stop_fails=True), (failed, ["client", "launch", "stop", "kill", "client", "launch"]))
+        self.assertEqual(run(stop_fails=False), (failed, ["client", "launch", "stop", "client", "launch"]))  # a bridge that answers is asked, never killed
+
+    def test_a_request_is_claimed_by_one_supervisor_and_a_second_supervisor_does_not_start(self):
+        import json, os
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"MODBENCH_OUTBOX": str(Path(tmp) / "box")}), patch("builtins.print"), \
+             patch.object(deploy, "accept", return_value={}), patch.object(deploy, "deploy", return_value={"ok": True}) as deployed:
+            box = Path(tmp) / "box"; box.mkdir(); args = SimpleNamespace(runtime=tmp, timeout=1, once=True)
+            runtime.save_json(box / "request.json", {"id": "a", "components": ["client"]})
+            self.assertTrue(deploy.claim(box)); self.assertFalse(deploy.claim(box))  # the second supervisor finds nothing to deploy
+            with self.assertRaisesRegex(runtime.RuntimeError_, "already waiting"): deploy.request(SimpleNamespace(components=["client"], reason="", timeout=1))
+            self.assertEqual(deploy.serve(args), 0)  # a claim left by a supervisor that died is served by the next one
+            self.assertEqual((json.loads((box / "result.json").read_text())["id"], deployed.call_count, sorted(p.name for p in box.iterdir())), ("a", 1, ["result.json"]))
+            held = runtime.only_one("deploy-supervisor", Path(tmp))
+            with self.assertRaisesRegex(runtime.RuntimeError_, "another deploy supervisor"): deploy.serve(args)
+            held.close()
+
     def test_core_can_be_installed_on_the_client_alone(self):
         self.assertEqual(runtime.component_sides("core"), ["client", "server"])
         self.assertEqual(runtime.component_sides("core", "client"), ["client"])

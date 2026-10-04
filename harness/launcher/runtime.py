@@ -84,6 +84,35 @@ def save_json(path: Path, value: dict[str, Any]) -> None:
     os.replace(tmp, path)
 
 
+def only_one(name: str, runtime: Path = RUNTIME):
+    """A lock file as mutex for a host process that must run once: the open file, kept for the life of the process, or None
+    when another process holds it. The OS drops the lock when its holder ends, however it ends, so it is never stale.
+    A file rather than a loopback port: Windows reserves port ranges anew at every boot, and each runtime needs its own."""
+    runtime.mkdir(parents=True, exist_ok=True)
+    lock = (runtime / f"{name}.lock").open("a")
+    try:
+        if os.name == "nt":
+            import msvcrt
+            lock.seek(0); msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        lock.close(); return None
+    return lock
+
+
+HOLD = "/data/modbench-hold"  # in the server container; the server asks only whether it exists (ServerClock)
+
+
+def hold_cmd(owner: str, take: bool, force: bool = False) -> str:
+    """Shell line for the server container that takes or releases the world hold as ``owner`` (operator, compaction, backup);
+    exit 0 means it did. The file says whose hold it is: a hold is taken only when there is none (``force``, the operator's
+    alone, takes over any) and released only by its owner, so no holder sets running a world that another one holds."""
+    if not take: return f'[ "$(cat {HOLD} 2>/dev/null)" = {owner} ] && rm -f {HOLD}'
+    return f"echo {owner} > {HOLD}" if force else f"set -C; echo {owner} > {HOLD}"
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as source:
@@ -362,23 +391,28 @@ def recorded_process_is_running(record: dict[str, Any]) -> bool:
     return process_identity(pid) == identity
 
 
+# $hit: the java processes whose command line names the managed instance, and no others (no path, no match).
+CLIENT_JAVA = (
+    "$needle=[Environment]::GetEnvironmentVariable('MODBENCH_INSTANCE');if(-not $needle){exit 3};$needle=$needle.Replace('\\','/');"
+    "$hit=@(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |"
+    "Where-Object {$_.Name -in @('java.exe','javaw.exe','java','javaw') -and $_.CommandLine -and $_.CommandLine.Replace('\\','/').IndexOf($needle,[StringComparison]::OrdinalIgnoreCase) -ge 0});"
+)
+
+
+def client_java(instance: Path, then: str) -> subprocess.CompletedProcess:
+    env = os.environ.copy(); env["MODBENCH_INSTANCE"] = str(instance.resolve())
+    return subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", CLIENT_JAVA + then], env=env,
+                          capture_output=True, text=True, timeout=20, check=False)  # a loaded host answers slowly, and no answer counts as running
+
+
 def client_instance_is_running(instance: Path) -> bool:
     """Check a managed-instance lock/process without exposing process arguments."""
     if any((instance / name).exists() for name in ("instance.lock", ".instance.lock")):
         return True
     if os.name != "nt":
         return False
-    # Print a boolean only. Command lines never reach our logs or stdout.
-    script = (
-        "$needle=[Environment]::GetEnvironmentVariable('MODBENCH_INSTANCE').Replace('\\','/');"
-        "$hit=Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |"
-        "Where-Object {$_.Name -in @('java.exe','javaw.exe','java','javaw') -and $_.CommandLine -and $_.CommandLine.Replace('\\','/').IndexOf($needle,[StringComparison]::OrdinalIgnoreCase) -ge 0} |"
-        "Select-Object -First 1; if ($hit) {'true'} else {'false'}"
-    )
-    env = os.environ.copy(); env["MODBENCH_INSTANCE"] = str(instance.resolve())
     try:
-        result = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], env=env,
-                                capture_output=True, text=True, timeout=5, check=False)
+        result = client_java(instance, "if ($hit.Count) {'true'} else {'false'}")  # a boolean only: command lines never reach our logs or stdout
         if result.returncode != 0:
             return True
         answer = result.stdout.strip().lower()
@@ -386,6 +420,20 @@ def client_instance_is_running(instance: Path) -> bool:
     except (OSError, subprocess.TimeoutExpired):
         # An unavailable inspector is not evidence that the game is stopped.
         return True
+
+
+def kill_client(instance: Path, timeout: float = 30) -> None:
+    """Terminate the java that client_instance_is_running sees, for a rollback only: a client that a deploy broke has no bridge
+    left to ask, and without this it would never get its old jars back."""
+    assert_managed_instance(instance)
+    try:
+        client_java(instance, "$hit | ForEach-Object {Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue}")
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError_(f"could not terminate the managed client: {exc}") from exc
+    deadline = time.monotonic() + timeout
+    while client_instance_is_running(instance) and time.monotonic() < deadline: time.sleep(0.5)
+    if client_instance_is_running(instance): raise RuntimeError_("the managed client is still running after it was terminated")
+    print("managed client process terminated")
 
 
 def component_sides(kind: str, only: str = "") -> list[str]:
@@ -442,7 +490,7 @@ def install_jar(kind: str, cfg: dict[str, Any], runtime: Path, only: str = "", s
         backup = backup_path(kind, side, runtime)
         temp = target.with_suffix(".jar.new")
         shutil.copy2(source, temp)
-        if target.exists():
+        if target.exists() and sha256_file(target) != sha256_file(source):  # the same jar again (a replayed deploy) must not replace the backup with the jar it is the backup for
             backup.parent.mkdir(parents=True, exist_ok=True)
             backup_new = backup.with_suffix(".jar.new")
             shutil.copy2(target, backup_new)
@@ -527,7 +575,7 @@ def start_server(args: argparse.Namespace) -> None:
     log = (runtime / "logs" / "server.log"); log.parent.mkdir(parents=True, exist_ok=True)
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
     with log.open("ab") as output:
-        proc = subprocess.Popen(command, cwd=server, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, creationflags=flags)
+        proc = subprocess.Popen(command, cwd=server, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, creationflags=flags, env=game_env())
     identity = process_identity(proc.pid)
     if not identity:
         raise RuntimeError_(f"the server process exited at once or could not be identified; see {log}")
@@ -718,6 +766,12 @@ def verify_client_build(cfg: dict[str, Any], runtime: Path = RUNTIME) -> None:
     raise RuntimeError_("client modules are an unrecognized mix; install matching components or roll back to a previously joined managed set")
 
 
+def game_env() -> dict[str, str]:
+    """The environment a game process gets: this one's without anything named like a credential. The game runs Java the agent
+    wrote, and the console's environment holds the operator's keys (OPENROUTER_API_KEY for the overlay's summaries)."""
+    return {k: v for k, v in os.environ.items() if not re.search("KEY|TOKEN|SECRET|PASSWORD", k.upper())}
+
+
 def launch_client(args: argparse.Namespace) -> None:
     runtime = Path(args.runtime).resolve(); cfg = load_config(runtime); path = instance_dir(cfg); assert_managed_instance(path)
     if not getattr(args, "installed_as_is", False):  # a supervised deploy installs jars this checkout did not build
@@ -728,7 +782,7 @@ def launch_client(args: argparse.Namespace) -> None:
         raise RuntimeError_("username must not be empty")
     # Do not use Prism's --server: that route can bypass FML's setup in this
     # legacy pack. The authenticated bridge connects after the title screen.
-    subprocess.Popen([prism, "--dir", str(cfg["prismData"]), "-l", INSTANCE_NAME, "--offline", username], creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0)
+    subprocess.Popen([prism, "--dir", str(cfg["prismData"]), "-l", INSTANCE_NAME, "--offline", username], env=game_env(), creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0)
     joined = wait_for_client_join(args.timeout)
     record_joined_client_build(cfg, runtime)
     print(json.dumps(joined))
@@ -740,7 +794,7 @@ def provision_client(args: argparse.Namespace) -> None:
     prism = resolve_executable(cfg.get("prism", ""), cfg.get("prismCandidates", []), "Prism Launcher executable")
     # Deliberately omit --offline and --server: Prism chooses its already
     # logged-in account and downloads the vanilla/Forge/LWJGL dependencies.
-    subprocess.Popen([prism, "--dir", str(cfg["prismData"]), "-l", INSTANCE_NAME], creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0)
+    subprocess.Popen([prism, "--dir", str(cfg["prismData"]), "-l", INSTANCE_NAME], env=game_env(), creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0)
     print("Prism provisioning launch requested")
 
 
