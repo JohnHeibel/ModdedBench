@@ -46,20 +46,22 @@ final class ReferenceNavigationJob implements Navigation.Job,PlansWhilePaused {
         previousAllowBreak=Baritone.settings().allowBreak.value;previousAllowPlace=Baritone.settings().allowPlace.value;
         engine.getPathingBehavior().forceCancel();BlockRules.reset();engine.snags.reset();baritone.gtnh.pathing.Cost.reset();
         initialCalculations=engine.getPathingBehavior().calculationsStarted();initialSegments=engine.getPathingBehavior().segmentsCompleted();
-        lease=ownsLease?ControlRegistry.controls().arbiter().acquire("baritone-reference",this::cancel,override,true):parent;
-        if(!lease.isActive())throw new IllegalArgumentException("navigation lease is inactive");
-        Baritone.settings().allowBreak.value=allowBreak;Baritone.settings().allowPlace.value=allowPlace;
-        engine.overrideProtection=override;
-        engine.explicitMiningTargets=()->s->false;
-        if(corridorStart!=null){
-            var corridor=new baritone.gtnh.pathing.Corridor(corridorStart,goals.get(0),radius);
-            engine.positionAllowed=p->corridor.contains(p);
-        }else engine.positionAllowed=p->true;
-        engine.getInputOverrideHandler().attach(lease);
-        // The cells the model named, by their physical floors: a goal no body fits in is refused before a search floods for it.
-        var refused=GoalRoom.refusal(physicalGoals.size()==1?new GoalBlock(physicalGoals.get(0)):new GoalComposite(physicalGoals.stream().map(GoalBlock::new).toArray(Goal[]::new)),GoalRoom.of(engine,mc.theWorld,mc.thePlayer,allowBreak),allowPlace);
-        if(refused!=null){failure.putAll(refused);finish("failed","goal_not_standable");return;}
-        engine.getCustomGoalProcess().setGoalAndPath(goal);
+        try{
+            lease=ownsLease?ControlRegistry.controls().arbiter().acquire("baritone-reference",this::cancel,override,true):parent;
+            if(!lease.isActive())throw new IllegalArgumentException("navigation lease is inactive");
+            Baritone.settings().allowBreak.value=allowBreak;Baritone.settings().allowPlace.value=allowPlace;
+            engine.overrideProtection=override;
+            engine.explicitMiningTargets=()->s->false;
+            if(corridorStart!=null){
+                var corridor=new baritone.gtnh.pathing.Corridor(corridorStart,goals.get(0),radius);
+                engine.positionAllowed=p->corridor.contains(p);
+            }else engine.positionAllowed=p->true;
+            engine.getInputOverrideHandler().attach(lease);
+            // The cells the model named, by their physical floors: a goal no body fits in is refused before a search floods for it.
+            var refused=GoalRoom.refusal(physicalGoals.size()==1?new GoalBlock(physicalGoals.get(0)):new GoalComposite(physicalGoals.stream().map(GoalBlock::new).toArray(Goal[]::new)),GoalRoom.of(engine,mc.theWorld,mc.thePlayer,allowBreak),allowPlace);
+            if(refused!=null){failure.putAll(refused);finish("failed","goal_not_standable");return;}
+            engine.getCustomGoalProcess().setGoalAndPath(goal);
+        }catch(RuntimeException failure){finish("failed","start_failed");throw failure;}
     }
     private boolean refreshGoal(){
         var nativeWorld=engine.getPlayerContext().world();var next=new ArrayList<BlockPos>();
