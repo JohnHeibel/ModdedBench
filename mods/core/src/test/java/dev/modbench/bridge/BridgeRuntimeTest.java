@@ -15,7 +15,7 @@ import org.junit.Test;
 
 /** Contract tests for the game-thread queue and request ownership boundaries. */
 public class BridgeRuntimeTest {
-    private static final class Runtime extends BridgeRuntime {
+    private static class Runtime extends BridgeRuntime {
         final List<String> controls = new ArrayList<>();
         int maintained;
 
@@ -48,6 +48,23 @@ public class BridgeRuntimeTest {
             .map(e->e.getAsJsonObject()).filter(e->e.get("name").getAsString().equals("obs.async"))
             .allMatch(e->e.get("watchable").getAsBoolean()&&e.get("thread").getAsString().equals("server_observation")));
         assertFalse(runtime.bridgeId().equals(new Runtime().bridgeId()));
+    }
+
+    @Test
+    public void aFailureReachesTheRuntimeBeforeItsReplyIsBuilt() {
+        // The client's clock withdraws a resume its action never earned and marks the record the reply then carries.
+        Runtime runtime=new Runtime(){
+            @Override protected void admit(Request r){r.resumed=Json.object("pausedBy","step");}
+            @Override protected void failed(Request r){r.resumed.addProperty("stayedPaused",true);}
+        };
+        Object world=new Object();runtime.service(world);
+        runtime.add("act.refused",r->{throw new IllegalArgumentException("target_not_visible");});
+        runtime.add("act.done",r->"done");
+        Session session=new Session();List<JsonObject> replies=new ArrayList<>();
+        runtime.dispatch(request(runtime,session,1,"act.refused",new JsonObject(),replies));
+        runtime.dispatch(request(runtime,session,2,"act.done",new JsonObject(),replies));runtime.service(world);
+        assertTrue(replies.get(0).getAsJsonObject("resumedWorld").get("stayedPaused").getAsBoolean());
+        assertFalse(replies.get(1).getAsJsonObject("resumedWorld").has("stayedPaused"));
     }
 
     @Test
