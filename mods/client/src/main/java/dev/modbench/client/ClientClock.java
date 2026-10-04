@@ -89,8 +89,11 @@ public final class ClientClock implements ClockHooks.Driver {
         if(ticks>0) record.addProperty("ticks",ticks);
         r.resumed=record;
     }
-    /** The action that asked for the resume was refused before it started anything (BridgeRuntime cleared its record): the world stays paused. */
-    static boolean dropped(Request armed) { return armed.resumed==null; }
+    /**
+     * The action that asked for the resume was refused before it started anything (BridgeRuntime cleared its record), or its
+     * session is gone (sendResume would send as nobody): the world stays paused.
+     */
+    static boolean dropped(Request armed) { return armed.resumed==null || !armed.session.connected; }
     private void sendResume() {
         resumeSent=true;
         Request resume=new Request(new com.google.gson.JsonPrimitive("resume-for-action-"+requestId),"time.resume",

@@ -21,6 +21,11 @@ public class ClientClockTest {
         r.resumed=null;  // BridgeRuntime does this when the handler refuses the request on the game thread
         assertTrue(ClientClock.dropped(r));
     }
+    @Test public void aResumeIsDroppedWhenTheSessionThatAskedForItIsGone() {
+        Session session=new Session();Request r=armed(session);
+        session.disconnect();  // before the credit tick: there is nobody to resume for, and no session to send the resume as
+        assertTrue(ClientClock.dropped(r));
+    }
     @Test public void pausedRefusalCarriesTheReasonAndAGuardIsNotOneToResumeThrough() {
         assertEquals("time_paused: paused by requested_pause; resume before starting simulation actions",ClientClock.refusal("requested_pause","starting simulation actions"));
         assertEquals("time_paused: paused by step; resume before executing native GUI actions",ClientClock.refusal("step","executing native GUI actions"));
