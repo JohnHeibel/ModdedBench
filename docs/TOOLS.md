@@ -294,7 +294,7 @@ Notes surface as a side effect, under a `notes` key, with at most five
 entries `{id, title, updated}` (`mb_notes` `get` reads one): on `mb_status` (session start), when a block, tile or entity with a
 note is observed, when a position read enters a noted region or comes near a
 note, and when a work call arrives somewhere. A note is not repeated within
-ten minutes unless the player has moved far away. `auto` notes never surface.
+ten minutes unless the player has moved far away.
 
 - `mb_notes("capture", {"kind": "block", "pos": [x, y, z]})` returns the
   `worldId` and `attachment` that `mb_note_write` needs. Entity attachments
@@ -303,10 +303,10 @@ ten minutes unless the player has moved far away. `auto` notes never surface.
   fields in `patch` change. Retry a lost reply with the same `operation_id`
   (the original receipt is replayed). `status` is `open`, `done` or
   `archived`; there is no delete.
-- Search is grep over the notes that pass every filter. `query` is one literal
-  piece of text (a regular expression with `regex: true`), case-insensitive
-  unless `case: true`, tried on each line of the text and on the id, title and
-  tags. Nothing is scored or ranked and words are not split. A result's
+- Search is plain text over the notes that pass every filter. A note is found
+  when every word of `query` is somewhere in its text, id, title or tags,
+  case-insensitive unless `case: true`; with `regex: true` the query is one
+  regular expression tried on each line. Nothing is scored or ranked. A result's
   `excerpt` is its matching lines (the first five; `matchingLines` counts them)
   with `context` lines around each (default 1, at most 5) in `grep -n` form
   (`12:` a match, `13-` a neighbour), or the first 280 characters when no line

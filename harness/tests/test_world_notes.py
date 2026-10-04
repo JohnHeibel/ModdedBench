@@ -186,7 +186,7 @@ class WorldNotesTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"world changed"):
                 write_note(game,str(uuid.uuid4()),"anchor",1,"wrongworld",{"text":"wrong"})
 
-    def test_search_is_grep_literal_by_default_regex_on_request_and_returns_matching_lines(self):
+    def test_search_finds_every_word_or_one_regex_and_returns_the_matching_lines(self):
         body = ["head", "Tin: 12 in chest A.B", "copper 40", "x" * 300 + " TIN dust " + "y" * 300, "tail", "end"]
         self.save("log", title="Bronze line", text="\n".join(body))
         self.save("other", title="Steam", text="nothing here")
@@ -194,7 +194,10 @@ class WorldNotesTests(unittest.TestCase):
         self.assertEqual(find(query="tin"), ["log"])                           # a substring, whatever its case
         self.assertEqual(find(query="tin", case=True), [])
         self.assertEqual(find(query="TIN dust", case=True), ["log"])
-        self.assertEqual(find(query="copper tin"), [])                         # one literal piece of text: words are not split
+        self.assertEqual((find(query="copper tin"), find(query="copper bronze dust"), find(query="copper zinc")), (["log"], ["log"], []))  # every word, anywhere in the note
+        self.assertEqual((find(query="copper tin", regex=True), find(query="tin dust", regex=True)), ([], ["log"]))                     # one pattern: side by side on a line
+        both = self.store.search(query="copper head", context=0)["notes"][0]
+        self.assertEqual((both["matchingLines"], both["excerpt"]), (2, "1:head\n3:copper 40"))  # a line with any of the words is shown
         self.assertEqual(find(query="t.n"), []); self.assertEqual(find(query="a.b"), ["log"])   # a dot is a dot
         self.assertEqual(find(query="t.n", regex=True), ["log"])
         self.assertEqual(find(query=r"^copper \d+$", regex=True), ["log"])     # a regular expression is tried on each line
@@ -375,11 +378,10 @@ class NotesSurfacingTests(unittest.TestCase):
         self.assertEqual((failed["id"], failed["status"], failed["tags"]), ("auto-route-0-8-8-8", "open", ["auto", "failed", "route"]))
         self.assertIn("stuck", failed["title"]); self.assertEqual(json.loads(failed["text"])["jobId"], "j1")
         self.assertIsNone(notes.journal(self.game, "nav.mine", None, error=BridgeError("cancelled", "stopped", "nav.mine", {})))
-        # tracked() wires it together: the receipt is journaled; the auto note is kept but does not surface.
+        # tracked() wires it together: the receipt is journaled, then the fresh auto note surfaces at the arrival position.
         self.game.receipt = {"state": "succeeded", "goal": [40, 64, 40], "blocksMined": 5}
         result = notes.tracked("nav.mine", 30, blocks=[{"id": "a:b"}])
-        self.assertEqual(result["blocksMined"], 5); self.assertNotIn("notes", result)
-        self.assertEqual(self.store.get("auto-mine-0-40-64-40")["revision"], 1)
+        self.assertEqual(result["blocksMined"], 5); self.assertEqual([n["id"] for n in result["notes"]], ["auto-mine-0-40-64-40"])
         self.assertEqual(result["endedAt"], [round(v, 1) for v in self.game.pos])  # where the job left you rides on its receipt
         self.game.receipt = {"state": "running"}
         self.assertNotIn("notes", notes.tracked("nav.mine", 30, blocks=[]))
@@ -416,7 +418,7 @@ class NotesSurfacingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unknown attachment fields"):
             attachment(dict(kind="item", item="a:b", pos=[0, 0, 0]))
 
-    def test_auto_notes_stay_out_of_search_and_surfacing_unless_asked_for(self):
+    def test_auto_notes_stay_out_of_search_unless_asked_for_and_still_surface(self):
         mbtool.state["kernel"] = self.game
         self.put("mine", self.at(10, 64, 20))
         notes.journal(self.game, "nav.build", {"state": "succeeded", "origin": [10, 64, 20], "blocksPlaced": 10})
@@ -429,7 +431,7 @@ class NotesSurfacingTests(unittest.TestCase):
         self.assertEqual((find(query="blocksPlaced"), find(query="blocksPlaced", author="all")), ([], ["auto-build-0-8-64-20"]))
         with self.assertRaisesRegex(ValueError, "author must be"): self.store.search(author="harness")
         self.assertEqual(ids(notes.mb_notes("search", {"near": "player", "radius": 8, "status": "all"})), ["mine"])
-        self.assertEqual([n["id"] for n in notes.surface(self.game, reason="session", radius=32)], ["mine"])
+        self.assertEqual(sorted(n["id"] for n in notes.surface(self.game, reason="session", radius=32)), ["auto-build-0-8-64-20", "mine"])
 
     def test_notes_tool_search_is_capped_by_default_and_null_does_not_lift_it(self):
         mbtool.state["kernel"] = self.game

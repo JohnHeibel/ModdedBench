@@ -11,11 +11,12 @@ observing a block/entity, entering a region, session start), most relevant first
 note already shown in the last SHOWN_TTL_S seconds unless the player has moved MOVE_RESET blocks.
 ``tracked()`` wraps ``kernel().call`` for the methods that mark such transitions and attaches the
 notes under a ``"notes"`` key only when non-empty. Terminal work outcomes are journaled as ``auto``
-notes keyed by location (a repeat at the same place updates instead of duplicating); ``auto`` notes
-never surface and are left out of a search unless it asks for them.
+notes keyed by location (a repeat at the same place updates instead of duplicating); they surface
+like any other and are left out of a search unless it asks for them.
 
-Search is grep: one literal piece of text or a regular expression, matched line by line. Nothing is
-scored or ranked; results come newest-changed first (history sequence), a page at a time. The only
+Search is plain text: every word of the query somewhere in the note, or one regular expression tried on
+each line, and the lines that matched as grep prints them. Nothing is scored or ranked; results come
+newest-changed first (history sequence), a page at a time. The only
 durable clock is the wall clock written on each revision (createdAt/updatedAt, UTC): memory.context
 carries no game time and the simulation tick counter restarts with the server.
 """
@@ -267,8 +268,9 @@ class NotesStore:
             raise ValueError("detail must be summary or full")
         _text(query, "query", 512, empty=True)
         regex, case = bool(regex), bool(case)
-        try:
-            pattern = re.compile(query if regex else re.escape(query), 0 if case else re.IGNORECASE) if query else None
+        try:  # every word has to be in the note; a line is shown when any of them is on it
+            words = [re.compile(w if regex else re.escape(w), 0 if case else re.IGNORECASE) for w in ([query] if regex else query.split())]
+            pattern = re.compile("|".join(f"(?:{w.pattern})" for w in words), 0 if case else re.IGNORECASE) if words else None
         except re.error as error:
             raise ValueError(f"query is not a valid regular expression: {error}") from None
         if tags is not None and (not isinstance(tags, list) or len(tags) > 32):
@@ -330,9 +332,9 @@ class NotesStore:
                 if not tags.issubset(note["tags"]) or not any(matches(a) for a in note["attachments"]):
                     continue
                 lines = note["text"].split("\n")
-                hits = [i for i, line in enumerate(lines) if pattern.search(line)] if pattern else []
-                if pattern and not hits and not pattern.search(" ".join([note["id"], note["title"], *note["tags"]])):
+                if not all(any(w.search(line) for line in [note["id"], note["title"], *note["tags"], *lines]) for w in words):
                     continue
+                hits = [i for i, line in enumerate(lines) if pattern.search(line)] if pattern else []
                 result = dict(note, age=_age(changed, now))
                 if detail == "summary":
                     result = dict({k: v for k, v in result.items() if k not in {"text", "data"}}, bodyCharacters=len(note["text"]),
@@ -500,14 +502,14 @@ def surface(kernel, *, position=None, dimension=None, block=None, entity=None, s
         cache["last"] = (dimension, now, here)
         store = store_for(world)
         if subjects is not None:
-            anchor, found = here, store.search(subject=subjects, limit=100)["notes"] if subjects else []
+            anchor, found = here, store.search(subject=subjects, author="all", limit=100)["notes"] if subjects else []
         elif entity is not None:
-            anchor, found = here, store.search(entity_uuid=entity, limit=100)["notes"]
+            anchor, found = here, store.search(entity_uuid=entity, author="all", limit=100)["notes"]
         elif block is not None:
             anchor = _floor(block)
-            found = store.search(dimension=dimension, near=anchor, radius=0, limit=100)["notes"]
+            found = store.search(dimension=dimension, near=anchor, radius=0, author="all", limit=100)["notes"]
         else:
-            anchor, found = here, store.search(dimension=dimension, near=here, radius=radius, limit=100)["notes"]
+            anchor, found = here, store.search(dimension=dimension, near=here, radius=radius, author="all", limit=100)["notes"]
         shown = cache.setdefault("shown", {})
         out = []
         for note in sorted(found, key=lambda n: (_nearest(n, anchor, dimension)[0], n["status"] != "open")):
@@ -685,32 +687,24 @@ def mb_notes(method: str = "search", params: dict | None = None) -> Any:
     search: {query,regex:false,case:false,context:1,since,before,author:me|auto|all,
     tags:[all-required-tags],status:open|done|archived|all,kind,near:[x,y,z]|player,
     radius:32,region:{min,max},entity_uuid,subject,dimension,limit:20,max_chars:6000,
-    cursor,detail:summary|full}. Every filter given must hold.
-    query works like grep, not like a search engine: it is one piece of text taken
-    literally, spaces included (a regular expression with regex:true), ignoring case
-    unless case:true, looked for in each line of the text and in the id, title and
-    tags. Words are not split and nothing is ranked: "copper vein" matches only where
-    those two words stand together.
-    since/before select by when a note last changed: an age ("90m", "5h", "3d": that
-    long ago, in real time) or a UTC time ("2026-10-04T12:00").
-    author: notes tagged "auto" are journaled by the harness (work outcomes) and never
-    surface; yours are anything else. me (the default) leaves the auto notes out, auto
-    returns only them, all returns both; tags:["auto"] also returns them.
-    Results come newest-changed first, each with its anchors, its age (since it last
-    changed: 40m, 5h, 3d) and an excerpt: the lines that matched (the first 5;
-    matchingLines counts them all) with context lines around each (0..5), as grep -n
-    prints them ("12:" a matching line, "13-" a neighbour, long lines cut around the
-    match), or the first 280 characters when there is no query or it matched only the
-    id, title or tags. get reads the full note.
-    A page ends at limit notes (at most 100) or when the notes would pass max_chars
-    characters of JSON (1000..20000), whichever comes first; a note that is larger
-    alone is listed with "omitted" in place of its content. Follow nextCursor unchanged
-    with the same filters for the next page; pages retain a consistent snapshot.
+    cursor,detail:summary|full}. Every filter given must hold; nothing is ranked.
+    query is plain text: a note is found when every word of it is somewhere in the
+    note's text, id, title or tags, ignoring case unless case:true. With regex:true
+    the whole query is one regular expression tried on each line, which is also how
+    to ask for words side by side.
+    since/before select by when a note last changed: an age ("90m", "5h", "3d", in
+    real time) or a UTC time ("2026-10-04T12:00").
+    author: me (the default) is your notes; auto is the ones the harness journals
+    (work outcomes, tagged "auto"); all is both.
+    Results come newest-changed first, each with its anchors, its age and an excerpt:
+    the lines that matched, as grep -n prints them ("12:" a match, "13-" one of the
+    context lines around it; the first 5, matchingLines counts them all), or the start
+    of the text when no line matched. get reads the full note.
+    A page ends at limit notes or max_chars characters (1000..20000), whichever comes
+    first; a note too large for a page is listed with "omitted". Follow nextCursor
+    unchanged with the same filters for the next page; pages retain a consistent snapshot.
     Defaults to current dimension and excludes archived notes; dimension:null searches
     all dimensions (spatial searches require one). Entity proximity uses lastSeen.
-    Changed 2026-10: results used to come in id order with auto notes among them
-    (they surfaced too), a query was split into words that could match anywhere in a
-    note, and a page had no character limit.
     get: {id} returns the note with createdAt, updatedAt, age and now (UTC); an entry
     added with mb_note_append starts with its own time.
     history: {id,before_revision?,limit:20}. resolve: {id} inspects currently loaded

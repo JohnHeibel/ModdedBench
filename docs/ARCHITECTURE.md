@@ -161,9 +161,8 @@ tools that arrive somewhere, observe a block or entity, enter a noted region,
 or start a session attach up to five relevant notes under a `notes` key, with
 a per-session cache so the same note is not repeated while nothing changed.
 A few automatic notes are written for important outcomes (a build completing,
-a job failing at a location), tagged `auto`; they do not surface and a search
-returns them only when asked. Search is plain text (grep), newest-changed
-first, a capped page at a time; nothing is ranked.
+a job failing at a location), tagged `auto`; a search returns them only when asked. Search is plain text,
+newest-changed first, a capped page at a time; nothing is ranked.
 
 ## Provenance
 
