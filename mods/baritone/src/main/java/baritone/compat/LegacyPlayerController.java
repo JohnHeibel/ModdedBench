@@ -10,10 +10,13 @@ public final class LegacyPlayerController {
     public LegacyPlayerController(baritone.Baritone engine){this.engine=engine;}
     private static final java.lang.reflect.Field HITTING=cpw.mods.fml.relauncher.ReflectionHelper.findField(net.minecraft.client.multiplayer.PlayerControllerMP.class,"isHittingBlock","field_78778_j");
     private static final java.lang.reflect.Field CURRENT_Y=cpw.mods.fml.relauncher.ReflectionHelper.findField(net.minecraft.client.multiplayer.PlayerControllerMP.class,"currentBlockY","field_78772_d");
+    private static final java.lang.reflect.Field DAMAGE=cpw.mods.fml.relauncher.ReflectionHelper.findField(net.minecraft.client.multiplayer.PlayerControllerMP.class,"curBlockDamageMP","field_78770_f");
     private static final java.lang.reflect.Method SYNC=cpw.mods.fml.relauncher.ReflectionHelper.findMethod(net.minecraft.client.multiplayer.PlayerControllerMP.class,null,new String[]{"syncCurrentPlayItem","func_78750_j"});
     public double getBlockReachDistance(){return mc.playerController.getBlockReachDistance();}
     public void resetBlockRemoving(){mc.playerController.resetBlockRemoving();}
     public void syncHeldItem(){try{SYNC.invoke(mc.playerController);}catch(ReflectiveOperationException e){throw new IllegalStateException(e);}}
+    /** How far the game has the block under the swing broken, 0..1: it moves every tick of a break that will end. */
+    public static float damage(){try{return DAMAGE.getFloat(Minecraft.getMinecraft().playerController);}catch(IllegalAccessException e){throw new IllegalStateException(e);}}
     public boolean hasBrokenBlock(){try{return CURRENT_Y.getInt(mc.playerController)==-1;}catch(IllegalAccessException e){throw new IllegalStateException(e);}}
     public void setHittingBlock(boolean value){try{HITTING.setBoolean(mc.playerController,value);}catch(IllegalAccessException e){throw new IllegalStateException(e);}}
     public boolean clickBlock(BlockPos p,EnumFacing side){
