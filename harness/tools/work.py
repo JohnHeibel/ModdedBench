@@ -573,6 +573,8 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
     cleared or pending and no new ground stood on end it as stalled_no_progress_near_x,y,z, paused
     if this session placed something, else failed (a cell nothing can be placed against, a standing
     cell it cannot leave). Holding a break on one block that long counts as stalled too.
+    noVantage (present when not empty, first 64): unfinished cells that, when last looked at, had no
+    standing spot in the world as it is from which a face to place them against is in view.
     symptoms: what happened to you during the job, as in mb_mine.
     """
     if drawing is not None:
