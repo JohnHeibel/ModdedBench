@@ -22,7 +22,7 @@ from mbtools_gtnh.core import lane_by_method, method_name, no_threat
 def mb_gui(method: str, params: dict | None = None) -> Any:
     """General UI primitives: click_slot, transfer, return_cursor, click_at, drag,
     scroll, key, type, text_field, button, container_button, hover, hit_test, status,
-    open_inventory, close. Use mb_methods for parameter schemas. Native event clicks
+    open_inventory, close. mb_methods(name="gui.") has the parameter schemas. Native event clicks
     reach modded/ghost slots; structured clicks and exact transfers use ordinary slots.
     Observe windowId/epoch and pass expected stacks/cursor to guard stale state.
     Inspect receipts after partial effects; never retry a click merely because its
@@ -34,11 +34,15 @@ def mb_gui(method: str, params: dict | None = None) -> Any:
 
 
 @tool(lane="read", coverage=["inventory"])
-def mb_inventory(detail: str = "full", container: bool = False) -> Any:
+def mb_inventory(detail: str = "compact", container: bool = False) -> Any:
     """Observe item identities with metadata/NBT, cursor and slot ownership.
-    Player detail: full, compact, counts. Container detail: summary, full, compact;
-    full includes bounded custom widget inspection. Container indices differ from
-    player inventory indices. Use observed clickAt coordinates for native events.
+    Player detail: compact (the default: occupied slots), full (all 36), counts (totals
+    per item). Container detail: compact (the default: every container slot and your
+    occupied ones, with stacks and slot flags), summary (adds slot x/y and clickAt,
+    buttons, labels and the custom widget tree) or full (summary plus every GUI field):
+    tens of kilobytes on a machine GUI, so ask for them only to click what is not a slot.
+    Container indices differ from player inventory indices. Native events take the
+    clickAt coordinates summary and full observe.
     """
     return notes.with_item_notes(kernel().call("obs.container" if container else "obs.inventory", detail=detail))
 

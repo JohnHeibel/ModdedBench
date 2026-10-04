@@ -28,7 +28,7 @@ Conventions that hold across all tools:
 | Tool | Effect | What it does |
 | --- | --- | --- |
 | `mb_status` | read | Bridge capabilities and connection state; surfaces notes near the player (session start). |
-| `mb_methods` | read | Lists the raw bridge methods with descriptions and effects. |
+| `mb_methods` | read | Lists the raw bridge methods, one line each; `name="gui."` (any part of a method name) returns the matches whole: full description with the parameter schema, effect, thread. |
 | `mb_call` | any | Calls any raw method with JSON params; the escape hatch when no wrapper fits. |
 | `mb_obs` | read | Observations: `player`, `players`, `world`, `block`, `entities`, `entity`, `inventory`, `container`, `gui`, `tooltip`, `find`, `keys`, `tile`, `nbt`, `waila`, `batch`, and the engine's world reads `scan`, `terrain`, `fluid`, `tools`. Block, tile and entity reads surface attached notes. |
 | `mb_act` | action | Native actions: raw `input`, `look`, `use_block`, `use_entity`, `attack_entity`, `use_item`, `eat`, `select_hotbar`, bounded `combat`, `status`, `stop`. |
@@ -288,9 +288,8 @@ custom-predicate example.
 | `mb_run` | privileged | Runs a model-written Python script (`main(**args)`, every `mb_*` tool in scope, `log`) as one call; stops at the first error with the line and the log. Runs once unless given a `name`, which keeps it under `harness/scripts/` for re-running. Disposable by design: not listed in `mb_status`, no library. |
 | `mb_goal` | action | Reads or updates the goal stack (chapter, quest, sub-goal, serves) kept in the note `goal-stack`; `mb_status` returns it with a stall signal. |
 
-Notes surface as a side effect, under a `notes` key, with at most five compact
-entries `{id, kind, title, revision, status, at, distance, excerpt?, tags?,
-why}`: on `mb_status` (session start), when a block, tile or entity with a
+Notes surface as a side effect, under a `notes` key, with at most five
+entries `{id, title, updated}` (`mb_notes` `get` reads one): on `mb_status` (session start), when a block, tile or entity with a
 note is observed, when a position read enters a noted region or comes near a
 note, and when a work call arrives somewhere. A note is not repeated within
 ten minutes unless the player has moved far away.

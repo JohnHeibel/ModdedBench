@@ -226,7 +226,7 @@ class GTNHProfileTests(unittest.TestCase):
         merged = server._with_fields(one, {"body": {"task": "t1"}})
         self.assertEqual((json.loads(merged.content[0].text), merged.structuredContent), ({"a": 1, "body": {"task": "t1"}},) * 2)
         plain = server._with_fields(CallToolResult(content=[TextContent(type="text", text="ok")]), {"bodyBusy": True})
-        self.assertEqual([c.text for c in plain.content], ["ok", '{"bodyBusy": true}'])
+        self.assertEqual([c.text for c in plain.content], ["ok", '{"bodyBusy":true}'])
         self.assertIs(server._with_fields(one, {}), one)
 
     def test_failed_reload_retains_last_good_tools(self):
@@ -322,7 +322,7 @@ class GTNHProfileTests(unittest.TestCase):
         core, inv, work, quests = (module_with(srv, a) for a in ("mb_status", "mb_gui", "mb_route", "mb_quest_observe"))
         fake = self.use(FakeKernel(lambda method, params: {"png": base64.b64encode(b"png").decode(), "width": 1, "height": 1}
                                    if method == "sys.screenshot" else {"method": method}))
-        self.assertEqual(core.mb_methods()["method"], "sys.methods")
+        self.assertEqual(core.mb_methods("no such"), {"methods": {}}); self.assertIn(("sys.methods", {}), fake.calls)
         self.assertEqual(core.mb_status()["method"], "sys.capabilities")
         self.assertEqual(core.mb_obs("player", {"detail": "full"})["method"], "obs.player")
         self.assertIn(("obs.player", {"detail": "full"}), fake.calls)

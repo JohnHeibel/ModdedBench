@@ -208,9 +208,8 @@ class NotesSurfacingTests(unittest.TestCase):
         self.put("far", self.at(500, 64, 500)); self.put("nether", self.at(10, 64, 20, dimension=-1))
         found = notes.surface(self.game, reason="session", radius=32)
         self.assertEqual([n["id"] for n in found], ["n0", "n1", "n2", "n3", "n4"])
-        self.assertTrue(found[0].pop("updated").startswith("20"))  # surfaced notes carry their age
-        self.assertEqual(found[0], {"id": "n0", "kind": "location", "title": "note n0", "revision": 1, "status": "open", "at": [10, 64, 20],
-                                    "distance": 0.0, "excerpt": "details details details n0", "tags": ["plan"], "why": "session"})
+        self.assertRegex(found[0].pop("updated"), r"^20\d\d-\d\d-\d\dT\d\d:\d\d$")  # surfaced notes carry their age, to the minute
+        self.assertEqual(found[0], {"id": "n0", "title": "note n0"})  # a note rides along by name: mb_notes get reads it
         self.assertEqual([n["id"] for n in notes.surface(self.game, reason="session", radius=32)], ["n5", "n6"])   # the rest, once
         self.assertEqual(notes.surface(self.game, reason="session", radius=32), [])                                 # nothing new
         self.game.pos = [12, 64, 20]
@@ -241,7 +240,7 @@ class NotesSurfacingTests(unittest.TestCase):
         self.put("pig", dict(kind="entity", dimension=0, uuid=entity, uuidScope="server", lastSeen=[30, 64, 20]))
         mbtool.state["kernel"] = self.game
         seen = notes.after("obs.block", {"x": 3, "y": 65, "z": 3}, {"id": "minecraft:stone", "meta": 0, "pos": [3, 65, 3]})
-        self.assertEqual([(n["id"], n["why"], n["at"]) for n in seen["notes"]], [("anchor", "block", [3, 65, 3]), ("room", "block", {"min": [0, 60, 0], "max": [5, 70, 5]})])
+        self.assertEqual([n["id"] for n in seen["notes"]], ["anchor", "room"])
         self.assertNotIn("notes", notes.after("obs.block", {"x": 40, "y": 65, "z": 40}, {"id": "minecraft:stone", "pos": [40, 65, 40]}))
         found = notes.after("obs.entity", {}, {"found": True, "uuid": entity, "uuidScope": "server", "pos": [30, 64, 20]})
         self.assertEqual([n["id"] for n in found["notes"]], ["pig"])
@@ -249,7 +248,7 @@ class NotesSurfacingTests(unittest.TestCase):
         self.assertEqual(notes.after("obs.player", {}, "not an object"), "not an object")
         self.put("camp", self.at(150, 64, 150)); self.game.pos = [200, 64, 200]
         arrived = notes.after("nav.goto", {}, {"state": "succeeded", "arrival": {"pos": [152, 64, 150]}})
-        self.assertEqual([(n["id"], n["why"], n["distance"]) for n in arrived["notes"]], [("camp", "arrival", 2.0)])
+        self.assertEqual([n["id"] for n in arrived["notes"]], ["camp"])
         self.assertNotIn("notes", notes.after("nav.goto", {}, {"state": "succeeded", "arrival": {"pos": [152, 64, 150]}}))  # shown already
 
     def test_auto_journal_keys_by_location_and_records_failures(self):
@@ -284,6 +283,16 @@ class NotesSurfacingTests(unittest.TestCase):
         with self.assertRaises(BridgeError): notes.tracked("nav.route", 30, name="x")
         self.assertEqual(self.store.get("auto-route-0-8-8-8")["revision"], 2)
 
+    def test_note_write_answers_with_a_receipt_not_the_note_again(self):
+        mbtool.state["kernel"] = self.game
+        place = dict(kind="location", dimension=0, pos=[10, 64, 20])
+        done = notes.mb_note_write(self.world, "plan", 0, "op-1", dict(title="LV workshop", text="roof first " * 80, attachments=[place], tags=["base"]))
+        self.assertEqual(done, {"saved": True, "replayed": False, "sequence": 1, "id": "plan", "revision": 1, "size": 880, "attachments": [place]})
+        again = notes.mb_note_write(self.world, "plan", 0, "op-1", dict(title="LV workshop", text="roof first " * 80, attachments=[place], tags=["base"]))
+        self.assertEqual((again["replayed"], again["revision"]), (True, 1))
+        self.assertEqual(notes.mb_note_write(self.world, "plan", 1, "op-2", dict(status="done")), {**done, "sequence": 2, "revision": 2})
+        self.assertEqual(self.store.get("plan")["text"], "roof first " * 80)
+
     def test_item_and_topic_notes_have_no_place_and_surface_by_subject(self):
         self.put("cassiterite", dict(kind="item", item="gregtech:gt.blockores:1823"))
         self.put("boiler", dict(kind="topic", topic="Machine:Boiler"))
@@ -294,7 +303,7 @@ class NotesSurfacingTests(unittest.TestCase):
         result = {"slots": [{"id": "gregtech:gt.blockores", "meta": 1823, "count": 3}, {"id": "minecraft:stick", "meta": 0}]}
         self.assertEqual(notes.item_subjects(result), ["gregtech:gt.blockores", "gregtech:gt.blockores:1823", "minecraft:stick", "minecraft:stick:0"])
         found = notes.surface(self.game, subjects=notes.item_subjects(result), reason="item")
-        self.assertEqual([(n["id"], n["at"]) for n in found], [("cassiterite", "gregtech:gt.blockores:1823")])
+        self.assertEqual([n["id"] for n in found], ["cassiterite"])
         self.assertEqual(notes.surface(self.game, subjects=notes.item_subjects(result)), [])  # shown once
         with self.assertRaisesRegex(ValueError, "unknown attachment fields"):
             attachment(dict(kind="item", item="a:b", pos=[0, 0, 0]))

@@ -1140,7 +1140,7 @@ and list what is loaded, with load errors.
 
 | Tool | What it does |
 | --- | --- |
-| `mb_methods` | List bridge methods advertised by the GTNH profile; also caches their effects for lane routing of mb_call |
+| `mb_methods` | List the bridge's raw methods with one line each, or with name the matching ones whole; also caches their effects for lane routing of mb_call |
 | `mb_status` | Bridge status, the clock (paused, why, operator hold), your goal stack (mb_goal) with its stall signal, world notes near you, how long the run has been going, and your l… |
 | `mb_cost` | What your own tool calls cost over the last `hours`: calls, failures and minutes per tool, and the time between calls |
 | `mb_call` | Call any advertised bridge method with JSON parameters |
@@ -1195,7 +1195,7 @@ and list what is loaded, with load errors.
 | `mb_quest_status` | Report native Better Questing availability and catalogue counts |
 | `mb_quest_sync` | Queue Better Questing's native full quest/progress and chapter synchronization query |
 | `mb_quest_search` | Search localized quest UUIDs, titles and descriptions with pagination |
-| `mb_quest_lines` | Read native quest-line order, layout and per-player state totals |
+| `mb_quest_lines` | Read quest lines in book order: per-player state totals and every quest's id, title and state |
 | `mb_quest_observe` | Observe one quest UUID: prerequisites, task progress/config and rewards |
 | `mb_quest_detect` | Hand a quest its tasks: the quest book's detect button, checkboxes included |
 | `mb_quest_select_choice` | Select one observed native reward option through the normal BQ packet |
