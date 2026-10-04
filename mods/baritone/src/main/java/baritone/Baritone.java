@@ -48,6 +48,8 @@ public final class Baritone implements IBaritone {
     /** A mining job that plugs each hole it opens may break blocks beside fluid (never lava), as a player does. */
     public static volatile boolean besideFluid;
     public java.util.function.Predicate<BlockPos> positionAllowed=p->true;
+    /** Cells a path may place into or break, where the terrain permissions allow it at all: a job's walk leaves its own work alone. Read by path searches on their threads. */
+    public volatile java.util.function.Predicate<BlockPos> editAllowed=p->true;
     /** Movement edges this job saw fail; each job resets it when it starts. */
     public final baritone.gtnh.pathing.Snags snags=new baritone.gtnh.pathing.Snags();
     /** Doors and gates a path opened, to close behind it. */

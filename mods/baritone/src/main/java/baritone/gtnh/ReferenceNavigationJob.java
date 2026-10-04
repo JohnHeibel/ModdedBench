@@ -44,7 +44,8 @@ final class ReferenceNavigationJob implements Navigation.Job,PlansWhilePaused {
         refreshGoal();
         ownsLease=parent==null;
         previousAllowBreak=Baritone.settings().allowBreak.value;previousAllowPlace=Baritone.settings().allowPlace.value;
-        engine.getPathingBehavior().forceCancel();BlockRules.reset();engine.snags.reset();baritone.gtnh.pathing.Cost.reset();
+        engine.getPathingBehavior().forceCancel();BlockRules.reset();engine.snags.reset();
+        if(ownsLease)baritone.gtnh.pathing.Cost.reset(); // a walk inside another job's lease is that job's cost
         initialCalculations=engine.getPathingBehavior().calculationsStarted();initialSegments=engine.getPathingBehavior().segmentsCompleted();
         lease=ownsLease?ControlRegistry.controls().arbiter().acquire("baritone-reference",this::cancel,override,true):parent;
         if(!lease.isActive())throw new IllegalArgumentException("navigation lease is inactive");

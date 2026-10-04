@@ -92,6 +92,7 @@ public class CalculationContext {
     private final dev.modbench.api.WorldMemory.Snapshot protectedRegions;
     private final boolean overrideProtection;
     public final java.util.function.Predicate<BlockPos> positionAllowed;
+    private final java.util.function.Predicate<BlockPos> editAllowed;
     public final baritone.gtnh.pathing.Snags snags; // ModdedBench: movement edges this job banned after they snagged
     private final java.util.function.Predicate<IBlockState> explicitMiningTargets;
 
@@ -110,6 +111,7 @@ public class CalculationContext {
         this.protectedRegions = captured.protection();
         this.overrideProtection = captured.overrideProtection();
         this.positionAllowed = captured.positionAllowed();
+        this.editAllowed = captured.editAllowed();
         this.snags = captured.snags();
         this.air = captured.air();
         this.breathSafety = Math.max(1, Baritone.settings().breathSafety.value);
@@ -203,7 +205,7 @@ public class CalculationContext {
     }
 
     public boolean isPossiblyProtected(int x, int y, int z) {
-        if (y < 0 || y > 255 || !worldBorder.canPlaceAt(x,z)) return true;
+        if (y < 0 || y > 255 || !worldBorder.canPlaceAt(x,z) || !editAllowed.test(new BlockPos(x,y,z))) return true;
         return !overrideProtection && !protectedRegions.protectedAt(new dev.modbench.api.WorldMemory.Pos(x,y,z), true).isEmpty();
     }
 }

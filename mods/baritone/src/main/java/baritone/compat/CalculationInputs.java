@@ -16,9 +16,14 @@ import java.util.function.Predicate;
 public record CalculationInputs(World world,BlockStateInterface blocks,ToolSet tools,
         boolean throwaway,boolean waterPlacement,boolean sprint,int frostWalker,int depthStrider,
         WorldMemory.Snapshot protection,boolean overrideProtection,Predicate<BlockPos> positionAllowed,
-        Predicate<IBlockState> explicitMiningTargets,baritone.gtnh.pathing.Snags snags,int air) {
+        Predicate<IBlockState> explicitMiningTargets,baritone.gtnh.pathing.Snags snags,int air,Predicate<BlockPos> editAllowed) {
     /** A player's full air supply in ticks (EntityPlayer#getAir with the head out of water). */
     public static final int FULL_AIR=300;
+    public CalculationInputs(World world,BlockStateInterface blocks,ToolSet tools,boolean throwaway,boolean waterPlacement,
+            boolean sprint,int frostWalker,int depthStrider,WorldMemory.Snapshot protection,boolean overrideProtection,Predicate<BlockPos> positionAllowed,
+            Predicate<IBlockState> explicitMiningTargets,baritone.gtnh.pathing.Snags snags,int air){
+        this(world,blocks,tools,throwaway,waterPlacement,sprint,frostWalker,depthStrider,protection,overrideProtection,positionAllowed,explicitMiningTargets,snags,air,p->true);
+    }
     public CalculationInputs(World world,BlockStateInterface blocks,ToolSet tools,boolean throwaway,boolean waterPlacement,
             boolean sprint,int frostWalker,int depthStrider,WorldMemory.Snapshot protection,boolean overrideProtection,Predicate<BlockPos> positionAllowed,
             Predicate<IBlockState> explicitMiningTargets,baritone.gtnh.pathing.Snags snags){
@@ -34,7 +39,7 @@ public record CalculationInputs(World world,BlockStateInterface blocks,ToolSet t
         this(world,blocks,tools,throwaway,waterPlacement,sprint,frostWalker,depthStrider,protection,overrideProtection,positionAllowed,explicitMiningTargets,new baritone.gtnh.pathing.Snags());
     }
     public CalculationInputs {
-        Objects.requireNonNull(blocks);Objects.requireNonNull(tools);Objects.requireNonNull(protection);Objects.requireNonNull(positionAllowed);Objects.requireNonNull(snags);
+        Objects.requireNonNull(blocks);Objects.requireNonNull(tools);Objects.requireNonNull(protection);Objects.requireNonNull(positionAllowed);Objects.requireNonNull(snags);Objects.requireNonNull(editAllowed);
     }
     public static CalculationInputs capture(IBaritone owner,boolean threaded){
         var engine=(Baritone)owner;var ctx=owner.getPlayerContext();var player=ctx.player();var world=ctx.world();
@@ -44,6 +49,7 @@ public record CalculationInputs(World world,BlockStateInterface blocks,ToolSet t
         return new CalculationInputs(world,new BlockStateInterface(ctx,threaded),tools,
             engine.getInventoryBehavior().hasGenericThrowaway(),FallProtection.available()&&!world.provider.isHellWorld,
             player.getFoodStats().getFoodLevel()>6,0,0,ControlRegistry.memory().memory().snapshot(),engine.overrideProtection,engine.positionAllowed,engine.explicitMiningTargets.get(),engine.snags,
-            player.getAir()); // the air bar the player sees
+            player.getAir(), // the air bar the player sees
+            engine.editAllowed);
     }
 }
