@@ -168,10 +168,7 @@ final class ReferenceConstructionProcess extends BulkJob {
         engine.getBuilderProcess().mayBreak=p->{
             BlockPos pos=new BlockPos(p.getX(),p.getY(),p.getZ());Cell cell=snapshot.get(pos);
             if(cell==null)return allowBreak&&!restricted;
-            if(!clearing&&deferredSnapshot.contains(pos))return false;
-            if(!replace&&!cell.clear())return false;
-            if(pendingSnapshot.contains(pos)&&!verified.getOrDefault(pos,false))return false;
-            return true;
+            return PlanBreaks.allowed(cell.clear(),verified.getOrDefault(pos,false),!clearing&&deferredSnapshot.contains(pos),replace,pendingSnapshot.contains(pos));
         };
         engine.getBuilderProcess().mayPlace=p->!restricted||snapshot.containsKey(new BlockPos(p.getX(),p.getY(),p.getZ()));
         Set<BlockPos> poseSensitive=new HashSet<>();
