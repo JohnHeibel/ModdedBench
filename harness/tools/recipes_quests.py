@@ -202,7 +202,7 @@ def mb_recipes(id: str = "", meta: int | None = None, nbt: str | None = None, mo
                handler: str = "", offset: int = 0, limit: int = 0,
                alternatives_offset: int = 0, alternatives_limit: int = 32,
                timeout_s: float = 60.0, fluid: str = "", amount: int = 1000,
-               detail: str = "summary", index: int = -1, query: str = "") -> Any:
+               detail: str = "summary", index: int = -1, query: str = "", stations: str = "") -> Any:
     """Browse every way to make an item, or mode='uses' for what consumes it.
 
     Default limit=0 returns a category overview with counts and known GT base EU/t
@@ -234,7 +234,12 @@ def mb_recipes(id: str = "", meta: int | None = None, nbt: str | None = None, mo
     query="steel plate" keeps the summaries whose shown output and input names hold every word (the recipe view's
     search box), before offset and limit (default 20) page them; matched says how many of total, and at most 1000
     are searched, so pick a handler first.
-    detail='full' returns ONE recipe whatever limit says: pick it with index.
+    detail='full' returns ONE recipe whatever limit says: pick it with index. Its catalysts are the blocks that can
+    run it, each as one item. Plain crafting and smelting have dozens that all do the same: there catalysts holds the
+    first (the crafting table, the furnace) and otherCatalysts counts the rest; stations='all' lists every one. Every
+    other handler lists all of its catalysts. A full recipe leaves out what says nothing: maxStackSize when it is 64,
+    oreNames when there are none, alternativesOffset when it is 0, alternativeCount when every alternative is listed.
+    x and y are the slot's place in the recipe's own grid: in shaped crafting they are the shape.
     This observes recipes; it does not craft, spawn items or alter the current GUI.
     Your notes on the item and on any ingredient shown are named under "notes": read them (mb_notes get) before making an ingredient by hand.
     """
@@ -260,15 +265,22 @@ def mb_recipes(id: str = "", meta: int | None = None, nbt: str | None = None, mo
         result.update(query=query, matched=len(found), offset=offset, recipes=found[offset:end], nextOffset=end if end < len(found) else None)
     if detail != "full" and isinstance(result.get("recipes"), list):
         # Every recipe of a handler repeats that handler's station list (dozens of crafting-table variants): say it once, by name.
-        stations, recipes = result.setdefault("stations", {}), result["recipes"]
+        named, recipes = result.setdefault("stations", {}), result["recipes"]
         for recipe in recipes:
             names = [e["name"] for c in recipe.pop("catalysts", None) or [] for e in c.get("examples", [])[:1]]
-            stations.setdefault(recipe.get("handlerKey"), names[:6] + ([f"+{len(names) - 6} more (detail='full' lists them)"] if len(names) > 6 else []))
+            named.setdefault(recipe.get("handlerKey"), names[:6] + ([f"+{len(names) - 6} more (detail='full', stations='all' lists them)"] if len(names) > 6 else []))
             for part in ("inputs", "other"): recipe[part] = [_only(position) for position in recipe.get(part) or []]
             if "result" in recipe: recipe["result"] = _only(recipe["result"])
         # So does what the handler and the summary form fix (its key, coverage, the preview note): once for the page, where the page agrees.
         shared = {key: recipes[0][key] for key in SHARED if recipes and key in recipes[0] and all(r.get(key) == recipes[0][key] for r in recipes)}
         if shared: result.update(shared=shared, recipes=[{key: value for key, value in r.items() if key not in shared} for r in recipes])
+    if detail == "full" and isinstance(result.get("recipes"), list):
+        for recipe in result["recipes"]:
+            found = [_station(c) for c in recipe.get("catalysts") or []]
+            if stations != "all" and len(found) > 1 and str(recipe.get("handlerKey")).split("|")[1:2] in (["crafting"], ["smelting"]):
+                recipe.update(catalysts=found[:1], otherCatalysts=len(found) - 1)  # the grid and the furnace: one name stands for the lot
+            elif found: recipe["catalysts"] = found
+        result = _lean(result)
     # Notes on the ingredients matter as much as notes on the target: "the base already makes this" belongs to the ingredient.
     return notes.with_item_notes(result)
 
@@ -281,6 +293,21 @@ def _only(position):
     """A summary position with a single possible item is that item, not a list of one alternative."""
     examples = position.get("examples") if isinstance(position, dict) else None
     return examples[0] if examples and position.get("alternativeCount") == 1 else position
+
+
+def _station(position):
+    """A catalyst that is one item with no place of its own in the recipe is that item."""
+    items = position.get("alternatives") if isinstance(position, dict) else None
+    return items[0] if items and len(items) == 1 == position.get("alternativeCount") and not position.get("x") and not position.get("y") else position
+
+
+def _lean(value):
+    """A full recipe without the fields that say nothing (mb_recipes names them)."""
+    if isinstance(value, list): return [_lean(v) for v in value]
+    if not isinstance(value, dict): return value
+    drop = {key for key, nothing in (("maxStackSize", 64), ("oreNames", []), ("alternativesOffset", 0)) if key in value and value[key] == nothing}
+    if isinstance(value.get("alternatives"), list) and value.get("alternativeCount") == len(value["alternatives"]): drop.add("alternativeCount")
+    return {key: _lean(v) for key, v in value.items() if key not in drop}
 
 
 def _names(value) -> str:
