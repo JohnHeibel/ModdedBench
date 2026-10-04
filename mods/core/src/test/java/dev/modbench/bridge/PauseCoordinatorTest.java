@@ -241,6 +241,19 @@ public class PauseCoordinatorTest {
     }
 
     @Test
+    public void aGuardOnAStepsLastTickEndsTheStepAndIsItsReason() {
+        Fixture f=new Fixture();settlePause(f);
+        f.clock.configure(Json.object("airBelow",100));
+        f.coordinator.command("time.resume",Json.object("ticks",3),f.replies::add);
+        int[] air={300,300,90};
+        for(int tick=0;tick<3;tick++) { int now=air[tick];assertTrue(f.coordinator.before());f.coordinator.after(()->f.clock.observe(20.0F,now)); }
+        assertEquals("air_threshold",f.clock.reason());
+        assertFalse(f.coordinator.before());
+        JsonObject last=f.coordinator.status().getAsJsonObject("lastStep");
+        assertEquals(3,last.get("ran").getAsInt());assertEquals("air_threshold",last.get("endedBy").getAsString());
+    }
+
+    @Test
     public void aPlainResumeSupersedesAStepAndRunsFreely() {
         Fixture f=new Fixture();settlePause(f);
         f.coordinator.command("time.step",Json.object("ticks",10),f.replies::add);
