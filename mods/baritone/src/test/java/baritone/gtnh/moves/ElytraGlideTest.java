@@ -34,7 +34,7 @@ public class ElytraGlideTest {
             var flight=plan(terrain,east(pitch),-40);
             assertNotNull("pitch "+pitch,flight);
             assertEquals(64,flight.dest().y);assertEquals(0,flight.dest().z);
-            assertEquals(flight.touchdown().x+ElytraGlide.SLIDE,flight.dest().x);
+            assertEquals(flight.touchdown().x+flight.slide(),flight.dest().x);assertTrue(flight.slide()>=3&&flight.slide()<=6);
             assertTrue(pitch+" lands at "+flight.dest().x,flight.dest().x<last&&flight.dest().x>-30);
             assertTrue(flight.cost()>0&&flight.cost()<ActionCosts.COST_INF);
             last=flight.dest().x;
@@ -80,10 +80,29 @@ public class ElytraGlideTest {
         assertEquals(gliding.getCost(),gliding.calculateCost(Planning.context(terrain,glides)),1e-9);
         assertEquals("the wings came off",ActionCosts.COST_INF,gliding.calculateCost(Planning.context(terrain)),0);
     }
-    /** The arithmetic is the game's: these are a flight measured in the pack (harness/smoke/glide_course.py prints them). */
-    @Test public void aTickOfFlightIsTheGamesOwn(){
-        double[] v={0.2,-0.2,0};
-        ElytraGlide.fly(v,-90,20);
-        assertEquals(0.21586,v[0],1e-5);assertEquals(-0.20283,v[1],1e-5);assertEquals(0,v[2],1e-9);
+    /**
+     * The arithmetic is the game's. These are a flight in the pack held at 20 degrees, measured a tick at a time
+     * (harness/smoke/glide_course.py --measure 20): its motion at one tick, and fifty ticks on, and how far it went between.
+     */
+    @Test public void fiftyTicksOfFlightAreTheGamesOwn(){
+        double[] v={0.0869,-0.4240,0};
+        double x=0,y=0;
+        for(int tick=0;tick<50;tick++){ElytraGlide.fly(v,-90,20);x+=v[0];y+=v[1];}
+        assertEquals(0.9374,v[0],2e-3);assertEquals(-0.2273,v[1],2e-3);assertEquals(0,v[2],1e-9);
+        assertEquals(90.866-60.782,x,0.05);assertEquals(181.454-194.431,y,0.05);
+    }
+    /** And at 30 degrees: steeper, so faster down, and settling at the sink the game settles at. */
+    @Test public void aSteeperFlightSinksAsTheGameDoes(){
+        double[] v={0.0818,-0.4374,0};
+        double x=0,y=0;
+        for(int tick=0;tick<50;tick++){ElytraGlide.fly(v,-90,30);x+=v[0];y+=v[1];}
+        assertEquals(1.0844,v[0],2e-3);assertEquals(-0.3400,v[1],2e-3);
+        assertEquals(93.545-60.777,x,0.05);assertEquals(176.508-194.418,y,0.05);
+    }
+    /** A glide the game flew: from a tower twenty up, walking off its edge, the body touched down 44.06 from where it stood and slid 5.06. */
+    @Test public void theGlideTheGameFlewIsTheGlidePlanned(){
+        var flight=plan(tower(-40),east(30),-40);
+        assertEquals(44.06,flight.touchX()-(-39.5),0.5);
+        assertEquals(5,flight.slide());
     }
 }

@@ -45,8 +45,8 @@ public record ElytraGlide(int dx,int dz,float pitch,int airtime) implements Move
     static final int FALL=3;
     /** Where the body leaves the ledge, from the cell's centre, and how fast it walks there. */
     static final double EDGE=0.8,WALK=0.2;
-    /** Cells past the touchdown the body slides before it stands. */
-    static final int SLIDE=2;
+    /** The body slides on after touching down: this many ticks' worth of the speed it came in at. */
+    static final double SLIDE=4;
     /** A touchdown faster than this downward hurts. */
     static final double HARD=-0.45;
     static final int[][] WAYS={{1,0},{-1,0},{0,1},{0,-1}};
@@ -103,8 +103,8 @@ public record ElytraGlide(int dx,int dz,float pitch,int airtime) implements Move
 
     // ---- the search's side ----
 
-    /** A planned glide: where the feet touch down, where the body stands afterwards, the ticks it takes, the cells it flies through. */
-    record Flight(double touchX,double touchZ,BetterBlockPos touchdown,BetterBlockPos dest,double cost,List<BetterBlockPos> cells){}
+    /** A planned glide: where the feet touch down, the cells the body slides on, where it then stands, the ticks it takes, the cells it flies through. */
+    record Flight(double touchX,double touchZ,BetterBlockPos touchdown,int slide,BetterBlockPos dest,double cost,List<BetterBlockPos> cells){}
 
     /**
      * The glide from standing in this cell, or null where there is none: no ledge, something in the way, wings that
@@ -124,7 +124,7 @@ public record ElytraGlide(int dx,int dz,float pitch,int airtime) implements Move
                 double qx=px+v[0]*half/2,qy=py+v[1]*half/2,qz=pz+v[2]*half/2;
                 int cx=(int)Math.floor(qx),cy=(int)Math.floor(qy),cz=(int)Math.floor(qz);
                 if(!context.isLoaded(cx,cz))return null;
-                if(!MovementHelper.fullyPassable(context,cx,cy,cz))return v[1]>HARD?land(context,qx,qz,cx,cy+1,cz,tick,cells):null;
+                if(!MovementHelper.fullyPassable(context,cx,cy,cz))return v[1]>HARD?land(context,qx,qz,Math.abs(v[0]*dx+v[2]*dz),cx,cy+1,cz,tick,cells):null;
                 if(!clear(context,cx,cy,cz))return null;
                 BetterBlockPos cell=new BetterBlockPos(cx,cy,cz);
                 if(cells.isEmpty()||!cells.get(cells.size()-1).equals(cell))cells.add(cell);
@@ -140,16 +140,17 @@ public record ElytraGlide(int dx,int dz,float pitch,int airtime) implements Move
         for(int down=1;down<=2;down++)if(!MovementHelper.fullyPassable(context,x,y-down,z)&&!MovementHelper.canWalkOn(context,x,y-down,z))return false;
         return true;
     }
-    /** The end of a glide whose feet reach this cell: level ground to stand on from the touchdown to a cell past where the slide stops. */
-    private Flight land(CalculationContext context,double touchX,double touchZ,int x,int y,int z,int ticks,List<BetterBlockPos> cells){
-        for(int along=0;along<=SLIDE+1;along++){
+    /** The end of a glide whose feet reach this cell at this speed: level ground to stand on from the touchdown to past where the slide stops. */
+    private Flight land(CalculationContext context,double touchX,double touchZ,double speed,int x,int y,int z,int ticks,List<BetterBlockPos> cells){
+        int slide=(int)Math.ceil(SLIDE*speed);
+        for(int along=0;along<=slide+2;along++){
             int sx=x+dx*along,sz=z+dz*along;
             if(!context.isLoaded(sx,sz)||!MovementHelper.canWalkOn(context,sx,y-1,sz))return null;
             for(int up=0;up<=2;up++)if(!MovementHelper.fullyPassable(context,sx,y+up,sz))return null;
         }
         BetterBlockPos touchdown=new BetterBlockPos(x,y,z);
-        return new Flight(touchX,touchZ,touchdown,new BetterBlockPos(x+dx*SLIDE,y,z+dz*SLIDE),
-            ActionCosts.WALK_OFF_BLOCK_COST+ticks+SLIDE*ActionCosts.WALK_ONE_BLOCK_COST,cells);
+        return new Flight(touchX,touchZ,touchdown,slide,new BetterBlockPos(x+dx*slide,y,z+dz*slide),
+            ActionCosts.WALK_OFF_BLOCK_COST+ticks+slide*ActionCosts.WALK_ONE_BLOCK_COST/2,cells);
     }
 
     @Override public int xOffset(){return dx;}
@@ -192,7 +193,7 @@ public record ElytraGlide(int dx,int dz,float pitch,int airtime) implements Move
             Set<BetterBlockPos> valid=new HashSet<>();
             valid.add(src);
             for(BetterBlockPos cell:flight.cells)for(int side=-1;side<=1;side++)for(int up=-3;up<=3;up++)valid.add(new BetterBlockPos(cell.x+side*glide.dz,cell.y+up,cell.z+side*glide.dx));
-            for(int along=-1;along<=SLIDE+1;along++)for(int up=0;up<=1;up++)valid.add(new BetterBlockPos(flight.touchdown.x+glide.dx*along,dest.y+up,flight.touchdown.z+glide.dz*along));
+            for(int along=-1;along<=flight.slide+2;along++)for(int up=0;up<=1;up++)valid.add(new BetterBlockPos(flight.touchdown.x+glide.dx*along,dest.y+up,flight.touchdown.z+glide.dz*along));
             return valid;
         }
         /** Off the ledge there is no stopping. */
@@ -221,7 +222,7 @@ public record ElytraGlide(int dx,int dz,float pitch,int airtime) implements Move
             int from=(feet.x-src.x)*glide.dx+(feet.z-src.z)*glide.dz,to=(dest.x-feet.x)*glide.dx+(dest.z-feet.z)*glide.dz;
             boolean inLine=(feet.x-src.x)*glide.dz==0&&(feet.z-src.z)*glide.dx==0;
             if(!left&&feet.y==src.y&&inLine&&from>=0&&from<=1)MovementHelper.moveTowards(ctx,state,new BetterBlockPos(src.x+2*glide.dx,src.y,src.z+2*glide.dz));   // on the ledge: walk off it
-            else if(feet.y==dest.y&&Math.abs(to)<=SLIDE+2){                     // down: let the slide run out, then stand where the route goes on
+            else if(feet.y==dest.y&&inLine&&to>=-2&&to<=flight.slide+1){                     // down: let the slide run out, then stand where the route goes on
                 if(Math.hypot(body.motionX,body.motionZ)<WALK)MovementHelper.moveTowards(ctx,state,dest);
             }else return state.setStatus(MovementStatus.UNREACHABLE);          // on the ground somewhere else: the route is planned again from here
             return state;
