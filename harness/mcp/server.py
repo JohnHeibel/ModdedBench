@@ -242,6 +242,11 @@ class Server(FastMCP):
         scope_token = cancel_scope.set(scope)
         started, error_code = time.time(), "cancelled"
         try:
+            tool = self._tool_manager._tools.get(name)  # noqa: SLF001
+            known = list((tool.parameters or {}).get("properties", {})) if tool else None
+            unknown = sorted(set(arguments or {}) - set(known)) if known is not None else []
+            if unknown:  # the argument model drops what it does not know, and the call would run on defaults
+                raise ValueError(f"{name} takes no argument {', '.join(unknown)}; its arguments are: {', '.join(known) or 'none'}")
             result = await super().call_tool(name, arguments)
             error_code = "tool_error" if getattr(result, "isError", False) else None
             if isinstance(result, CallToolResult):
