@@ -76,8 +76,9 @@ def _git(repo, *args):
     try: return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, timeout=20).stdout.strip() or None
     except Exception: return None
 
-def turn(cmd, prompt, cwd, log, feed=None, over=lambda: None):
-    """One Codex turn, streamed to the log and stdout: (exit code, thread id or None, last agent message, budget reason or None)."""
+def turn(cmd, prompt, cwd, log, feed=None, over=lambda: None, seen=lambda thread: None):
+    """One Codex turn, streamed to the log and stdout: (exit code, thread id or None, last agent message, budget reason or None).
+    ``seen`` gets the thread id the moment Codex names it."""
     thread, last, spent, cut = None, "", None, []
     with subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace") as p:
         p.stdin.write(prompt); p.stdin.close()
@@ -92,7 +93,10 @@ def turn(cmd, prompt, cwd, log, feed=None, over=lambda: None):
             try: event = json.loads(line)
             except ValueError: continue
             if not isinstance(event, dict): continue
-            thread = thread or _find_id(event); item = event.get("item")
+            item = event.get("item")
+            if not thread:
+                thread = _find_id(event)
+                if thread: seen(thread)
             try: feed and feed.event(event)
             except Exception as e: log.write("# feed: %r\n" % e)  # the overlay never costs a turn
             if event.get("type") == "item.completed" and isinstance(item, dict) and item.get("type") == "agent_message" and isinstance(item.get("text"), str): last = item["text"]
@@ -128,6 +132,9 @@ def run(repo=REPO, prompt=None, max_turns=50, state=None, codex=None, extra=(), 
     save_record()
     _mark_run(repo / ".state" / "run.json", started, max_minutes)
     folder = repo / ".state" / "tasks"
+    def keep(found):  # saved the moment it is known: a run is one turn, and a first turn that is killed must resume, not start over with the full brief
+        nonlocal thread
+        if not thread: thread = found; state.write_text(json.dumps({"thread": thread}), encoding="utf-8")
     def end(reason):
         try: _tasks().end_all("run_end", folder=folder)  # between turns a task runs on; when the run is over it stops
         except Exception as e: print("codex_loop: cancelling the background task: %r" % e, file=sys.stderr)
@@ -162,9 +169,7 @@ def run(repo=REPO, prompt=None, max_turns=50, state=None, codex=None, extra=(), 
             log.write("# %s %s\n" % (time.strftime("%Y-%m-%dT%H:%M:%S"), " ".join(cmd)))
             body = _body(folder)
             again = CONTINUE + (" Your background task %s (%s) is still running: mb_task shows it." % (body["task"], body["name"] or "unnamed") if body else "")
-            code, found, last, spent = turn(cmd, again if thread else prompt.read_text(encoding="utf-8"), repo, log, feed, over)
-            if found and not thread:
-                thread = found; state.write_text(json.dumps({"thread": thread}), encoding="utf-8")
+            code, _, last, spent = turn(cmd, again if thread else prompt.read_text(encoding="utf-8"), repo, log, feed, over, keep)
             if spent: return end(spent)
             if "MISSION COMPLETE" in [x.strip() for x in last.splitlines()]: feed.add("mark", "MISSION COMPLETE"); return end("complete")
             failures = failures + 1 if code else 0

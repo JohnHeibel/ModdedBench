@@ -107,6 +107,17 @@ class CodexLoopTests(unittest.TestCase):
         (self.repo / "calls.json").unlink(); reason, calls = self.loop([{}], max_turns=1)
         self.assertEqual(("max_turns", ["resume", "T-1", "-"]), (reason, calls[0]["argv"][-3:]))
 
+    def test_the_thread_id_is_saved_while_the_first_turn_is_still_running(self):
+        import threading, time
+        state, saved = self.repo / ".state" / "codex-loop.json", []
+        def watch():  # a killed first turn leaves what is on disk now, not what the turn's end would have written
+            until = time.monotonic() + 20
+            while time.monotonic() < until and not state.exists(): time.sleep(0.05)
+            saved.append(state.read_text() if state.exists() else None); (self.repo / ".state" / "STOP").write_text("")
+        threading.Thread(target=watch, daemon=True).start()
+        reason, _ = self.loop([{"events": [{"type": "thread.started", "thread_id": "T-1"}, {"type": "turn.started", "sleep": 40}]}])
+        self.assertEqual(("stop_file", [json.dumps({"thread": "T-1"})]), (reason, saved))
+
     def test_stop_file_ends_the_loop(self):
         reason, calls = self.loop([{"events": [{"type": "thread.started", "thread_id": "T-1"}], "stop": True}])
         self.assertEqual(("stop_file", 1), (reason, len(calls)))
