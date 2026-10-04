@@ -334,7 +334,7 @@ def run_natural_tools(course, info: dict, index: int, yaw: float, name: str) -> 
             threading.Thread(target=later, daemon=True).start()
         m = info["mine"]
         duration = course.args.duration * 4
-        r = work.mb_mine(blocks=[{"id": m["id"]}], items=[{"id": m["id"]}], quantity=NEED, bounds=m["bounds"], allow_break=True, allow_place=True,
+        r = work.mb_mine(blocks=[{"id": m["id"]}], items=[{"id": m["id"]}], quantity=NEED, bounds=m["bounds"], allow_break=True, allow_place=True, cleanup_scaffold=False,
                          timeout_ticks=duration)
         return {"state": r.get("state") or "succeeded", "reason": r.get("reason"), "receipt": trim(r)}
 
