@@ -335,7 +335,7 @@ def run_natural_tools(course, info: dict, index: int, yaw: float, name: str) -> 
         m = info["mine"]
         duration = course.args.duration * 4
         r = work.mb_mine(blocks=[{"id": m["id"]}], items=[{"id": m["id"]}], quantity=NEED, bounds=m["bounds"], allow_break=True, allow_place=True,
-                         timeout_ticks=duration, timeout_s=duration / 20 + 60)
+                         timeout_ticks=duration)
         return {"state": r.get("state") or "succeeded", "reason": r.get("reason"), "receipt": trim(r)}
 
     return frame(course, name, info, index, yaw, body)

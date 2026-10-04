@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import base64
+import inspect
 import asyncio
 import json
 import os
@@ -340,28 +341,29 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual(fake.calls[-1], ("memory.protect", {"name": "base", "min": [1,2,3], "max": [4,5,6]}))
         with self.assertRaises(ValueError):
             core.mb_memory("dev.fluid_fixture.restore")
-        work.mb_route("base to cave", reverse=True, start_index=2, timeout_s=900, timeout_ticks=16000)
+        # One timeout, in game ticks: the wall-clock wait is derived from it (that budget at two thirds speed, plus 30 s).
+        work.mb_route("base to cave", reverse=True, start_index=2, timeout_ticks=16000)
         self.assertEqual(fake.last("nav.route"), ("nav.route", {"name": "base to cave", "reverse": True,
             "startIndex": 2, "allowBreak": False, "allowPlace": False, "overrideProtection": False,
-            "timeoutTicks": 16000, "timeout": 900}))
+            "timeoutTicks": 16000, "timeout": 1230.0}))
         work.mb_route("approved work", allow_break=True, override_protection=True)
         self.assertTrue(fake.last("nav.route")[1]["overrideProtection"])
         work.mb_route("next journey")
         self.assertFalse(fake.last("nav.route")[1]["overrideProtection"])
         work.mb_mine([{"id":"ore:block"}], [{"id":"ore:item"}], quantity=8,
-                     bounds={"min":[0,1,0],"max":[3,4,3]}, timeout_s=700)
+                     bounds={"min":[0,1,0],"max":[3,4,3]})
         self.assertEqual(fake.last("nav.mine"), ("nav.mine", {
             "blocks":[{"id":"ore:block"}], "items":[{"id":"ore:item"}], "quantity":8,
             "radius":24, "allowBreak":False, "allowPlace":False,
             "overrideProtection":False, "timeoutTicks":12000,
-            "bounds":{"min":[0,1,0],"max":[3,4,3]}, "timeout":700}))
+            "bounds":{"min":[0,1,0],"max":[3,4,3]}, "timeout":930.0}))
         cells=[{"pos":[0,0,0],"id":"minecraft:stone","meta":0}]
         work.mb_build_preview(cells=cells, origin=[10,70,10])
         self.assertEqual(fake.calls[-1][0], "nav.build_preview")
-        work.mb_build(cells=cells, timeout_ticks=500, timeout_s=45)
+        work.mb_build(cells=cells, timeout_ticks=500)
         self.assertEqual(fake.last("nav.build"), ("nav.build", {"replaceExisting":False,
             "overrideProtection":False,"allowBreak":False,"allowPlace":False,"mode":"blueprint",
-            "timeoutTicks":500,"cells":cells,"timeout":45}))
+            "timeoutTicks":500,"cells":cells,"timeout":67.5}))
         # One mb_scan covers a volume above the bridge's per-scan cap: layers of <=262144 cells, each paged to its end.
         def scan(method, params):
             volume = 1
@@ -387,9 +389,13 @@ class GTNHProfileTests(unittest.TestCase):
         self.use(fake)
         work.mb_work_status("job-7")
         self.assertEqual(fake.calls[-1], ("nav.work_status", {"jobId":"job-7"}))
-        work.mb_work_resume("job-7", {"timeoutTicks":400,"overrideProtection":True}, timeout_s=88)
-        self.assertEqual(fake.last("nav.resume"), ("nav.resume", {"timeout":88,"jobId":"job-7",
+        work.mb_work_resume("job-7", {"timeoutTicks":400,"overrideProtection":True})
+        self.assertEqual(fake.last("nav.resume"), ("nav.resume", {"timeout":60.0,"jobId":"job-7",
             "timeoutTicks":400,"overrideProtection":True}))
+        work.mb_work_resume("job-7")  # the job keeps its own budget, unknown here: the wait covers the longest one
+        self.assertEqual(fake.last("nav.resume")[1]["timeout"], 5430.0)
+        for tool in (work.mb_route, work.mb_mine, work.mb_build, work.mb_copy, work.mb_schematic_build, work.mb_work_resume):
+            self.assertNotIn("timeout_s", inspect.signature(tool).parameters)
         quests.mb_quest_observe("00000000-0000-0000-0000-000000000001")
         self.assertEqual(fake.calls[-1][0], "quest.observe")
         quests.mb_quest_claim("00000000-0000-0000-0000-000000000001", [2], {"2":1}, wait_s=0)
@@ -627,10 +633,10 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual(result["request"]["cells"], 1)
         self.assertIn("preview", result)
         result = tools.mb_schematic_build("x", preview=False, replace_existing=False, allow_break=False, allow_place=True,
-                                          settings={"restricted":False}, timeout_ticks=77, timeout_s=9)
+                                          settings={"restricted":False}, timeout_ticks=77)
         request = fake.last("nav.build")[1]
         self.assertFalse(request["replaceExisting"]); self.assertFalse(request["allowBreak"]); self.assertTrue(request["allowPlace"])
-        self.assertEqual((request["settings"], request["timeoutTicks"], request["timeout"]), ({"restricted":False}, 77, 9))
+        self.assertEqual((request["settings"], request["timeoutTicks"], request["timeout"]), ({"restricted":False}, 77, 35.775))
         self.assertEqual(result["result"], {"state":"succeeded"})
         fake.reply = lambda method, params: {"count": 0, "cells": []}   # cells only count inside the nested plan
         with self.assertRaises(ValueError): tools.mb_schematic_build("x")
@@ -652,9 +658,9 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertFalse({"count","skipped","tileEntities","timeoutTicks","timeout"} & set(request))
         self.assertEqual(previewed["copied"], {"size":[2,1,1],"count":2,"skipped":{"air":0,"unknown":0,"unloaded":0},"tileEntities":1})
         self.assertEqual(previewed["request"]["cells"], 2); self.assertIn("preview", previewed)
-        built = tools.mb_copy(bounds, build=True, allow_break=True, timeout_ticks=300, timeout_s=30)
+        built = tools.mb_copy(bounds, build=True, allow_break=True, timeout_ticks=300)
         method, request = fake.last("nav.build")
-        self.assertEqual((request["origin"], request["allowBreak"], request["timeoutTicks"], request["timeout"]), ([0,0,0], True, 300, 30))
+        self.assertEqual((request["origin"], request["allowBreak"], request["timeoutTicks"], request["timeout"]), ([0,0,0], True, 300, 52.5))
         self.assertEqual(built["result"], {"state":"succeeded"})
         for bad in ({}, {"min":[0,0,0]}, {"min":1,"max":2}):
             with self.assertRaises(ValueError): tools.mb_copy(bad)

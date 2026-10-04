@@ -113,7 +113,7 @@ class Shells(Course):
         t = time.monotonic()
         try:   # the call of job 9d600db0, cell for cell
             receipt = work.mb_build(cells=cells, origin=origin, replace_existing=True, allow_break=True, allow_place=False,
-                                    mode="blueprint", timeout_ticks=12000, timeout_s=660)
+                                    mode="blueprint", timeout_ticks=12000)
         except BridgeError as e:
             err = (e.reply or {}).get("error") or {}
             receipt = {**(err.get("receipt") if isinstance(err.get("receipt"), dict) else {}), "errorCode": e.code, "errorMsg": e.msg}

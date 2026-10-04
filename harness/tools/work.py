@@ -43,13 +43,20 @@ def _any_facing(params: dict) -> tuple[dict, dict | None]:
     return {**params, "settings": {**(params.get("settings") or {}), "metadataMasks": {**dict.fromkeys(guessed, 0), **own}}}, fact
 
 
+def _wait(ticks: int) -> float:
+    """Real seconds to wait on a job whose budget is `ticks` game ticks: that budget at two thirds speed, and slack.
+    The tick budget is the one timeout. The wait only has to outlast it, so the job ends itself and says why."""
+    return ticks / 20 * 1.5 + 30
+
+
 def _with(receipt: Any, key: str, fact: Any) -> Any:
     """A harness decision said back in the receipt."""
     return {**receipt, key: fact} if fact is not None and isinstance(receipt, dict) else receipt
 
 
-def _build_call(method: str, params: dict, timeout_s: float | None = None) -> Any:
+def _build_call(method: str, params: dict) -> Any:
     """Direct request for small plans; bounded staging (nav.build_stage) for large cell lists."""
+    timeout_s = _wait(params["timeoutTicks"]) if params.get("timeoutTicks") else None  # a preview has no budget: the default wait
     if params.get("mode") == "builder":
         params = {**params, "settings": {"restricted": True, **(params.get("settings") or {})}}
     cells = params.get("cells")
@@ -93,19 +100,18 @@ def _echo(spec: dict) -> dict:
 @tool(coverage=["move"])
 def mb_route(name: str, reverse: bool = False, start_index: int = 0,
              allow_break: bool = False, allow_place: bool = False,
-             override_protection: bool = False, timeout_ticks: int = 1200,
-             timeout_s: float = 90.0) -> Any:
+             override_protection: bool = False, timeout_ticks: int = 1200) -> Any:
     """Follow a saved route, approaching its first anchor then following bounded corridors.
 
     Each leg replans against current terrain; blocked corridors fail instead of
     silently taking a distant shortcut. reverse reverses the anchor order; start_index
     indexes that resulting order. A cancelled route can be restarted at the reported
-    nextIndex. Raise both timeouts for long journeys (ticks <=72000); deadlines count
-    simulation ticks, caller timeout counts real seconds. Protection still applies
+    nextIndex. Raise timeout_ticks for long journeys (<=72000); it counts simulation
+    ticks and is the only timeout. Protection still applies
     with allow_break/allow_place unless override_protection is explicitly true.
     Notes near the arrival position are returned under "notes".
     """
-    return notes.tracked("nav.route", timeout_s, name=name, reverse=reverse, startIndex=start_index,
+    return notes.tracked("nav.route", _wait(timeout_ticks), name=name, reverse=reverse, startIndex=start_index,
                          allowBreak=allow_break, allowPlace=allow_place,
                          overrideProtection=override_protection, timeoutTicks=timeout_ticks)
 
@@ -391,7 +397,7 @@ def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, q
             bounds: dict | None = None, radius: int = 24,
             allow_break: bool = False, allow_place: bool = False,
             override_protection: bool = False, timeout_ticks: int = 12000,
-            timeout_s: float = 600.0, beside_fluid: bool | None = None,
+            beside_fluid: bool | None = None,
             vein: list[int] | None = None, vein_grid: dict | None = None, stall_ticks: int | None = None,
             tool_slot: int | None = None) -> Any:
     """Run bounded native quantity mining and return its terminal receipt.
@@ -470,7 +476,7 @@ def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, q
     if bounds is not None: params["bounds"] = bounds
     if stall_ticks is not None: params["stallTicks"] = stall_ticks
     before = _held(k)
-    try: result = notes.tracked("nav.mine", timeout_s, **params)
+    try: result = notes.tracked("nav.mine", _wait(timeout_ticks), **params)
     except BridgeError as error:
         receipt = ((error.reply or {}).get("error") or {}).get("receipt")
         if isinstance(receipt, dict): receipt.update(_drops(before, _held(k)), **facts); _left(receipt)
@@ -584,7 +590,7 @@ def mb_build_preview(cells: list[dict] | None = None, selection: dict | None = N
 def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
              origin: list[int] | None = None, replace_existing: bool = False,
              override_protection: bool = False, timeout_ticks: int = 12000,
-             timeout_s: float = 600.0, allow_break: bool = False,
+             allow_break: bool = False,
              allow_place: bool = False, mode: str = "blueprint",
              settings: dict | None = None, size: list[int] | None = None,
              drawing: dict | None = None, stall_ticks: int | None = None) -> Any:
@@ -606,6 +612,13 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
     cell it cannot leave). Holding a break on one block that long counts as stalled too.
     A plan cell that already matches is never dug through to get somewhere, replace_existing or not;
     where finished work is the only way to the rest, the job ends stalled as above.
+    A cell that wants a block and holds a different solid one is occupied: without replace_existing
+    the job does not start (reason occupied, the cells under `occupied` {count, first}), and stops
+    the same way if one turns up later and nothing else can be done. Tall grass, a snow layer or
+    water in a cell is not an occupant: the block goes in as it would by hand. Cells to be cleared
+    never need replace_existing. A cell clicked into several times without the block appearing
+    ends the job as attempt_limit. `stopped` {reason, pos} names the cell a stop is about.
+    A failed build is error code build_failed; every way a job ends answers with its receipt.
     Build order, stages and the two examples: mb_build_preview. The receipt's `step` says where
     the order stands: {stage, y, index, of, left, first}, the index-th of `of` steps, `left` cells
     of it (and of earlier steps) still wrong, `first` one of them. A step that cannot be finished
@@ -630,7 +643,7 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
     if size is not None: params["size"] = size
     if stall_ticks is not None: params["stallTicks"] = stall_ticks
     params, loose = _any_facing(params)
-    return _with(_labelled(_build_call("nav.build", params, timeout_s), params), "anyMeta", loose)
+    return _with(_labelled(_build_call("nav.build", params), params), "anyMeta", loose)
 
 
 def _labelled(receipt: Any, params: dict) -> Any:
@@ -660,7 +673,7 @@ def mb_schematic_import(path: str, origin: list[int] | None = None, include_air:
 
 @tool(rung=1, lane=lambda kw: "read" if kw.get("preview", True) else "act", coverage=["machine"])
 def mb_schematic_build(path: str, origin: list[int] | None = None, include_air: bool = False,
-                       preview: bool = True, timeout_ticks: int = 12000, timeout_s: float = 600.0,
+                       preview: bool = True, timeout_ticks: int = 12000,
                        allow_break: bool | None = None, allow_place: bool | None = None,
                        replace_existing: bool | None = None, override_protection: bool | None = None,
                        settings: dict | None = None) -> Any:
@@ -672,7 +685,7 @@ def mb_schematic_build(path: str, origin: list[int] | None = None, include_air: 
     imported = mb_schematic_import(path, origin, include_air)
     spec = _spec(imported, allowBreak=allow_break, allowPlace=allow_place, replaceExisting=replace_existing,
                  overrideProtection=override_protection, settings=settings, timeoutTicks=None if preview else timeout_ticks)
-    result = _build_call("nav.build_preview" if preview else "nav.build", spec, None if preview else timeout_s)
+    result = _build_call("nav.build_preview" if preview else "nav.build", spec)
     return {"imported": {k: imported.get(k) for k in REPORT_KEYS if k in imported}, "request": _echo(spec),
             "preview" if preview else "result": result}
 
@@ -682,7 +695,7 @@ def mb_copy(bounds: dict, origin: list[int] | None = None, include_air: bool = F
             at: list[int] | None = None, preview: bool = False, build: bool = False,
             allow_break: bool = False, allow_place: bool = False, replace_existing: bool = False,
             override_protection: bool = False, settings: dict | None = None,
-            timeout_ticks: int = 12000, timeout_s: float = 600.0) -> Any:
+            timeout_ticks: int = 12000) -> Any:
     """Copy loaded blocks inside inclusive bounds {min,max} into a build plan; optionally rebuild it elsewhere.
 
     Java returns {plan:{cells,origin,size},size,count,skipped,tileEntities} with cell positions
@@ -700,7 +713,7 @@ def mb_copy(bounds: dict, origin: list[int] | None = None, include_air: bool = F
         return plan
     spec = _spec(plan, origin=at, allowBreak=allow_break, allowPlace=allow_place, replaceExisting=replace_existing,
                  overrideProtection=override_protection, settings=settings, timeoutTicks=timeout_ticks if build else None)
-    result = _build_call("nav.build" if build else "nav.build_preview", spec, timeout_s if build else None)
+    result = _build_call("nav.build" if build else "nav.build_preview", spec)
     return {"copied": {k: plan.get(k) for k in REPORT_KEYS if k in plan}, "request": _echo(spec),
             "result" if build else "preview": result}
 
@@ -793,21 +806,21 @@ def mb_work_status(job_id: str) -> Any:
 
 
 @tool(rung=1, coverage=["move", "machine"])
-def mb_work_resume(job_id: str, options: dict | None = None,
-                   timeout_s: float = 600.0) -> Any:
+def mb_work_resume(job_id: str, options: dict | None = None) -> Any:
     """Resume a durable blocked/interrupted mining or build job, or wait again on a suspended one.
 
     A job whose step ended returns state "suspended" with a suspendedJobId. A suspended job of any kind (mine, build, goto, process, fight) is held where it stopped,
     break progress and path kept, and runs on whenever the world runs; this call waits on it
     as it is, and returns at once with its outcome if it already finished. resume=N steps it.
 
-    Options may supply a fresh timeoutTicks and explicit per-attempt permissions,
+    Options may supply a fresh timeoutTicks (the job's own budget when not given) and explicit per-attempt permissions,
     including overrideProtection, a stallTicks for this session, and retry: true to try
     again the mining targets earlier sessions found unreachable (skipped otherwise).
     Native recovery re-observes world and inventory; already delivered placement/mining
     input is not blindly replayed.
     """
-    try: receipt = notes.tracked("nav.resume", timeout_s, jobId=job_id, **(options or {}))
+    # Without a fresh budget the job keeps its own, which is not known here: wait as long as the longest one.
+    try: receipt = notes.tracked("nav.resume", _wait((options or {}).get("timeoutTicks", 72000)), jobId=job_id, **(options or {}))
     except BridgeError as error:
         failed = ((error.reply or {}).get("error") or {}).get("receipt")
         if isinstance(failed, dict): _left(failed)

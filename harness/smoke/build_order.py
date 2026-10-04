@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Build order, measured from a finished job's own files: no game, no model of the builder.
 
-A build job leaves <jobId>.attempts.jsonl beside its journal: one row per right-click, in order, keyed by the
-cell clicked into ("x,y,z"). That is the real placement order (clicks made by the walk as it bridges included).
+A build job leaves <jobId>.attempts.jsonl beside its journal: one row per right-click the game took, in order,
+keyed by the cell the block lands in ("x,y,z"). That is the real placement order (clicks made by the walk as it bridges included).
 This reads it back as numbers that can be compared between two runs of the same plan:
 
   python harness/smoke/build_order.py <work dir> <jobId or prefix>...

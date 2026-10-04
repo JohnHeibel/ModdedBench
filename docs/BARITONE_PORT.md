@@ -138,6 +138,24 @@ the two together are refused. Preview lists `steps` as `{stage, y, cells}`.
 `settings.clickInterval` (1 to 20 ticks, default the engine's 5) sets
 `rightClickSpeed` for the job.
 
+Occupied cells. One meaning of an empty cell is used everywhere
+(`LegacyPlacement.empty`): air, or a block the game replaces when another is
+placed into it (tall grass, a snow layer, water). Such a cell needs no
+`replaceExisting`: the job may break what is in it, and a click on it is
+counted for the cell itself, where the block lands. A cell that wants a block
+and holds a different solid one is `occupied`. Without `replaceExisting` the
+job refuses to start (`reason: occupied`, `stopped.pos` the first such cell,
+`occupied {count, first}` the list), and stops the same way mid-run once
+nothing else of the steps so far can be placed or cleared. Cells to be cleared
+are never a conflict. Preview counts conflicts with the job's own
+`replaceExisting`.
+
+Attempts. A cell is charged for a click only when the game took it
+(`onPlayerRightClick` returned true). The count lives for the session and is
+dropped when the cell is seen to match, so a resume or a later repair starts
+from none. At the limit the job pauses with `reason: attempt_limit` and
+`stopped.pos` the cell.
+
 Builder settings: `buildInLayers`, `layerHeight`, `startAtLayer`,
 `layerOrder`, `skipFailedLayers`; `buildRepeat`, `buildRepeatCount` (default 1,
 not upstream's unbounded -1), `buildRepeatSneaky` (default false);
@@ -161,8 +179,9 @@ GUI tools and verify with `obs.tile`.
 
 Each mining or building job writes `modbench/work/<jobId>.json` (checkpoint
 and last receipt), `<jobId>.spec.json` (the frozen specification) and
-`<jobId>.attempts.jsonl` (placement intents, fsynced before each click) under
-the game directory, scoped to world and dimension. `nav.work_status` reads the
+`<jobId>.attempts.jsonl` (one row per click the game took, a measurement log
+appended with each checkpoint and never read back) under the game directory,
+scoped to world and dimension. `nav.work_status` reads the
 bounded checkpoint; collections over 128 entries appear as
 `{omitted: true, count}`. `nav.resume {jobId}` accepts a new timeout and edit
 permissions, never a different plan, and re-observes the world before acting.
