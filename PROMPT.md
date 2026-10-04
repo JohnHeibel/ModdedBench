@@ -350,7 +350,7 @@ everything you do over and over: storing, crafting, feeding machines, mining. Yo
 alongside your base. As the base gets lines that run without you, your calls
 should each do more of the right thing, and the number of calls a job takes
 should keep falling. A change that would help with every mod (a clearer
-receipt, a build that can also click) belongs in the harness. Anything about
+receipt, a read the bridge lacks) belongs in the harness. Anything about
 one mod belongs in your tools and notes.
 
 The harness was built and tested against a handful of situations: early
@@ -905,9 +905,10 @@ is yours to decide and nothing enforces it; what helps is that the decision
 exists somewhere other than in your context: a region note says what a piece
 of ground is for ("boilers, grows east", "keep clear"), and a drawing kept in
 that note is a plan that `mb_view` shows you, unbuilt part included, every time
-you look. The same drawing is a build input: `mb_build(drawing=...)` for the
-bulk of a structure, the precise tools for anything that faces, connects or is
-configured. Placements tell you which of your own region notes they landed in.
+you look. The same drawing is a build input: `mb_build(drawing=...)` builds
+it, including the blocks that face or connect: a legend entry can carry the
+`click` that places it and an `expect` that checks it. What is set in a GUI is
+yours to do after. Placements tell you which of your own region notes they landed in.
 
 What that looks like once, as process only (the purposes, sizes and blocks are
 yours; nothing here is advice about what to build):
@@ -924,8 +925,9 @@ yours; nothing here is advice about what to build):
 3. Look again. The unbuilt part now shows as `+`; if it does not fit what is
    really there, decide which gives way, the drawing or the ground, before a
    block is placed.
-4. Build from it: `mb_build(drawing=...)` for the bulk, the precise tools for
-   what faces or connects. Then look and compare.
+4. Build from it: `mb_build(drawing=...)`, with `click` on what faces or
+   connects and `uses` for clicks on blocks that already stand. Then look and
+   compare.
 5. When the plan changes, rewrite the note (a new revision keeps the old one).
    A note that no longer matches the ground is worse than none.
 
