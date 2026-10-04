@@ -106,6 +106,9 @@ def trial(task: str, n: int, a) -> dict:
     src = Path(a.checkout).resolve()
     c = sh(["git", "clone", "-q", "--no-hardlinks", str(src), str(folder / "checkout")])
     if c.returncode: raise RuntimeError("clone: " + c.stderr)
+    # The scenarios and these tasks hold worked answers (plans, graders): the agent's tree goes without them.
+    c = sh(["git", "-C", str(folder / "checkout"), "sparse-checkout", "set", "--no-cone", "/*", "!/harness/smoke/"])
+    if c.returncode or (folder / "checkout" / "harness" / "smoke").exists(): raise RuntimeError("sparse checkout: " + c.stderr)
     commit = sh(["git", "-C", str(folder / "checkout"), "rev-parse", "--short", "HEAD"]).stdout.strip()
     (folder / "brief" / "PROMPT.md").write_text(brief(folder / "checkout", prompt), encoding="utf-8", newline="\n")
     row = {"task": task, "trial": n, "model": a.model, "effort": a.effort, "commit": commit, "folder": folder.name, "started": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
