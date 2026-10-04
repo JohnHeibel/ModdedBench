@@ -149,8 +149,8 @@ when no cell is to blame, and a stopped click is there in full as
 | `attempt_limit` | Eight clicks the game took into `pos` without the block appearing. | |
 | `mismatch` | What is at `pos`, or what the click would make there, is another variant than the plan's (a facing). | |
 | `no_stance` | No standing spot from which a face to place `pos` against is in view, or, where `pos` holds a block to remove, from which that block is. | `blockedBy` {pos, id}: what the view of a block to remove ends on |
-| `no_route` | Everything reachable was searched and none of it is a place to work `pos` from. | |
-| `stalled` | The stall watchdog (`stallTicks`, 200) fired and neither of the two above explains it. | |
+| `no_route` | Everything reachable was searched and none of it is a place to work `pos` from. | `walk`, as for `stalled` |
+| `stalled` | The stall watchdog (`stallTicks`, 200) fired and neither of the two above explains it. | `walk` {at, feet, onGround, movement, keys, touching, goal, inGoal, searching, searches, lastSearch}: where the body is, the step of its route it is on, the keys held, and each block whose collision boxes it touches with those boxes |
 | `timeout` | `timeout_ticks` ran out. | |
 | `requested` | `mb_build_pause`. | |
 | `no_vantage` | A click: places to stand exist, and from none is the face in view and reach. | `stopped.click.blocking` |

@@ -26,6 +26,8 @@ public final class BlockShapes {
         /** The top lies inside the cell, above 0.1251 and under 0.875, at most `feetAbove` over its bottom: a player on it
          *  (not beside it) stands within this cell, and the engine's feet cell is the one above, as upstream's for a slab. */
         public boolean floorInside(double feetAbove){return !empty&&top>.1251&&top<.875&&top<=feetAbove+1e-3;}
+        /** The top is under a whole block's: a body on it reaches down into the cells beside it. */
+        public boolean low(){return !empty&&top<1-1e-5;}
         /** A 0.6 footprint centred at (x,z), relative to the cell's corner and possibly beyond it, overlaps the top. */
         public boolean supports(double x,double z){for(double[] r:surface)if(r[0]<x+.3&&r[2]>x-.3&&r[1]<z+.3&&r[3]>z-.3)return true;return false;}
     }
@@ -155,6 +157,41 @@ public final class BlockShapes {
         try{world.getBlock(x,y,z).addCollisionBoxesToList(world,x,y,z,lane,boxes,Minecraft.getMinecraft().thePlayer);}
         catch(RuntimeException|LinkageError failed){return true;}
         return !boxes.isEmpty();
+    }
+    /** On the game thread: where across its way a body has room in a cell it enters along x (or z) with its feet at y.
+     *  The game's own collision boxes for everything a body there could touch, the cells beside it included, less what
+     *  it steps over: {lo, hi} for the body's middle. An open door's leaf takes a strip of its cell's side, so the
+     *  room's middle is not the cell's. Null when the cell has no room, or the game would not say. */
+    public static double[] room(World world,net.minecraft.entity.Entity body,int x,int y,int z,boolean alongX){
+        AxisAlignedBB sweep=alongX?AxisAlignedBB.getBoundingBox(x,y,z-1,x+1,y+body.height,z+2):AxisAlignedBB.getBoundingBox(x-1,y,z,x+2,y+body.height,z+1);
+        List<double[]> across=new ArrayList<>();
+        try{
+            for(Object o:world.getCollidingBoundingBoxes(body,sweep)){
+                AxisAlignedBB b=(AxisAlignedBB)o;
+                if(b.maxY>y+body.stepHeight+1e-3)across.add(alongX?new double[]{b.minZ,b.maxZ}:new double[]{b.minX,b.maxX});
+            }
+        }catch(RuntimeException|LinkageError failed){return null;}
+        return gap(across,(alongX?z:x)+.5,body.width/2);
+    }
+    /** What the spans leave for a body's middle once each is widened by half the body: of the stretches within a cell
+     *  either side of `mid`, the one nearest it. Null when that one does not reach the cell `mid` is the middle of. */
+    static double[] gap(List<double[]> spans,double mid,double half){
+        spans.sort(Comparator.comparingDouble(s->s[0]));
+        double[] best=null;double from=mid-1.5+half,end=mid+1.5-half;
+        for(int i=0;i<=spans.size();i++){
+            double to=Math.min(end,i<spans.size()?spans.get(i)[0]-half:end);
+            if(to-from>1e-6&&(best==null||away(from,to,mid)<away(best[0],best[1],mid)))best=new double[]{from,to};
+            if(i<spans.size())from=Math.max(from,spans.get(i)[1]+half);
+        }
+        return best!=null&&best[1]>mid-.5&&best[0]<mid+.5?best:null;
+    }
+    private static double away(double lo,double hi,double mid){return mid<lo?lo-mid:mid>hi?mid-hi:0;}
+    /** Where in its room a body heads for: the cell's middle, or as near it as stays in the cell and a tenth of a block
+     *  off the room's edges. */
+    public static double aim(double[] room,double mid){
+        if(room==null)return mid;
+        double lo=Math.max(room[0],mid-.5),hi=Math.min(room[1],mid+.5),m=Math.min(.1,(hi-lo)/2);
+        return Math.max(lo+m,Math.min(hi-m,mid));
     }
     private static double round(double v){return Math.round(v*1000)/1000.0;}
     private static void ask(Block block,int meta,int x,int y,int z){

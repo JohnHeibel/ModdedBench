@@ -2,7 +2,9 @@
 
 A stone brick block three wide and four high stands in a fresh arena with one ladder on one side of it. Each side is a
 case: goto the top of the block, back to the start, then to the middle of the ladder. `roof_hole` is a small room with a
-ladder inside that leaves through a one-cell hole in its roof: up onto the roof and back out of the door.
+ladder inside that leaves through a one-cell hole in its roof: up onto the roof and back out of the door. `roof_run` is
+a shut room under a long roof, entered only by the hole at the roof's far end: the player runs the roof's length at the
+wall the ladder hangs on, and has to come down the ladder, not rest on the top of its box (3/16 of the cell in this pack).
 
 A case passes when every goto ends succeeded with the player in the goal cell.
 
@@ -23,7 +25,7 @@ BRICK, LADDER = "minecraft:stonebrick", "minecraft:ladder"
 OUT = Path(__file__).resolve().parents[2] / ".runtime" / "evidence" / "ladder-course.json"
 # side: the ladder's column (x, z), its meta (which neighbour it hangs on) and where the player starts, two cells off.
 SIDES = {"west": ((1, 3), 4, (-1, 3)), "east": ((5, 3), 5, (7, 3)), "north": ((3, 1), 2, (3, -1)), "south": ((3, 5), 3, (3, 7))}
-CASES = [*SIDES, "roof_hole"]
+CASES = [*SIDES, "roof_hole", "roof_run"]
 
 
 class Ladders(bs.Shells):
@@ -49,13 +51,19 @@ class Ladders(bs.Shells):
                      if y == 2 or ((x in (0, 4) or z in (0, 4)) and (x, z) != (4, 2))}
             cells.update({(1, y, 2): (LADDER, 5) for y in range(3)})
             start, goals = (7, 2), [(3, 3, 3), (7, 0, 2), (1, 1, 2)]
+        elif name == "roof_run":  # a shut room one wide under a long roof, the hole at its west end with the ladder's top in it, a wall above
+            cells = {(x, y, z): (BRICK, 0) for x in range(8) for z in (1, 2, 3) for y in range(3)
+                     if (y == 2 and (x, z) != (1, 2)) or (y < 2 and (x in (0, 7) or z in (1, 3)))}
+            cells.update({(0, 3, z): (BRICK, 0) for z in (1, 2, 3)})
+            cells.update({(1, y, 2): (LADDER, 5) for y in range(3)})
+            start, goals = (6, 2, 3), [(4, 0, 2), (6, 3, 2), (4, 0, 2)]
         else:
             (lx, lz), meta, start = SIDES[name]
             cells = {(x, y, z): (BRICK, 0) for x in (2, 3, 4) for z in (2, 3, 4) for y in range(4)}
             cells.update({(lx, y, lz): (LADDER, meta) for y in range(4)})
             goals = [(3, 4, 3), (start[0], 0, start[1]), (lx, 2, lz)]
         self.put(cells)
-        self.stand([origin[0] + start[0] + .5, bs.FLOOR, origin[2] + start[1] + .5])
+        self.stand([origin[0] + start[0] + .5, bs.FLOOR + (start[2] if len(start) > 2 else 0), origin[2] + start[1] + .5])
         legs = [self.goto(origin, g) for g in goals]
         return {"origin": origin, "legs": legs, "passed": all(leg["passed"] for leg in legs)}
 

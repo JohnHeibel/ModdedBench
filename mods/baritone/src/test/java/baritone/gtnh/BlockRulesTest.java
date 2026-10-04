@@ -64,6 +64,31 @@ public class BlockRulesTest {
         // A top under 0.875 puts the player's feet cell, floor(minY+0.1251), inside the block: not a floor to plan on.
         assertFalse(shape(new double[]{0,0,0,1,.8125,1}).standable());
     }
+    @Test public void aTopUnderAWholeBlocksIsLow(){
+        assertTrue(shape(new double[]{.0625,0,.0625,.9375,.875,.9375}).low());   // a chest: stood on, and a body on it is in the cells beside
+        assertTrue(shape(new double[]{0,0,0,1,.875,1}).low());                   // soul sand
+        assertFalse(shape(new double[]{0,0,0,1,1,1}).low());assertFalse(shape().low());
+        assertFalse(shape(new double[]{0,0,0,1,.5,1},new double[]{.5,.5,0,1,1,1}).low()); // stairs: their top is a whole block's
+    }
+    private static List<double[]> spans(double... v){List<double[]> out=new ArrayList<>();for(int i=0;i<v.length;i+=2)out.add(new double[]{v[i],v[i+1]});return out;}
+    @Test public void aBodyHeadsForTheRoomACellLeaves(){
+        // A doorway at 4..5 in a wall, an open door's leaf (0.1875 thick) on its low side: the room is 0.2125 wide, off the cell's middle.
+        double[] room=BlockShapes.gap(spans(5,6,3,4,4,4.1875),4.5,.3);
+        assertArrayEquals(new double[]{4.4875,4.7},room,1e-9);
+        assertEquals(4.5875,BlockShapes.aim(room,4.5),1e-9);
+        // The doorway alone: its middle is the cell's.
+        room=BlockShapes.gap(spans(3,4,5,6),4.5,.3);
+        assertArrayEquals(new double[]{4.3,4.7},room,1e-9);assertEquals(4.5,BlockShapes.aim(room,4.5),1e-9);
+        // Nothing beside the way: the room is wider than the cell, and the middle stays the aim.
+        room=BlockShapes.gap(spans(),4.5,.3);
+        assertArrayEquals(new double[]{3.3,5.7},room,1e-9);assertEquals(4.5,BlockShapes.aim(room,4.5),1e-9);
+        // A post in the cell's middle leaves room either side, most of it in the next cell: the aim stays in this one.
+        room=BlockShapes.gap(spans(4.375,4.625),4.5,.3);
+        assertArrayEquals(new double[]{3.3,4.075},room,1e-9);assertEquals(4.0375,BlockShapes.aim(room,4.5),1e-9);
+        // The cell shut across (a closed door): no room in it, whatever the cells beside it leave.
+        assertNull(BlockShapes.gap(spans(4,5),4.5,.3));assertNull(BlockShapes.gap(spans(3,6),4.5,.3));
+        assertEquals(4.5,BlockShapes.aim(null,4.5),0);
+    }
     @Test public void aTopInsideTheCellMovesTheFeetUpLikeASlab(){
         var slab=shape(new double[]{0,0,0,1,.5,1});
         assertTrue(slab.floorInside(.5));assertFalse(slab.floorInside(0));   // on it, or beside it under its top

@@ -23,6 +23,11 @@ package baritone.pathing.movement.movements;
 import baritone.api.IBaritone;
 import baritone.api.pathing.movement.MovementStatus;
 import baritone.api.utils.BetterBlockPos;
+import baritone.gtnh.BlockShapes; // ModdedBench
+import baritone.api.utils.Rotation;
+import baritone.api.utils.RotationUtils;
+import baritone.api.utils.input.Input;
+import baritone.compat.Vec3d;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
@@ -87,14 +92,20 @@ public class MovementDownward extends Movement {
         } else if (!playerInValidPosition()) {
             return state.setStatus(MovementStatus.UNREACHABLE);
         }
-        double diffX = ctx.player().posX - (dest.getX() + 0.5);
-        double diffZ = ctx.player().posZ - (dest.getZ() + 0.5);
+        // ModdedBench: the way down is the room the cell below leaves, not its middle. A ladder's box takes a strip of its
+        // cell; a body that came over the hole fast rests on the strip's top one cell down, and upstream then walked
+        // on the way it faced, into the ladder, which climbs. Head for the room, and stand still once over it.
+        net.minecraft.world.World world = ctx.world().nativeWorld;
+        double toX = BlockShapes.aim(BlockShapes.room(world, ctx.player(), dest.getX(), dest.getY(), dest.getZ(), false), dest.getX() + 0.5);
+        double toZ = BlockShapes.aim(BlockShapes.room(world, ctx.player(), dest.getX(), dest.getY(), dest.getZ(), true), dest.getZ() + 0.5);
+        double diffX = ctx.player().posX - toX;
+        double diffZ = ctx.player().posZ - toZ;
         double ab = Math.sqrt(diffX * diffX + diffZ * diffZ);
 
-        if (numTicks++ < 10 && ab < 0.2) {
+        if (ab < 0.05 || (numTicks++ < 10 && ab < 0.2)) {
             return state;
         }
-        MovementHelper.moveTowards(ctx, state, positionsToBreak[0]);
-        return state;
+        Rotation toward = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), new Vec3d(toX, ctx.playerHead().y, toZ), ctx.playerRotations());
+        return state.setTarget(new MovementState.MovementTarget(toward.withPitch(ctx.playerRotations().getPitch()), false)).setInput(Input.MOVE_FORWARD, true);
     }
 }
