@@ -2,6 +2,7 @@
 # Copyright (c) 2026 ModdedBench contributors
 """Background tasks (harness/tools/tasks.py) against fake kernels and fake processes; no bridge, no game."""
 import importlib
+import itertools
 import json
 import os
 import signal
@@ -16,7 +17,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'mcp'))
 import mbtool  # noqa: E402
-from kernel import BridgeError, Kernel, resume_once  # noqa: E402
+from kernel import BridgeError, Kernel, Reply, resume_once  # noqa: E402
 from mbtools_gtnh import core, interrupts, scripts, tasks, work  # noqa: E402
 
 
@@ -82,7 +83,37 @@ class Methods:
                 {"name": "act.stop", "effect": "interaction"}]
 
 
+class Game(Kernel):
+    """The model's connection with a fake game behind it: every call meets the body gate, as on the real one."""
+    CONTEXT = {"worldId": "w", "dimension": 0, "bridgeId": "b", "worldEpoch": 1}
+
+    def __init__(self):
+        self.timeout, self._ids, self.sent = 5.0, itertools.count(1), []
+
+    def _request(self, req, timeout):
+        method = req["method"]; self.sent.append(method)
+        if method == "sys.methods":
+            return Reply(True, 0, 0, 0, [{"name": "obs.player", "effect": "read", "watchable": True}, {"name": "obs.batch", "effect": "read"},
+                                         {"name": "interrupt.status", "effect": "read"}, {"name": "interrupt.fire", "effect": "interaction"},
+                                         {"name": "interrupt.ack", "effect": "interaction"}, {"name": "act.input", "effect": "interaction"}])
+        if method == "obs.batch": return Reply(True, 0, 0, 0, {"values": {"me": {"health": 6}}, "errors": {}, "context": self.CONTEXT})
+        return Reply(True, 0, 0, 0, {"context": self.CONTEXT, "operationId": 1})
+
+
 class BodyLockTests(TaskTestCase):
+    def test_a_watch_fires_and_is_acknowledged_while_a_task_has_the_body(self):
+        k = Game()
+        sup = interrupts.InterruptSupervisor(k, self.dir / "watches", poll_s=10, fire_backoff_s=.001); self.addCleanup(sup.close)
+        sup.add("low", {"queries": {"me": {"method": "obs.player"}}, "condition": {"lt": ["me.health", 8]}, "effects": ["notify", "pause"]})
+        self.put("t1", name="vein")
+        sup.poll()
+        until = time.monotonic() + 2
+        while time.monotonic() < until and not [e for e in sup.events(0)["events"] if e["kind"] in ("triggered", "reaction_error")]: time.sleep(.01)
+        self.assertEqual([e["kind"] for e in sup.events(0)["events"] if e["kind"] in ("triggered", "reaction_error")], ["triggered"])
+        self.assertEqual(k.sent.count("interrupt.fire"), 1)
+        k.call("interrupt.ack", eventId="e1")
+        self.assertRaises(BridgeError, k.call, "act.input")  # the body itself stays the task's
+
     def test_game_calls_that_move_the_body_are_refused_with_the_task_named_and_reads_are_marked(self):
         self.put("t1", name="vein", now="mb_mine")
         k = Methods()
