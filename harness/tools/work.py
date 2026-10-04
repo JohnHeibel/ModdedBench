@@ -387,7 +387,7 @@ def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, q
             override_protection: bool = False, timeout_ticks: int = 12000,
             beside_fluid: bool | None = None,
             vein: list[int] | None = None, vein_grid: dict | None = None, stall_ticks: int | None = None,
-            tool_slot: int | None = None) -> Any:
+            tool_slot: int | None = None, cleanup_scaffold: bool | None = None) -> Any:
     """Run bounded native quantity mining and return its terminal receipt.
 
     blocks are the block selectors to mine: {id, meta?}, or {id, item:{id, meta?}} to match by the block's
@@ -440,6 +440,14 @@ def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, q
     will_not_break_here, with the fluid beside each.
     tool_slot (0..35) forces the tool in that slot for this job (the kind, so a swap to the hotbar
     keeps it); the receipt shows forcedTool, and a tool measured breaking nothing is still reported.
+    cleanup_scaffold is required with allow_place: the path places blocks to climb or bridge
+    (a pillar up a tree, a step over a gap), and the job records each one. True breaks them again
+    once the work ends as work does (done, inventory full, out of reachable targets, out of time,
+    stalled), on its own budget and without placing new ones; a death, an unplugged fluid, a
+    protected block broken or a cancel leaves them standing, as does False (an escape pillar, a
+    way out of a ravine you want to keep). Fluid plugs are never scaffold. The receipt's
+    scaffold {cleanup, placed, at, removed, left [{pos, block, why}]} says what it placed and what
+    still stands: a block that changed since (dirt grown to grass) or now holds fluid back is left.
     symptoms: what happened to you during the job (damage and its type, effects gained or
     lost, air lost, burning, webbed, slowed), each first seen with the feet/head/under blocks
     there and a count. pathRules: which of your block rules (hazards, standOn, neverStandOn,
@@ -458,6 +466,11 @@ def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, q
         bounds = bounds if bounds is not None else vein_bounds(vein, grid)
         items = items or VEIN_ITEMS
     elif not blocks: raise ValueError("blocks are required unless vein is given")
+    if allow_place and cleanup_scaffold is None:
+        raise ValueError("allow_place lets the path place blocks to climb or bridge: pass cleanup_scaffold=True to break "
+                         "them again when the work ends, or False to leave them standing")
+    if cleanup_scaffold and not allow_place: raise ValueError("cleanup_scaffold needs allow_place: without it nothing is placed")
+    if cleanup_scaffold is not None: params["cleanupScaffold"] = cleanup_scaffold
     if tool_slot is not None: params["toolSlot"] = tool_slot
     if items is not None: params["items"] = items  # absent: the job counts any gain (the Java side decides what that means)
     if allow_place if beside_fluid is None else beside_fluid: params["besideFluid"] = True
