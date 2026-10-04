@@ -2,7 +2,7 @@
 # Copyright (c) 2026 ModdedBench contributors
 """Offline interrupt supervisor regressions; no bridge or game is required."""
 from __future__ import annotations
-import asyncio, sys, tempfile, threading, time, unittest
+import asyncio, sys, tempfile, threading, time, unittest, unittest.mock
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "mcp"))
 import importlib
@@ -10,9 +10,10 @@ import mbtool
 from mbtools_gtnh.interrupts import InterruptSupervisor, get_supervisor, close_supervisor, mb_wait
 
 class FakeKernel:
-    def __init__(self): self.value=0; self.context={"worldId":"w","dimension":0,"bridgeId":"b","worldEpoch":1}; self.fires=[]; self.errors={}; self.methods={"obs.x":{"effect":"read","watchable":True}}
+    def __init__(self): self.value=0; self.context={"worldId":"w","dimension":0,"bridgeId":"b","worldEpoch":1}; self.fires=[]; self.errors={}; self.methods={"obs.x":{"effect":"read","watchable":True}}; self.clock={"paused":False}
     def call(self, method, **kw):
         if method=="sys.methods": return self.methods
+        if method=="time.status": return {"state":dict(self.clock)}
         if method=="obs.batch": return {"values":{"x":{"n":self.value}},"errors":self.errors,"context":dict(self.context),"tick":1}
         if method=="interrupt.status": return {"context":dict(self.context),"operationId":9,"latched":[]}
         if method=="interrupt.fire": self.fires.append(kw); return {"ok":True,"pauseConfirmed":"pause" in kw["effects"]}
@@ -276,6 +277,27 @@ class InterruptTests(unittest.TestCase):
             self.assertTrue(woke["woke"]); self.assertLess(time.monotonic()-start,30)
             self.assertEqual(["triggered"],[e["kind"] for e in woke["events"]]); self.assertEqual("look",woke["events"][0]["data"]["payload"]["modelPrompt"])
             self.assertEqual(got["cursor"]+2,woke["cursor"])
+        finally:
+            close_supervisor(); mbtool.state.pop("kernel",None)
+        self.s=InterruptSupervisor(self.k,self.tmp.name,retained=3,poll_s=10)
+
+    def test_mb_wait_does_not_sleep_through_a_paused_world(self):
+        self.s.close(); self.k.close=lambda: None; self.k.connected=True
+        mbtool.drop_kernel(); mbtool.state["kernel"]=self.k
+        try:
+            sup=get_supervisor(self.tmp.name); short=unittest.mock.patch.dict(mb_wait.__globals__,WAIT_SLICE=.05)
+            self.k.clock={"paused":True,"reason":"requested_pause"}
+            start=time.monotonic(); got=mb_wait(0,60)  # paused on entry: nothing it waits for can happen
+            self.assertEqual((False,"requested_pause",[],sup.events(0)["cursor"]),(got["woke"],got["paused"],got["events"],got["cursor"])); self.assertLess(time.monotonic()-start,2)
+            sup._event("triggered","w",eventId="e1",payload={})
+            self.assertEqual((True,False),(mb_wait(got["cursor"],60)["woke"],"paused" in mb_wait(got["cursor"],60)))  # an event that woke it comes first
+            self.k.clock={"paused":False}; cursor=sup.events(0)["cursor"]
+            timer=threading.Timer(.2,lambda: self.k.clock.update(paused=True,reason="health_dropped"))
+            with short:
+                start=time.monotonic(); timer.start(); got=mb_wait(cursor,60); timer.join()  # a guard pauses it during the wait
+            self.assertEqual((False,"health_dropped"),(got["woke"],got["paused"])); self.assertLess(time.monotonic()-start,2)
+            self.k.clock={"paused":False}
+            with short: self.assertNotIn("paused",mb_wait(cursor,1))  # a running world waits its time out
         finally:
             close_supervisor(); mbtool.state.pop("kernel",None)
         self.s=InterruptSupervisor(self.k,self.tmp.name,retained=3,poll_s=10)
