@@ -97,25 +97,45 @@ final class WorkAccess {
     static Vec3 eyeAt(BlockPos feet){return Vec3.createVectorHelper(feet.getX()+.5,feet.getY()+MC.thePlayer.getPosition(1).yCoord-MC.thePlayer.boundingBox.minY,feet.getZ()+.5);}
     record Pose(BlockPos feet,double standingY) {}
     static Vec3 eyeAt(Pose pose){return Vec3.createVectorHelper(pose.feet().getX()+.5,pose.standingY()+MC.thePlayer.getPosition(1).yCoord-MC.thePlayer.boundingBox.minY,pose.feet().getZ()+.5);}
-    static List<Pose> buildingApproaches(World world,BlockPos target) {
-        double reach=MC.playerController.getBlockReachDistance();
-        int radius=Math.min(8,(int)Math.ceil(reach));
-        BlockPos min=new BlockPos(target.getX()-radius,Math.max(1,target.getY()-radius-2),target.getZ()-radius);
-        BlockPos max=new BlockPos(target.getX()+radius,Math.min(254,target.getY()+radius),target.getZ()+radius);
-        // Use exactly the navigation graph's collision-derived footing. A
-        // full-block-only pose list loses every stance as a slab roof closes.
-        // Include the lower poses permitted by the player's native eye/reach.
-        TerrainGrid grid=ForgeSnapshot.local(world,min,max);List<Pose> out=new ArrayList<>();
-        for(int x=min.getX();x<=max.getX();x++)for(int z=min.getZ();z<=max.getZ();z++)for(int y=min.getY();y<=max.getY();y++) {
-            BlockPos feet=new BlockPos(x,y,z);double height=grid.standingY(feet);
-            if(!Double.isFinite(height))continue;
-            Pose pose=new Pose(feet,height);Vec3 eye=eyeAt(pose);
-            double dx=Math.max(0,Math.max(target.getX()-eye.xCoord,eye.xCoord-target.getX()-1));
-            double dy=Math.max(0,Math.max(target.getY()-eye.yCoord,eye.yCoord-target.getY()-1));
-            double dz=Math.max(0,Math.max(target.getZ()-eye.zCoord,eye.zCoord-target.getZ()-1));
-            if(dx*dx+dy*dy+dz*dz<=reach*reach&&ForgeSnapshot.liveClear(world,x+.5,height,z+.5,height+1.8))out.add(pose);
+    /** Where the player could stand to work on `target`, nearest first: Stands, taken for this one cell. */
+    static List<Pose> buildingApproaches(World world,BlockPos target) {return new Stands(world,target,Stands.radius()).around(target);}
+    /**
+     * Every pose the player could stand in within `half` of a centre, captured once and asked for many targets: a
+     * capture per target is most of what a large plan costs the game thread. It uses exactly the navigation graph's
+     * collision-derived footing (a full-block-only list loses every stance as a slab roof closes) and includes the
+     * lower poses the player's own eye and reach permit.
+     */
+    static final class Stands {
+        private final World world;private final BlockPos centre;private final int half;private final List<Pose> poses=new ArrayList<>();
+        static int radius(){return Math.min(8,(int)Math.ceil(MC.playerController.getBlockReachDistance()));}
+        Stands(World world,BlockPos centre,int half){
+            this.world=world;this.centre=centre;this.half=half;
+            BlockPos min=new BlockPos(centre.getX()-half,Math.max(1,centre.getY()-half-2),centre.getZ()-half);
+            BlockPos max=new BlockPos(centre.getX()+half,Math.min(254,centre.getY()+half),centre.getZ()+half);
+            TerrainGrid grid=ForgeSnapshot.local(world,min,max);
+            for(int x=min.getX();x<=max.getX();x++)for(int z=min.getZ();z<=max.getZ();z++)for(int y=min.getY();y<=max.getY();y++){
+                BlockPos feet=new BlockPos(x,y,z);double height=grid.standingY(feet);
+                if(Double.isFinite(height))poses.add(new Pose(feet,height));
+            }
         }
-        out.sort(Comparator.comparingDouble(p->distance(p.feet())));return out;
+        /** Whether every pose within reach of `target` is in here. */
+        boolean covers(BlockPos target){return within(target,half-radius());}
+        boolean within(BlockPos p,int distance){
+            return Math.abs(p.getX()-centre.getX())<=distance&&Math.abs(p.getY()-centre.getY())<=distance&&Math.abs(p.getZ()-centre.getZ())<=distance;
+        }
+        List<Pose> around(BlockPos target){
+            double reach=MC.playerController.getBlockReachDistance();int radius=radius();List<Pose> out=new ArrayList<>();
+            for(Pose pose:poses){
+                BlockPos feet=pose.feet();
+                if(Math.abs(feet.getX()-target.getX())>radius||Math.abs(feet.getZ()-target.getZ())>radius||feet.getY()<target.getY()-radius-2||feet.getY()>target.getY()+radius)continue;
+                Vec3 eye=eyeAt(pose);
+                double dx=Math.max(0,Math.max(target.getX()-eye.xCoord,eye.xCoord-target.getX()-1));
+                double dy=Math.max(0,Math.max(target.getY()-eye.yCoord,eye.yCoord-target.getY()-1));
+                double dz=Math.max(0,Math.max(target.getZ()-eye.zCoord,eye.zCoord-target.getZ()-1));
+                if(dx*dx+dy*dy+dz*dz<=reach*reach&&ForgeSnapshot.liveClear(world,feet.getX()+.5,pose.standingY(),feet.getZ()+.5,pose.standingY()+1.8))out.add(pose);
+            }
+            out.sort(Comparator.comparingDouble(p->distance(p.feet())));return out;
+        }
     }
     static Map<String,Object> observed(World world,BlockPos p) {
         if(!ForgeSnapshot.loaded(world,p.getX(),p.getY(),p.getZ()))return Map.of("pos",point(p),"loaded",false);

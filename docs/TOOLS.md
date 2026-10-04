@@ -148,7 +148,7 @@ when no cell is to blame, and a stopped click is there in full as
 | `missing_materials` | Nothing carried goes into any cell the order allows now. Nothing is checked up front: the job builds what it can first. | `missing [{selector, needed, allocated, missing}]` |
 | `attempt_limit` | Eight clicks the game took into `pos` without the block appearing. | |
 | `mismatch` | What is at `pos`, or what the click would make there, is another variant than the plan's (a facing). | |
-| `no_stance` | No standing spot from which a face to place `pos` against is in view. | |
+| `no_stance` | No standing spot from which a face to place `pos` against is in view, or, where `pos` holds a block to remove, from which that block is. | `blockedBy` {pos, id}: what the view of a block to remove ends on |
 | `no_route` | Everything reachable was searched and none of it is a place to work `pos` from. | |
 | `stalled` | The stall watchdog (`stallTicks`, 200) fired and neither of the two above explains it. | |
 | `timeout` | `timeout_ticks` ran out. | |

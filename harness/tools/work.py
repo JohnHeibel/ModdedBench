@@ -650,6 +650,8 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
                          the plan's (a facing): give the cell a click with a look, or leave its meta out.
       no_stance          no standing spot from which a face to place pos against is in view; often
                          there is nothing to place it against yet (stage it later, or allow_place).
+                         Where pos holds a block to remove, none from which that block is in view:
+                         `blockedBy` {pos, id} is what the view ends on, a block outside the plan.
       no_route           everything reachable was searched and none of it is a place to work pos from.
       stalled            200 ticks (the stallTicks setting) with nothing placed, cleared or pending and
                          no new ground stood on, and neither of the two above explains it.
