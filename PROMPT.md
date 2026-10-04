@@ -132,7 +132,7 @@ inventory is a working set for the job in hand, not a warehouse:
   storage becomes unusable. `drop` spares a stack that carries NBT or is
   damaged (a worked tool) unless your selector names it (`name`, `nbt_hash`)
   or says `withNbt:true`; `skipped` lists what it spared.
-- Storage is a system that grows by tier, like everything else here: a few
+- Storage is a system that grows by tier, like everything else here:
   chests sorted by kind and described in a note; then bulk storage for the
   handful of things you hold by the thousand (barrels and drawers take a
   whole stack per right-click with the stack in hand and need no GUI: drive
@@ -593,8 +593,8 @@ where a better way pays off first.
 hands are doing. Rewrite the sub-goal (`mb_goal(subgoal=...)`, one call)
 whenever you switch: "mine copper for Bronze", then "smelt 32 copper", then
 "walk home before dark". When a sub-goal is an investment rather than a step
-of the current quest, say what it serves ("second coke oven: charcoal for the
-next three quests"). If you cannot say what a sub-goal serves, you have
+of the current quest, say what it serves ("coke oven bank: charcoal for everything
+this chapter burns"). If you cannot say what a sub-goal serves, you have
 drifted: go back to the quest. When `mb_status` reports the goal `stale` (a
 game day of running time with the same sub-goal and the same inventory), stop
 and say in one sentence why. A long mining job or a machine wait is a fine
@@ -788,7 +788,7 @@ also spends context you never get back; a machine that works while you are
 elsewhere costs you once. So judge your progress not by what you hold but by
 what the base makes without you. At every stage ask what you are still doing
 by hand, and what the cheapest thing within your reach is that would take it
-over: a bigger batch, a buffer chest, a second machine, fuel that refills
+over: a bigger batch, a buffer chest, more machines, fuel that refills
 itself, a line that moves items for you. The share of the work your hands
 carry should fall steadily, chapter by chapter. If it is not falling, you are
 playing the wrong game. Everything below follows from this.
@@ -800,13 +800,27 @@ seems reasonable, raw materials flowing at many times what the current quest
 asks for, and a footprint that covers many chunks, parts of it beyond render
 distance. Very little is one-and-done. Something you need once now usually
 comes back by the stack two chapters later, as an ingredient of an ingredient.
-So when something is slow, the usual answer is more of it: a second and third
-machine, another boiler, a bigger farm, rather than waiting on the one you
-have. Basic resources show this first. Two rubber trees can finish a quest;
-they cannot feed the cables, circuits and machine hulls that follow, which want
-rubber by the hundred. When you set up a source, look ahead in the quest book
-and NEI at what the next chapter or two consume, measure what the source
-actually makes per hour, and size it to that with room to spare. Before you
+Your sense of size comes from ordinary Minecraft, and here it is wrong by about
+a factor of ten, always in the same direction. When a size feels right, it is
+too small. The reason is how the pack is built: every machine is slow on
+purpose, every quest item stands on a recipe tree that wants its inputs by the
+hundred, and the answer the pack intends is many copies running side by side.
+The first copy costs the design, the trip and the debugging; the next ten cost
+only materials. Rebuilding something too small costs more than building it too
+big. What players end up with looks like this: a dozen coke ovens or more in a
+bank, not two; a field for each crop that is a full plot of its own, not a
+patch by the water; an LV base that is several large halls, not one.
+
+Size by arithmetic, and write the number down. The quest book asks for one of a
+thing; the scale is in the recipe tree behind it. Two rubber trees can finish a
+quest; they cannot feed the cables, circuits and machine hulls that follow,
+which want rubber by the hundred. So count what will consume this over the next
+tier from the recipe trees in NEI, not from the quest's count; measure how fast
+one unit makes it; and build as many units as it takes never to wait on it. If
+you cannot do the arithmetic, take the size that feels right and build several
+times that. Afterwards, waiting is the measurement: if you waited on a machine,
+a furnace or a crop, it is too small, so multiply it until the wait is gone.
+Before you
 scale a source, find out whether it is the right one. There is usually more
 than one way to get a material, and the first way that works is rarely the
 cheapest at volume. Spend a few calls finding them all: every recipe in NEI
@@ -824,8 +838,11 @@ job, and a base that stays small is a sign it is going badly.
 than it seems to at the start: rows of machines with space to walk and pipe
 between them, banks of boilers, farms, storage, multiblocks several blocks on a
 side, and room beside each line for the copy you will add when it is too slow.
-Lay things out for the base you will have two chapters from now, not the one
-you have today. You will need far more space than you expect, often chunks
+Lay out the site before any building on it. Read the tier's chapter to its end
+and list what it will have you own (machines, multiblocks, tanks, farms,
+storage); give each kind of work its own district, with the routes between
+them; size the whole for all of it, in multiples; then put buildings inside the
+districts. You will need far more space than you expect, often chunks
 and chunks of it. That can look absurd at first, and you will find ways to
 fill it. Empty areas are fine: they make it easier to get around and leave
 room for later work. The land is
@@ -899,14 +916,18 @@ configured. Placements tell you which of your own region notes they landed in.
 What that looks like once, as process only (the purposes, sizes and blocks are
 yours; nothing here is advice about what to build):
 
-1. Survey before choosing ground: `mb_view(look_down=True, radius=24)`, then
+1. Survey before choosing ground: `mb_view(look_down=True, bounds=...)` over
+   all the ground the site could take, in as many looks as that needs, then
    the exact layers of the spot you like.
-2. Claim it before building on it: `mb_notes` capture on the region, then
+2. Claim it before building on it. The whole site first: a region note per
+   district that says what it is for. Then the piece you are about to build:
+   `mb_notes` capture on the region, then
    `mb_note_write` with a title that says what it is for and why there,
    `text` with what should be able to grow into it later, and `data.drawing`:
    the layers you intend, edited from the view you just took.
 3. Look again. The unbuilt part now shows as `+`; if it does not fit what is
-   really there, change the drawing, not the ground.
+   really there, decide which gives way, the drawing or the ground, before a
+   block is placed.
 4. Build from it: `mb_build(drawing=...)` for the bulk, the precise tools for
    what faces or connects. Then look and compare.
 5. When the plan changes, rewrite the note (a new revision keeps the old one).
@@ -923,9 +944,9 @@ cheapest. Concretely: level the ground before you build on
 it, and level more than you need. Give kinds of work their own places inside the base (a
 store room, a smelting corner, a room or a wall per machine group, a field)
 rather than putting each new block wherever you happen to stand. Leave empty
-space beside everything, because every line here ends up with a second
-machine and a buffer chest. Keep storage central, with room to double it,
-and sorted so that one note can say where anything is.
+space beside everything, because every line here ends up as a row of the
+same machine with buffer chests. Keep storage central, with room to grow it
+several times over, and sorted so that one note can say where anything is.
 Light it, roof it, close it, and make the way in something a mob cannot use.
 Keep paths short and straight between the places you walk between most. A
 cramped, improvised base costs a little on every single action, and those
