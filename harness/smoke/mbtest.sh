@@ -20,10 +20,12 @@ envfile="$(mktemp)"; trap 'rm -f "$envfile"' EXIT
   echo "MB_SERVER_BRIDGE_URL=ws://127.0.0.1:47224/ws"
   echo "MB_SERVER_BRIDGE_TOKEN=$(docker exec "$server" cat /home/mc/.moddedbench/bridge-47224.token | tr -d '\r\n')"
   echo "MB_CLIENT_LOG=/clientlogs/fml-client-latest.log"
+  echo "MB_CLIENT_WORK=/clientwork"
+  echo "MB_COMMIT=$(git -C "$repo" rev-parse --short HEAD)$(git -C "$repo" diff --quiet HEAD -- mods harness/tools || echo +)"
   echo "MODBENCH_NOTES_DIR=/tmp/mbtest-notes"
   echo "MODBENCH_INTERRUPTS_DIR=/tmp/mbtest-interrupts"
   echo "NO_PROXY=127.0.0.1,localhost,host.docker.internal"
   echo "HTTP_PROXY="; echo "HTTPS_PROXY="; echo "PYTHONUNBUFFERED=1"
 } > "$envfile"
 docker run --rm --network "container:$server" --env-file "$(cygpath -w "$envfile" 2>/dev/null || echo "$envfile")" \
-  -v "$repo:/repo" -v "$(cygpath -w "$instance/logs" 2>/dev/null || echo "$instance/logs"):/clientlogs:ro" -w /repo --entrypoint python3 "$image" "$@"
+  -v "$repo:/repo" -v "$(cygpath -w "$instance/logs" 2>/dev/null || echo "$instance/logs"):/clientlogs:ro" -v "$(cygpath -w "$instance/modbench/work" 2>/dev/null || echo "$instance/modbench/work"):/clientwork:ro" -w /repo --entrypoint python3 "$image" "$@"
