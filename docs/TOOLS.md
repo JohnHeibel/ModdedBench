@@ -242,9 +242,8 @@ custom-predicate example.
 | `mb_run` | privileged | Runs a model-written Python script (`main(**args)`, every `mb_*` tool in scope, `log`) as one call; stops at the first error with the line and the log. Runs once unless given a `name`, which keeps it under `harness/scripts/` for re-running. Disposable by design: not listed in `mb_status`, no library. |
 | `mb_goal` | action | Reads or updates the goal stack (chapter, quest, sub-goal, serves) kept in the note `goal-stack`; `mb_status` returns it with a stall signal. |
 
-Notes surface as a side effect, under a `notes` key, with at most five compact
-entries `{id, kind, title, revision, status, at, distance, excerpt?, tags?,
-why}`: on `mb_status` (session start), when a block, tile or entity with a
+Notes surface as a side effect, under a `notes` key, with at most five
+entries `{id, title, updated}` (`mb_notes` `get` reads one): on `mb_status` (session start), when a block, tile or entity with a
 note is observed, when a position read enters a noted region or comes near a
 note, and when a work call arrives somewhere. A note is not repeated within
 ten minutes unless the player has moved far away.

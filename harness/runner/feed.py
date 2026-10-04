@@ -165,7 +165,7 @@ POP = {  # tool -> (arguments, result, last known position of the player) -> (ki
                                          "matches": [{"pos": m.get("pos"), "name": _name(m)} for m in r.get("matches") or []][:40], "me": me}),
     "mb_map": lambda a, r, me: ("map", {k: r.get(k) for k in ("bounds", "blocksPerPixel", "player", "layer")}),
     "mb_screenshot": lambda a, r, me: ("shot", {}),
-    "mb_note_write": lambda a, r, me: ("note", {"title": r["note"].get("title"), "text": str(r["note"].get("text", ""))[:500], "wrote": True}) if r.get("saved") else None,
+    "mb_note_write": lambda a, r, me: ("note", {"title": (a.get("patch") or {}).get("title") or a.get("id"), "text": str((a.get("patch") or {}).get("text", ""))[:500], "wrote": True}) if r.get("saved") else None,  # the receipt does not repeat the note
 }
 
 

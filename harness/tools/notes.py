@@ -6,7 +6,7 @@ Only capture/resolve contact Minecraft. Stored observations are never silently r
 Notes live under MODBENCH_NOTES_DIR (default <repo>/.state/notes). Store objects are cached in
 ``mbtool.state["notes"]["stores"]``; the "already shown" cache is ``mbtool.state["notes"]["shown"]``.
 
-Surfacing: ``surface()`` returns at most SURFACE_LIMIT compact notes for a transition (arrival,
+Surfacing: ``surface()`` names at most SURFACE_LIMIT notes (id, title, updated) for a transition (arrival,
 observing a block/entity, entering a region, session start), most relevant first, and suppresses a
 note already shown in the last SHOWN_TTL_S seconds unless the player has moved MOVE_RESET blocks.
 ``tracked()`` wraps ``kernel().call`` for the methods that mark such transitions and attaches the
@@ -399,7 +399,7 @@ def _log(msg):
 
 
 def surface(kernel, *, position=None, dimension=None, block=None, entity=None, subjects=None, reason="", radius=16, context=None) -> list[dict]:
-    """At most SURFACE_LIMIT compact notes relevant to a transition, most relevant first; [] when nothing new.
+    """At most SURFACE_LIMIT notes relevant to a transition, as id, title and updated, most relevant first; [] when nothing new.
 
     Exactly one focus: ``entity`` (server UUID), ``block`` ([x,y,z]: notes anchored there or regions
     containing it), or a position (``position`` or the player's feet) with ``radius``. Never raises.
@@ -436,7 +436,7 @@ def surface(kernel, *, position=None, dimension=None, block=None, entity=None, s
             if prior and now - prior[0] < SHOWN_TTL_S and _dist(prior[1], here) < MOVE_RESET:
                 continue
             shown[key] = (now, here)
-            out.append(_compact(note, anchor, dimension, reason))
+            out.append(_compact(note))
             if len(out) == SURFACE_LIMIT:
                 break
         if len(shown) > 512:
@@ -456,20 +456,9 @@ def _nearest(note, anchor, dimension):
     return best if best[1] is not None else (math.inf, note["attachments"][0])
 
 
-def _compact(note, anchor, dimension, reason):
-    distance, a = _nearest(note, anchor, dimension)
-    out = {"id": note["id"], "kind": a["kind"], "title": note["title"], "revision": note["revision"], "status": note["status"],
-           "at": {"min": a["min"], "max": a["max"]} if a["kind"] == "region" else a.get("pos") or a.get("lastSeen") or a.get(a["kind"]),
-           "updated": note.get("updatedAt"),
-           "distance": None if math.isinf(distance) else round(distance, 1)}
-    excerpt = (note.get("excerpt") if "excerpt" in note else note.get("text", ""))[:140]
-    if excerpt:
-        out["excerpt"] = excerpt
-    if note.get("tags"):
-        out["tags"] = note["tags"]
-    if reason:
-        out["why"] = reason
-    return out
+def _compact(note):
+    """What rides along on another tool's result: that the note exists and how old it is. mb_notes get reads it."""
+    return {"id": note["id"], "title": note["title"], "updated": (note.get("updatedAt") or "")[:16]}
 
 
 def item_subjects(result, limit=64):
@@ -595,8 +584,9 @@ def tracked(method, timeout=None, **params):
 def mb_notes(method: str = "search", params: dict | None = None) -> Any:
     """Durable world notes: context, status, capture, search, get, history, resolve.
 
-    Notes also surface on their own (under "notes") when you arrive somewhere, observe a
-    block/entity that has one, enter an annotated region, or call mb_status.
+    Notes also surface on their own (under "notes", as id, title and updated: get reads one)
+    when you arrive somewhere, observe a block/entity that has one, enter an annotated
+    region, or call mb_status.
     capture: {kind:block,pos:[x,y,z]}, {kind:entity,entityId:observedId} or uuid,
     {kind:location,pos?:[x,y,z]}, {kind:region,min:[x,y,z],max:[x,y,z]},
     {kind:item,item:"modid:name" or "modid:name:meta"} for an item TYPE (there is no
@@ -637,8 +627,12 @@ def mb_note_write(world_id: str, id: str, expected_revision: int,
     history preserves prior content, which can be copied into a new guarded revision.
     Region annotations do not prevent normal progression or automatically protect blocks.
     Stored under MODBENCH_NOTES_DIR (default .state/notes), across JVM/MCP restarts.
+    Returns the receipt, not the note again: saved, replayed, sequence, id, revision,
+    size (characters of text) and the attachments as stored.
     """
-    return write_note(kernel(), world_id, id, expected_revision, operation_id, patch)
+    done = write_note(kernel(), world_id, id, expected_revision, operation_id, patch)
+    note = done.pop("note")
+    return {**done, "id": note["id"], "revision": note["revision"], "size": len(note["text"]), "attachments": note["attachments"]}
 
 
 # ---- goal stack ----
