@@ -61,6 +61,7 @@ public final class Request {
             if (previous == DONE || timer && previous == RUNNING) return;
         } while (!state.compareAndSet(previous, DONE));
         session.pending.remove(id.toString(), this);
+        if (!ok) runtime.failed(this);
         JsonObject envelope = Json.object("id", id, "ok", ok, "tick", runtime.tick(),
             "seq", runtime.nextSequence(), "src", runtime.side(), "worldEpoch", runtime.worldEpoch(),
             "cost_ms", (System.nanoTime() - start) / 1_000_000.0);
