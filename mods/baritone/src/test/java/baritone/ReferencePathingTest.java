@@ -109,6 +109,18 @@ public class ReferencePathingTest {
         assertTrue(path(c,new BetterBlockPos(0,64,0),new GoalBlock(1,65,0)).movements().get(0) instanceof MovementAscend);
         assertTrue(path(c,new BetterBlockPos(1,65,0),new GoalBlock(2,64,0)).movements().get(0) instanceof MovementDescend);
     }
+    @Test public void aLadderIsEnteredAtItsFootAndClimbedNotJumpedOnto(){
+        // A wall four high with a ladder on its west side; the way to its top is into the ladder's cell and up it.
+        Terrain t=new Terrain();
+        for(int y=64;y<68;y++){for(int z=-1;z<=1;z++)t.set(2,y,z,Blocks.STONE,0);t.set(1,y,0,Blocks.LADDER,4);}
+        var c=context(t,false);
+        var up=path(c,new BetterBlockPos(-1,64,0),new GoalBlock(2,68,0));
+        assertTrue(up.positions().toString(),up.positions().contains(new BetterBlockPos(1,64,0)));
+        assertEquals(up.movements().toString(),4,up.movements().stream().filter(m->m instanceof MovementPillar).count());
+        assertTrue(up.movements().stream().noneMatch(m->m instanceof MovementAscend&&m.getDest().x==1));
+        var down=path(c,new BetterBlockPos(2,68,0),new GoalBlock(-1,64,0));
+        assertTrue(down.movements().toString(),down.movements().stream().anyMatch(m->m instanceof MovementDownward));
+    }
     @Test public void directDownwardDiggingIsARealMovement(){
         var p=path(context(new Terrain(),false),new BetterBlockPos(0,64,0),new GoalBlock(0,63,0));
         assertEquals(1,p.movements().size());assertTrue(p.movements().get(0) instanceof MovementDownward);
