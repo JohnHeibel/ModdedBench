@@ -2,7 +2,7 @@
 # Copyright (c) 2026 ModdedBench contributors
 """Offline tests for the operator console: the prompt it writes and who may press its buttons."""
 from __future__ import annotations
-import json, sys, threading, unittest, urllib.error, urllib.request
+import json, shutil, sys, threading, unittest, urllib.error, urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -23,9 +23,24 @@ def start(args, job=None):
 
 
 class ConsoleTests(unittest.TestCase):
-    def test_start_keeps_what_the_loop_writes_as_it_dies(self):
-        _, loop, _ = start({})
-        self.assertIn("mkdir -p .state", loop); self.assertTrue(loop.endswith(">/dev/null 2>>.state/codex-loop.err"))
+    def test_start_asks_for_the_loop_lock_first_and_starts_the_loop_under_it(self):
+        steps, loop, _ = start({})
+        self.assertEqual(([console.LOOP_FREE], console.LOOP), (steps[-2][-1:], loop))
+        self.assertLess(loop.index("flock -n .state/loop.lock"), loop.index("rm -f .state/STOP"))  # a start that is refused leaves the running loop's stop request
+
+    @unittest.skipUnless(shutil.which("sh"), "runs the loop's shell line")
+    def test_the_loop_line_passes_the_prompt_and_arguments_and_keeps_what_the_loop_writes_as_it_dies(self):
+        import os, subprocess, tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            bin = Path(tmp, "bin"); bin.mkdir(); Path(tmp, ".state").mkdir(); Path(tmp, ".state", "STOP").write_text("")
+            (bin / "flock").write_text('#!/bin/sh\necho "$1 $2" > flock.txt; shift 2; exec "$@"\n', newline="\n")  # the lock itself is flock's: only what it is asked is checked
+            (bin / "python3").write_text('#!/bin/sh\nfor a in "$@"; do echo "$a"; done > argv.txt; ls .state > state.txt; echo trace >&2; exit 3\n', newline="\n")
+            env = {**os.environ, "PATH": str(bin) + os.pathsep + os.environ["PATH"]}
+            done = subprocess.run(["sh", "-c", console.LOOP, "sh", "--max-minutes", "5", "--", "-c", "two words"], cwd=tmp, env=env, capture_output=True, text=True)
+            self.assertEqual((3, "", ""), (done.returncode, done.stdout, done.stderr))
+            self.assertEqual("-n .state/loop.lock\n", Path(tmp, "flock.txt").read_text())
+            self.assertEqual(["harness/runner/codex_loop.py", "--prompt", "PROMPT.md", "--max-minutes", "5", "--", "-c", "two words"], Path(tmp, "argv.txt").read_text().splitlines())
+            self.assertNotIn("STOP", Path(tmp, "state.txt").read_text()); self.assertEqual("trace\n", Path(tmp, ".state", "codex-loop.err").read_text())
 
     def test_the_shipped_prompt_has_every_placeholder_the_console_fills(self):
         text = console.fill_prompt((REPO / "PROMPT.md").read_text(encoding="utf-8"), "Steam Macerator", "Tier 0.5 - Steam Age")

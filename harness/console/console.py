@@ -66,6 +66,13 @@ AGENT_PROBE = ("import json,subprocess,pathlib;s=pathlib.Path('.state');r=lambda
                "'stopRequested':(s/'STOP').exists(),'thread':r('codex-loop.json'),'prompt':pathlib.Path('/brief/PROMPT.md').exists(),"
                "'commits':subprocess.run(['git','rev-list','--count','modbench-base..HEAD'],capture_output=True,text=True).stdout.strip(),"
                "'log':r('codex-loop.log')[-6000:],'err':r('codex-loop.err')[-2000:]}))")
+# One loop per checkout: two would drive one Codex thread and one body. The lock is flock's, so it lasts exactly as long as the
+# loop, however that ends, and the stop file is cleared only by the start that got it. LOOP_FREE is the same question asked
+# first, where the operator sees the answer; the loop itself starts detached. Its stdout repeats codex-loop.log; its stderr
+# is the only trace of a loop that died, so it is kept.
+LOOP = ("mkdir -p .state; p=PROMPT.md; [ -f /brief/PROMPT.md ] && p=/brief/PROMPT.md; exec flock -n .state/loop.lock sh -c "
+        "'rm -f .state/STOP; exec python3 harness/runner/codex_loop.py \"$@\" >/dev/null 2>>.state/codex-loop.err' sh --prompt $p \"$@\"")
+LOOP_FREE = "mkdir -p .state; flock -n .state/loop.lock true || { echo 'a loop is already running on this checkout: stop it and wait for \"loop idle\", then start'; exit 1; }"
 
 
 def fill_prompt(prompt, quest, chapter):
@@ -316,9 +323,7 @@ class Console:
             extra = [*(extra or ["--"]), "-c", 'model_reasoning_summary="detailed"']
             # Turns are recovery, not a unit of the run: the run is sized in minutes and tokens, and a turn is cut where it stands.
             budget = ["--max-turns", "200", "--max-minutes", str(max(1, min(float(a.get("maxMinutes") or 120), 100000))), "--max-tokens", str(max(100000, min(int(a.get("maxTokens") or 50_000_000), 10**11)))]
-            # The loop's stdout repeats codex-loop.log; its stderr is the only trace of a loop that died, so it is kept.
-            loop = "mkdir -p .state; rm -f .state/STOP; p=PROMPT.md; [ -f /brief/PROMPT.md ] && p=/brief/PROMPT.md; exec python3 harness/runner/codex_loop.py --prompt $p \"$@\" >/dev/null 2>>.state/codex-loop.err"
-            self.run_job(name, [[*COMPOSE, "up", "-d", "gateway", "agent"], [*COMPOSE, "exec", "-d", "agent", "sh", "-c", loop, "sh", *budget, *extra]])
+            self.run_job(name, [[*COMPOSE, "up", "-d", "gateway", "agent"], [*agent, "sh", "-c", LOOP_FREE], [*COMPOSE, "exec", "-d", "agent", "sh", "-c", LOOP, "sh", *budget, *extra]])
         elif name == "agent.stop": self.run_job(name, [[*agent, "sh", "-c", "mkdir -p .state && touch .state/STOP"]])
         elif name == "agent.kill": self.run_job(name, [[*agent, "sh", "-c", "pkill -f '[c]odex_loop.py'; pkill -x codex; pkill -f '[h]arness/mcp/server.py'; true"]])
         elif name == "agent.down":
