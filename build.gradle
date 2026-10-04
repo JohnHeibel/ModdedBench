@@ -74,6 +74,8 @@ project(':server') {
             compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
         }
     }
+    // Their game-free parts are unit-tested on every build as well.
+    sourceSets.test { compileClasspath += sourceSets.dev.output; runtimeClasspath += sourceSets.dev.output }
     tasks.named('jar') { dependsOn 'devClasses'; if (project.hasProperty('devFixtures')) from sourceSets.dev.output }
     tasks.named('test') {
         dependsOn 'reobfJar'
