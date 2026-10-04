@@ -65,17 +65,29 @@ public class VantagesTest {
         var v=Vantages.search(s,hopper(),BODY,1);
         assertEquals(1,v.size());assertTrue(v.get(0).eye().z()<-88);
     }
-    @Test public void reportsLookUnreachableSupportMissingAndHitNotOnFace() {
+    @Test public void reportsLookUnreachableAndSupportMissing() {
         ClickSpace s=new Spaces(-6,63,-6,6,70,6,false).floor(63).floor(64).slab(2,65,0).build();
         var tally=new Vantages.Tally();
         var up=place(p(0,65,0),1,null,new ClickSpec.Look(1,null,null));
         assertTrue(Vantages.search(s,up,BODY,1,tally).isEmpty());assertEquals("look_unreachable",Vantages.problem(s,up,tally));
         var floating=place(p(0,67,0),1,null,ClickSpec.Look.ANY);
         assertEquals("support_missing",Vantages.problem(s,floating,new Vantages.Tally()));
-        var high=new Vantages.Target(Vantages.using(p(2,65,0),5),new Vec(1,.8,.5),ClickSpec.Look.ANY,null);
-        assertTrue(Vantages.search(s,high,BODY,1).isEmpty());assertEquals("hit_not_on_face",Vantages.problem(s,high,new Vantages.Tally()));
         var low=new Vantages.Target(Vantages.using(p(2,65,0),5),new Vec(1,.25,.5),ClickSpec.Look.ANY,null);
-        assertFalse(Vantages.search(s,low,BODY,1).isEmpty());
+        var seen=Vantages.search(s,low,BODY,1).get(0);
+        assertEquals(new Vec(3,65.25,.5),seen.point());assertTrue(Vantages.shown(s,seen.click(),low.hit()));
+    }
+    @Test public void aHitBesideTheShapeShownIsAimedAtOnTheCellsOwnFace() {
+        // Over a slab's top, on its east side: the copy shows nothing there, the game's ray may (a block can be another
+        // shape to what is held). It is aimed at where the whole cell's face would be, and known as not shown.
+        ClickSpace s=new Spaces(-6,63,-6,6,70,6,false).floor(63).floor(64).slab(2,65,0).build();
+        var high=new Vantages.Target(Vantages.using(p(2,65,0),5),new Vec(1,.8,.5),ClickSpec.Look.ANY,null);
+        var aimed=Vantages.search(s,high,BODY,1).get(0);
+        assertEquals(new Vec(3,65.8,.5),aimed.point());assertFalse(Vantages.shown(s,aimed.click(),high.hit()));
+        // On the top face the copy puts the plane at the slab's top; the game's ray says where it is.
+        var top=Vantages.search(s,new Vantages.Target(Vantages.using(p(2,65,0),1),new Vec(.5,1,.5),ClickSpec.Look.ANY,null),BODY,1).get(0);
+        assertEquals(new Vec(2.5,65.5,.5),top.point());
+        assertSame(top.point(),Vantages.onPlane(top.point(),1,2.4,65.5,.6));
+        assertEquals(new Vec(2.5,66,.5),Vantages.onPlane(top.point(),1,2.4,66,.6));
     }
     @Test public void aWayIsLostToABlockInTheBodyOrTheLineOfSightAndToNoOther() {
         ClickSpace s=new Spaces(-6,63,-6,6,70,6,false).floor(63).floor(64).build();

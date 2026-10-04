@@ -34,6 +34,8 @@ The pack's own blocks (PACK), each one call:
   click_machines   five machines in a row before a wall, every front away from it, then five wrench uses that set the
                    output sides (up, up, down, toward the third, away from the fourth): kinds, fronts and sides read
                    from the server's tiles
+  click_cable      a cable between a battery buffer and a furnace, joined to the furnace by a cutter click near the edge of
+                   the cable's top face: a point that is on that face only as the game shows the cable to a held cutter
   click_smeltery   a smeltery with a controller, two drains facing in, a faucet on each, a basin and a table under the
                    faucets and a bucket of lava into the tank: the controller reports a valid structure
   click_ebf        an Electric Blast Furnace: 37 structure cells, six hatches and the controller each facing out, the
@@ -64,7 +66,7 @@ from mbtools_gtnh import plan  # noqa: E402
 OUT = mc.ROOT / ".runtime" / "evidence" / "faceclick-course.json"
 SCENARIOS = ("click_hopper", "click_boxed", "click_access", "click_attached", "click_upright", "click_unstable", "click_look", "click_chain", "click_use", "click_gui",
              "click_scaffold", "click_multiblock")
-PACK = ("click_machines", "click_smeltery", "click_ebf")
+PACK = ("click_machines", "click_cable", "click_smeltery", "click_ebf")
 AIR, STONE, DIRT, LOG, COBBLE = "minecraft:air", "minecraft:stone", "minecraft:dirt", "minecraft:log", "minecraft:cobblestone"
 BOX = (7, 7, 7)   # the plot: builder_shell's corner of the arena, clear floor, nothing with a tile entity within reach
 # The acceptance shape's blocks. Stand-ins that take their facing from the click, as machines do.
@@ -314,6 +316,21 @@ class Clicks:
         ok = r.get("state") == "succeeded" and controller.get("ValidStructure") in (1, True) and not r.get("scaffoldLeft")
         return {"passed": ok, "receipt": r, "controller": controller, "tank": tank,
                 "why": f"{brief(r)} valid={controller.get('ValidStructure')} layers={controller.get('Layers')} tank={ {k: v for k, v in tank.items() if k not in ('x', 'y', 'z', 'id')} } scaffoldLeft={r.get('scaffoldLeft')}"}
+
+    def click_cable(self):
+        """A cable between two machines, joined to the second with the cutter: the click names a point near the edge of the
+        cable's top face, which is on that face only as the game shows the cable to a held cutter (a whole block)."""
+        cells = [{"pos": [1, 0, 3], **part(171), "click": {"look": {"toward": "west", "pitch": [0, 40]}}, "expect": [{"method": "obs.tile", "path": "tile.mFacing", "equals": 5}]},
+                 {"pos": [3, 0, 3], **part(261), "click": {"look": {"toward": "north"}}},
+                 {"pos": [2, 0, 3], **part(1246), "click": {"face": "east"}, "stage": 1}]
+        uses = [{"pos": [2, 0, 3], "item": {"id": TOOL, "meta": 26}, "click": {"face": "up", "hit": [.9, 1, .5]}, "stage": 2,
+                 "expect": [{"method": "obs.tile", "path": "tile.mConnections", "equals": 48}]}]
+        origin = self.scene({}, [(GT, 1, 171), (GT, 1, 261), (GT, 1, 1246), (TOOL, 1, 26, TOOL_NBT)], start=(2, 6))
+        seen = call(work.mb_build_preview, cells=cells, uses=uses, origin=origin)
+        r = call(work.mb_build, cells=cells, uses=uses, origin=origin, timeout_ticks=4000)
+        joined = self.tile([2, 0, 3]).get("mConnections")
+        ok = r.get("state") == "succeeded" and joined == 48
+        return {"passed": ok, "receipt": r, "why": f"{brief(r)} mConnections={joined} preview={ {k: seen.get(k) for k in ('ready', 'problemCount')} } note={[p.get('note', '')[:40] for p in (seen.get('clicks') or seen).get('problems', [])]}"}
 
     def click_ebf(self):
         casing, coil = {"id": "gregtech:gt.blockcasings", "meta": 11}, {"id": "gregtech:gt.blockcasings5", "meta": 0}

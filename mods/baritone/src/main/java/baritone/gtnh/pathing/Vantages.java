@@ -49,8 +49,10 @@ public final class Vantages {
         double[] lo={u.minX(),u.minY(),u.minZ()},hi={u.maxX(),u.maxY(),u.maxZ()};
         List<Vec> out=new ArrayList<>();
         if(hit!=null) {
-            double[] h={c.block().getX()+hit.x(),c.block().getY()+hit.y(),c.block().getZ()+hit.z()};h[a]=p;
-            for(int i=0;i<3;i++)if(i!=a&&(h[i]<lo[i]-1e-3||h[i]>hi[i]+1e-3))return List.of();
+            // A hit beside the shape the block shows now is aimed at all the same, on the cell's own face: a block can be
+            // another shape to the game's look ray than to this copy (to what is held, say), and that ray decides.
+            double[] h={c.block().getX()+hit.x(),c.block().getY()+hit.y(),c.block().getZ()+hit.z()},o={c.block().getX(),c.block().getY(),c.block().getZ()};
+            h[a]=shown(s,c,hit)?p:o[a]+c.face()%2;
             out.add(new Vec(h[0],h[1],h[2]));return out;
         }
         double[][] fractions={{.5,.5},{.25,.25},{.75,.25},{.25,.75},{.75,.75}};
@@ -60,6 +62,20 @@ public final class Vantages {
             out.add(new Vec(h[0],h[1],h[2]));
         }
         return out;
+    }
+    /** Whether a hit lies on the face as the block shows it in this copy. */
+    public static boolean shown(ClickSpace s,Click c,Vec hit) {
+        Voxel v=s.at(c.block());if(v.selection().isEmpty())return false;
+        CollisionBox u=union(v.selection());int a=axis(c.face());
+        double[] lo={u.minX(),u.minY(),u.minZ()},hi={u.maxX(),u.maxY(),u.maxZ()},h={c.block().getX()+hit.x(),c.block().getY()+hit.y(),c.block().getZ()+hit.z()};
+        for(int i=0;i<3;i++)if(i!=a&&(h[i]<lo[i]-1e-3||h[i]>hi[i]+1e-3))return false;
+        return true;
+    }
+    /** The point moved onto the plane the game's ray found the face in; the same point when it lies there already. */
+    public static Vec onPlane(Vec point,int face,double x,double y,double z) {
+        int a=axis(face);double real=a==0?x:a==1?y:z;
+        if(Math.abs(get(point,a)-real)<1e-3)return point;
+        return new Vec(a==0?real:point.x(),a==1?real:point.y(),a==2?real:point.z());
     }
     public static double yaw(Vec eye,Vec to){return Math.toDegrees(Math.atan2(-(to.x()-eye.x()),to.z()-eye.z()));}
     public static double pitch(Vec eye,Vec to){double dx=to.x()-eye.x(),dz=to.z()-eye.z();return -Math.toDegrees(Math.atan2(to.y()-eye.y(),Math.sqrt(dx*dx+dz*dz)));}
