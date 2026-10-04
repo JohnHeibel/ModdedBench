@@ -77,11 +77,12 @@ public final class WorkSpec {
         integer(spec,"timeoutTicks",12000,1,72000);
         if(spec.containsKey("size")){List<?> size=list(spec.get("size"));if(size.size()!=3)throw new IllegalArgumentException("size needs three dimensions");for(int i=0;i<3;i++)integer(Map.of("size",size.get(i)),"size",1,1,i==1?256:30000000);}
         List<Map<String,Object>> entries=new ArrayList<>();
-        if(spec.containsKey("cells")==spec.containsKey("selection"))throw new IllegalArgumentException("exactly one of cells or selection required");
+        // Uses alone are a plan too: right clicks on blocks that stand.
+        if(spec.containsKey("cells")?spec.containsKey("selection"):!spec.containsKey("selection")&&StepPlan.uses(spec).isEmpty())throw new IllegalArgumentException("exactly one of cells or selection required (uses may stand alone)");
         if(spec.containsKey("cells")) {
             List<?> cells=list(spec.get("cells"));if(cells.isEmpty()||cells.size()>CELLS)throw new IllegalArgumentException("cells must contain 1.."+CELLS+" entries; a larger build is several jobs");
             for(Object entry:cells)entries.add(object(entry));
-        } else {
+        } else if(spec.containsKey("selection")) {
             Map<String,Object> sel=object(spec.get("selection"));Bounds bounds=bounds(sel);
             fields(sel,Set.of("min","max","shape","block","replace","axis"));
             if(bounds.volume()>SELECTION)throw new IllegalArgumentException("selection volume exceeds "+SELECTION);

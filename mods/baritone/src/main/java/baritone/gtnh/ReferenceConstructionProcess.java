@@ -19,11 +19,13 @@ import java.util.*;
 /**
  * The construction engine: native cell identity and durable intent around upstream BuilderProcess scheduling.
  * One behaviour. The plan is built in step order (BuildSteps), edits outside it need the terrain permissions,
- * and a job that cannot go on stops with one reason and, where one is to blame, one cell.
+ * and a job that cannot go on stops with one reason and, where one is to blame, one cell. The plan's click cells
+ * and uses are ClickRun's: each stage's after its plain cells, under the same lease, journal, budget and stop.
  */
 final class ReferenceConstructionProcess extends BulkJob {
     private final Baritone engine;
     private final ConstructionPlan plan;
+    private final ClickRun clicks;
     private final Map<Settings.Setting<?>,Object> savedSettings=new LinkedHashMap<>();
     /** Made once for the plan: what the source builder is shown at each cell, and the item that places it. */
     private final Map<BlockPos,IBlockState> states=new HashMap<>();
@@ -61,11 +63,13 @@ final class ReferenceConstructionProcess extends BulkJob {
     private long searchesBefore=Long.MAX_VALUE;
     /** The current build step (BuildSteps), the one the running pass was started at, and this tick's wrong cells per step. */
     private int buildStep,passStep=-1;
+    /** The step being worked: the first with something left among those so far (an earlier one whose cell broke comes first). */
+    private int work;
     private int[] stepLeft=new int[0];
     private BlockPos[] stepFirst=new BlockPos[0];
     ReferenceConstructionProcess(BaritoneNavigation navigation,WorkJournal journal,Map<String,Object> options){
         super(navigation,journal,options);engine=navigation.reference();
-        plan=new ConstructionPlan(params,journal.progress,world);
+        plan=new ConstructionPlan(params,journal.progress,world);clicks=new ClickRun(this,engine,plan);
     }
     @Override void begin(){
         super.begin();
@@ -75,6 +79,15 @@ final class ReferenceConstructionProcess extends BulkJob {
             if(!cell.clear())selectors.put(p,Map.copyOf(ConstructionPlan.material(cell)));
         }
         kinds=Set.copyOf(selectors.values());
+        // Charged only for a click the game took. One it refused placed nothing, and is not the cell's fault.
+        engine.getPlayerContext().playerController().placed=p->{
+            BlockPos pos=new BlockPos(p.getX(),p.getY(),p.getZ());Cell cell=plan.schematic.get(pos);
+            // Outside the plan it is scaffold, the builder's or a walk's: recorded, and taken away again when the job ends.
+            if(cell==null){clicks.placed(pos);return;}
+            if(cell.clear())return;
+            int count=attempts.merge(pos,1,Integer::sum);journal.recordAttempt(ConstructionPlan.key(cell),count);pending.add(pos);
+            placementGoals.clear();
+        };
         survey();
         // A block the job may not remove can never become the plan's: say so now, with the cell, before any input.
         if(!plan.replace()){var held=held();if(!held.isEmpty()){blamed=held.get(0);finish("failed","occupied");return;}}
@@ -127,14 +140,16 @@ final class ReferenceConstructionProcess extends BulkJob {
         for(Cell cell:plan.cells){
             BlockPos p=cell.pos();int at=order.index(walked++);boolean done=false,stuck=false;
             if(plan.loaded(p)){
-                done=plan.correct(cell);matches.put(p,done);
+                boolean present=plan.correct(cell);matches.put(p,present);
+                // A click cell is done once its click is settled too: read as expected, or found standing.
+                done=present&&(cell.click()==null||clicks.settled(ConstructionPlan.key(cell)));
                 // Seen to match: the clicks it took are forgotten, so a later repair of this cell starts from none.
-                if(done&&pending.remove(p)){attempts.remove(p);placedObserved.add(p);}
+                if(present&&pending.remove(p)){attempts.remove(p);placedObserved.add(p);}
                 // A cell to be emptied may start empty, receive a scaffold and be cleared again: that removal counts too.
-                if(cell.clear()){if(!done)dirty.add(p);else if(dirty.remove(p))removedObserved.add(p);}
+                if(cell.clear()){if(!present)dirty.add(p);else if(dirty.remove(p))removedObserved.add(p);}
                 // What stands in a cell that wants a block: nothing or something a placement replaces (which the job may
                 // also break, replace or not: it costs nothing that the placement would not), or a block in the way.
-                else if(!done){
+                else if(!present){
                     if(!baritone.compat.LegacyPlacement.empty(world,p.getX(),p.getY(),p.getZ()))stuck=!replace||pending.contains(p);
                     else if(!world.isAirBlock(p.getX(),p.getY(),p.getZ()))replaceable.add(p);
                 }
@@ -145,8 +160,29 @@ final class ReferenceConstructionProcess extends BulkJob {
             // The step is last tick's: it only moves on once everything before it is done, so nothing counted here is early.
             if(at<=buildStep){if(!stuck)open++;else if(occupied==null)occupied=p;}
         }
+        // A use not yet made is something left, of its stage's uses.
+        for(var use:plan.uses)if(!clicks.settled(use.key())){
+            int at=order.uses(use.stage());
+            if(wrong++<ConstructionPlan.FIRST)some.add(use.pos());
+            if(count[at]++==0)first[at]=use.pos();
+            if(at<=buildStep)open++;
+        }
         correct=matches;soft=replaceable;left=wrong;leftFirst=some;
         stepLeft=count;stepFirst=first;buildStep=BuildSteps.current(buildStep,count);
+        work=buildStep;for(int i=buildStep-1;i>=0;i--)if(count[i]>0)work=i;
+    }
+    int clickStep(){return work;}
+    /** The click executor's turn: a click is under way, a cell is to be put back, or the step being worked is one of clicks or uses. */
+    private boolean clicking(){return clicks.busy()||work<stepLeft.length&&plan.steps.kind(work)!=BuildSteps.CELLS;}
+    /** A click cannot be made, or did not do what was asked: the job stops on its cell, to be resumed once that is seen to. */
+    void stop(String why,BlockPos pos){blamed=pos;finish("paused",why);}
+    /** An item is not carried: what the plan still needs against the inventory, and the cell that wanted it. */
+    void shortOf(BlockPos pos){
+        Map<Map<String,Object>,Integer> required=new LinkedHashMap<>();
+        for(Cell c:plan.cells)if(!c.clear()&&!correct.getOrDefault(c.pos(),false))required.merge(selectors.get(c.pos()),1,Integer::sum);
+        for(var use:plan.uses)if(!use.item().containsKey("empty")&&!clicks.settled(use.key()))required.putIfAbsent(use.item(),1);
+        missing=ConstructionPlan.materials(required).stream().filter(row->(Integer)row.get("missing")>0).limit(2*ConstructionPlan.FIRST).toList();
+        blamed=pos;finish("paused","missing_materials");
     }
     /** The first cell still wrong among the steps so far, else the first wrong cell of the plan. */
     private BlockPos next(){
@@ -299,12 +335,6 @@ final class ReferenceConstructionProcess extends BulkJob {
             if(!builder.stateComparison.test(predicted,states.get(pos))){blamed=pos;finish("paused","mismatch");return;}
             if(attempts.getOrDefault(pos,0)>=ConstructionPlan.ATTEMPTS){blamed=pos;finish("paused","attempt_limit");}
         };
-        // Charged only for a click the game took. One it refused placed nothing, and is not the cell's fault.
-        engine.getPlayerContext().playerController().placed=p->{
-            BlockPos pos=new BlockPos(p.getX(),p.getY(),p.getZ());Cell cell=cells.get(pos);if(cell==null||cell.clear())return;
-            int count=attempts.merge(pos,1,Integer::sum);journal.recordAttempt(ConstructionPlan.key(cell),count);pending.add(pos);
-            placementGoals.clear();
-        };
     }
     /**
      * What the job may break, for the builder and for every path through the plan: PlanBreaks decides for plan cells
@@ -357,7 +387,9 @@ final class ReferenceConstructionProcess extends BulkJob {
         return false;
     }
     private void startPass(){
-        if(plan.cells.isEmpty()){finish("succeeded","empty_selected_schematic");return;}
+        // A click's walk leaves the input handler released.
+        if(!engine.getInputOverrideHandler().hasActiveLease())engine.getInputOverrideHandler().attach(lease);
+        if(plan.cells.isEmpty()){started=true;passStep=buildStep;if(left==0)finish("succeeded",plan.uses.isEmpty()?"empty_selected_schematic":"schematic_verified");return;}
         int minX=plan.cells.stream().mapToInt(c->c.pos().getX()).min().orElseThrow(),minY=plan.cells.stream().mapToInt(c->c.pos().getY()).min().orElseThrow(),minZ=plan.cells.stream().mapToInt(c->c.pos().getZ()).min().orElseThrow();
         int width=plan.cells.stream().mapToInt(c->c.pos().getX()).max().orElseThrow()-minX+1,height=plan.cells.stream().mapToInt(c->c.pos().getY()).max().orElseThrow()-minY+1,length=plan.cells.stream().mapToInt(c->c.pos().getZ()).max().orElseThrow()-minZ+1;
         // The source builder is shown the plan up to the current step only; step() starts a new pass when the step moves on.
@@ -374,10 +406,10 @@ final class ReferenceConstructionProcess extends BulkJob {
         engine.getBuilderProcess().build(String.valueOf(params.getOrDefault("name","ModdedBench schematic")),schematic,new baritone.compat.Vec3i(minX,minY,minZ));
         started=true;
     }
-    @Override int progress(){return placedObserved.size()+removedObserved.size();}
+    @Override int progress(){return placedObserved.size()+removedObserved.size()+clicks.made();}
     // A cell nothing can be placed against, or one the player cannot leave, keeps the source builder at its goal or
     // replanning for ever; the shared watchdog ends that. A pending placement or a block cleared is work too.
-    @Override long activity(){return java.util.Objects.hash(placedObserved.size(),removedObserved.size(),pending.size());}
+    @Override long activity(){return java.util.Objects.hash(placedObserved.size(),removedObserved.size(),pending.size(),clicks.activity());}
     @Override String phase(){return "reference_build";}
     /**
      * The shared deadline and watchdog, in the builder's own few words and with a cell. A stall is no_stance when
@@ -387,6 +419,8 @@ final class ReferenceConstructionProcess extends BulkJob {
     @Override String named(String why){
         if(why.startsWith("timeout_"))return "timeout";
         if(!why.startsWith("stalled_"))return why;
+        // A stall during a click is that click's, in the word of what it was stuck at.
+        if(clicking()){blamed=clicks.at();if(blamed==null)blamed=next();return ClickLog.stalled(clicks.phase());}
         var blind=noVantage.stream().filter(p->Boolean.FALSE.equals(correct.get(p))&&plan.steps.visible(p,buildStep)).toList();
         if(!blind.isEmpty()&&blind.size()>=open){blamed=blind.get(0);return "no_stance";}
         blamed=next();
@@ -394,7 +428,16 @@ final class ReferenceConstructionProcess extends BulkJob {
         return pathing.calculationsStarted()>searchesBefore&&"FAILURE".equals(pathing.lastCalculation().get("type"))
             &&pathing.lastCalculation().get("search") instanceof Map<?,?> search&&"exhausted".equals(search.get("why"))?"no_route":"stalled";
     }
+    /** A click of this job opened the screen: it is closed and the build stops on that click. Any other screen takes the controls. */
+    @Override void guiOpened(){if(clicks.guiOpened()){blamed=clicks.blame();finish("paused","gui_opened");}else super.guiOpened();}
+    /** Ending with a living player and no screen: cells out for access are put back and scaffold outside the plan taken away first. */
+    @Override boolean closing(String terminal,String why){
+        if(WorkAccess.died(player)||mc.theWorld!=world||mc.thePlayer!=player||mc.currentScreen!=null||!clicks.close())return false;
+        engine.getPathingBehavior().forceCancel();engine.getInputOverrideHandler().release();passStep=-1;
+        remaining=Math.max(remaining,clicks.budget());return true;
+    }
     @Override void step(){
+        if(closing()){survey();if(!clicks.tick())closed();return;}
         if(!started)return;
         capture();var builder=engine.getBuilderProcess();
         if(clearanceEgress&&mc.thePlayer.onGround&&egressGoal.isInGoal(engine.getPlayerContext().playerFeet())){
@@ -406,7 +449,16 @@ final class ReferenceConstructionProcess extends BulkJob {
         if(open==0&&occupied!=null){blamed=occupied;finish(session()>0?"paused":"failed",pending.contains(occupied)?"mismatch":"occupied");return;}
         // The build step moved on (the source builder may already have stopped, its shown cells all done). Existing
         // searches retain their immutable schematic; start a new source plan.
-        if(passStep!=buildStep){engine.getPathingBehavior().forceCancel();startPass();}
+        if(clicking()){
+            // The source builder stands down for the click executor, and is started again when plain cells are next.
+            if(passStep>=0){engine.getPathingBehavior().forceCancel();engine.getInputOverrideHandler().release();passStep=-1;}
+            clicks.tick();
+            if(done()||closing())return;
+            state="clicking";
+            if(ticks%20==0)journal.save(status());
+            return;
+        }
+        if(passStep!=buildStep){engine.getPathingBehavior().forceCancel();startPass();if(done()||closing())return;}
         if(!builder.isActive()){
             // The source builder holds every cell it was shown done. What the plan still finds wrong is a cell it cannot make as asked.
             if(!cleanupPhase&&!deferredAir.isEmpty()){
@@ -421,23 +473,19 @@ final class ReferenceConstructionProcess extends BulkJob {
         }
         if(builder.isPaused()){
             // The source builder has nothing it can do for the cells it is shown: nothing carried goes into any of them.
-            Map<Map<String,Object>,Integer> required=new LinkedHashMap<>();
-            for(Cell c:plan.cells)if(!c.clear()&&!correct.getOrDefault(c.pos(),false)){
-                required.merge(selectors.get(c.pos()),1,Integer::sum);
-                if(blamed==null&&plan.steps.visible(c.pos(),buildStep)&&!plan.occupied(c.pos())&&plan.slot(c)<0)blamed=c.pos();
-            }
+            for(Cell c:plan.cells)if(blamed==null&&!c.clear()&&!correct.getOrDefault(c.pos(),false)&&plan.steps.visible(c.pos(),buildStep)&&!plan.occupied(c.pos())&&plan.slot(c)<0)blamed=c.pos();
             if(blamed==null){blamed=next();finish("paused","stalled");return;}
-            missing=ConstructionPlan.materials(required).stream().filter(row->(Integer)row.get("missing")>0).limit(2*ConstructionPlan.FIRST).toList();
-            finish("paused","missing_materials");return;
+            shortOf(blamed);return;
         }
         if(centerForPlacement())return;
         engine.tickStart();
         // Placement callbacks may finish and release this job during the source tick.
-        if(done())return;
+        if(done()||closing())return;
         state="building";
         if(ticks%20==0)journal.save(status());
     }
     @Override void releaseProcess(){
+        clicks.release();
         engine.getPathingBehavior().forceCancel();engine.getInputOverrideHandler().release();engine.getBuilderProcess().resetAdapters();engine.getPlayerContext().playerController().placed=p->{};engine.explicitMiningTargets=()->s->false;
         engine.overrideProtection=false;engine.positionAllowed=p->true;
         for(var entry:savedSettings.entrySet())ReferenceSettings.copy(entry.getKey(),entry.getValue());
@@ -447,8 +495,10 @@ final class ReferenceConstructionProcess extends BulkJob {
         out.put("buildPhase",clearanceEgress?"clearance_egress":cleanupPhase?"clearance":"construction");out.put("deferredAirCells",deferredAir.size());
         out.put("selected",plan.cells.size());out.put("placed",placedObserved.size());out.put("removed",removedObserved.size());out.put("pendingPlacementVerification",pending.size());
         // One stop, one reason, one cell where a cell is to blame, and the step it happened on.
-        if(done()&&!succeeded()){
-            Map<String,Object> stop=new LinkedHashMap<>();stop.put("reason",reason);
+        // A job that is putting things back before it ends already says how it ends.
+        Map<String,Object> stop=null;
+        if(done()?!succeeded():closing()&&!ending.terminal("").equals("succeeded")){
+            stop=new LinkedHashMap<>();stop.put("reason",reason);
             if(blamed!=null)stop.put("pos",point(blamed));
             var at=plan.steps.where(blamed,buildStep);if(!at.isEmpty())stop.put("step",at);
             out.put("stopped",stop);
@@ -458,6 +508,7 @@ final class ReferenceConstructionProcess extends BulkJob {
         // What is still wrong, and where the stepped order stands: a job that ends unfinished stopped on this step, and nothing above it was begun.
         out.put("left",Map.of("count",left,"first",leftFirst.stream().map(WorkSpec::point).toList()));
         var step=plan.steps.receipt(buildStep,stepLeft,stepFirst);if(!step.isEmpty())out.put("step",step);
+        clicks.status(out,stop);
         out.put("cost",Cost.status());
         return out;
     }
