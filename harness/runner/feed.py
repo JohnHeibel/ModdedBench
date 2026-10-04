@@ -108,8 +108,8 @@ def _inventory(a, r, me):
 def _recipe(a, r, me):
     first = (r.get("recipes") or [None])[0]
     if not isinstance(first, dict) or not first.get("inputs"): return None
-    cell = lambda c: {"x": c.get("x"), "y": c.get("y"), **_stack((c.get("alternatives") or c.get("examples") or [None])[0])} if isinstance(c, dict) else {}
-    return "recipe", {"handler": first.get("name") or "", "inputs": [cell(c) for c in first["inputs"]][:16], "result": cell(first.get("result")) or _stack(r.get("target")),
+    cell = lambda c: {"x": c.get("x"), "y": c.get("y"), **_stack((c.get("alternatives") or c.get("examples") or [c])[0])} if isinstance(c, dict) else {}  # a summary position with one item is that item
+    return "recipe", {"handler": first.get("name") or (r.get("shared") or {}).get("name") or "", "inputs": [cell(c) for c in first["inputs"]][:16], "result": cell(first.get("result")) or _stack(r.get("target")),
                       "target": _name(r.get("target") or a), "total": r.get("total")}
 
 def _notes(a, r, me):
