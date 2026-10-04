@@ -162,7 +162,8 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
         inactiveTicks=0;
         if(besideFluid&&(unconfirmedPlug()||plug()))return; // this tick belongs to the plug
         engine.tickStart(this::mineAtReachedGoal);
-        if(engine.snags.failure()!=null){finish("failed",engine.snags.failure());return;}
+        // Judged as the deadline is: a session that gained something pauses, and a resume starts with no bans.
+        if(engine.snags.failure()!=null){finish(session()>0?"paused":"failed",engine.snags.failure());return;}
         if(besideFluid)watch();
         if(measure())return;
         if(process.isActive()){
