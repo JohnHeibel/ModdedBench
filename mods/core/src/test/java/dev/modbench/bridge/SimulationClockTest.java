@@ -100,6 +100,18 @@ public class SimulationClockTest {
     }
 
     @Test
+    public void turningTheThreatGuardOffForgetsTheThreatsItListed() {
+        SimulationClock clock = new SimulationClock(() -> 0L);
+        clock.configure(Json.object("threatWithin", 12.0));
+        clock.threats(threats("7"));
+        clock.resume();
+        clock.configure(Json.object("healthDrop", true)); // Another guard's change leaves the list alone.
+        assertEquals(1, clock.status().getAsJsonArray("threats").size());
+        clock.configure(Json.object("threatWithin", -1)); // Nothing refreshes the list from here on: a stale mob must not stay "after you".
+        assertEquals(0, clock.status().getAsJsonArray("threats").size());
+    }
+
+    @Test
     public void aFightQuietsItsOwnHitsAndMobsButNotTheOtherGuards() {
         SimulationClock clock = new SimulationClock(() -> 0L);
         JsonObject config = new JsonObject();

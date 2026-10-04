@@ -106,6 +106,7 @@ public final class SimulationClock {
         healthDrop=hd; actionFailed=af; pauseOnDisconnect=disconnect; healthBelow=hb; airBelow=ab;
         foodBelow=fb; burning=fire; threatWithin=tw; knownThreats.clear();
         lastHealth=null; java.util.Arrays.fill(inDanger,false);
+        if(threatWithin<0) threats=new com.google.gson.JsonArray(); // the host stops looking for threats: none it listed before is still known to be one
     }
     private void transition(boolean value) {
         if(paused==value) return;
