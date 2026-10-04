@@ -52,3 +52,16 @@ RUN apk add --no-cache squid socat
 COPY docker/squid.conf /etc/squid/squid.conf
 # squid drops privileges and then cannot open /dev/stdout, so it logs to a file that is tailed into the container log.
 CMD ["sh", "-c", "socat TCP-LISTEN:47223,fork,reuseaddr TCP4:host.docker.internal:47223 & touch /var/log/squid/access.log && chown squid /var/log/squid/access.log && tail -F /var/log/squid/access.log & exec squid -N"]
+
+# asker: answers viewers' questions in chat from the run's logs (harness/asker). Its own Codex login, the logs read only, no route to the game.
+FROM node:22-bookworm-slim AS asker
+COPY harness/mcp/requirements.txt /tmp/requirements.txt
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip ca-certificates && rm -rf /var/lib/apt/lists/* \
+ && npm install -g @openai/codex && pip3 install --break-system-packages --no-cache-dir -r /tmp/requirements.txt \
+ && useradd -m asker && mkdir -p /home/asker/.codex /data && chown asker:asker /home/asker/.codex /data
+COPY harness/asker /opt/modbench/asker
+COPY harness/runner/feed.py /opt/modbench/runner/feed.py
+USER asker
+WORKDIR /data
+ENV PYTHONUNBUFFERED=1
+CMD ["python3", "/opt/modbench/asker/bot.py", "--log", "/work/modbench/.state/codex-loop.log", "--feed", "/outbox/overlay/feed.jsonl", "--notes", "/work/modbench/.state/notes", "--work", "/data"]

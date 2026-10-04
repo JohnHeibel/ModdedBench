@@ -34,8 +34,24 @@ services:
     mem_limit: 8g
     pids_limit: 2048
 
+  asker:                                  # the chat bot: docker compose --profile chat up -d asker. See docs/CONTAINERS.md.
+    profiles: [chat]
+    build: {context: .., dockerfile: docker/Dockerfile, target: asker}
+    environment: {MB_TWITCH_CHANNEL: "${TWITCH_CHANNEL:-}", MB_TWITCH_NICK: "${TWITCH_NICK:-}", MB_TWITCH_TOKEN: "${TWITCH_TOKEN:-}", MB_ASK_MODEL: "${ASK_MODEL:-gpt-5.6-luna}"}
+    networks: [chat]                      # the internet, and no route to the game, the agent or the gateway
+    volumes:
+      - agent-work:/work:ro               # the run's log and the agent's journal, read only
+      - ${OUTBOX:-../.runtime/outbox}:/outbox:ro
+      - asker-home:/home/asker/.codex     # its own Codex login, never the agent's
+      - asker-data:/data                  # the searchable copy of the log, and asks.jsonl: every question and answer
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 2g
+    pids_limit: 256
+
 networks:
   game: {}
   egress: {}
   agent: {internal: true}
-volumes: {server-data: {}, agent-work: {}, agent-home: {}}
+  chat: {}
+volumes: {server-data: {}, agent-work: {}, agent-home: {}, asker-home: {}, asker-data: {}}
