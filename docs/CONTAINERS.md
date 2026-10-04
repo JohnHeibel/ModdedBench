@@ -168,6 +168,7 @@ keeps with `mb_goal`, and action lines are templates over its tool calls. Initia
 | Take the agent's commits out | `docker compose ... exec agent git bundle create /outbox/run.bundle modbench-base..HEAD`, then `git fetch .runtime/outbox/run.bundle` on the host |
 | Hold the world paused / release | `docker compose ... exec server sh -c 'echo operator > /data/modbench-hold'` / `... rm -f /data/modbench-hold` (`cat` it first: `backup` or `compaction` is a hold that ends by itself) |
 | New world | `docker compose ... down`, `docker volume rm moddedbench_server-data` |
+| New world that keeps the old one | start the console with `MB_COMPOSE_PROJECT=<name>`: a second stack (`docker/compose.side.yaml`) with its own world and agent checkout and the same Codex login. Stop the other stacks first. |
 | Start a run without the console | fill the four placeholders in a copy of `PROMPT.md`, save it as `.runtime/brief/PROMPT.md`, then start the loop as in step 6 above (under `flock`, or the one-loop guard does not cover it), or paste it into an interactive `codex` in that container |
 | Snapshot the world, the notes and the agent's work | `python harness/launcher/backup.py once`, or `loop --every 30` in a terminal you leave open (one loop per stack: a second exits) |
 

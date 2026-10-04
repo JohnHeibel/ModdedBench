@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+# A second stack beside the real one: a fresh world and a fresh agent checkout in volumes of its own, the same Codex
+# login (a copy would fork the rotating token and log one of the two out). Stop the other stacks first: all publish
+# 25575. The console drives it when MB_COMPOSE_PROJECT is set:
+#   MB_COMPOSE_PROJECT=mbfresh python harness/console/console.py
+volumes:
+  agent-home: {external: true, name: moddedbench_agent-home}
