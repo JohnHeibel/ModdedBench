@@ -33,6 +33,8 @@ public final class ClientClock implements ClockHooks.Driver {
     private boolean resuming, creditTick, resumeSent;
     private int resumeTicks, creditRan;
     private Session agent;
+    /** The action whose _resume armed the credit tick. */
+    private Request armed;
     final PausedFrame presentation=new PausedFrame(this);
     private final SmoothView view=new SmoothView();
     private final PlanHold planHold=new PlanHold();
@@ -84,11 +86,13 @@ public final class ClientClock implements ClockHooks.Driver {
         if(agent!=null && agent.connected && agent!=r.session) throw new IllegalArgumentException("time control belongs to another connected agent session");
         if(Json.bool(state,"held",false)) throw new IllegalArgumentException("the operator is holding the world paused; wait for the release");
         if(!"paused".equals(Json.string(state,"mode",""))) throw new IllegalArgumentException("pause has not settled; inspect time.status before resuming");
-        agent=r.session;resuming=creditTick=true;resumeSent=false;resumeTicks=ticks;
+        agent=r.session;armed=r;resuming=creditTick=true;resumeSent=false;resumeTicks=ticks;
         JsonObject record=Json.object("pausedBy",pauseReason(),"threats",state.has("threats")?state.get("threats"):new com.google.gson.JsonArray());
         if(ticks>0) record.addProperty("ticks",ticks);
         r.resumed=record;
     }
+    /** The action that asked for the resume was refused before it started anything (BridgeRuntime cleared its record): the world stays paused. */
+    static boolean dropped(Request armed) { return armed.resumed==null; }
     private void sendResume() {
         resumeSent=true;
         Request resume=new Request(new com.google.gson.JsonPrimitive("resume-for-action-"+requestId),"time.resume",
@@ -222,6 +226,7 @@ public final class ClientClock implements ClockHooks.Driver {
         observationFrames.keySet().removeIf(id->!pending.containsKey(id));
         runtime.service(runtime.identity());
         if(paused || stepBudget==0) view.settle();
+        if(creditTick && paused && dropped(armed)) { resuming=creditTick=false;planHold.reset(); }
         if(creditTick && paused) {
             // Plan-while-paused: the action's job plans with the world still paused, and its first tick follows the plan.
             if(planHold.hold(runtime::planningWhilePaused,runtime::whilePaused,System.nanoTime())) {
