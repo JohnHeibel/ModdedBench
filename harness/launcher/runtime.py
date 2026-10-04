@@ -491,7 +491,9 @@ def set_server_properties(server: Path, accept_eula: bool, server_ip: str = "127
         eula.write_text("# Accepted explicitly by modbench runtime\neula=true\n", encoding="utf-8")
     properties = server / "server.properties"
     lines = properties.read_text(encoding="utf-8", errors="replace").splitlines() if properties.is_file() else []
-    wanted = {"server-ip": server_ip, "server-port": "25575", "online-mode": "false", "white-list": "false", "enable-rcon": "false"}
+    # The pack ships difficulty=3 (hard); runs are played on easy unless MB_DIFFICULTY says otherwise.
+    wanted = {"server-ip": server_ip, "server-port": "25575", "online-mode": "false", "white-list": "false", "enable-rcon": "false",
+              "difficulty": os.environ.get("MB_DIFFICULTY", "1")}
     seen: set[str] = set()
     out = []
     for line in lines:
