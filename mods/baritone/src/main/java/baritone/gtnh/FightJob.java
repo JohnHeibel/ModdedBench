@@ -38,6 +38,8 @@ final class FightJob implements Navigation.Job {
     private final boolean hold,swarm,crit,block;
     private final int duration,interval,maxAttackers,maxGrowth,startHostiles;
     private final double leash,bailHealth,maxHealthLoss,startHealth,ax,ay,az;
+    private final long initialCalculations;
+    private final Map<String,Object> failure=new LinkedHashMap<>();
     private String state="fighting",reason="",phase="starting";
     private Entity target;
     // One pass over the loaded entities a tick: creepers and the hostile rule's matches in sight within 8, nearest first.
@@ -89,7 +91,7 @@ final class FightJob implements Navigation.Job {
         }
         var settings=Baritone.settings();
         for(var s:List.of(settings.allowBreak,settings.allowPlace,settings.followRadius,settings.followOffsetDistance))saved.put(s,s.value);
-        engine.getPathingBehavior().forceCancel();engine.snags.reset();
+        engine.getPathingBehavior().forceCancel();engine.snags.reset();initialCalculations=engine.getPathingBehavior().calculationsStarted();
         lease=ControlRegistry.controls().arbiter().acquire("baritone-fight",this::cancel,false,true);
         // overrideProtection lets this fight block (or draw) in a protected room: item use that reaches no block, nothing more.
         boolean inPlace=bool(params,"overrideProtection",false);if(inPlace)lease.permitInPlaceItemUse();
@@ -130,7 +132,12 @@ final class FightJob implements Navigation.Job {
         }
         double tx=target.posX-ax,ty=target.boundingBox.minY-ay,tz=target.posZ-az;
         if(!hold&&Math.sqrt(tx*tx+ty*ty+tz*tz)>leash){finish("failed","target_beyond_leash");return;}
-        if(ticks-lastUseful>200){finish("failed","cannot_reach_target");return;}
+        if(ticks-lastUseful>200){
+            // Ten seconds without a hit. If the engine was walking to the target, how its last search ended is the cause; a
+            // search that found a path names none (the target kept its distance), and the evidence is in the receipt either way.
+            String cause=phase.equals("pursuing")||phase.equals("closing")?PathFailure.cause(engine,initialCalculations,engine.getPathingBehavior().getGoal(),failure):null;
+            finish("failed",cause==null||cause.equals("path_calculation_failed")?"cannot_reach_target":"cannot_reach_target: "+cause);return;
+        }
 
         if(ranged&&shotPhase!=1&&shotPhase!=2&&!hostiles(3.5).isEmpty()){ // a mob walks faster than a player backs away: a launcher is no use at arm's length
             if(meleeSlot==null){finish("failed","hostile_in_melee_range: the ranged fight is over, "+shots+" shots; fight on with a melee weapon (or pass ranged.meleeSlot) or leave");return;}
@@ -142,7 +149,8 @@ final class FightJob implements Navigation.Job {
         if(!inReach&&!hold){phase="pursuing";engine.tickStart();return;}
         Set<Integer> keys=new LinkedHashSet<>();var game=mc.gameSettings;
         aim(target);
-        if(target instanceof EntityCreeper creeper&&creeper.getCreeperState()>0){phase="backing_off";keys.add(game.keyBindBack.getKeyCode());rest(keys);lastUseful=ticks;return;}
+        // Backwards only onto somewhere to stand: with a drop, a wall or a fluid behind, the fight goes on where it is.
+        if(target instanceof EntityCreeper creeper&&creeper.getCreeperState()>0&&clearBehind()){phase="backing_off";keys.add(game.keyBindBack.getKeyCode());rest(keys);lastUseful=ticks;return;}
         phase=inReach?"striking":"holding";
         var held=me.getHeldItem();
         if(block&&held!=null&&held.getItemUseAction()==net.minecraft.item.EnumAction.block){
@@ -296,6 +304,7 @@ final class FightJob implements Navigation.Job {
             // Whoever is left is the next decision: the same rows obs.entities gives, so nothing here is new knowledge.
             out.put("hostilesInSight",hostiles(16).stream().map(e->Map.of("entityId",e.getEntityId(),"type",String.valueOf(net.minecraft.entity.EntityList.getEntityString(e)),"distance",Math.round(e.getDistanceToEntity(me)*10)/10.0)).toList());
         }
+        if(!failure.isEmpty())out.put("failure",failure);
         out.put("hostileRule",hostileRule);out.put("jobSettings",jobSettings);
         out.put("controlOwned",!done()&&lease.isActive());out.put("scope",scope);return out;
     }
