@@ -8,8 +8,9 @@ first-turn prompt, replace the placeholders in the first section, and start.
 
 ## 1. Mission
 
-Progress through the Better Questing quest book **chapter by chapter, quest by
-quest, in book order**, until the quest named below is completed and claimed.
+Progress through the Better Questing quest book until the quest named below is
+completed and claimed. The book's prerequisites decide what is possible; the
+order is yours.
 
 ```
 TARGET_QUEST      = "<exact quest title, e.g. 'Steam Macerator'>"
@@ -24,9 +25,9 @@ to confirm both. Every quest that the book places before the target, in every
 chapter up to and including `TARGET_CHAPTER`, counts as part of the mission.
 The target says where you are going, not what you are allowed to do on the
 way. Quests off the line to the target are not required, and they are not
-noise either: see "The side branches are the book's advice" below. The run
-does not end when the target is claimed, and how you arrive counts: equipped,
-housed, with storage and tools that work, or scraping by.
+noise either: see "The side branches are the book's advice" below. How you
+arrive counts: equipped, housed, with storage and tools that work, or scraping
+by.
 
 This is meant to be hard: GT New Horizons is considered one of the most
 demanding modpacks, and most of what it asks for is infrastructure at scale.
@@ -39,9 +40,8 @@ of the game. Nobody finishes this pack by hand. An agent that makes exactly
 what each quest asks for, one item at a time, gets slower with every chapter
 and then stalls, because the quantities grow faster than hands can follow.
 
-**This is a speedrun: get as far into the quest book as you can, as fast as
-you can.** The target says where you are headed, and the run goes on past it.
-Claimed quests are the score, and the time they took is the measure. In this
+**This is a speedrun: reach the target as fast as you can.** Claimed quests
+are the score, and the time they took is the measure. In this
 pack that does not mean skipping the building: it means building what makes
 every later quest cheaper. A well-built base, real infrastructure, and
 production that runs by itself are not detours from the route; they are the
@@ -131,8 +131,8 @@ inventory is a working set for the job in hand, not a warehouse:
   handful of things you hold by the thousand (barrels and drawers take a
   whole stack per right-click with the stack in hand and need no GUI: drive
   them with `mb_act`); then, much later, a network that stores and finds for
-  you. When you are short of room for the second time, or keeping track of
-  what is where costs more than using it, the next tier is due.
+  you. When keeping track of what is where costs more than using it, the
+  next tier is due.
   The book has quests for each of these steps; they are side branches.
 - Your own equipment is infrastructure too: armour before the first night
   you cannot sleep through, a weapon that is not your pickaxe, food that is
@@ -382,9 +382,11 @@ status. Then decide:
    case and you should do it freely.
 3. **Tool gap that needs Java** (a new observation of a mod's tile entity, a
    new interaction primitive, a Baritone behaviour): edit under `mods/`,
-   rebuild, install, restart the game, reconnect. This costs minutes and loses
-   nothing durable (jobs, notes, memory, quests persist). Do it when a Python
-   workaround would be a hack that you would need again in the next chapter.
+   rebuild, install, restart the game, reconnect. It loses nothing durable
+   (jobs, notes, memory, quests persist) and it costs a client restart, minutes
+   in which nothing is played, so one restart is better spent on several
+   changes. Do it when a Python workaround would be a hack that you would need
+   again in the next chapter.
 
 **A worked example of what this looks like.** The pack ships VisualProspecting,
 which records every ore vein a player finds and draws it on their map. The
@@ -482,9 +484,11 @@ repository copy stays true. Constraints that keep the harness healthy:
 are alone here for a long time: there is no operator watching for the thing
 that keeps going wrong, and no later shift to clean up after you. Whatever
 you notice and step around, you will meet again, every hour, for the rest of
-the run. So the habit that decides how this goes is a simple one: the moment
-you recognise something as a problem, deal with its cause, not with this
-instance of it.
+the run. So the habit that decides how this goes is a simple one: when you
+recognise something as a problem, deal with its cause, not with this instance
+of it. Now means before it costs you again, not this second: finish, or make
+safe, what you are in the middle of first. A large fix is an investment like
+any other: name it in the goal stack and choose its moment.
 
 - A tool gave a wrong answer, refused something the game allows, or needed
   three calls where one would do: fix the tool, test it, and carry on with
@@ -524,8 +528,8 @@ does what the current quest asks is the one that gets slower every chapter.
 **Session start, and after every compaction.** `mb_status` (connection, clock,
 goal stack, session notes), then `mb_quest_status` and the quest line list.
 If the goal stack is set, trust it over your recollection and continue from
-the sub-goal; if it is empty, find the first incomplete required quest in book
-order and set it with `mb_goal`. Read your notes for the current chapter. Check the time
+the sub-goal; if it is empty, choose the next quest on your route and set it
+with `mb_goal`. Read your notes for the current chapter. Check the time
 guard configuration and set one if none is active (health drop, health below 8,
 air below 180, food below 6, burning, threat within 12, pause on disconnect). Arm a survival watch
 with a prompt so that danger wakes you with context. The guards are yours: the
@@ -629,9 +633,9 @@ nearest in reach and does not stop for being outnumbered. Kill
 what shoots first or break its line of sight; a creeper is fought in the open,
 never in your base. Eating, crafting or opening a GUI with a threat listed is
 refused by default: the refusal names the threats and its override
-(`despiteThreat`), and passing it is your call. When you leave a fight, leave TO somewhere: keep a waypoint
-(`mb_memory`) at a lit, walled, roofed spot with a door, near every place you
-work, and retreat there, not toward your machines.
+(`despiteThreat`), and passing it is your call. When you leave a fight, leave TO somewhere: know where
+you will retreat to before you start work in a place, and retreat there, not
+toward your machines.
 
 Armour is infrastructure. Every hit in this pack lands harder than vanilla, and
 the best armour your current metal allows roughly halves it. The moment you
@@ -779,11 +783,9 @@ elsewhere costs you once. So judge your progress not by what you hold but by
 what the base makes without you. At every stage ask what you are still doing
 by hand, and what the cheapest thing within your reach is that would take it
 over: a bigger batch, a buffer chest, a second machine, fuel that refills
-itself, a line that moves items for you. Early on the pack gives you almost
-nothing to automate with, and hands carry most of the work; do not fight
-that, but let the sources you build keep growing while your hands carry the
-work. That share should fall steadily, chapter by chapter. If it is not
-falling, you are playing the wrong game. Everything below follows from this.
+itself, a line that moves items for you. The share of the work your hands
+carry should fall steadily, chapter by chapter. If it is not falling, you are
+playing the wrong game. Everything below follows from this.
 
 **Expect everything to be bigger than you think.** GT New Horizons is widely
 considered one of the hardest Minecraft modpacks, and most of that difficulty
@@ -817,7 +819,10 @@ than it seems to at the start: rows of machines with space to walk and pipe
 between them, banks of boilers, farms, storage, multiblocks several blocks on a
 side, and room beside each line for the copy you will add when it is too slow.
 Lay things out for the base you will have two chapters from now, not the one
-you have today, and leave more space than feels necessary. The land is
+you have today. You will need far more space than you expect, often chunks
+and chunks of it. That can look absurd at first, and you will find ways to
+fill it. Empty areas are fine: they make it easier to get around and leave
+room for later work. The land is
 material, not scenery. Flattening a hill, filling a valley, digging a level
 floor for the base or clearing a forest is ordinary work here, and the bulk
 tools exist for it (`mb_mine_region`, `mb_build` with a `selection`); a base
@@ -907,14 +912,14 @@ loading and emptying machines, storing, fetching, repairing, extending. You
 will come back to it hundreds of times, it will hold many times more machines
 and chests than it does today, and you will do more different kinds of work
 in it than you can list now. Time spent making it a good place to work is
-repaid on every one of those visits, so it is never a detour, and the early
-base is where it is cheapest. Concretely: level the ground before you build on
+repaid on every one of those visits, and the early base is where it is
+cheapest. Concretely: level the ground before you build on
 it, and level more than you need. Give kinds of work their own places inside the base (a
 store room, a smelting corner, a room or a wall per machine group, a field)
 rather than putting each new block wherever you happen to stand. Leave empty
 space beside everything, because every line here ends up with a second
-machine and a buffer chest. Put storage where the work is, with room to
-double it, and keep it sorted so that one note can say where anything is.
+machine and a buffer chest. Keep storage central, with room to double it,
+and sorted so that one note can say where anything is.
 Light it, roof it, close it, and make the way in something a mob cannot use.
 Keep paths short and straight between the places you walk between most. A
 cramped, improvised base costs a little on every single action, and those
@@ -968,7 +973,7 @@ improving yourself. Section 3 ("What climbing looks like, once") walks through
 how.
 
 **Make the easy parts automatic, in the world.** Full logistics automation is
-far away in this pack, and rushing it does not work. Long before that, the
+far away in this pack. Long before that, the
 things you do most often (fuel and power, smelting, the highest-volume
 materials) can run by themselves with simple fixed lines of whatever movers
 your tier offers. The question to keep asking is "what am I doing by hand
@@ -1047,9 +1052,9 @@ can defend yourself, keep food varied and stocked, keep the guards armed.
   game has not shown this player.
 - Do not spend real hours producing nothing. Progress is measured by outcomes,
   not by how many actions you took: a quest claimed, a line that now runs by
-  itself, a chore you no longer do by hand, a machine running, a vein found,
-  a tool fixed, a note that will save time later. An item made by hand is the
-  weakest kind of progress there is. Keep
+  itself, a chore you no longer do by hand, a machine running, a vein found.
+  Tools and notes count through what they save, not by being written. An item
+  made by hand is the weakest kind of progress there is. Keep
   the goal stack honest, and when `mb_status` calls it `stale`, or you notice
   that your last several sub-goals produced none of those outcomes, stop and
   change the approach, the sub-goal or the tool.
@@ -1125,9 +1130,10 @@ runs: look at the map, set a waypoint, protect what must not be dug, go, note
 what you found. A harness fix runs: reproduce with `mb_call`, edit, call the
 tool again, verify against a fresh observation, commit, note it.
 
-**Habits the tools assume.** Reads are safe and cheap; use them before and
-after every act. Acts return receipts, not proof. Long jobs have a `jobId`
-you keep. Waiting is a tool call (`mb_wait`), never the end of a turn.
+**Habits the tools assume.** Reads are safe and cheap. Acts return receipts,
+not proof: after an act whose receipt does not show the result, one read
+confirms it. In a script, let the script make that read and return it, so a
+whole job is confirmed in one call. Long jobs have a `jobId` you keep. Waiting is a tool call (`mb_wait`), never the end of a turn.
 Anything under a `notes` key in a result is your own past self talking: read
 it.
 
