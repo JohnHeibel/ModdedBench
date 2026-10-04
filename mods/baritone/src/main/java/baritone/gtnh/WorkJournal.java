@@ -27,14 +27,44 @@ final class WorkJournal {
         if(!scope.equals(ControlRegistry.memory().memory().scope()))throw new IllegalArgumentException("work belongs to another world/dimension");
     }
     private static Path path(String id){UUID.fromString(id);return Minecraft.getMinecraft().mcDataDir.toPath().resolve("modbench/work").resolve(id+".json");}
-    private static Map<String,Object> checkpoint(String id) throws java.io.IOException {
-        Path file=path(id);if(Files.size(file)>64*1024*1024)throw new IllegalArgumentException("work journal too large");
+    private static Map<String,Object> checkpoint(Path file) throws java.io.IOException {
+        if(Files.size(file)>64*1024*1024)throw new IllegalArgumentException("work journal too large");
         return object(JSON.fromJson(Files.readString(file,StandardCharsets.UTF_8),Map.class));
     }
+    static final int KEEP=20;
+    // How each journal last ended, read once: only this client writes them. "paused <kind>", or "" for any other end.
+    private static final Map<String,String> ended=new HashMap<>();
+    private static String ended(String kind,Object state){return "paused".equals(state)?"paused "+kind:"";}
+    /**
+     * Every job leaves a journal. When one begins, the journals beyond the newest KEEP go, with their spec and ledger;
+     * paused jobs are counted apart, per kind, since a paused job is what a resume is offered for and the tools remember
+     * as many of those. At most 64 journals are read in one call, so a backlog drains over the jobs that follow.
+     */
+    static void prune(Path directory,String current){
+        try(var listed=Files.list(directory)){
+            var journals=listed.filter(f->f.getFileName().toString().matches("[0-9a-f-]{36}\\.json")).map(f->Map.entry(f,f.toFile().lastModified()))
+                .sorted((a,b)->Long.compare(b.getValue(),a.getValue())).toList();
+            Map<String,Integer> kept=new HashMap<>();int read=0;
+            for(var journal:journals){
+                String id=journal.getKey().getFileName().toString().substring(0,36);
+                if(id.equals(current))continue;
+                String how=ended.get(id);
+                if(how==null){
+                    if(++read>64)break;
+                    try{var data=checkpoint(journal.getKey());how=ended(String.valueOf(data.get("kind")),child(data,"receipt").get("state"));}catch(Exception unreadable){how="";}
+                    ended.put(id,how);
+                }
+                if(kept.merge(how,1,Integer::sum)<=KEEP)continue;
+                for(String suffix:List.of(".spec.json",".attempts.jsonl",".json"))Files.deleteIfExists(directory.resolve(id+suffix));
+                ended.remove(id);
+            }
+        }catch(java.io.IOException|RuntimeException clutter){} // a journal left behind costs disk, never the job that is starting
+    }
+    void prune(){prune(file.getParent(),id);}
     /** Inspection never rehydrates a million-cell spec or its per-click ledger. */
     static Map<String,Object> status(String id) {
         try {
-            var data=checkpoint(id);
+            var data=checkpoint(path(id));
             if(data.containsKey("spec"))data.put("specSummary",summary(object(data.remove("spec"))));
             else if(!data.containsKey("specSummary"))data.put("specSummary",Map.of("storedSeparately",true));
             data.put("inspection","bounded checkpoint; resume loads the complete frozen specification and attempt ledger");
@@ -52,7 +82,7 @@ final class WorkJournal {
     }
     static Map<String,Object> load(String id) {
         try {
-            Path file=path(id);var data=checkpoint(id);
+            Path file=path(id);var data=checkpoint(file);
             if(!data.containsKey("spec")){Path spec=file.resolveSibling(id+".spec.json");if(Files.size(spec)>256L*1024*1024)throw new IllegalArgumentException("work spec too large");data.put("spec",object(JSON.fromJson(Files.readString(spec,StandardCharsets.UTF_8),Map.class)));}
             Path ledger=file.resolveSibling(id+".attempts.jsonl");if(Files.exists(ledger)) {
                 var progress=new LinkedHashMap<>(child(data,"progress"));var attempts=new LinkedHashMap<>(child(progress,"attempts"));
@@ -71,7 +101,7 @@ final class WorkJournal {
             var checkpoint=new LinkedHashMap<>(progress);checkpoint.remove("attempts");
             Map<String,Object> data=new LinkedHashMap<>();data.put("version",2);data.put("jobId",id);data.put("kind",kind);data.put("scope",scope);data.put("specSummary",summary(spec));data.put("progress",checkpoint);data.put("receipt",receipt);
             byte[] bytes=JSON.toJson(data).getBytes(StandardCharsets.UTF_8);
-            write(file,bytes,64L*1024*1024);
+            write(file,bytes,64L*1024*1024);ended.put(id,ended(kind,receipt.get("state")));
         }catch(Exception error){throw new IllegalStateException("cannot checkpoint work: "+error.getMessage(),error);}
     }
     void recordAttempt(String key,int count) {

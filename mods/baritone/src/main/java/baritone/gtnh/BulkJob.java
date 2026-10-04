@@ -34,7 +34,7 @@ abstract class BulkJob implements Navigation.Job {
     void begin() {
         lease=ControlRegistry.controls().arbiter().acquire("baritone_"+journal.kind,this::cancel,override,true);
         sessionStart=progress();
-        journal.save(status());
+        journal.save(status());journal.prune();
     }
     final void tick() {
         if(done())return;
