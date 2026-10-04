@@ -19,7 +19,7 @@ from runtime import REPO, RuntimeError_, load_json, save_json
 COMPONENTS = ("core", "baritone", "client")
 MAX_JAR = 64 << 20
 JOIN_S, STOP_S = 420, 60  # what the supervisor gives a launched client to join the world, and a running one to shut down
-WORST_S = 2 * (STOP_S + JOIN_S) + 120  # stop, launch, and when that fails stop, roll back and launch again: a request waits this long for its verdict
+WORST_S = 2 * (STOP_S + JOIN_S) + 120  # stop, launch, and when that fails stop (or terminate), roll back and launch again: a request waits this long for its verdict
 
 
 def outbox() -> Path:
@@ -87,7 +87,9 @@ def deploy(jars: dict[str, Path], root: Path, timeout: float) -> dict:
         return {"ok": True, "deployed": installed}
     except Exception as failure:
         try:
-            if runtime.client_instance_is_running(runtime.instance_dir(cfg)): runtime.stop_client(stop)
+            if runtime.client_instance_is_running(runtime.instance_dir(cfg)):
+                try: runtime.stop_client(stop)
+                except Exception: runtime.kill_client(runtime.instance_dir(cfg))  # the deploy may have broken the bridge a stop goes through: the way back must not need it
             for kind in reversed(installed): runtime.rollback_jar(kind, root, "client")
             runtime.launch_client(launch)
             return {"ok": False, "error": str(failure), "rolledBack": installed}

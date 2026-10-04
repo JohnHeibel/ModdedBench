@@ -61,6 +61,28 @@ class DeployTests(unittest.TestCase):
             result = deploy.deploy({"client": Path("c.jar")}, Path("."), 1)
         self.assertEqual((result, calls), ({"ok": False, "error": "shutdown requested but client is still live", "rolledBack": []}, ["stop", "stop", "launch"]))
 
+    def test_a_rollback_whose_client_has_no_bridge_terminates_it_and_only_then(self):
+        def run(stop_fails):
+            calls, running = [], [True]
+            def launch(args):
+                calls.append("launch"); running[0] = True
+                if calls.count("launch") == 1: raise runtime.RuntimeError_("did not join")
+            def stop(args):
+                calls.append("stop")
+                if stop_fails: raise runtime.RuntimeError_("could not request authenticated client shutdown")
+                running[0] = False
+            def kill(instance): calls.append("kill"); running[0] = False
+            def stopped(kind, *a): self.assertFalse(running[0]); calls.append(kind)  # jars move only under a client that is down
+            with patch.object(runtime, "load_config", return_value={}), patch.object(runtime, "instance_dir", return_value=Path(".")), \
+                 patch.object(runtime, "client_instance_is_running", lambda instance: running[0]), patch.object(runtime, "launch_client", launch), \
+                 patch.object(runtime, "stop_client", stop), patch.object(runtime, "kill_client", kill), \
+                 patch.object(runtime, "install_jar", lambda kind, *a: calls.append(kind)), patch.object(runtime, "rollback_jar", stopped):
+                running[0] = False; result = deploy.deploy({"client": Path("c.jar")}, Path("."), 1)
+            return result, calls
+        failed = {"ok": False, "error": "did not join", "rolledBack": ["client"]}
+        self.assertEqual(run(stop_fails=True), (failed, ["client", "launch", "stop", "kill", "client", "launch"]))
+        self.assertEqual(run(stop_fails=False), (failed, ["client", "launch", "stop", "client", "launch"]))  # a bridge that answers is asked, never killed
+
     def test_a_request_is_claimed_by_one_supervisor_and_a_second_supervisor_does_not_start(self):
         import json, os
         from types import SimpleNamespace
