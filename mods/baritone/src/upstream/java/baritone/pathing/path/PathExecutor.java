@@ -671,6 +671,10 @@ public class PathExecutor implements IPathExecutor, Helper {
         if (!next.toBreakCached.isEmpty()) {
             return false; // it's breaking
         }
+        // ModdedBench: the jump is pressed here, past the ascend's own care for where it lands; into a cell with something in it (an open door) the ascend jumps itself
+        if (!MovementHelper.fullyPassable(ctx, next.getDest()) || !MovementHelper.fullyPassable(ctx, next.getDest().up())) {
+            return false;
+        }
         for (int x = 0; x < 2; x++) {
             for (int y = 0; y < 3; y++) {
                 BlockPos chk = current.getSrc().up(y);

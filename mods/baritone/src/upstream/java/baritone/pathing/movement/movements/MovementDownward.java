@@ -96,16 +96,29 @@ public class MovementDownward extends Movement {
         // cell; a body that came over the hole fast rests on the strip's top one cell down, and upstream then walked
         // on the way it faced, into the ladder, which climbs. Head for the room, and stand still once over it.
         net.minecraft.world.World world = ctx.world().nativeWorld;
-        double toX = BlockShapes.aim(BlockShapes.room(world, ctx.player(), dest.getX(), dest.getY(), dest.getZ(), false), dest.getX() + 0.5);
-        double toZ = BlockShapes.aim(BlockShapes.room(world, ctx.player(), dest.getX(), dest.getY(), dest.getZ(), true), dest.getZ() + 0.5);
+        double[] roomX = BlockShapes.room(world, ctx.player(), dest.getX(), dest.getY(), dest.getZ(), false);
+        double[] roomZ = BlockShapes.room(world, ctx.player(), dest.getX(), dest.getY(), dest.getZ(), true);
+        double toX = over(roomX, dest.getX() + 0.5, ctx.player().posX);
+        double toZ = over(roomZ, dest.getZ() + 0.5, ctx.player().posZ);
         double diffX = ctx.player().posX - toX;
         double diffZ = ctx.player().posZ - toZ;
         double ab = Math.sqrt(diffX * diffX + diffZ * diffZ);
 
-        if (ab < 0.05 || (numTicks++ < 10 && ab < 0.2)) {
+        if (there(roomX, diffX) && there(roomZ, diffZ) || (numTicks++ < 10 && ab < 0.2)) {
             return state;
         }
         Rotation toward = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), new Vec3d(toX, ctx.playerHead().y, toZ), ctx.playerRotations());
         return state.setTarget(new MovementState.MovementTarget(toward.withPitch(ctx.playerRotations().getPitch()), false)).setInput(Input.MOVE_FORWARD, true);
+    }
+
+    /** ModdedBench: where along one axis to be: where the body is when that is in the room already (steering on would
+     *  swing it from edge to edge), or the room's aim. */
+    private static double over(double[] room, double mid, double at) {
+        return room != null && at >= Math.max(room[0], mid - 0.5) && at <= Math.min(room[1], mid + 0.5) ? at : BlockShapes.aim(room, mid);
+    }
+
+    /** In the room; with none measured (a block still to dig), near the cell's middle as upstream had it. */
+    private static boolean there(double[] room, double diff) {
+        return room == null ? Math.abs(diff) < 0.05 : diff == 0;
     }
 }
