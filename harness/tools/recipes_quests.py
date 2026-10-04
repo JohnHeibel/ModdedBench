@@ -126,7 +126,8 @@ def mb_quest_claim(quest_id: str, reward_ids: list[int] | None = None,
     across the claim, by name: that is the rewards arriving, no separate check needed.
     """
     k = kernel(); before = _held(k)
-    receipt = k.call("quest.claim", questId=quest_id, rewardIds=[], choices=choices or {})
+    rewards = [reward["id"] for reward in k.call("quest.observe", questId=quest_id).get("rewards") or []]  # the bridge has them named; the game takes the quest
+    receipt = k.call("quest.claim", questId=quest_id, rewardIds=rewards, choices=choices or {})
     deadline, state, clamped = time.monotonic() + max(0.0, min(wait_s, 60.0)), None, _clamped(wait_s)
     while wait_s > 0:
         state = k.call("quest.observe", questId=quest_id)

@@ -413,15 +413,17 @@ class GTNHProfileTests(unittest.TestCase):
         quests.mb_quest_observe("00000000-0000-0000-0000-000000000001")
         self.assertEqual(fake.calls[-1][0], "quest.observe")
         quests.mb_quest_claim("00000000-0000-0000-0000-000000000001", [2], {"2":1}, wait_s=0)
-        self.assertEqual((fake.last("quest.claim")[1]["choices"], fake.last("quest.claim")[1]["rewardIds"]), ({"2":1}, []))  # the claim is the whole quest's: ids name nothing
+        self.assertEqual(fake.last("quest.claim")[1]["choices"], {"2":1})
         stock = [[{"identity": {"id": "minecraft:apple", "meta": 0, "name": "Apple"}, "count": 2}]]
         def claiming(method, params):
-            if method == "quest.claim": stock.append([{"identity": {"id": "minecraft:apple", "meta": 0, "name": "Apple"}, "count": 5}, {"identity": {"id": "bq:lootchest", "meta": 1, "name": "Loot Chest"}, "count": 1}])
+            if method == "quest.claim":
+                if params["rewardIds"] != [0, 3]: raise ValueError("known reward IDs required")  # the bridge refuses an empty list (run of 2026-10-04) and an unknown id
+                stock.append([{"identity": {"id": "minecraft:apple", "meta": 0, "name": "Apple"}, "count": 5}, {"identity": {"id": "bq:lootchest", "meta": 1, "name": "Loot Chest"}, "count": 1}])
             if method == "obs.inventory": return {"totals": stock[-1]}
-            if method == "quest.observe": return {"claimed": True}
+            if method == "quest.observe": return {"claimed": len(stock) > 1, "rewards": [{"id": 0}, {"id": 3}]}
             return {"method": method}
         self.use(FakeKernel(claiming))
-        claimed = quests.mb_quest_claim("00000000-0000-0000-0000-000000000001")
+        claimed = quests.mb_quest_claim("00000000-0000-0000-0000-000000000001", [7])  # a guessed id changes nothing
         self.assertEqual((claimed["claimed"], claimed["received"]), (True, {"Apple": 3, "Loot Chest": 1}))
         fake = self.use(FakeKernel(lambda method, params: {"method": method, **params}))
         quest = {"complete": True, "canClaim": True, "tasks": [{"id": 0, "name": "Tick", "type": "bq_standard:checkbox", "complete": True, "config": "{}"}]}
