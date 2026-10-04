@@ -29,6 +29,7 @@ REPO = Path(__file__).resolve().parents[2]
 DOCKER = shutil.which("docker") or "C:/Program Files/Docker/Docker/resources/bin/docker.exe"
 PROJECT = os.environ.get("MB_COMPOSE_PROJECT", "moddedbench")  # a test stack is `-p mbtest`
 COMPOSE = [DOCKER, "compose", "-p", PROJECT, "-f", str(REPO / "docker" / "compose.yaml"), "--env-file", str(REPO / "docker" / ".env")]
+if PROJECT == "mbdev": COMPOSE[6:6] = ["-f", str(REPO / "docker" / "compose.dev.yaml")]
 OUT, KEEP = REPO / ".runtime" / "snapshots", 48
 WORLD = "tar -C /data --exclude=./mods --exclude=./libraries --exclude=./logs --exclude=./crash-reports --exclude='./*.jar' -czf - ."
 NOTES = ("import sqlite3,pathlib,tarfile,sys,tempfile\n"
