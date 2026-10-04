@@ -270,7 +270,7 @@ class Kernel:
             r = self.call_reply(method, timeout, **params)
         if not r.ok:
             msg = (r.error or {}).get("msg", "")
-            if wanted is None and msg.startswith("time_paused"):
+            if wanted is None and msg.startswith("time_paused") and "by a guard" not in msg:  # a guard's pause is one to look at first
                 msg += " (or call the tool again with resume=True: it resumes the world and acts in one step)"
             raise BridgeError((r.error or {}).get("code", "?"), msg, method, r.raw)
         return r.data

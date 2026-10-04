@@ -70,6 +70,10 @@ public final class ClientClock implements ClockHooks.Driver {
     boolean endsWork() { return !resuming && (guardPause() || paused && "step".equals(pauseReason())); }
     /** Paused for the purpose of refusing actions: false once an action has asked to resume. */
     boolean refusesActions() { return paused && !resuming; }
+    /** Why a paused world refuses an action, with the pause's reason: a guard's pause is one to look at, not to resume through. */
+    String refusal(String what) { return refusal(pauseReason(),what); }
+    static String refusal(String reason,String what) { return "time_paused: "+(WAITED_OUT.contains(reason)?"paused by "+reason+"; resume before "+what
+        :"world paused by a guard ("+reason+"): read mb_time status, decide, resume"); }
     /**
      * Admits an action that carries _resume while the world is paused: true (resume) or N (step N ticks). The same
      * checks the server makes are made here first, so a refusal fails the call before anything runs.

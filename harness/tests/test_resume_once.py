@@ -12,6 +12,7 @@ from kernel import BridgeError, Kernel, Reply, resume_once
 
 class FakeWorld(Kernel):
     """The clock and one action; the world pauses again after `repause` actions ran."""
+    refusal = "time_paused: paused by requested_pause; resume before starting simulation actions"
     def __init__(self, held=False, repause=None):
         self.paused, self.held, self.repause, self.sent, self.ran = True, held, repause, [], 0
 
@@ -22,7 +23,7 @@ class FakeWorld(Kernel):
         if method == "time.resume":
             if self.held: return Reply(False, 0, 0, 0, error={"code": "clock_error", "msg": "held by the operator"})
             self.paused = False; return Reply(True, 0, 0, 0, {"paused": False})
-        if self.paused: return Reply(False, 0, 0, 0, error={"code": "bad_request", "msg": "time_paused: resume before starting simulation actions"})
+        if self.paused: return Reply(False, 0, 0, 0, error={"code": "bad_request", "msg": self.refusal})
         self.ran += 1
         if self.repause and self.ran >= self.repause: self.paused = True
         return Reply(True, 0, 0, 0, {"done": True})
@@ -32,6 +33,14 @@ def test_without_resume_the_paused_refusal_stands():
     k = FakeWorld()
     with pytest.raises(BridgeError, match="time_paused"): k.call("act.input")
     assert "time.resume" not in k.sent
+
+
+def test_a_guard_pause_refusal_does_not_offer_to_resume_through_it():
+    k = FakeWorld()
+    with pytest.raises(BridgeError, match="requested_pause.*resume=True"): k.call("act.input")
+    k.refusal = "time_paused: world paused by a guard (health_dropped): read mb_time status, decide, resume"
+    with pytest.raises(BridgeError, match="health_dropped") as e: k.call("act.input")
+    assert "resume=True" not in e.value.msg
 
 
 def test_resume_lifts_the_pause_once_and_records_it():
@@ -75,7 +84,7 @@ class ResumingClient(FakeWorld):
             self.paused = False; self.ran += 1
             record = {"pausedBy": "threat", "threats": []} | ({"ticks": params["_resume"]} if params["_resume"] is not True else {})
             return Reply(True, 0, 0, 0, {"done": True}, raw={"resumedWorld": record})
-        if self.paused: return Reply(False, 0, 0, 0, error={"code": "bad_request", "msg": "time_paused: resume before starting simulation actions"})
+        if self.paused: return Reply(False, 0, 0, 0, error={"code": "bad_request", "msg": self.refusal})
         return Reply(True, 0, 0, 0, {"done": True})
 
 
