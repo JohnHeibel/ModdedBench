@@ -339,6 +339,10 @@ pushes and what pulls.
    block that would hide it goes in. Check it by what arrives everywhere it
    should.
 
+`mb_build` makes such clicks as part of a plan, in the right order and each
+with its own check, so your tool's job is to know the rule and write the plan,
+not to drive the clicks.
+
 Each rung is built from the one below it, and is trusted only after it has
 worked on the real thing. When a rung surprises you, fix that rung and its
 note, not the one case. No one's code is perfect, yours or the harness's, and
