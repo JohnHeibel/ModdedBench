@@ -51,8 +51,10 @@ final class ReferenceConstructionProcess extends BulkJob {
     private final Map<Cell,Goal> placementGoals=new HashMap<>();
     private int placementGoalEpoch=-1;
     private BlockPos placementGoalFeet;
-    /** Cells last found with nowhere to stand from which a face to place them against can be seen. */
-    private final Set<BlockPos> noVantage=new LinkedHashSet<>();
+    /** The standing poses around the player that the cells near it share (WorkAccess.Stands), kept as long as the goals made from them. */
+    private WorkAccess.Stands stands;
+    /** How far from the player those poses are captured, and how far it may walk before they are captured again. */
+    private static final int NEAR=10,DRIFT=2;
     private Set<BlockPos> deferredAir=Set.of();
     private boolean cleanupPhase;
     private boolean clearanceEgress;
@@ -156,6 +158,7 @@ final class ReferenceConstructionProcess extends BulkJob {
     private void capture(){
         BlockPos currentFeet=WorkAccess.feet();
         if(placementGoalEpoch!=ticks/20||!currentFeet.equals(placementGoalFeet)){
+            if(placementGoalEpoch!=ticks/20)stands=null;
             placementGoalEpoch=ticks/20;placementGoalFeet=currentFeet;placementGoals.clear();cleanupGoals.clear();
         }
         survey();
@@ -201,41 +204,27 @@ final class ReferenceConstructionProcess extends BulkJob {
             if(cell==null||cell.clear())return goal;
             if(placementGoals.containsKey(cell))return placementGoals.get(cell);
             int slot=plan.slot(cell);if(slot<0||!mc.thePlayer.onGround)return goal;
-            Set<BlockPos> legal=new HashSet<>();boolean adjacent=false;
-            for(var pose:WorkAccess.buildingApproaches(world,cell.pos())){
-                var sourceFeet=baritone.compat.NavigationCoordinates.feet(pose.feet().getX()+.5,pose.standingY(),pose.feet().getZ()+.5,
-                    p->world.getBlock(p.getX(),p.getY(),p.getZ()) instanceof net.minecraft.block.BlockSlab);
-                if(!sourcePlacementHeight(cell,sourceFeet))continue;
-                // PathExecutor reaches a block goal before necessarily reaching
-                // its center. At the current cell use the real body position:
-                // otherwise a boundary-overlapping player can be declared ready
-                // to place its neighbor forever, while native collision rejects it.
-                boolean here=pose.feet().equals(currentFeet);
-                double y=here?mc.thePlayer.boundingBox.minY:pose.standingY();
-                PlacementGoalSupport.Probe probe=(x,z)->builder.canPlaceFrom(states.get(cell.pos()),x,y,z,slot);
-                // Any other cell is promised from its centre, where the player will not be standing. A view that exists
-                // only from the exact centre (a ray through the seam of two blocks meeting at an edge) is no stance:
-                // on arrival the real position refutes it and the next such cell becomes the goal, back and forth.
-                if(here?probe.at(mc.thePlayer.posX,mc.thePlayer.posZ):PlacementGoalSupport.steady(pose.feet().getX()+.5,pose.feet().getZ()+.5,probe)){
-                    legal.add(sourceFeet);adjacent|=goal.isInGoal(sourceFeet);
-                }
-            }
+            // A cell out of reach of every pose near the player keeps the source goal, which is enough to walk towards it:
+            // what can be seen of it from where is asked on arrival, so a plan costs the game by its surroundings, not its size.
+            if(stands==null||!stands.within(currentFeet,DRIFT))stands=new WorkAccess.Stands(world,currentFeet,NEAR);
+            if(!stands.covers(cell.pos())){placementGoals.put(cell,goal);return goal;}
+            Set<BlockPos> legal=vantages(cell,slot,stands.around(cell.pos()),currentFeet);
+            boolean adjacent=legal.stream().anyMatch(goal::isInGoal);
             // No existing vantage is not proof that construction is impossible:
             // the source planner may still build the support it needs to stand on.
             if(legal.isEmpty()){
                 // Standing in the cell itself fails native collision from every vantage, and the source goal (stand on top of the
                 // new block) is unreachable without scaffolding: step out to a neighbouring column first, then this adapter runs again.
                 var at=cell.pos();
-                if(!mc.thePlayer.boundingBox.intersectsWith(net.minecraft.util.AxisAlignedBB.getBoundingBox(at.getX(),at.getY(),at.getZ(),at.getX()+1,at.getY()+1,at.getZ()+1))){noVantage.add(at);return goal;}
+                if(!inside(at)){placementGoals.put(cell,goal);return goal;}
                 // A low neighbouring stance can still overlap a different floor
                 // cell, while searchForPlaceables refuses every upward click.
                 // Egress must reach a height where this cell becomes actionable.
                 boolean covered=world.getBlock(at.getX(),at.getY()+1,at.getZ())!=net.minecraft.init.Blocks.air;int up=reachUp();
-                var out=WorkAccess.buildingApproaches(world,at).stream().map(pose->pose.feet()).filter(f->PlacementGoalSupport.egress(at,f,covered,up)&&ForgeSnapshot.liveStandable(world,f))
+                var out=stands.around(at).stream().map(pose->pose.feet()).filter(f->PlacementGoalSupport.egress(at,f,covered,up)&&ForgeSnapshot.liveStandable(world,f))
                     .map(f->(Goal)new GoalBlock(f)).toArray(Goal[]::new);
                 return out.length==0?goal:new GoalComposite(out);
             }
-            noVantage.remove(cell.pos());
             // Existing work poses supplement the source goal, never replace it: removing a future goal would keep A*
             // from constructing its own support (notably a pillar), even though a distant existing pose is legal.
             Goal adapted=adjacent?goal:new GoalComposite(goal,new GoalComposite(legal.stream().map(p->new baritone.process.BuilderProcess.GoalPlace(p.down())).toArray(Goal[]::new)));
@@ -243,7 +232,9 @@ final class ReferenceConstructionProcess extends BulkJob {
         };
         builder.breakGoalAdapter=(target,goal)->{
             BlockPos p=new BlockPos(target.getX(),target.getY(),target.getZ());
-            if(!cleanupPhase||!deferredAir.contains(p))return goal;
+            // Upstream's break goal ends two below the block; the hand reaches further up (toBreakNearPlayer looks five above the feet),
+            // so standing under it counts too. The ray at the click still decides.
+            if(!cleanupPhase||!deferredAir.contains(p))return new GoalComposite(goal,new GoalBlock(p.down(3)),new GoalBlock(p.down(4)),new GoalBlock(p.down(5)));
             return cleanupGoals.computeIfAbsent(p,key->{
                 List<Goal> goals=new ArrayList<>();goals.add(goal);
                 for(var pose:WorkAccess.buildingApproaches(world,p)){
@@ -303,8 +294,33 @@ final class ReferenceConstructionProcess extends BulkJob {
         engine.getPlayerContext().playerController().placed=p->{
             BlockPos pos=new BlockPos(p.getX(),p.getY(),p.getZ());Cell cell=cells.get(pos);if(cell==null||cell.clear())return;
             int count=attempts.merge(pos,1,Integer::sum);journal.recordAttempt(ConstructionPlan.key(cell),count);pending.add(pos);
-            placementGoals.clear();
+            placementGoals.clear();stands=null;
         };
+    }
+    /** Whether the player's body is in this cell. */
+    private boolean inside(BlockPos at){
+        return mc.thePlayer.boundingBox.intersectsWith(net.minecraft.util.AxisAlignedBB.getBoundingBox(at.getX(),at.getY(),at.getZ(),at.getX()+1,at.getY()+1,at.getZ()+1));
+    }
+    /** The feet positions, among these poses, from which a face to place this cell against is in view. */
+    private Set<BlockPos> vantages(Cell cell,int slot,List<WorkAccess.Pose> poses,BlockPos currentFeet){
+        var builder=engine.getBuilderProcess();Set<BlockPos> legal=new HashSet<>();
+        for(var pose:poses){
+            var sourceFeet=baritone.compat.NavigationCoordinates.feet(pose.feet().getX()+.5,pose.standingY(),pose.feet().getZ()+.5,
+                p->world.getBlock(p.getX(),p.getY(),p.getZ()) instanceof net.minecraft.block.BlockSlab);
+            if(!sourcePlacementHeight(cell,sourceFeet))continue;
+            // PathExecutor reaches a block goal before necessarily reaching
+            // its center. At the current cell use the real body position:
+            // otherwise a boundary-overlapping player can be declared ready
+            // to place its neighbor forever, while native collision rejects it.
+            boolean here=pose.feet().equals(currentFeet);
+            double y=here?mc.thePlayer.boundingBox.minY:pose.standingY();
+            PlacementGoalSupport.Probe probe=(x,z)->builder.canPlaceFrom(states.get(cell.pos()),x,y,z,slot);
+            // Any other cell is promised from its centre, where the player will not be standing. A view that exists
+            // only from the exact centre (a ray through the seam of two blocks meeting at an edge) is no stance:
+            // on arrival the real position refutes it and the next such cell becomes the goal, back and forth.
+            if(here?probe.at(mc.thePlayer.posX,mc.thePlayer.posZ):PlacementGoalSupport.steady(pose.feet().getX()+.5,pose.feet().getZ()+.5,probe))legal.add(sourceFeet);
+        }
+        return legal;
     }
     /**
      * What the job may break, for the builder and for every path through the plan: PlanBreaks decides for plan cells
@@ -376,8 +392,9 @@ final class ReferenceConstructionProcess extends BulkJob {
     }
     @Override int progress(){return placedObserved.size()+removedObserved.size();}
     // A cell nothing can be placed against, or one the player cannot leave, keeps the source builder at its goal or
-    // replanning for ever; the shared watchdog ends that. A pending placement or a block cleared is work too.
-    @Override long activity(){return java.util.Objects.hash(placedObserved.size(),removedObserved.size(),pending.size());}
+    // replanning for ever; the shared watchdog ends that. A pending placement or a block cleared is work too, and so is
+    // a break the game is advancing: a slow block (a worn tool, a hard block in the way) is no stall, one that never breaks is.
+    @Override long activity(){return java.util.Objects.hash(placedObserved.size(),removedObserved.size(),pending.size(),baritone.compat.LegacyPlayerController.damage());}
     @Override String phase(){return "reference_build";}
     /**
      * The shared deadline and watchdog, in the builder's own few words and with a cell. A stall is no_stance when
@@ -387,8 +404,18 @@ final class ReferenceConstructionProcess extends BulkJob {
     @Override String named(String why){
         if(why.startsWith("timeout_"))return "timeout";
         if(!why.startsWith("stalled_"))return why;
-        var blind=noVantage.stream().filter(p->Boolean.FALSE.equals(correct.get(p))&&plan.steps.visible(p,buildStep)).toList();
-        if(!blind.isEmpty()&&blind.size()>=open){blamed=blind.get(0);return "no_stance";}
+        // Asked once, now: of the cells that could still be worked, has every one no such spot?
+        BlockPos blind=null;BlockPos feet=WorkAccess.feet();
+        for(Cell cell:plan.cells){
+            BlockPos p=cell.pos();
+            if(!Boolean.FALSE.equals(correct.get(p))||!plan.steps.visible(p,buildStep))continue;
+            boolean held=!cell.clear()&&!baritone.compat.LegacyPlacement.empty(world,p.getX(),p.getY(),p.getZ());
+            if(held&&(!plan.replace()||pending.contains(p)))continue;
+            int slot=cell.clear()||held?-1:plan.slot(cell);
+            if(slot<0||inside(p)||!vantages(cell,slot,WorkAccess.buildingApproaches(world,p),feet).isEmpty()){blind=null;break;}
+            if(blind==null)blind=p;
+        }
+        if(blind!=null){blamed=blind;return "no_stance";}
         blamed=next();
         var pathing=engine.getPathingBehavior();
         return pathing.calculationsStarted()>searchesBefore&&"FAILURE".equals(pathing.lastCalculation().get("type"))
