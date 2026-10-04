@@ -144,6 +144,16 @@ class Tasks(bs.Shells):
                     "third, the fifth away from the fourth.",
         "smeltery": "Build a working smeltery on the open floor in front of you from the parts you carry. It must hold the bucket of lava "
                     "you carry and have two pour points: one over a casting basin, one over a casting table.",
+        "ebf_fixed": "Build an Electric Blast Furnace on the open floor in front of you from the parts you carry, so that its controller reports "
+                     "a formed structure with no maintenance problems: you carry the duct tape for its maintenance hatch. The controller "
+                     "faces south, toward where you stand now. Power comes in from the west: both energy hatches in the west side, each "
+                     "with a run of three of the cables you carry leading west from it along the floor. Output leaves to the east: the "
+                     "output bus in the east side, with the chest you carry standing against it.",
+        "wiring": "Set the four machines you carry: the battery buffer at {buffer} with its front (the side it gives power from) facing "
+                  "east, the macerator at {macerator}, the electric furnace at {furnace} on top of the stone brick pillar, the alloy "
+                  "smelter at {smelter}. Then run the cable you carry from the battery buffer's front so that the macerator and the "
+                  "electric furnace are both connected to it. The alloy smelter must stay unconnected, and the stone brick wall stays "
+                  "as it is.",
         "ebf": "Build an Electric Blast Furnace on the open floor in front of you from the parts you carry, so that its controller reports "
                "a formed structure. The controller faces south, toward where you stand now. Power comes in from the west: both energy "
                "hatches in the west side, each with a run of three of the cables you carry leading west from it along the floor. Output "
@@ -324,6 +334,52 @@ class Tasks(bs.Shells):
                 "noScaffoldLeft": not leftovers, "switchedOffFor": [(t.get("shutDownReason") or {}).get("key") for t in controller.values()]}
 
 
+    MAINTENANCE = ("mWrench", "mScrewdriver", "mSoftHammer", "mHardHammer", "mSolderingTool", "mCrowbar")
+
+    def ebf_fixed_setup(self):
+        kit = [("gregtech:gt.blockcasings", 14, 11), ("gregtech:gt.blockcasings5", 16, 0)] + [(GT, n, k) for k, n in ((1000, 1), (41, 2), (90, 1), (71, 1), (81, 1), (91, 1), (1246, 6))]
+        return self.begin({}, kit + [("minecraft:chest", 1), ("gregtech:gt.metaitem.01", 1, 32764), WRENCH, (DIRT, 64)], (5, 0, 8))
+
+    def ebf_fixed_grade(self, state, after):
+        grade = self.ebf_grade(state, after)
+        controller = [t for t in self.tiles(after, GT).values() if t.get("mID") == 1000]
+        # The six states a controller saves, each under the name the pack gives it: the mallet's has had two.
+        flags = {k: next((t[n] for n in (k, k.replace("Hammer", "Mallet")) if n in t), None) if k == "mSoftHammer" else t.get(k) for t in controller for k in self.MAINTENANCE}
+        grade.update(maintenance=flags, maintained=bool(flags) and all(v in (1, True) for v in flags.values()),
+                     hatch=[{k: t.get(k) for k in ("mInventory", "Inventory", *self.MAINTENANCE) if k in t} for t in self.tiles(after, GT).values() if t.get("mID") == 90])
+        return grade
+
+    WIRE = {"buffer": (1, 0, 4), "macerator": (9, 0, 1), "furnace": (9, 2, 7), "smelter": (5, 0, 3)}
+    KINDS = {"buffer": 171, "macerator": 301, "furnace": 261, "smelter": 201}
+    SIDES = ((0, -1, 0), (0, 1, 0), (0, 0, -1), (0, 0, 1), (-1, 0, 0), (1, 0, 0))   # bit n of a cable's mConnections: down, up, north, south, west, east
+
+    def wiring_setup(self):
+        scene = {(7, y, z): (BRICK, 0) for y in range(3) for z in range(2, 7) if (y, z) != (0, 4)}
+        scene.update({(9, 0, 7): (BRICK, 0), (9, 1, 7): (BRICK, 0)})
+        state = self.begin(scene, [(GT, 1, k) for k in self.KINDS.values()] + [(GT, 16, 1246), (WRENCH[0], 1, 26, WRENCH[3]), WRENCH, (DIRT, 16)], (3, 0, 6))
+        state["prompt"] = Tasks.PROMPTS["wiring"].format(**{k: self.world(c) for k, c in self.WIRE.items()})
+        return state
+
+    def wiring_grade(self, state, after):
+        tiles = self.tiles(after, GT)
+        cables = {c: t.get("mConnections") or 0 for c, t in tiles.items() if t.get("mID") == 1246}
+        step = lambda c, n: (c[0] + self.SIDES[n][0], c[1] + self.SIDES[n][1], c[2] + self.SIDES[n][2])
+        touches = lambda cell: {c for c, bits in cables.items() for n in range(6) if bits >> n & 1 and step(c, n) == cell}   # cables with a side open toward it
+        b = self.WIRE["buffer"]; first = (b[0] + 1, b[1], b[2])
+        seen, todo = set(), [first] if first in touches(b) else []
+        while todo:
+            c = todo.pop()
+            if c in seen: continue
+            seen.add(c)
+            todo += [step(c, n) for n in range(6) if cables[c] >> n & 1 and cables.get(step(c, n), 0) >> (n ^ 1) & 1]   # joined when both open toward each other
+        stray = self.changed(state["before"], after, lambda c, v: v.startswith(GT + ":"))
+        return {"machinesPlaced": all(tiles.get(c, {}).get("mID") == self.KINDS[n] for n, c in self.WIRE.items()), "bufferFrontEast": tiles.get(b, {}).get("mFacing") == 5,
+                "cables": len(cables), "withinSixteen": len(cables) <= 16, "fromBufferFront": bool(seen), "maceratorJoined": bool(seen & touches(self.WIRE["macerator"])),
+                "furnaceJoined": bool(seen & touches(self.WIRE["furnace"])), "smelterUnconnected": not touches(self.WIRE["smelter"]),
+                "connections": {self.key(c): v for c, v in sorted(cables.items())}, "nothingElseChanged": not stray, "stray": stray[:12],
+                "noScaffoldLeft": not any(v.startswith(DIRT) for v in after.values())}
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("op", choices=("setup", "grade", "list")); ap.add_argument("task", nargs="?"); ap.add_argument("dir", nargs="?")
@@ -335,7 +391,7 @@ def main():
     try:
         if args.op == "setup":
             if t.active: t.s.call(bs.FIX + ".restore"); t.active = False
-            state = getattr(t, args.task + "_setup")(); state["prompt"] = Tasks.PROMPTS[args.task]
+            state = getattr(t, args.task + "_setup")(); state.setdefault("prompt", Tasks.PROMPTS[args.task])
             (folder / "state.json").write_text(json.dumps(state))
             t.c.call("time.pause")      # the agent finds the world as a run leaves it: held until it acts
             print(json.dumps({"task": args.task, "base": state["base"], "cells": len(state["before"])}))
