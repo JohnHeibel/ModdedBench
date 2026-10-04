@@ -40,6 +40,8 @@ final class FightJob implements Navigation.Job {
     private final double leash,bailHealth,maxHealthLoss,startHealth,ax,ay,az;
     private String state="fighting",reason="",phase="starting";
     private Entity target;
+    // One pass over the loaded entities a tick: creepers and the hostile rule's matches in sight within 8, nearest first.
+    private List<Entity> close=List.of();
     private int ticks,lastAttack=-100,lastUseful,attacks,crits,kills,clearTicks;
     // Ranged: nothing here knows a weapon. How it is used is found by trying (hold and release; if nothing flies, click); how
     // its projectile flies comes in as numbers, and each shot's velocity samples go back out for the caller to fit them from.
@@ -72,7 +74,7 @@ final class FightJob implements Navigation.Job {
         maxAttackers=integer(params,"maxAttackers",2,1,8);leash=number(params,"leash",16,2,48);bailHealth=number(params,"bailHealth",8,0,40);
         // Going badly, before the bail line: this much health lost in this fight, or this many more hostiles in sight than at the start.
         maxHealthLoss=number(params,"maxHealthLoss",10,1,100);maxGrowth=integer(params,"maxGrowth",3,0,64);
-        var me=mc.thePlayer;ax=me.posX;ay=me.boundingBox.minY;az=me.posZ;startHealth=me.getHealth();startHostiles=hostiles(8).size();
+        var me=mc.thePlayer;ax=me.posX;ay=me.boundingBox.minY;az=me.posZ;startHealth=me.getHealth();close=close();startHostiles=hostiles(8).size();
         if(params.containsKey("weaponSlot")){me.inventory.currentItem=integer(params,"weaponSlot",0,0,8);mc.playerController.updateController();}
         ranged=params.containsKey("ranged");
         if(ranged){
@@ -108,11 +110,12 @@ final class FightJob implements Navigation.Job {
         if(ticks++>=duration){finish("failed","duration_elapsed");return;}
         if(me.getHealth()<=bailHealth){finish("failed","health_at_bail_line");return;}
         if(startHealth-me.getHealth()>=maxHealthLoss){finish("failed","health_lost: "+Math.round((startHealth-me.getHealth())*10)/10.0+" of "+startHealth+" lost in this fight, "+kills+" kills");return;}
+        close=close();
         int inSight=hostiles(8).size();
         if(inSight>startHostiles+maxGrowth){finish("failed","swarm_growing: "+startHostiles+" hostiles in sight at the start, "+inSight+" now after "+kills+" kills");return;}
         List<Entity> near=hostiles(4);
         if(!swarm&&near.size()>maxAttackers){finish("failed","outnumbered: "+near.size()+" entities of the hostile rule within 4 blocks");return;}
-        for(Entity e:matching(x->x instanceof EntityCreeper,7))if(e!=target&&((EntityCreeper)e).getCreeperState()>0){finish("failed","creeper_swelling: entity "+e.getEntityId());return;}
+        for(Entity e:close)if(e instanceof EntityCreeper creeper&&e!=target&&creeper.getCreeperState()>0&&e.getDistanceToEntity(me)<=7){finish("failed","creeper_swelling: entity "+e.getEntityId());return;}
 
         if(target!=null&&dead(target)){kills++;target=null;if(chosen!=null){finish("succeeded","target_dead");return;}}
         if(chosen!=null){
@@ -121,7 +124,7 @@ final class FightJob implements Navigation.Job {
         } else {
             // A selector (or, holding, the hostile rule) keeps its target while it lives, else takes the nearest match in sight.
             if(swarm){Entity closest=hostiles(REACH+2).stream().filter(e->reach(e)<=REACH).findFirst().orElse(null);if(closest!=null)target=closest;}
-            if(target==null){List<Entity> all=matching(named!=null?named:hostile,hold?8:leash);target=all.isEmpty()?null:all.get(0);}
+            if(target==null){List<Entity> all=named!=null?matching(named,hold?8:leash):hostiles(8);target=all.isEmpty()?null:all.get(0);}
             if(target==null){phase="clear";rest(Set.of());if(++clearTicks>=40)finish("succeeded","clear");return;}
             clearTicks=0;
         }
@@ -171,12 +174,17 @@ final class FightJob implements Navigation.Job {
         return Math.sqrt(dx*dx+dy*dy+dz*dz);
     }
     private static boolean dead(Entity e){return e.isDead||e instanceof EntityLivingBase l&&l.getHealth()<=0;}
-    /** Entities of the hostile rule the player can see within `radius`, nearest first. */
-    private List<Entity> hostiles(double radius){return matching(hostile,radius);}
+    private List<Entity> close(){return matching(e->e instanceof EntityCreeper||hostile.test(e),8);}
+    /** Entities of the hostile rule the player can see within `radius`, nearest first: out of this tick's pass up to 8 blocks. */
+    private List<Entity> hostiles(double radius){
+        if(radius>8)return matching(hostile,radius);
+        var me=mc.thePlayer;return close.stream().filter(e->hostile.test(e)&&e.getDistanceToEntity(me)<=radius).toList();
+    }
     private List<Entity> matching(Predicate<Entity> rule,double radius){
         var me=mc.thePlayer;List<Entity> out=new ArrayList<>();
+        // Distance first: it is two subtractions, the rule may walk a class's ancestry and sight traces a ray.
         for(Object value:mc.theWorld.loadedEntityList)
-            if(value instanceof Entity e&&e!=me&&!dead(e)&&rule.test(e)&&e.getDistanceToEntity(me)<=radius&&me.canEntityBeSeen(e))out.add(e);
+            if(value instanceof Entity e&&e!=me&&!dead(e)&&e.getDistanceToEntity(me)<=radius&&rule.test(e)&&me.canEntityBeSeen(e))out.add(e);
         out.sort(Comparator.comparingDouble(e->e.getDistanceSqToEntity(me)));return out;
     }
     private void rangedTick(Entity t){
