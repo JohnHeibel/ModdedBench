@@ -50,6 +50,8 @@ final class ClickRun {
     private ClickSpace space;
     private Set<BlockPos> kept=Set.of();
     private int spaceStep=-1,walkScaffold,made,pressTick,searching;
+    /** How often this session clicked each cell in. */
+    private final Map<String,Integer> clickedIn=new HashMap<>();
     private List<StepPlan.Step> open=List.of();
     private String phase="idle";
     private boolean closing;
@@ -67,7 +69,9 @@ final class ClickRun {
         final String kind;final StepPlan.Step step;final BlockPos block;final Task parent;Map<String,Object> row;
         List<Vantages.Vantage> vantages=List.of();final Set<BlockPos> tried=new HashSet<>();
         Deque<BlockPos> opening;StepPlan.Step hides;Vantages.Vantage at;Read read;
-        int age,wait,routes,rounds,expectTries,pressTick=-1;boolean opened,fetched,fetching,variant;
+        int age,wait,routes,rounds,expectTries,pressTick=-1;boolean opened,fetched,fetching,variant,anyVariant;
+        /** The six cells around a cell removed for access, as they stood before the first hit. */
+        Map<BlockPos,Map<String,Object>> around;
         Map<String,Object> before,clicked,predicted,diagnosis=Map.of(),expectBefore;List<Map<String,Object>> observed;
         Task(String kind,StepPlan.Step step,BlockPos block,Task parent,Map<String,Object> row){this.kind=kind;this.step=step;this.block=block;this.parent=parent;this.row=row;}
         boolean breaking(){return step==null;}
@@ -204,7 +208,8 @@ final class ClickRun {
         List<StepPlan.Step> left=new ArrayList<>();
         for(var s:plan.places)if(s.stage()==stage) {
             if(plan.correct(plan.cells.get(s.index()))){if(!log.settled(s.key())){log.record(s.key(),"already_present");changed=true;}continue;}
-            // A block this job clicked in is gone again: it is clicked in again.
+            // A block this job clicked in is gone again: it is clicked in again, as often as the builder tries a cell.
+            if(clickedIn.getOrDefault(s.key(),0)>=ConstructionPlan.ATTEMPTS){if(changed)save();stop(s,"attempt_limit",WorkAccess.observed(world,s.pos()).get("id"));return true;}
             log.drop(s.key());
             if(!plan.occupied(s.pos())){left.add(s);continue;}
             // Another block stands in the cell. The plan replaces it; else the build says occupied once nothing else is left to do.
@@ -324,7 +329,12 @@ final class ClickRun {
     private void aim() {
         BlockPos feet=WorkAccess.feet();
         Vantages.Vantage v=task.vantages.stream().filter(x->x.feet().equals(feet)).findFirst().orElse(null);
-        if(v==null){if(task.vantages.isEmpty()){observe();return;}v=task.vantages.get(0);}
+        if(v==null) {
+            if(task.vantages.isEmpty()){observe();return;}
+            // Not at a stance (a walk to a drop ends where the drop lay): to one, and only then from wherever the walk ends.
+            if(task.routes++<2){route();return;}
+            v=task.vantages.get(0);
+        }
         task.at=v;
         var eye=mc.thePlayer.getPosition(1);
         double dx=v.point().x()-eye.xCoord,dy=v.point().y()-eye.yCoord,dz=v.point().z()-eye.zCoord;
@@ -344,7 +354,7 @@ final class ClickRun {
                 var predicted=baritone.compat.LegacyPlacement.predict(engine.getPlayerContext(),mc.thePlayer.getHeldItem(),baritone.compat.RayTraceResult.fromNative(hit),new baritone.api.utils.Rotation(mc.thePlayer.rotationYaw,mc.thePlayer.rotationPitch));
                 task.predicted=Map.of("id",String.valueOf(Registry.name(predicted.getBlock())),"meta",predicted.meta);
                 // The click from here would make another variant than the one the cell names: nothing is placed from this stance.
-                if(task.kind.equals("step")&&s.meta()!=null&&s.id().equals(task.predicted.get("id"))&&predicted.meta!=s.meta()){task.variant=true;another();return;}
+                if(!task.anyVariant&&s.meta()!=null&&s.id().equals(task.predicted.get("id"))&&predicted.meta!=s.meta()){task.variant=true;another();return;}
             }
             task.clicked=new LinkedHashMap<>();task.clicked.put("block",point(b));task.clicked.put("face",ClickSpec.NAMES[hit.sideHit]);
             task.clicked.put("hit",List.of(round(hit.hitVec.xCoord-hit.blockX),round(hit.hitVec.yCoord-hit.blockY),round(hit.hitVec.zCoord-hit.blockZ)));
@@ -353,6 +363,7 @@ final class ClickRun {
             if(task.breaking()) {
                 // Journaled before the first hit, so whatever ends this session the next puts it back.
                 if(task.parent!=null&&task.row==null){task.row=new LinkedHashMap<>();task.row.put("pos",point(task.block));task.row.put("id",task.before.get("id"));task.row.put("meta",task.before.get("meta"));task.row.put("for",task.parent.label());restores.add(task.row);save();}
+                if(task.parent!=null&&task.around==null){task.around=new LinkedHashMap<>();for(int f=0;f<6;f++){BlockPos n=ClickSpec.offset(task.block,f);if(!replaceable(n))task.around.put(n,state(n));}}
                 space=null;enter("break");job.lease.setKeys(Set.of());return;
             }
             // A use is journaled as being taken before the key goes down: a session that ends here never presses it twice.
@@ -382,13 +393,25 @@ final class ClickRun {
             Task t=task;
             if(t.kind.equals("clean")){scaffold.remove(t.block);save();idle();}
             else if(t.parent==null)idle(); // the plan replaces what stood here: the cell is open for its click now
-            else{task=t.parent;breakNext();}
+            else{collateral(t);task=t.parent;breakNext();}
             return;
         }
+        // Another block stands in a cell being opened (it fell or flowed in): that one is not the job's to remove.
+        if(task.parent!=null&&task.before!=null&&!same(task.before,task.block)){mc.playerController.resetBlockRemoving();fail("access_failed");return;}
         ControlRegistry.targeting().refresh();var hit=mc.objectMouseOver;
         boolean on=hit!=null&&hit.typeOfHit==MovingObjectPosition.MovingObjectType.BLOCK&&hit.blockX==task.block.getX()&&hit.blockY==task.block.getY()&&hit.blockZ==task.block.getZ();
         job.lease.setKeys(on?Set.of(mc.gameSettings.keyBindAttack.getKeyCode()):Set.of());
         if(!on&&task.age>40){mc.playerController.resetBlockRemoving();if(++task.rounds>=3)fail("access_failed");else enter("aim");}
+    }
+    /** What stood beside a removed cell and does so no longer went with it: measured, not predicted, and to be put back like the cell. */
+    private void collateral(Task t) {
+        if(t.around==null)return;
+        boolean any=false;
+        for(var e:t.around.entrySet())if(!same(e.getValue(),e.getKey())) {
+            Map<String,Object> row=new LinkedHashMap<>();row.put("pos",point(e.getKey()));row.put("id",e.getValue().get("id"));row.put("meta",e.getValue().get("meta"));
+            row.put("for",t.parent.label());row.put("with",point(t.block));restores.add(row);any=true;
+        }
+        if(any)save();
     }
     private void settle() {
         task.age++;StepPlan.Step s=task.step;
@@ -422,7 +445,9 @@ final class ClickRun {
             Expectation e=s.expect().get(i);
             Object value=values.containsKey("e"+i)?Expectation.extract(values.get("e"+i),e.path()):Expectation.MISSING;
             Object prior=before.containsKey("e"+i)?Expectation.extract(before.get("e"+i),e.path()):Expectation.MISSING;
-            boolean met=e.met(prior,value);all&=met;
+            // changed compares two reads: with no first read there is nothing to have changed from.
+            boolean unread=e.op().equals("changed")&&(task.expectBefore==null||task.expectBefore.containsKey("error")||child(task.expectBefore,"errors").containsKey("e"+i));
+            boolean met=!unread&&e.met(prior,value);all&=met;
             Map<String,Object> row=new LinkedHashMap<>(e.json());row.put("observed",value==Expectation.MISSING?"missing":value);
             if(e.op().equals("changed"))row.put("before",prior==Expectation.MISSING?"missing":prior);
             if(child(reply,"errors").containsKey("e"+i))row.put("error",child(reply,"errors").get("e"+i));
@@ -441,7 +466,8 @@ final class ClickRun {
             if(same(t.row,p))restores.remove(t.row);else t.row.put("left","differs");
             space=null;save();idle();return;
         }
-        log.record(t.step.key(),verdict);made++;job.journal.recordClick(row(t,verdict));
+        // A cell clicked in again is no further progress.
+        log.record(t.step.key(),verdict);if(!t.step.place()||clickedIn.merge(t.step.key(),1,Integer::sum)==1)made++;job.journal.recordClick(row(t,verdict));
         if(t.step.place()){if(space!=null)space=space.with(p,ClickWorld.voxel(world,p.getX(),p.getY(),p.getZ()));StepPlan.placed(ways,open,p,ClickWorld.body(mc,true));}
         save();idle();
     }
@@ -449,7 +475,11 @@ final class ClickRun {
     private void fail(String reason) {
         Task t=task;
         switch(t.kind) {
-            case "restore"->{t.row.put("left",reason);save();idle();}
+            case "restore"->{
+                // No stance gives the block as it stood: it goes back as a click does give it, and is listed (differs), rather than staying out.
+                if(t.variant&&!t.anyVariant){t.anyVariant=true;t.variant=false;t.tried.clear();t.rounds=0;t.routes=0;space=null;observe();return;}
+                t.row.put("left",reason);save();idle();
+            }
             case "clean"->{stuck.add(t.block);idle();}
             case "break"->{
                 if(t.parent==null){stop("occupied");return;}

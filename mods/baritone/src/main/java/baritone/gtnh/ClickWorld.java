@@ -27,6 +27,8 @@ final class ClickWorld {
     private final boolean override;
     private final Map<BlockPos,Voxel> cells=new HashMap<>();
     final Set<BlockPos> protectedCells=new HashSet<>();
+    /** Tile entities in and around the box, as far out as temporary access asks about. */
+    private final List<BlockPos> tiles=new ArrayList<>();
     private int cursor;
     ClickWorld(World world,BlockPos a,BlockPos b,boolean override) {
         this.world=world;this.override=override;
@@ -34,6 +36,9 @@ final class ClickWorld {
         max=new BlockPos(Math.max(a.getX(),b.getX()),Math.min(255,Math.max(a.getY(),b.getY())),Math.max(a.getZ(),b.getZ()));
         w=max.getX()-min.getX()+1;h=max.getY()-min.getY()+1;d=max.getZ()-min.getZ()+1;
         if((long)w*h*d>MAX_VOLUME)throw new IllegalArgumentException(SPREAD);
+        int t=Access.TILE_DISTANCE;
+        for(Object o:world.loadedTileEntityList)if(o instanceof net.minecraft.tileentity.TileEntity e&&!e.isInvalid()
+            &&e.xCoord>=min.getX()-t&&e.xCoord<=max.getX()+t&&e.yCoord>=min.getY()-t&&e.yCoord<=max.getY()+t&&e.zCoord>=min.getZ()-t&&e.zCoord<=max.getZ()+t)tiles.add(new BlockPos(e.xCoord,e.yCoord,e.zCoord));
     }
     /** The box around every target, widened by margin (reach and a step or two). */
     static ClickWorld around(World world,Collection<BlockPos> targets,int margin,boolean override) {
@@ -55,7 +60,7 @@ final class ClickWorld {
     boolean complete(){return cursor>=w*h*d;}
     /** How far the copy has come: work the stall watchdog can see. */
     int cursor(){return cursor;}
-    ClickSpace space(){if(!complete())throw new IllegalStateException("capture incomplete");return new ClickSpace(min,max,cells);}
+    ClickSpace space(){if(!complete())throw new IllegalStateException("capture incomplete");return new ClickSpace(min,max,cells,tiles);}
     static Voxel voxel(World world,int x,int y,int z) {
         var cell=ForgeSnapshot.sample(world,x,y,z);
         if(cell.kind()==TerrainGrid.UNKNOWN)return new Voxel(TerrainGrid.UNKNOWN,List.of(),List.of(),false,false,"unknown");

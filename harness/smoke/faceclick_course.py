@@ -11,6 +11,12 @@ server finds. Facings are recorded, and a scenario fails when clicks that should
                    allow_break (the wall is beside tile entities, which access leaves alone); nothing placed or dug
   click_access     a face seen only through one dirt block, no tile entity near: refused without allow_break; with it
                    the dirt goes, the click is made and the same block is back
+  click_attached   the same face, and the dirt has a torch standing on it: the dirt stays, the torch stays, the job
+                   stops as no_vantage
+  click_upright    the same face seen only through an upright log: the log goes and comes back upright, though the
+                   nearest click that puts a log there would lay it down
+  click_unstable   a sand cell one above a torch: every sand clicked in falls and breaks on it. The job stops on the cell after a
+                   bounded number of clicks instead of spending the stack
   click_look       four furnaces placed looking north, south, east, west and a dispenser placed looking down:
                    four different furnace facings
   click_chain      a drawing whose legend entry carries the click: three logs, each against the one before
@@ -56,7 +62,7 @@ from movement_course import BridgeError, work  # noqa: E402
 from mbtools_gtnh import plan  # noqa: E402
 
 OUT = mc.ROOT / ".runtime" / "evidence" / "faceclick-course.json"
-SCENARIOS = ("click_hopper", "click_boxed", "click_access", "click_look", "click_chain", "click_use", "click_gui",
+SCENARIOS = ("click_hopper", "click_boxed", "click_access", "click_attached", "click_upright", "click_unstable", "click_look", "click_chain", "click_use", "click_gui",
              "click_scaffold", "click_multiblock")
 PACK = ("click_machines", "click_smeltery", "click_ebf")
 AIR, STONE, DIRT, LOG, COBBLE = "minecraft:air", "minecraft:stone", "minecraft:dirt", "minecraft:log", "minecraft:cobblestone"
@@ -166,6 +172,31 @@ class Clicks:
               and made["receipt"].get("state") == "succeeded" and made["log"] == (LOG, 4) and not made["strays"] and not made["receipt"].get("accessLeft"))
         return {"passed": ok, "rows": rows, "why": f"without: {brief(refused['receipt'])} changed={len(refused['strays'])} | with: {brief(made['receipt'])} "
                                                    f"log={made['log']} strays={made['strays'][:3]} accessLeft={made['receipt'].get('accessLeft')}"}
+
+    def click_attached(self):
+        torch = ("minecraft:torch", 5)
+        walls = {(3, 0, 3): STONE, (2, 1, 3): STONE, (2, 0, 2): STONE, (2, 0, 4): STONE, (1, 0, 3): DIRT, (1, 1, 3): torch}
+        origin = self.scene(walls, [(LOG, 4), (DIRT, 8)], start=(0, 5))
+        r = call(work.mb_build, cells=[{"pos": [2, 0, 3], "id": LOG, "click": {"face": "west"}}], origin=origin, allow_break=True, timeout_ticks=3000)
+        left = self.strays(origin, {k: v[0] if isinstance(v, tuple) else v for k, v in walls.items()})
+        ok = (r.get("stopped") or {}).get("reason") == "no_vantage" and not left and not r.get("accessLeft")
+        return {"passed": ok, "receipt": r, "why": f"{brief(r)} changed={left[:3]} accessLeft={r.get('accessLeft')}"}
+
+    def click_upright(self):
+        walls = {(3, 0, 3): STONE, (2, 1, 3): STONE, (2, 0, 2): STONE, (2, 0, 4): STONE, (1, 0, 3): (LOG, 0)}
+        origin = self.scene(walls, [(LOG, 4)], start=(0, 5))
+        r = call(work.mb_build, cells=[{"pos": [2, 0, 3], "id": LOG, "click": {"face": "west"}}], origin=origin, allow_break=True, timeout_ticks=3000)
+        got = self.seen(origin, [(1, 0, 3), (2, 0, 3)])
+        ok = r.get("state") == "succeeded" and got[(1, 0, 3)] == (LOG, 0) and got[(2, 0, 3)] == (LOG, 4) and not r.get("accessLeft")
+        return {"passed": ok, "receipt": r, "why": f"{brief(r)} putBack={got[(1, 0, 3)]} cell={got[(2, 0, 3)]} accessLeft={r.get('accessLeft')}"}
+
+    def click_unstable(self):
+        sand = "minecraft:sand"
+        origin = self.scene({(3, 0, 3): STONE, (3, 1, 3): STONE, (3, 2, 3): STONE, (2, 0, 3): ("minecraft:torch", 5)}, [(sand, 64)], start=(0, 5))
+        r = call(work.mb_build, cells=[{"pos": [2, 2, 3], "id": sand, "click": {"face": "west"}}], origin=origin, timeout_ticks=6000)
+        stop = (r.get("stopped") or {}).get("reason")
+        ok = r.get("state") in ("paused", "failed") and stop in ("attempt_limit", "placement_rejected") and (r.get("ticks") or 0) < 2500
+        return {"passed": ok, "receipt": r, "why": f"{brief(r)}"}
 
     def click_look(self):
         spots = {"north": [1, 0, 1], "south": [3, 0, 1], "east": [5, 0, 1], "west": [3, 0, 4]}

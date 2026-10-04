@@ -63,8 +63,7 @@ public record ClickSpec(Integer face,Vec hit,Look look,Boolean sneak) {
     public static int opposite(int face){return face^1;}
     public static BlockPos offset(BlockPos p,int face){return new BlockPos(p.getX()+DIR[face][0],p.getY()+DIR[face][1],p.getZ()+DIR[face][2]);}
     static double[] range(Object value,String key,double min,double max) {
-        if(value instanceof Number n){double v=number(Map.of(key,n),key,0,min,max);return new double[]{v,v};}
-        List<?> r=list(value);if(r.size()!=2)throw new IllegalArgumentException(key+" is a number or [low, high]");
+        if(!(value instanceof List<?> r)||r.size()!=2)throw new IllegalArgumentException(key+" is a range [low, high] in degrees: a look is never one exact angle");
         double lo=number(Map.of(key,r.get(0)),key,0,min,max),hi=number(Map.of(key,r.get(1)),key,0,min,max);
         if(hi<lo)throw new IllegalArgumentException(key+" range needs low <= high");
         return new double[]{lo,hi};

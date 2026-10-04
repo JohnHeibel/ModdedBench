@@ -11,7 +11,8 @@ import java.util.function.Predicate;
  * clicks, and puts the same blocks back. Which cells may go is decided here from what the copy of the world shows,
  * never from block names: not a cell holding a tile entity or a fluid, nor one beside a fluid, nor a plan cell, nor an
  * unknown one, nor one within TILE_DISTANCE of any tile entity (a machine may check the blocks around it), nor one
- * the caller keeps (a protected cell, or a block that could not be put back as it was).
+ * the caller keeps (a protected cell, or a block that could not be put back as it was), nor one with anything beside
+ * it that is not a whole block (what hangs on a block or stands on it, a torch, a rail, a door, comes off with it).
  */
 public final class Access {
     private Access() {}
@@ -27,14 +28,14 @@ public final class Access {
         if(v.fluid())return "fluid";
         if(planned.contains(p))return "plan_cell";
         if(kept.test(p))return "kept";
-        for(int f=0;f<6;f++)if(s.at(ClickSpec.offset(p,f)).fluid())return "beside_fluid";
+        for(int f=0;f<6;f++) {
+            var n=s.at(ClickSpec.offset(p,f));
+            if(n.fluid())return "beside_fluid";
+            if(!n.replaceable()&&n.kind()!=TerrainGrid.SUPPORT)return "beside_part_block";
+        }
         if(nearTile(s,p))return "near_tile_entity";
         return null;
     }
-    /** A tile entity within TILE_DISTANCE (Chebyshev) of p in the copy. Cells outside the copy count as unknown, not as tile entities. */
-    public static boolean nearTile(ClickSpace s,BlockPos p) {
-        int d=TILE_DISTANCE;
-        for(int x=-d;x<=d;x++)for(int y=-d;y<=d;y++)for(int z=-d;z<=d;z++)if(s.at(p.getX()+x,p.getY()+y,p.getZ()+z).tile())return true;
-        return false;
-    }
+    /** A tile entity within TILE_DISTANCE (Chebyshev) of p: in the copy, or beyond its edge where the game named one. */
+    public static boolean nearTile(ClickSpace s,BlockPos p){return s.nearTile(p,TILE_DISTANCE);}
 }
