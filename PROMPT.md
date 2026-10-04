@@ -1215,6 +1215,7 @@ and list what is loaded, with load errors.
 | --- | --- |
 | `mb_notes` | Durable world notes: context, status, capture, search, get, history, resolve |
 | `mb_note_write` | Create/update a durable note with history and a retry-safe receipt |
+| `mb_note_append` | Add a dated entry to the end of an existing note without reading or resending its text |
 | `mb_goal` | Read or update your goal stack: chapter > current quest > working sub-goal |
 
 **`harness/tools/plan.py`**: The drawing: one format to look at a place, to plan in it and to build from.
