@@ -16,7 +16,8 @@ from pathlib import Path
 
 from mbtool import tool
 
-REQUESTS = Path(os.environ.get("MODBENCH_OUTBOX") or Path(__file__).resolve().parents[2] / ".runtime" / "outbox") / "requests"
+# Codex starts the MCP server without the container's environment, so the mounted outbox is found by its path.
+REQUESTS = Path(os.environ.get("MODBENCH_OUTBOX") or ("/outbox" if os.path.isdir("/outbox") else Path(__file__).resolve().parents[2] / ".runtime" / "outbox")) / "requests"
 
 
 @tool(lane="read", name="mb_request")
