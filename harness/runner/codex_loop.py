@@ -139,7 +139,7 @@ def run(repo=REPO, prompt=None, max_turns=50, state=None, codex=None, extra=(), 
     started, tokens0 = time.time(), feed.billed()
     # The budget is the run's, not the start's: the end and the cap are kept in run.json, and a start that names none continues them.
     plan = _mark_run(repo / ".state" / "run.json", started, max_minutes, max_tokens, tokens0); ends, cap = plan["endsAt"], plan["tokenCap"]
-    # One record per start, beside the overlay feed (outside the agent's reach in a contained run): what ran, on what, and what it did.
+    # One record per start, beside the overlay feed (in a contained run that is the outbox: kept on the host, but the agent can write there): what ran, on what, and what it did.
     record_path = feed.folder.parent / "runs" / (time.strftime("%Y%m%dT%H%M%S", time.localtime(started)) + ".json")
     record = {"model": feed.live["run"]["model"], "effort": feed.live["run"]["effort"], "codexArgs": list(extra), "thread": thread,
               "promptSha256": hashlib.sha256(prompt.read_bytes()).hexdigest(), "harnessCommit": _git(repo, "rev-parse", "HEAD"),

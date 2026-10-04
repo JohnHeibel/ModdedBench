@@ -21,7 +21,7 @@ the world through exactly two doors.
 | Agent to server | No shared network, volume or console. `time.*` and the authoritative observations already travel through the client's game connection. |
 | Agent to internet | The agent's network is `internal`. The gateway proxies `*.openai.com` and `*.chatgpt.com` and refuses the rest (`docker/squid.conf`). |
 | Agent to game | The client bridge, forwarded by the gateway; the token folder is mounted read-only and re-read after each client restart. |
-| Agent to host files | `/outbox` only. `harness/launcher/deploy.py serve` on the host accepts `modbench-client.jar`, `modbench-core.jar` and `modbench-baritone.jar`, nothing else, installs them on the client only, restarts it and rolls back if it does not join. |
+| Agent to host files | `/outbox` only. `harness/launcher/deploy.py serve` on the host accepts `modbench-client.jar`, `modbench-core.jar` and `modbench-baritone.jar`, nothing else, installs them on the client only, restarts it and rolls back if it does not join (a client that will not shut down for the rollback is terminated: the java process of the managed instance, nothing else). One supervisor per checkout: a second `serve` exits. |
 | Server code | `modbench-server.jar` and `modbench-core.jar` are copied from the image on every start, built from the commit the image was built from. |
 
 What this does not do: the client runs model-written Java on the host as your
@@ -74,10 +74,13 @@ python harness/launcher/runtime.py launch-client
 python harness/launcher/deploy.py serve
 ```
 
-6. Start the run. `PROMPT.md` placeholders are filled in the agent's checkout.
+6. Start the run: fill the four placeholders in a copy of `PROMPT.md` and save
+   it as `.runtime/brief/PROMPT.md` (mounted read-only at `/brief`; the console's
+   Initialize does both). The loop runs under the checkout's lock, so a second
+   one cannot start beside it.
 
 ```bash
-docker compose -f docker/compose.yaml exec agent python3 harness/runner/codex_loop.py --max-turns 200
+docker compose -f docker/compose.yaml exec agent sh -c 'mkdir -p .state && exec flock -n .state/loop.lock python3 harness/runner/codex_loop.py --prompt /brief/PROMPT.md --max-turns 200 --max-minutes 120'
 ```
 
 ## Operator console
@@ -97,12 +100,26 @@ and shows it in the job log. The console listens on loopback only and each
 request carries a token minted at start, so neither a web page nor the agent
 can drive it.
 
-Pause is an operator hold, not a bridge call: the console creates
+Start gives the loop a budget only for the fields that are filled in: minutes
+and millions of tokens, counted from that start. The run's end time and token
+cap are kept in `.state/run.json`, so a later Start with a field left blank
+continues to the same end and cap (the blank field shows what is left) instead
+of handing the run a fresh budget; a run with nothing stored gets 120 minutes
+and 50 M. Initialize clears them. Start is refused while a loop is running on
+the checkout (`.state/loop.lock`, held by `flock` for as long as the loop
+lives). A loop that dies leaves its last words in `.state/codex-loop.err`, and
+the page shows them above the log while no loop is running.
+
+Pause is an operator hold, not a bridge call: the console writes
 `modbench-hold` in the server's directory, the server pauses within a tick and
 refuses every `time.resume` until the file is gone. The agent has no path to
-that directory, so it can neither block the hold nor undo it. Resume removes
-the file and the server resumes by itself; it also takes over a pause that the
-agent or a disconnect left behind.
+that directory, so it can neither block the hold nor undo it. The file names
+its holder (`operator`, `backup`, `compaction`; the server only looks for the
+file), and each holder removes only its own: Resume ends the operator's hold,
+and says so when a snapshot or the compaction guard still holds the world.
+Pause takes any hold over, so Pause then Resume ends one that nobody is
+ending. A release resumes only the pause the hold itself made: a pause that
+the agent or a disconnect left behind stays until the agent resumes it.
 
 ## Stream overlay
 
@@ -128,7 +145,10 @@ With `OPENROUTER_API_KEY` in the console's environment, goals over 70 characters
 the agent's remarks over 220 are shortened for the frame by a cheap model
 (`MB_OVERLAY_MODEL`, default `deepseek/deepseek-v4.1-flash`), cached in
 `.runtime/overlay-short.json`, and marked "in short" on screen. This runs on the host
-only; the agent never has the key and never sees a summary.
+only; the agent never has the key and never sees a summary. The client runs Java the
+agent wrote, so the launcher starts the game without any environment variable named
+like a credential (`KEY`, `TOKEN`, `SECRET`, `PASSWORD`). Prism Launcher must not
+already be open: an open Prism starts the game with its own environment.
 
 `/overlay/data` is the same data as JSON, for a layout of your own. The loop writes
 it (`harness/runner/feed.py`) to `.runtime/outbox/overlay`: `feed.jsonl`, whose
@@ -142,13 +162,13 @@ action lines are templates over its tool calls. Initialize clears both files.
 | --- | --- |
 | Server console | `docker attach moddedbench-server-1` (detach with Ctrl-P Ctrl-Q) |
 | Stop the server cleanly | `docker compose -f docker/compose.yaml stop server` |
-| Stop the agent after its current turn | create `.state/STOP` in the agent's checkout: `docker compose ... exec agent touch .state/STOP` |
+| Stop the agent | create `.state/STOP` in the agent's checkout: `docker compose ... exec agent touch .state/STOP`. The turn is cut where it stands within seconds and the conversation resumes at the next start; the console's Start removes the file, by hand remove it first |
 | See what the agent asked the network for | `docker compose ... logs gateway` |
 | Take the agent's commits out | `docker compose ... exec agent git bundle create /outbox/run.bundle modbench-base..HEAD`, then `git fetch .runtime/outbox/run.bundle` on the host |
-| Hold the world paused / release | `docker compose ... exec server touch /data/modbench-hold` / `... rm -f /data/modbench-hold` |
+| Hold the world paused / release | `docker compose ... exec server sh -c 'echo operator > /data/modbench-hold'` / `... rm -f /data/modbench-hold` (`cat` it first: `backup` or `compaction` is a hold that ends by itself) |
 | New world | `docker compose ... down`, `docker volume rm moddedbench_server-data` |
-| Start a run without the console | fill the four placeholders in a copy of `PROMPT.md`, save it as `.runtime/brief/PROMPT.md`, then `docker compose ... exec agent python3 harness/runner/codex_loop.py --prompt /brief/PROMPT.md`, or paste it into an interactive `codex` in that container |
-| Snapshot the world and the notes | `python harness/launcher/backup.py once`, or `loop --every 30` in a terminal you leave open |
+| Start a run without the console | fill the four placeholders in a copy of `PROMPT.md`, save it as `.runtime/brief/PROMPT.md`, then start the loop as in step 6 above (under `flock`, or the one-loop guard does not cover it), or paste it into an interactive `codex` in that container |
+| Snapshot the world, the notes and the agent's work | `python harness/launcher/backup.py once`, or `loop --every 30` in a terminal you leave open (one loop per stack: a second exits) |
 
 ## The brief and the heartbeat
 
@@ -167,13 +187,18 @@ copies of these files, but not the mounted brief.
 ## Backups
 
 `harness/launcher/backup.py` is for the operator only. Each snapshot holds the
-world (operator hold: no ticks, so nothing is being saved), streams the
+world (the hold file, as `backup`: no ticks, so nothing is being saved), streams the
 server's data folder without the pack's own files to
 `.runtime/snapshots/<time>/world.tar.gz`, copies the agent's notes databases
 through SQLite's backup API to `notes.tar.gz` beside it so the two always
 match, and releases the hold unless one was already in force. The world on
-disk is the last autosave, at most 45 seconds of game time old. It keeps the
-newest 48 snapshots and the first of each day.
+disk is the last autosave, at most 45 seconds of game time old. With the world
+running again it saves what else exists only in the agent's volume:
+`agent.bundle` (`git bundle --all` of its checkout: every commit, no
+uncommitted edits) and `state.tar.gz` (its `.state` without logs: thread id,
+run budget, tasks, call log). It keeps the newest 48 snapshots and the first
+of each day. A snapshot that fails says why in `.runtime/logs/backups.log`
+and the loop goes on to the next.
 
 No container mounts `.runtime/snapshots`, and the agent's brief does not mention
 backups: from inside the run every mistake is permanent. The console starts the
@@ -181,9 +206,14 @@ backups: from inside the run every mistake is permanent. The console starts the
 **agent down**. Restoring is an operator decision for infrastructure faults
 only (a corrupted world, a lost disk, a harness bug that damaged state), never
 to undo the agent's own mistakes:
-`python harness/launcher/backup.py restore <snapshot> --reason "..."` stops the
+`python harness/launcher/backup.py restore <snapshot> --reason "..."` checks
+that the archives read to their end (before anything is touched), stops the
 server and agent, replaces the world and the notes, and appends the restore to
 `.runtime/snapshots/restores.jsonl` (host only). Start the stack when ready.
+The commits and the loop state are not restored with it; when they are wanted,
+copy the two files into `.runtime/outbox` and, in the agent container,
+`git fetch /outbox/agent.bundle 'refs/heads/*:refs/remotes/snapshot/*'` and
+`tar -xzf /outbox/state.tar.gz -C .state`.
 Set `MB_COMPOSE_PROJECT=mbtest` to act on a test stack.
 
 Recording: OBS window capture matched on the window title picks the client up
@@ -195,7 +225,8 @@ join, so a client-side edit does nothing: set `BRIGHT_NIGHTS=true` in
 `docker/.env` and restart the server. Light levels and mob spawning are unchanged.
 
 Restarts: the world stays paused (`client_disconnected`) after the client
-comes back, until the agent or the console's Resume resumes it. After a server
+comes back, until the agent resumes it (the console's Resume ends only the
+operator's hold). After a server
 restart press Launch and join; it reconnects the running client and keeps
 trying every 10 s while the server boots. A hold survives a server restart:
 the server runs a one-second warm-up (pack mods build world data on their
