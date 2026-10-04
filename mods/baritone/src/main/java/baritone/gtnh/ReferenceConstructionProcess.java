@@ -68,7 +68,8 @@ final class ReferenceConstructionProcess extends BulkJob {
     private BlockPos inTheWay;
     private long searchesBefore=Long.MAX_VALUE;
     /** The current build step (BuildSteps), the one the running pass was started at, and this tick's wrong cells per step. */
-    private int buildStep,passStep=-1;
+    private int buildStep,passStep=-1,liftedStep=-1;
+    private BuildSteps.Held held=BuildSteps.Held.NONE;
     private int[] stepLeft=new int[0];
     private BlockPos[] stepFirst=new BlockPos[0];
     ReferenceConstructionProcess(BaritoneNavigation navigation,WorkJournal journal,Map<String,Object> options){
@@ -397,8 +398,13 @@ final class ReferenceConstructionProcess extends BulkJob {
         int minX=plan.cells.stream().mapToInt(c->c.pos().getX()).min().orElseThrow(),minY=plan.cells.stream().mapToInt(c->c.pos().getY()).min().orElseThrow(),minZ=plan.cells.stream().mapToInt(c->c.pos().getZ()).min().orElseThrow();
         int width=plan.cells.stream().mapToInt(c->c.pos().getX()).max().orElseThrow()-minX+1,height=plan.cells.stream().mapToInt(c->c.pos().getY()).max().orElseThrow()-minY+1,length=plan.cells.stream().mapToInt(c->c.pos().getZ()).max().orElseThrow()-minZ+1;
         // The source builder is shown the plan up to the current step only; step() starts a new pass when the step moves on.
-        Map<BlockPos,IBlockState> frozen=plan.steps.schematic(DeferredClearance.schematic(states,deferredAir,cleanupPhase),buildStep);
+        Map<BlockPos,IBlockState> shown=plan.steps.schematic(DeferredClearance.schematic(states,deferredAir,cleanupPhase),buildStep);
         passStep=buildStep;
+        // Of the cells shown, those between a deeper one and the open wait for it (BuildSteps.held); step() starts a new pass when one is in.
+        Set<BlockPos> pending=new HashSet<>();
+        for(Cell c:plan.cells){BlockPos p=c.pos();if(!c.clear()&&shown.containsKey(p)&&Boolean.FALSE.equals(correct.get(p))&&baritone.compat.LegacyPlacement.empty(world,p.getX(),p.getY(),p.getZ()))pending.add(p);}
+        held=cleanupPhase||liftedStep==buildStep?BuildSteps.Held.NONE:BuildSteps.held(pending,p->baritone.compat.LegacyPlacement.empty(world,p.getX(),p.getY(),p.getZ()));
+        Map<BlockPos,IBlockState> frozen=new HashMap<>(shown);frozen.keySet().removeAll(held.held());
         ISchematic schematic=new ISchematic(){
             public int widthX(){return width;}public int heightY(){return height;}public int lengthZ(){return length;}
             public boolean inSchematic(int x,int y,int z,IBlockState current){return frozen.containsKey(new BlockPos(x+minX,y+minY,z+minZ));}
@@ -468,6 +474,13 @@ final class ReferenceConstructionProcess extends BulkJob {
         // The build step moved on (the source builder may already have stopped, its shown cells all done). Existing
         // searches retain their immutable schematic; start a new source plan.
         if(passStep!=buildStep){engine.getPathingBehavior().forceCancel();startPass();}
+        else if(!held.held().isEmpty()){
+            // A deeper cell is in: a new pass, with what that frees. Half a stall with none of them in: nothing waits any more
+            // in this step, so a cell that cannot be made at all does not keep the rest of the plan back.
+            boolean freed=held.first().stream().anyMatch(p->correct.getOrDefault(p,false));
+            if(!freed&&(stall.half()||!builder.isActive()))liftedStep=buildStep;
+            if(freed||liftedStep==buildStep){engine.getPathingBehavior().forceCancel();startPass();}
+        }
         if(!builder.isActive()){
             // The source builder holds every cell it was shown done. What the plan still finds wrong is a cell it cannot make as asked.
             if(!cleanupPhase&&!deferredAir.isEmpty()){

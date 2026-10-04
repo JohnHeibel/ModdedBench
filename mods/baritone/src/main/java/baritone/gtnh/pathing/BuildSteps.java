@@ -5,6 +5,7 @@ package baritone.gtnh.pathing;
 
 import baritone.compat.BlockPos;
 import java.util.*;
+import java.util.function.Predicate;
 import static baritone.gtnh.pathing.WorkSpec.*;
 
 /**
@@ -52,6 +53,30 @@ public final class BuildSteps {
         if(keys.length==0)return Map.of();
         Integer own=p==null?null:at.get(p);int step=Math.min(own!=null?own:current,keys.length-1);
         return Map.of("stage",stage(step),"y",y(step));
+    }
+    /** held: cells kept from the source builder for now. first: the deeper cells they wait for. */
+    public record Held(Set<BlockPos> held,Set<BlockPos> first){public static final Held NONE=new Held(Set.of(),Set.of());}
+    private static final int[][] SIDES={{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
+    private static BlockPos beside(BlockPos p,int[] side){return new BlockPos(p.getX()+side[0],p.getY()+side[1],p.getZ()+side[2]);}
+    /**
+     * Which of the cells still to be filled wait for now. A cell is reached through an open side; one whose only open
+     * sides are other cells to be filled lies behind them, and filled after them it can no longer be reached (the corner
+     * of a lining under a ceiling, the end of a blind passage). So each pending cell has a depth, the number of pending
+     * cells between it and a side that stays open, and a cell waits while a pending neighbour lies deeper. Cells with open
+     * sides everywhere hold nothing back; cells with no way out at all have no depth, and neither wait nor are waited for.
+     * open: whether a cell that is not pending is empty.
+     */
+    public static Held held(Set<BlockPos> pending,Predicate<BlockPos> open) {
+        Map<BlockPos,Integer> depth=new HashMap<>();ArrayDeque<BlockPos> queue=new ArrayDeque<>();
+        for(BlockPos p:pending)for(int[] side:SIDES){BlockPos n=beside(p,side);if(!pending.contains(n)&&open.test(n)){depth.put(p,0);queue.add(p);break;}}
+        if(depth.size()==pending.size())return Held.NONE;
+        while(!queue.isEmpty()){
+            BlockPos p=queue.poll();int next=depth.get(p)+1;
+            for(int[] side:SIDES){BlockPos n=beside(p,side);if(pending.contains(n)&&depth.putIfAbsent(n,next)==null)queue.add(n);}
+        }
+        Set<BlockPos> held=new HashSet<>(),first=new HashSet<>();
+        for(var e:depth.entrySet())for(int[] side:SIDES){BlockPos n=beside(e.getKey(),side);Integer d=depth.get(n);if(d!=null&&d>e.getValue()){held.add(e.getKey());first.add(n);}}
+        return held.isEmpty()?Held.NONE:new Held(Set.copyOf(held),Set.copyOf(first));
     }
     /** Preview: every step in order with the number of cells it holds. */
     public List<Map<String,Object>> list() {
