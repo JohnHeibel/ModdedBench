@@ -573,7 +573,7 @@ def start_server(args: argparse.Namespace) -> None:
     log = (runtime / "logs" / "server.log"); log.parent.mkdir(parents=True, exist_ok=True)
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
     with log.open("ab") as output:
-        proc = subprocess.Popen(command, cwd=server, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, creationflags=flags)
+        proc = subprocess.Popen(command, cwd=server, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, creationflags=flags, env=game_env())
     identity = process_identity(proc.pid)
     if not identity:
         raise RuntimeError_(f"the server process exited at once or could not be identified; see {log}")
@@ -764,6 +764,12 @@ def verify_client_build(cfg: dict[str, Any], runtime: Path = RUNTIME) -> None:
     raise RuntimeError_("client modules are an unrecognized mix; install matching components or roll back to a previously joined managed set")
 
 
+def game_env() -> dict[str, str]:
+    """The environment a game process gets: this one's without anything named like a credential. The game runs Java the agent
+    wrote, and the console's environment holds the operator's keys (OPENROUTER_API_KEY for the overlay's summaries)."""
+    return {k: v for k, v in os.environ.items() if not re.search("KEY|TOKEN|SECRET|PASSWORD", k.upper())}
+
+
 def launch_client(args: argparse.Namespace) -> None:
     runtime = Path(args.runtime).resolve(); cfg = load_config(runtime); path = instance_dir(cfg); assert_managed_instance(path)
     if not getattr(args, "installed_as_is", False):  # a supervised deploy installs jars this checkout did not build
@@ -774,7 +780,7 @@ def launch_client(args: argparse.Namespace) -> None:
         raise RuntimeError_("username must not be empty")
     # Do not use Prism's --server: that route can bypass FML's setup in this
     # legacy pack. The authenticated bridge connects after the title screen.
-    subprocess.Popen([prism, "--dir", str(cfg["prismData"]), "-l", INSTANCE_NAME, "--offline", username], creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0)
+    subprocess.Popen([prism, "--dir", str(cfg["prismData"]), "-l", INSTANCE_NAME, "--offline", username], env=game_env(), creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0)
     joined = wait_for_client_join(args.timeout)
     record_joined_client_build(cfg, runtime)
     print(json.dumps(joined))
@@ -786,7 +792,7 @@ def provision_client(args: argparse.Namespace) -> None:
     prism = resolve_executable(cfg.get("prism", ""), cfg.get("prismCandidates", []), "Prism Launcher executable")
     # Deliberately omit --offline and --server: Prism chooses its already
     # logged-in account and downloads the vanilla/Forge/LWJGL dependencies.
-    subprocess.Popen([prism, "--dir", str(cfg["prismData"]), "-l", INSTANCE_NAME], creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0)
+    subprocess.Popen([prism, "--dir", str(cfg["prismData"]), "-l", INSTANCE_NAME], env=game_env(), creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0)
     print("Prism provisioning launch requested")
 
 
