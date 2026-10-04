@@ -131,6 +131,14 @@ class BodyLockTests(TaskTestCase):
         self.assertEqual((read["body"]["task"], read["body"]["now"], read["bodyBusy"]), ("t1", "mb_mine", True))
         self.assertNotIn("bodyBusy", acted)
 
+    def test_a_live_task_in_a_paused_world_says_why_it_is_paused(self):
+        self.put("t1", name="vein", now="mb_mine")
+        self.assertNotIn("paused", tasks.fields()["body"])  # a running world: the task is working
+        self.k.clock.update(paused=True, reason="health_dropped")
+        self.assertEqual(tasks.fields(read=True)["body"]["paused"], "health_dropped")  # no tick runs, so neither does the task
+        self.k.call = mock.Mock(side_effect=TimeoutError("no bridge"))
+        self.assertEqual(tasks.fields()["body"]["task"], "t1")  # no clock to read: the body fields still come
+
     def test_a_free_body_adds_nothing_and_a_held_lock_refuses_a_start(self):
         k = Methods()
         tasks.gate(k, "act.input")

@@ -261,7 +261,11 @@ def deliver(folder: Path | None = None, limit: int = 5) -> list[dict]:
 def fields(read: bool = False, folder: Path | None = None) -> dict:
     """The body and finished fields the server adds to every tool result."""
     out, st = {}, live(folder)
-    if st: out["body"] = body(st)
+    if st:
+        out["body"] = body(st)
+        try: clock = kernel().call("time.status", timeout=5).get("state") or {}
+        except Exception: clock = {}
+        if clock.get("paused"): out["body"]["paused"] = clock.get("reason")  # no tick runs, so the task works on nothing until the world resumes
     if st and read: out["bodyBusy"] = True
     done = deliver(folder)
     if done: out["finished"] = done
