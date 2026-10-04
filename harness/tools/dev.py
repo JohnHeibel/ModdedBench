@@ -26,8 +26,9 @@ def request(items: list | None = None, reason: str = "", wait_seconds: int = 600
     "count": n}, named the way the game names them (mb_recipes and your inventory show the ids). Nothing made is
     supplied: no crafted, smelted or processed item. The operator reads the request and answers in a minute or
     two of real time; the game clock is left as you set it. Granted items go into your inventory, and what does
-    not fit drops at your feet. Returns what was given and what was refused, with the reason. If the answer has
-    not come within wait_seconds, returns status "pending": call again with request=<id> to go on waiting."""
+    not fit drops at your feet; given while the world is paused, they show in your inventory once it ticks.
+    Returns what was given and what was refused, with the reason. If the answer has not come within
+    wait_seconds, returns status "pending": call again with request=<id> to go on waiting."""
     REQUESTS.mkdir(parents=True, exist_ok=True)
     if request: rid = request
     else:
