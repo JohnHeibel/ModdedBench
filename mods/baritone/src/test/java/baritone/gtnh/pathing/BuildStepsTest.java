@@ -117,4 +117,33 @@ public class BuildStepsTest {
             try{WorkSpec.cells(bad);fail("accepted "+bad);}catch(IllegalArgumentException expected){}
         }
     }
+    private static BlockPos at(int x,int y,int z){return new BlockPos(x,y,z);}
+    @Test public void cellsWithAnOpenSideEachHoldNothingBack(){
+        // A row on the ground under open sky.
+        Set<BlockPos> row=new HashSet<>();for(int x=0;x<8;x++)row.add(at(x,65,0));
+        assertSame(BuildSteps.Held.NONE,BuildSteps.held(row,p->p.getY()>=65));
+    }
+    @Test public void theCornerOfALiningUnderACeilingGoesBeforeTheTwoCellsBesideIt(){
+        // A room x 1..5, z 1..5 at y 65 under a ceiling, rock all round: the ring of cells along its walls is to be filled.
+        Set<BlockPos> ring=new HashSet<>();
+        for(int x=1;x<=5;x++)for(int z=1;z<=5;z++)if(x==1||x==5||z==1||z==5)ring.add(at(x,65,z));
+        var held=BuildSteps.held(ring,p->p.getY()==65&&p.getX()>=1&&p.getX()<=5&&p.getZ()>=1&&p.getZ()<=5);
+        assertEquals(Set.of(at(1,65,1),at(5,65,1),at(1,65,5),at(5,65,5)),held.first());
+        assertEquals(Set.of(at(2,65,1),at(1,65,2),at(4,65,1),at(5,65,2),at(1,65,4),at(2,65,5),at(5,65,4),at(4,65,5)),held.held());
+        // The corners are in: what was held is free.
+        Set<BlockPos> left=new HashSet<>(ring);left.removeAll(held.first());
+        assertSame(BuildSteps.Held.NONE,BuildSteps.held(left,p->!ring.contains(p)&&p.getY()==65&&p.getX()>=1&&p.getX()<=5&&p.getZ()>=1&&p.getZ()<=5));
+    }
+    @Test public void aBlindPassageIsFilledFromItsEnd(){
+        // x 0..3 at y 65, z 0, open only past x 3.
+        Set<BlockPos> passage=Set.of(at(0,65,0),at(1,65,0),at(2,65,0),at(3,65,0));
+        var held=BuildSteps.held(passage,p->p.equals(at(4,65,0)));
+        assertEquals(Set.of(at(1,65,0),at(2,65,0),at(3,65,0)),held.held());
+        assertEquals(Set.of(at(0,65,0),at(1,65,0),at(2,65,0)),held.first());
+    }
+    @Test public void cellsWithNoWayOutAtAllNeitherWaitNorAreWaitedFor(){
+        // A closed pocket of two cells, and a cell in the open beside nothing of it.
+        var held=BuildSteps.held(Set.of(at(0,65,0),at(1,65,0),at(9,65,0)),p->p.equals(at(9,66,0)));
+        assertSame(BuildSteps.Held.NONE,held);
+    }
 }
