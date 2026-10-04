@@ -36,6 +36,8 @@ final class ReferenceConstructionProcess extends BulkJob {
     private final Map<Cell,baritone.api.pathing.goals.Goal> placementGoals=new HashMap<>();
     private int placementGoalEpoch=-1;
     private BlockPos placementGoalFeet;
+    /** Cells last found with nowhere to stand from which a face to place them against can be seen. */
+    private final Set<BlockPos> noVantage=new LinkedHashSet<>();
     private Set<BlockPos> deferredAir=Set.of();
     private boolean cleanupPhase;
     private boolean clearanceEgress;
@@ -212,10 +214,12 @@ final class ReferenceConstructionProcess extends BulkJob {
                 // otherwise a boundary-overlapping player can be declared ready
                 // to place its neighbor forever, while native collision rejects it.
                 boolean here=pose.feet().equals(currentFeet);
-                double x=here?mc.thePlayer.posX:pose.feet().getX()+.5;
                 double y=here?mc.thePlayer.boundingBox.minY:pose.standingY();
-                double z=here?mc.thePlayer.posZ:pose.feet().getZ()+.5;
-                if(engine.getBuilderProcess().canPlaceFrom(schematicStates.get(cell.pos()),x,y,z,slot)){
+                PlacementGoalSupport.Probe probe=(x,z)->engine.getBuilderProcess().canPlaceFrom(schematicStates.get(cell.pos()),x,y,z,slot);
+                // Any other cell is promised from its centre, where the player will not be standing. A view that exists
+                // only from the exact centre (a ray through the seam of two blocks meeting at an edge) is no stance:
+                // on arrival the real position refutes it and the next such cell becomes the goal, back and forth.
+                if(here?probe.at(mc.thePlayer.posX,mc.thePlayer.posZ):PlacementGoalSupport.steady(pose.feet().getX()+.5,pose.feet().getZ()+.5,probe)){
                     legal.add(sourceFeet);if(goal.isInGoal(sourceFeet))adjacent.add(sourceFeet);
                 }
             }
@@ -225,7 +229,7 @@ final class ReferenceConstructionProcess extends BulkJob {
                 // Standing in the cell itself fails native collision from every vantage, and the source goal (stand on top of the
                 // new block) is unreachable without scaffolding: step out to a neighbouring column first, then this adapter runs again.
                 var at=cell.pos();
-                if(!mc.thePlayer.boundingBox.intersectsWith(net.minecraft.util.AxisAlignedBB.getBoundingBox(at.getX(),at.getY(),at.getZ(),at.getX()+1,at.getY()+1,at.getZ()+1)))return goal;
+                if(!mc.thePlayer.boundingBox.intersectsWith(net.minecraft.util.AxisAlignedBB.getBoundingBox(at.getX(),at.getY(),at.getZ(),at.getX()+1,at.getY()+1,at.getZ()+1))){noVantage.add(at);return goal;}
                 // A low neighbouring stance can still overlap a different floor
                 // cell, while searchForPlaceables refuses every upward click.
                 // Egress must reach a height where this cell becomes actionable.
@@ -234,6 +238,7 @@ final class ReferenceConstructionProcess extends BulkJob {
                     .map(f->(baritone.api.pathing.goals.Goal)new baritone.api.pathing.goals.GoalBlock(f)).toArray(baritone.api.pathing.goals.Goal[]::new);
                 return out.length==0?goal:new baritone.api.pathing.goals.GoalComposite(out);
             }
+            noVantage.remove(cell.pos());
             // Retain source adjacency where native placement permits it. An
             // obstructing half/full block can instead require a higher vantage;
             // use the source GoalPlace preference and native reach for those.
@@ -456,6 +461,9 @@ final class ReferenceConstructionProcess extends BulkJob {
         var out=super.status();out.put("engine","baritone-1.2.19-source-port");out.put("process","BuilderProcess");out.put("mode",plan==null?null:plan.mode());
         out.put("buildPhase",clearanceEgress?"clearance_egress":cleanupPhase?"clearance":"construction");out.put("deferredAirCells",deferredAir.size());
         out.put("placed",placedObserved.size());out.put("removed",removedObserved.size());out.put("layer",layer);out.put("repeat",repeat);out.put("incorrect",incorrect);
-        out.put("selected",plan==null?0:plan.cells.size());out.put("pendingPlacementVerification",pending.size());out.put("movementTypes",List.copyOf(movements));out.put("inspection",inspection);return out;
+        out.put("selected",plan==null?0:plan.cells.size());out.put("pendingPlacementVerification",pending.size());out.put("movementTypes",List.copyOf(movements));out.put("inspection",inspection);
+        var blind=noVantage.stream().filter(p->!correct.getOrDefault(p,false)).limit(64).map(p->List.of(p.getX(),p.getY(),p.getZ())).toList();
+        if(!blind.isEmpty())out.put("noVantage",blind);
+        return out;
     }
 }
