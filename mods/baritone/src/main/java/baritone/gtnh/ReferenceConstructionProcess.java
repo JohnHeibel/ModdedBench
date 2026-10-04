@@ -43,6 +43,7 @@ final class ReferenceConstructionProcess extends BulkJob {
     private boolean clearanceEgress;
     private baritone.api.pathing.goals.Goal egressGoal;
     private final Map<BlockPos,baritone.api.pathing.goals.Goal> cleanupGoals=new HashMap<>();
+    private long searchesBefore=Long.MAX_VALUE;
     ReferenceConstructionProcess(BaritoneNavigation navigation,WorkJournal journal,Map<String,Object> options){
         super(navigation,journal,options);engine=navigation.reference();
         plan=new ConstructionPlan(params,journal.progress,world);repeat=plan.repeat;layer=plan.layer;
@@ -55,7 +56,7 @@ final class ReferenceConstructionProcess extends BulkJob {
             inspection=ConstructionPlan.inspect(plan.cells,plan.replace(),override,plan::correct);
             for(String key:List.of("unloaded","conflicts","protected","unsupported","missingItems"))if(((Number)inspection.get(key)).intValue()>0){finish("failed","preflight_"+key);return;}
         }
-        engine.getPathingBehavior().forceCancel();engine.snags.reset();
+        engine.getPathingBehavior().forceCancel();engine.snags.reset();searchesBefore=engine.getPathingBehavior().calculationsStarted();
         for(var setting:Baritone.settings().allSettings)savedSettings.put(setting,setting.value);
         initializeClearance();configure();engine.overrideProtection=override;engine.positionAllowed=p->true;
         engine.getInputOverrideHandler().attach(lease);
@@ -461,6 +462,10 @@ final class ReferenceConstructionProcess extends BulkJob {
         out.put("selected",plan==null?0:plan.cells.size());out.put("pendingPlacementVerification",pending.size());out.put("movementTypes",List.copyOf(movements));out.put("inspection",inspection);
         var blind=noVantage.stream().filter(p->!correct.getOrDefault(p,false)).limit(64).map(p->List.of(p.getX(),p.getY(),p.getZ())).toList();
         if(!blind.isEmpty())out.put("noVantage",blind);
+        // This job's last path search found no way at all: the stall that follows then has its cause beside it.
+        var pathing=engine.getPathingBehavior();
+        if(!"succeeded".equals(state)&&pathing.calculationsStarted()>searchesBefore&&"FAILURE".equals(pathing.lastCalculation().get("type"))
+            &&pathing.lastCalculation().get("search") instanceof Map<?,?> search)out.put("pathSearch",PathFailure.searchEnded(search.get("why"),null));
         return out;
     }
 }

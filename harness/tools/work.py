@@ -577,6 +577,8 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
     where finished work is the only way to the rest, the job ends stalled as above.
     noVantage (present when not empty, first 64): unfinished cells that, when last looked at, had no
     standing spot in the world as it is from which a face to place them against is in view.
+    pathSearch (present when the job's last path search found no way): no_route_to_goal means every
+    place reachable from where you stood was searched and none is a standing spot for a cell left.
     symptoms: what happened to you during the job, as in mb_mine.
     """
     if drawing is not None:
