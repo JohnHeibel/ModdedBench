@@ -26,7 +26,7 @@ final class ReferenceNavigationJob implements Navigation.Job,PlansWhilePaused {
     private final boolean ownsLease,allowBreak,allowPlace,override;
     private final int timeout;
     private InputArbiter.Lease lease;
-    private String state="planning",reason="";
+    private String state="planning",reason="";private boolean steppingOn;
     private int ticks,pathRevisions;
     private final long initialCalculations,initialSegments;
     private long calculations,segmentsCompleted;
@@ -97,6 +97,15 @@ final class ReferenceNavigationJob implements Navigation.Job,PlansWhilePaused {
         }
         state=current!=null?"moving":"planning";
         calculations=pathing.calculationsStarted()-initialCalculations;segmentsCompleted=pathing.segmentsCompleted()-initialSegments;
+        // A walk can end on the goal's floor with the body's centre past its edge. The planner then starts from the goal
+        // cell (its floor is what holds the player up) and plans nothing, while the goal waits for the feet: step back on.
+        var start=current==null&&pathing.getInProgress().isEmpty()&&mc.thePlayer.onGround&&!goal.isInGoal(feet)?pathing.pathStart():null;
+        if(start!=null&&!start.equals(feet)&&goal.isInGoal(start)) {
+            double dx=start.x+.5-mc.thePlayer.posX,dz=start.z+.5-mc.thePlayer.posZ;
+            engine.getInputOverrideHandler().clearAllKeys();engine.getInputOverrideHandler().flush();
+            lease.look((float)Math.toDegrees(Math.atan2(-dx,dz)),mc.thePlayer.rotationPitch);
+            lease.setKeys(Set.of(mc.gameSettings.keyBindSneak.getKeyCode(),mc.gameSettings.keyBindForward.getKeyCode()));steppingOn=true;
+        }else if(steppingOn){steppingOn=false;lease.setKeys(Set.of());}
         if(!engine.getCustomGoalProcess().isActive()){
             if(goal.isInGoal(engine.getPlayerContext().playerFeet())){finish("succeeded","goal_reached");}
             else finish("failed",PathFailure.cause(engine,initialCalculations,goal,failure));
