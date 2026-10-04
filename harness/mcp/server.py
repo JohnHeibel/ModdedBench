@@ -245,15 +245,15 @@ class Server(FastMCP):
             result = await super().call_tool(name, arguments)
             error_code = "tool_error" if getattr(result, "isError", False) else None
             if isinstance(result, CallToolResult):
-                return result.model_copy(update={"meta": {**(result.meta or {}), "bridge": trace}})
+                return result.model_copy(update={"content": _compact(result.content), "meta": {**(result.meta or {}), "bridge": trace}})
             if isinstance(result, tuple):
                 content, structured = result
             elif isinstance(result, dict):
                 structured = result
-                content = [TextContent(type="text", text=json.dumps(result))]
+                content = [TextContent(type="text", text=_dumps(result))]
             else:
                 content, structured = list(result), None
-            return CallToolResult(content=content, structuredContent=structured, isError=False, _meta={"bridge": trace})
+            return CallToolResult(content=_compact(content), structuredContent=structured, isError=False, _meta={"bridge": trace})
         except asyncio.CancelledError:
             await asyncio.shield(asyncio.to_thread(scope.cancel))
             raise
@@ -283,7 +283,7 @@ class Server(FastMCP):
             if getattr(outer, "resumed_world", None):
                 error["resumedWorld"] = outer.resumed_world  # the world runs now, although the call failed
             payload = {"ok": False, "error": error}
-            return CallToolResult(isError=True, content=[TextContent(type="text", text=json.dumps(payload))],
+            return CallToolResult(isError=True, content=[TextContent(type="text", text=_dumps(payload))],
                                   structuredContent=payload, _meta={"bridge": trace})
         finally:
             reply_trace.reset(token)
@@ -321,6 +321,24 @@ class Server(FastMCP):
         self.add_tool(mb_tools_status, name="mb_tools_status", description=mb_tools_status.__doc__)
 
 
+def _dumps(value: Any) -> str:
+    """A result's JSON, without whitespace: the model pays for every byte, and indent=2 was a third of them."""
+    return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
+
+
+def _compact(content: list) -> list:
+    """Every JSON text block re-serialised by _dumps (FastMCP indents what a tool returns); any other block as it is."""
+    out = []
+    for c in content:
+        if isinstance(c, TextContent) and c.text[:1] in ("{", "["):
+            try:
+                c = TextContent(type="text", text=_dumps(json.loads(c.text)))
+            except ValueError:
+                pass
+        out.append(c)
+    return out
+
+
 def _with_fields(result: CallToolResult, extra: dict) -> CallToolResult:
     """The result with extra fields in its JSON object, text and structured alike, or as a text block of its own."""
     if not extra:
@@ -332,9 +350,9 @@ def _with_fields(result: CallToolResult, extra: dict) -> CallToolResult:
     except ValueError:
         obj = None
     if isinstance(obj, dict):
-        content[texts[0]] = TextContent(type="text", text=json.dumps({**obj, **extra}))
+        content[texts[0]] = TextContent(type="text", text=_dumps({**obj, **extra}))
     else:
-        content.append(TextContent(type="text", text=json.dumps(extra)))
+        content.append(TextContent(type="text", text=_dumps(extra)))
     structured = {**result.structuredContent, **extra} if isinstance(result.structuredContent, dict) else result.structuredContent
     return result.model_copy(update={"content": content, "structuredContent": structured})
 
