@@ -31,20 +31,21 @@ public final class LegacyPlayerController {
     public static boolean interacting(java.util.List<BlockPos> marked,boolean sameTick,BlockPos clicked,boolean sneaking){
         return sameTick&&!sneaking&&marked.contains(clicked);
     }
-    /** A construction job's count of the clicks the game took, by the cell each landed in. */
+    /** A construction job's count of the clicks the game took, by the cell each landed in: the builder's and a walk's alike. */
     public java.util.function.Consumer<BlockPos> placed=cell->{};
     public boolean processRightClickBlock(BlockPos p,EnumFacing side,Vec3d hit){
         if(!permitted(1,p,side))return false;
         boolean interacting=interacting(interaction,interactionTick==mc.thePlayer.ticksExisted,p,mc.thePlayer.isSneaking());interaction=java.util.List.of();
         boolean building=engine.getBuilderProcess().isActive()&&!interacting;
         BlockPos cell=LegacyPlacement.landing(LegacyPlacement.empty(mc.theWorld,p.getX(),p.getY(),p.getZ()),p,side);
+        boolean free=LegacyPlacement.empty(mc.theWorld,cell.getX(),cell.getY(),cell.getZ());
         if(building)engine.getBuilderProcess().beforePlace.accept(cell);
         if(!engine.ownsNativeActions())return false;
         // The server must see the same native sneak/facing state used by placement prediction.
         mc.thePlayer.sendMotionUpdates();
         boolean taken=mc.playerController.onPlayerRightClick(mc.thePlayer,mc.theWorld,mc.thePlayer.getHeldItem(),p.getX(),p.getY(),p.getZ(),side.ordinal(),hit.nativeVector());
-        // A click the game refused placed nothing and costs the cell nothing.
-        if(taken&&building)placed.accept(cell);
+        // A click the game refused placed nothing and costs the cell nothing; nor did one at a cell that already held a block.
+        if(taken&&!interacting&&free)placed.accept(cell);
         return taken;
     }
     public boolean processRightClick(){

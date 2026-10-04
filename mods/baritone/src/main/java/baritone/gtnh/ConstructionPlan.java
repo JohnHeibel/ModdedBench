@@ -14,7 +14,7 @@ import net.minecraft.item.*;
 import net.minecraft.world.World;
 
 /**
- * Frozen construction plan: validated cells, the journaled replace selection, the build order, the live cell
+ * Frozen construction plan: validated cells and uses, the journaled replace selection, the build order, the live cell
  * predicate and the preview diff. It schedules nothing; ReferenceConstructionProcess runs it through BuilderProcess.
  */
 final class ConstructionPlan {
@@ -29,6 +29,8 @@ final class ConstructionPlan {
     final List<Cell> cells;
     /** The build order of `cells`, index for index. */
     final BuildSteps steps;
+    /** The click cells (index: into `cells`) and the uses: ClickRun's work. */
+    final List<StepPlan.Step> places,uses;
     private final Map<String,Block> blocks=new HashMap<>();
 
     /** progress is the journal's map for a job, or a scratch map for a preview. */
@@ -48,7 +50,8 @@ final class ConstructionPlan {
             schematic.put(c.pos(),c);
         }
         if(!frozen)progress.put("selection",List.copyOf(selected));
-        cells=List.copyOf(schematic.values());steps=new BuildSteps(cells);
+        uses=StepPlan.uses(params);for(var use:uses)if(!use.item().containsKey("empty"))WorkAccess.validateItemSelector(use.item());
+        cells=List.copyOf(schematic.values());places=StepPlan.places(cells);steps=new BuildSteps(cells,uses);
     }
     boolean replace(){return bool(params,"replaceExisting",false);}
     int slot(Cell cell){return cell.clear()?-1:inventorySlot(cell);}
@@ -127,6 +130,8 @@ final class ConstructionPlan {
                 differences.add(Map.of("pos",point(p),"expected",expected,"actual",actual,"reason",reason));
             }
         }
+        // A use's item is needed once however many uses name it: nothing here says a use spends it.
+        for(var use:uses)if(!use.item().containsKey("empty"))required.putIfAbsent(use.item(),1);
         var rows=materials(required);var all=steps.list();
         Map<String,Object> out=new LinkedHashMap<>();
         out.put("total",cells.size());out.put("correct",correct);out.put("mismatched",cells.size()-correct);out.put("matches",correct==cells.size());
@@ -135,6 +140,7 @@ final class ConstructionPlan {
         out.put("materialCount",rows.size());out.put("materials",rows.subList(0,Math.min(4*FIRST,rows.size())));
         out.put("differences",differences);out.put("differencesTruncated",cells.size()-correct>differences.size());
         out.put("stepCount",all.size());out.put("steps",all.subList(0,Math.min(4*FIRST,all.size())));
+        if(!places.isEmpty()||!uses.isEmpty())out.put("clicks",ClickRun.preview(this,override));
         return out;
     }
 }
