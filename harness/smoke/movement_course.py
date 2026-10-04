@@ -356,7 +356,7 @@ class Course:
                 m = info["mine"]
                 items = [{"id": i} for i in dict.fromkeys(m.get("drops") or [])] if spec.get("surface") else None  # only the block's own drops count
                 r = work.mb_mine(blocks=[{"id": m["id"]}], items=items, quantity=1, bounds=m["bounds"], allow_break=True, allow_place=True,
-                                 timeout_ticks=duration, timeout_s=timeout_s)
+                                 timeout_ticks=duration)
                 if spec.get("surface") and (r.get("state") or "succeeded") == "succeeded":  # then back to the bank
                     back = work.mb_process("goal", goal={"type": "block", "pos": info["goal"]}, duration_ticks=duration,
                                            allow_break=brk, allow_place=plc, timeout_s=timeout_s)

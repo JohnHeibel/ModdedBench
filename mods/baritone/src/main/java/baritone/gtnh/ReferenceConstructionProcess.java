@@ -21,7 +21,13 @@ final class ReferenceConstructionProcess extends BulkJob {
     private final Map<Settings.Setting<?>,Object> savedSettings=new LinkedHashMap<>();
     private Map<BlockPos,Cell> desired=Map.of();
     private Map<BlockPos,Boolean> correct=Map.of();
-    private final Map<String,Object> attempts;
+    /** Clicks the game took into a cell that has not yet been seen to match: this session's only, gone when it does. */
+    private final Map<BlockPos,Integer> attempts=new HashMap<>();
+    /** The cell a stop is about, when one is to blame. */
+    private BlockPos blamed;
+    /** This tick: wrong cells of the steps so far that can still be worked, and the first that cannot (a block the job may not remove). */
+    private int open;
+    private BlockPos occupied;
     private final Set<BlockPos> pending=new HashSet<>();
     private final Set<BlockPos> placedObserved=new HashSet<>(),removedObserved=new HashSet<>();
     private final Map<BlockPos,IBlockState.StateKey> previousObserved=new HashMap<>();
@@ -51,10 +57,11 @@ final class ReferenceConstructionProcess extends BulkJob {
     ReferenceConstructionProcess(BaritoneNavigation navigation,WorkJournal journal,Map<String,Object> options){
         super(navigation,journal,options);engine=navigation.reference();
         plan=new ConstructionPlan(params,journal.progress,world);repeat=plan.repeat;layer=plan.layer;
-        attempts=plan.attempts;
     }
     @Override void begin(){
         super.begin();
+        // A block the job may not remove can never become the plan's: say so now, with the cell, before any input.
+        if(!plan.replace()){var held=held();if(!held.isEmpty()){blamed=held.get(0);finish("failed","occupied");return;}}
         if(plan.strict){
             // Blueprint preflight: refuse before any input rather than discover a conflict mid-build.
             inspection=ConstructionPlan.inspect(plan.cells,plan.replace(),override,plan::correct);
@@ -66,6 +73,8 @@ final class ReferenceConstructionProcess extends BulkJob {
         engine.getInputOverrideHandler().attach(lease);
         capture();startPass();
     }
+    /** Plan cells that want a block and hold another one, which a placement would not replace. */
+    private List<BlockPos> held(){return plan.cells.stream().filter(c->!c.clear()&&plan.occupied(c.pos())&&!plan.correct(c)).map(Cell::pos).toList();}
     private void initializeClearance(){
         if(integer(journal.progress,"clearanceRepeat",-1,-1,100000)==repeat){
             Set<BlockPos> restored=new HashSet<>();for(Object p:list(journal.progress.getOrDefault("deferredAir",List.of())))restored.add(pos(p));
@@ -128,8 +137,9 @@ final class ReferenceConstructionProcess extends BulkJob {
         Map<BlockPos,IBlockState> states=new HashMap<>();Map<net.minecraft.block.Block,Integer> masks=new HashMap<>();
         // Wrong cells per build step are counted in this same walk over the plan: the order costs no pass of its own.
         var order=plan.steps;int[] left=new int[order.count()];BlockPos[] first=new BlockPos[left.length];int walked=0;
+        boolean replace=plan.replace();open=0;occupied=null;Set<BlockPos> soft=new HashSet<>();
         for(Cell source:plan.cells){
-            Cell cell=plan.desired(source);BlockPos p=cell.pos();cells.put(p,cell);int at=order.index(walked++);boolean done=false;
+            Cell cell=plan.desired(source);BlockPos p=cell.pos();cells.put(p,cell);int at=order.index(walked++);boolean done=false,stuck=false;
             var block=cell.clear()?net.minecraft.init.Blocks.air:ConstructionPlan.block(cell);
             states.put(p,new IBlockState(block,cell.meta(),null,p.getX(),p.getY(),p.getZ()));
             masks.put(block,plan.settings.metadataMask(cell.id()));
@@ -145,21 +155,27 @@ final class ReferenceConstructionProcess extends BulkJob {
                 boolean now=plan.correct(source);matches.put(p,now);done=now;
                 IBlockState.StateKey state=new IBlockState.StateKey(world.getBlock(p.getX(),p.getY(),p.getZ()),world.getBlockMetadata(p.getX(),p.getY(),p.getZ()));
                 var previous=previousObserved.put(p,state);
-                if(!now&&!state.block().isAir(world,p.getX(),p.getY(),p.getZ())&&!plan.repairPlaced()&&attempts.containsKey(ConstructionPlan.key(cell)))pending.add(p);
-                if(now&&pending.remove(p)){if(cell.clear())removedObserved.add(p);else placedObserved.add(p);}
+                // Seen to match: the clicks it took are forgotten, so a later repair of this cell starts from none.
+                if(now&&pending.remove(p)){attempts.remove(p);if(cell.clear())removedObserved.add(p);else placedObserved.add(p);}
+                boolean empty=baritone.compat.LegacyPlacement.empty(world,p.getX(),p.getY(),p.getZ());
+                // What stands in a cell that wants a block: nothing or something a placement replaces (which the job may
+                // also break, replace or not: it costs nothing that the placement would not), or a block in the way.
+                if(!now&&!cell.clear()){if(!empty)stuck=!replace||pending.contains(p);else if(!state.block().isAir(world,p.getX(),p.getY(),p.getZ()))soft.add(p);}
                 // Explicit-air cells may start empty, receive an autonomous
                 // scaffold, then be cleared again. Count that observed removal
                 // even though the final block equals its initial state.
                 if(previous!=null&&!state.equals(previous)&&cell.clear()&&now)removedObserved.add(p);
             }
             if(at>=0&&!done&&left[at]++==0)first[at]=p;
+            // The step is last tick's: it only moves on once everything before it is done, so nothing counted here is early.
+            if(!done&&at<=buildStep){if(!stuck)open++;else if(occupied==null)occupied=p;}
         }
         stepLeft=left;stepFirst=first;buildStep=BuildSteps.current(buildStep,left);int shown=buildStep;
         desired=Map.copyOf(cells);correct=Map.copyOf(matches);schematicStates=Map.copyOf(states);materialSelectors=Map.copyOf(selectors);
         var snapshot=desired;var verified=correct;var pendingSnapshot=Set.copyOf(pending);
         var materialSnapshot=Map.copyOf(materials);var masksSnapshot=Map.copyOf(masks);
-        boolean restricted=plan.restricted(),replace=plan.replace(),clearing=cleanupPhase;
-        var deferredSnapshot=deferredAir;
+        boolean restricted=plan.restricted(),clearing=cleanupPhase;
+        var softSnapshot=Set.copyOf(soft);
         engine.getBuilderProcess().stateValidator=(current,wanted,itemVerify)->{
             Cell cell=snapshot.get(new BlockPos(wanted.x,wanted.y,wanted.z));
             if(cell==null)return true;
@@ -176,11 +192,7 @@ final class ReferenceConstructionProcess extends BulkJob {
         // Only approximate inventory states use this; actual click prediction
         // and final world verification still require the requested block state.
         engine.getBuilderProcess().approximateMaterialMatches=(current,wanted)->current.getBlock()==wanted.getBlock();
-        engine.getBuilderProcess().mayBreak=p->{
-            BlockPos pos=new BlockPos(p.getX(),p.getY(),p.getZ());Cell cell=snapshot.get(pos);
-            if(cell==null)return allowBreak&&!restricted;
-            return PlanBreaks.allowed(cell.clear(),verified.getOrDefault(pos,false),!clearing&&deferredSnapshot.contains(pos),replace,pendingSnapshot.contains(pos));
-        };
+        engine.getBuilderProcess().mayBreak=breakRule(snapshot,verified,clearing?Set.of():deferredAir,softSnapshot,pendingSnapshot,replace,allowBreak&&!restricted);
         engine.getBuilderProcess().mayPlace=p->!restricted||snapshot.containsKey(new BlockPos(p.getX(),p.getY(),p.getZ()));
         Set<BlockPos> poseSensitive=new HashSet<>();
         for(Cell cell:snapshot.values())if(!cell.clear()&&(!cell.placement().isEmpty()||baritone.compat.LegacyStateProperties.hasOrientation(ConstructionPlan.block(cell))))poseSensitive.add(cell.pos());
@@ -293,7 +305,7 @@ final class ReferenceConstructionProcess extends BulkJob {
         engine.getBuilderProcess().accessGoal=()->clearanceEgress?egressGoal:null;
         // Immutable explicit permissions match exact observed states inside the plan only.
         Map<BlockPos,IBlockState.StateKey> breaks=new HashMap<>();
-        for(Cell cell:desired.values())if((replace||cell.clear())&&!correct.getOrDefault(cell.pos(),false)&&plan.loaded(cell.pos())&&!pending.contains(cell.pos())){
+        for(Cell cell:desired.values())if((replace||cell.clear()||soft.contains(cell.pos()))&&!correct.getOrDefault(cell.pos(),false)&&plan.loaded(cell.pos())&&!pending.contains(cell.pos())){
             BlockPos p=cell.pos();breaks.put(p,new IBlockState.StateKey(world.getBlock(p.getX(),p.getY(),p.getZ()),world.getBlockMetadata(p.getX(),p.getY(),p.getZ())));
         }
         Map<BlockPos,IBlockState.StateKey> breakSnapshot=Map.copyOf(breaks);
@@ -320,10 +332,25 @@ final class ReferenceConstructionProcess extends BulkJob {
             if(!engine.getBuilderProcess().placementFace.test(wanted,hit.sideHit)||!bool(cell.placement(),"verifyAfterPlacement",false)&&!engine.getBuilderProcess().stateComparison.test(predicted,wanted)){
                 finish("paused","native_placement_prediction_changed");return;
             }
-            String key=ConstructionPlan.key(cell);int count=((Number)attempts.getOrDefault(key,0)).intValue();
-            if(count>=plan.attemptLimit()){finish("paused","placement_attempt_limit_inspect_block_adapter");return;}
-            journal.recordAttempt(key,count+1);attempts.put(key,count+1);pending.add(pos);
+            if(attempts.getOrDefault(pos,0)>=plan.attemptLimit()){blamed=pos;finish("paused","attempt_limit");}
+        };
+        // Charged only for a click the game took. One it refused placed nothing, and is not the cell's fault.
+        engine.getPlayerContext().playerController().placed=p->{
+            BlockPos pos=new BlockPos(p.getX(),p.getY(),p.getZ());Cell cell=desired.get(pos);if(cell==null||cell.clear())return;
+            int count=attempts.merge(pos,1,Integer::sum);journal.recordAttempt(ConstructionPlan.key(cell),count);pending.add(pos);
             placementGoals.clear();
+        };
+    }
+    /**
+     * What the job may break, for the builder and for every path through the plan: PlanBreaks decides for plan cells
+     * (`soft` ones hold only what a placement would replace, so they need no replace), `outside` for everything else.
+     * All arguments are snapshots: path searches ask from their own threads.
+     */
+    static java.util.function.Predicate<BlockPos> breakRule(Map<BlockPos,Cell> cells,Map<BlockPos,Boolean> verified,Set<BlockPos> deferred,Set<BlockPos> soft,Set<BlockPos> pending,boolean replace,boolean outside){
+        return p->{
+            BlockPos pos=new BlockPos(p.getX(),p.getY(),p.getZ());Cell cell=cells.get(pos);
+            if(cell==null)return outside;
+            return PlanBreaks.allowed(cell.clear(),verified.getOrDefault(pos,false),deferred.contains(pos),replace||soft.contains(pos),pending.contains(pos));
         };
     }
     private boolean sourcePlacementHeight(Cell cell,baritone.compat.BlockPos sourceFeet){
@@ -398,6 +425,8 @@ final class ReferenceConstructionProcess extends BulkJob {
             clearanceEgress=false;journal.progress.put("clearanceEgress",false);
             engine.getPathingBehavior().forceCancel();configure();capture();startPass();journal.save(status());return;
         }
+        // Nothing left that can be placed or cleared, and a block the job may not remove stands in a cell: no walk ends this.
+        if(open==0&&occupied!=null){blamed=occupied;finish(session()>0?"paused":"failed","occupied");return;}
         if(passStep!=buildStep||builder.isActive()&&!passCells.equals(desired)){
             // The build step moved on (the source builder may already have stopped, its shown cells all done), or a
             // material substitution changed. Existing searches retain their immutable schematic; start a new source
@@ -464,7 +493,7 @@ final class ReferenceConstructionProcess extends BulkJob {
     }
     @Override void releaseProcess(){
         journal.progress.put("layer",layer);journal.progress.put("repeat",repeat);
-        engine.getPathingBehavior().forceCancel();engine.getInputOverrideHandler().release();engine.getBuilderProcess().resetAdapters();engine.explicitMiningTargets=()->s->false;
+        engine.getPathingBehavior().forceCancel();engine.getInputOverrideHandler().release();engine.getBuilderProcess().resetAdapters();engine.getPlayerContext().playerController().placed=p->{};engine.explicitMiningTargets=()->s->false;
         engine.overrideProtection=false;engine.positionAllowed=p->true;
         engine.getInventoryBehavior().throwawayFilter=stack->true;
         for(var entry:savedSettings.entrySet())ReferenceSettings.copy(entry.getKey(),entry.getValue());
@@ -474,6 +503,9 @@ final class ReferenceConstructionProcess extends BulkJob {
         out.put("buildPhase",clearanceEgress?"clearance_egress":cleanupPhase?"clearance":"construction");out.put("deferredAirCells",deferredAir.size());
         out.put("placed",placedObserved.size());out.put("removed",removedObserved.size());out.put("layer",layer);out.put("repeat",repeat);out.put("incorrect",incorrect);
         out.put("selected",plan==null?0:plan.cells.size());out.put("pendingPlacementVerification",pending.size());out.put("movementTypes",List.copyOf(movements));out.put("inspection",inspection);
+        // One stop, one cell: what ended the job and where.
+        if(blamed!=null)out.put("stopped",Map.of("reason",reason,"pos",point(blamed)));
+        if(blamed!=null&&reason.equals("occupied")&&!plan.replace()){var held=held();out.put("occupied",Map.of("count",held.size(),"first",held.stream().limit(8).map(WorkSpec::point).toList()));}
         // Where the stepped order stands: a job that ends unfinished stopped on this step, and nothing above it was begun.
         if(plan!=null){var step=plan.steps.receipt(buildStep,stepLeft,stepFirst);if(!step.isEmpty())out.put("step",step);}
         var blind=noVantage.stream().filter(p->!correct.getOrDefault(p,false)).limit(64).map(p->List.of(p.getX(),p.getY(),p.getZ())).toList();

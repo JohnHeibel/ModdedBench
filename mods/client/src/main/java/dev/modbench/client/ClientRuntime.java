@@ -498,9 +498,12 @@ public final class ClientRuntime extends BridgeRuntime {
         nei.pump(clock.isPaused());
         ui.maintain();
         interactions.maintain();
+        // A job's caller is always told what the job did, its jobId included: a deadline is answered here, not by the timer.
+        if (navigationRequest != null) navigationRequest.ownDeadline();
         if (navigationRequest != null && (navigationRequest.isDone() || !navigationRequest.session.connected || navigationRequest.expired())) {
-            navigationJob.cancel("cancelled");
-            navigationRequest.fail("cancelled", "navigation owner disconnected or cancelled");
+            boolean waited=!navigationRequest.isDone()&&navigationRequest.session.connected;
+            navigationJob.cancel(waited?"request_deadline_elapsed":"cancelled");
+            navigationRequest.fail("cancelled", waited?"the wait for this job ended before the job did; it is stopped where it stood":"navigation owner disconnected or cancelled",refused(navigationJob.status()));
             navigationRequest=null; navigationJob=null;
         }
         if (navigationRequest != null && clock.endsWork() && !clock.guardPause()) suspendNavigation(); // a step ended: hold the job, answer the caller
@@ -542,7 +545,7 @@ public final class ClientRuntime extends BridgeRuntime {
             if (job.succeeded() || "paused".equals(receipt.get("state"))) r.reply(receipt);
             else {
                 boolean cancelled=receipt.get("state").equals("cancelled");
-                r.fail(cancelled ? "cancelled" : "path_failed", String.valueOf(receipt.get("reason")),receipt);
+                r.fail(cancelled ? "cancelled" : "build".equals(receipt.get("action")) ? "build_failed" : "path_failed", String.valueOf(receipt.get("reason")),receipt);
                 if(!cancelled) clock.actionFailed();
             }
         }
@@ -574,7 +577,7 @@ public final class ClientRuntime extends BridgeRuntime {
         release();
         if (previous != null) previous.fail(reason, "input released: " + reason);
         if (navigationJob != null) navigationJob.cancel(reason);
-        if (navigationRequest != null) navigationRequest.fail(reason, "navigation released: " + reason);
+        if (navigationRequest != null) navigationRequest.fail(reason, "navigation released: " + reason, refused(navigationJob.status()));
         navigationRequest=null; navigationJob=null; suspendedId=null; suspendedEnd=null;
         ControlRegistry.controls().arbiter().revoke(reason);
         refusalMark=ControlRegistry.memory().refusals();
@@ -602,7 +605,7 @@ public final class ClientRuntime extends BridgeRuntime {
     /** The server refused the resume an action asked for: the world stays paused and that action ends here. */
     void resumeRefused(String why) {
         if (control != null) control.fail("resume_refused", why);
-        if (navigationRequest != null) navigationRequest.fail("resume_refused", why);
+        if (navigationRequest != null) { navigationJob.cancel("resume_refused"); navigationRequest.fail("resume_refused", why, refused(navigationJob.status())); }
         controlsChanged("resume_refused");
     }
     @Override protected void admit(Request r) {

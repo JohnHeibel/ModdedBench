@@ -18,6 +18,7 @@ final class WorkJournal {
     final Map<String,Object> spec;
     final Map<String,Object> progress=new LinkedHashMap<>();
     private final Path file;
+    private final StringBuilder ledger=new StringBuilder();
     WorkJournal(String kind,Map<String,Object> params) {
         this.id=UUID.randomUUID().toString();this.kind=kind;scope=ControlRegistry.memory().memory().scope();
         spec=object(JSON.fromJson(JSON.toJson(params),Map.class));file=path(id);
@@ -37,7 +38,7 @@ final class WorkJournal {
             var data=checkpoint(id);
             if(data.containsKey("spec"))data.put("specSummary",summary(object(data.remove("spec"))));
             else if(!data.containsKey("specSummary"))data.put("specSummary",Map.of("storedSeparately",true));
-            data.put("inspection","bounded checkpoint; resume loads the complete frozen specification and attempt ledger");
+            data.put("inspection","bounded checkpoint; resume loads the complete frozen specification");
             return object(compact(data));
         }catch(Exception error){throw new IllegalArgumentException("work journal unavailable: "+error.getMessage(),error);}
     }
@@ -54,11 +55,6 @@ final class WorkJournal {
         try {
             Path file=path(id);var data=checkpoint(id);
             if(!data.containsKey("spec")){Path spec=file.resolveSibling(id+".spec.json");if(Files.size(spec)>256L*1024*1024)throw new IllegalArgumentException("work spec too large");data.put("spec",object(JSON.fromJson(Files.readString(spec,StandardCharsets.UTF_8),Map.class)));}
-            Path ledger=file.resolveSibling(id+".attempts.jsonl");if(Files.exists(ledger)) {
-                var progress=new LinkedHashMap<>(child(data,"progress"));var attempts=new LinkedHashMap<>(child(progress,"attempts"));
-                try(var lines=Files.lines(ledger,StandardCharsets.UTF_8)){lines.forEach(line->{var entry=object(JSON.fromJson(line,Map.class));attempts.put(string(entry,"key",""),integer(entry,"count",0,1,Integer.MAX_VALUE));});}
-                progress.put("attempts",attempts);data.put("progress",progress);
-            }
             return data;
         }
         catch(Exception error){throw new IllegalArgumentException("work journal unavailable: "+error.getMessage(),error);}
@@ -67,18 +63,17 @@ final class WorkJournal {
         try {
             Files.createDirectories(file.getParent());Path specFile=file.resolveSibling(id+".spec.json");
             if(!Files.exists(specFile))write(specFile,JSON.toJson(spec).getBytes(StandardCharsets.UTF_8),256L*1024*1024);
-            if(!Files.exists(file.resolveSibling(id+".attempts.jsonl")))for(var e:child(progress,"attempts").entrySet())recordAttempt(e.getKey(),((Number)e.getValue()).intValue());
-            var checkpoint=new LinkedHashMap<>(progress);checkpoint.remove("attempts");
-            Map<String,Object> data=new LinkedHashMap<>();data.put("version",2);data.put("jobId",id);data.put("kind",kind);data.put("scope",scope);data.put("specSummary",summary(spec));data.put("progress",checkpoint);data.put("receipt",receipt);
+            if(ledger.length()>0){Files.writeString(file.resolveSibling(id+".attempts.jsonl"),ledger,StandardCharsets.UTF_8,StandardOpenOption.CREATE,StandardOpenOption.APPEND);ledger.setLength(0);}
+            Map<String,Object> data=new LinkedHashMap<>();data.put("version",2);data.put("jobId",id);data.put("kind",kind);data.put("scope",scope);data.put("specSummary",summary(spec));data.put("progress",progress);data.put("receipt",receipt);
             byte[] bytes=JSON.toJson(data).getBytes(StandardCharsets.UTF_8);
             write(file,bytes,64L*1024*1024);
         }catch(Exception error){throw new IllegalStateException("cannot checkpoint work: "+error.getMessage(),error);}
     }
-    void recordAttempt(String key,int count) {
-        try {Files.createDirectories(file.getParent());byte[] bytes=(JSON.toJson(Map.of("key",key,"count",count))+"\n").getBytes(StandardCharsets.UTF_8);
-            try(var channel=java.nio.channels.FileChannel.open(file.resolveSibling(id+".attempts.jsonl"),StandardOpenOption.CREATE,StandardOpenOption.APPEND,StandardOpenOption.WRITE)){var buffer=java.nio.ByteBuffer.wrap(bytes);while(buffer.hasRemaining())channel.write(buffer);channel.force(true);}
-        }catch(Exception error){throw new IllegalStateException("cannot persist placement intent",error);}
-    }
+    /**
+     * One row per click the game took, in order: <id>.attempts.jsonl, a measurement log (harness/smoke/build_order.py),
+     * never read back. Rows wait here and are appended by the next checkpoint: no disk write on the tick of a click.
+     */
+    void recordAttempt(String key,int count){ledger.append(JSON.toJson(Map.of("key",key,"count",count))).append('\n');}
     private static void write(Path file,byte[] bytes,long limit) throws java.io.IOException {
         if(bytes.length>limit)throw new IllegalArgumentException("work file exceeds size limit");Path temp=file.resolveSibling(file.getFileName()+".tmp");
         try(var channel=java.nio.channels.FileChannel.open(temp,StandardOpenOption.CREATE,StandardOpenOption.TRUNCATE_EXISTING,StandardOpenOption.WRITE)){var buffer=java.nio.ByteBuffer.wrap(bytes);while(buffer.hasRemaining())channel.write(buffer);channel.force(true);}

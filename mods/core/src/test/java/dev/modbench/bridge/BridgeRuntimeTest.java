@@ -168,6 +168,29 @@ public class BridgeRuntimeTest {
     }
 
     @Test
+    public void aJobThatOwnsItsDeadlineAnswersItWithItsReceipt() {
+        Runtime runtime = new Runtime();
+        runtime.add("act.job", request -> null);
+        Object world = new Object();
+        runtime.startTick(world);
+        Session session = new Session();
+        List<JsonObject> replies = new ArrayList<>();
+        Request request = request(runtime, session, 5, "act.job", new JsonObject(), replies);
+        runtime.dispatch(request);
+        runtime.startTick(world);
+
+        request.ownDeadline();
+        request.expire(); // the timer stands down: its bare timeout would lose the job's id and what it did
+        assertFalse(request.isDone());
+        request.fail("cancelled", "the wait ended before the job did", Json.object("jobId", "j-1", "state", "cancelled"));
+
+        assertEquals(1, replies.size());
+        JsonObject error = replies.get(0).getAsJsonObject("error");
+        assertEquals("cancelled", error.get("code").getAsString());
+        assertEquals("j-1", error.getAsJsonObject("receipt").get("jobId").getAsString());
+    }
+
+    @Test
     public void replyInsideTheDeadlineCarriesNoLateMarker() {
         Runtime runtime = new Runtime();
         runtime.add("act.quick", request -> "done");

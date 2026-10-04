@@ -19,7 +19,9 @@ Conventions that hold across all tools:
 - **Notes ride along.** A `notes` key appears on results when a note is
   relevant to the transition (see the notes section).
 - **Long calls.** Mining, building, routing and following stay open until a
-  terminal receipt; pass `timeout_s` generously and keep the returned `jobId`.
+  terminal receipt. Their one timeout is `timeout_ticks`, in game ticks; the
+  wall-clock wait is derived from it. Every way a job ends, a lost wait
+  included, answers with its receipt: keep the returned `jobId`.
 
 ## core.py: status, raw access, observation, action, time, memory
 
@@ -149,7 +151,7 @@ own opt-ins. The receipt's settings show
   16, coordinates copied at save time), `record`; `replace: true` overwrites.
   Put anchors at turns and height changes. Per world: 1,024 waypoints, 128
   routes, 256 regions.
-- For long `mb_route` trips raise both `timeout_s` and `timeout_ticks`.
+- For long `mb_route` trips raise `timeout_ticks`.
 
 ## recipes_quests.py: NEI and Better Questing
 

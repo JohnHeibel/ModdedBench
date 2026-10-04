@@ -28,7 +28,6 @@ final class ConstructionPlan {
     final ConstructionSettings settings;
     final List<Cell> source;
     final Map<BlockPos,Cell> schematic=new LinkedHashMap<>();
-    final Map<String,Object> attempts;
     final List<Map<String,Object>> throwaways;
     List<Cell> cells;
     /** The build order of `cells`, index for index. */
@@ -41,7 +40,6 @@ final class ConstructionPlan {
         settings=new ConstructionSettings(child(params,"settings"));source=validatedCells(params);
         for(Cell c:source)if(!c.clear())block(c);
         throwaways=settings.values.containsKey("acceptableThrowawayItems")?WorkAccess.itemSelectors(settings.values.get("acceptableThrowawayItems")):List.of();
-        attempts=new LinkedHashMap<>(child(progress,"attempts"));progress.put("attempts",attempts);
         repeat=integer(progress,"repeat",0,0,100000);layer=integer(progress,"layer",settings.integer("startAtLayer",0),0,256);
         installSchematic();
     }
@@ -107,7 +105,8 @@ final class ConstructionPlan {
         if(c.clear())return air;
         int mask=settings.metadataMask(c.id());return actual==block(c)&&(world.getBlockMetadata(p.getX(),p.getY(),p.getZ())&mask)==(c.meta()&mask)&&verified(c);
     }
-    boolean occupied(BlockPos p){if(!loaded(p))return false;Block b=world.getBlock(p.getX(),p.getY(),p.getZ());return !b.isAir(world,p.getX(),p.getY(),p.getZ())&&!b.isReplaceable(world,p.getX(),p.getY(),p.getZ());}
+    /** A block stands in the cell that a placement would not replace (LegacyPlacement.empty is the one meaning of empty). */
+    boolean occupied(BlockPos p){return loaded(p)&&!baritone.compat.LegacyPlacement.empty(world,p.getX(),p.getY(),p.getZ());}
     static List<Cell> validatedCells(Map<String,Object> params) {
         var cells=WorkSpec.cells(params);
         for(Cell cell:cells) {
@@ -140,8 +139,8 @@ final class ConstructionPlan {
             String reason="different";if(done.test(c)){correct++;continue;}
             if(!ForgeSnapshot.loaded(mc.theWorld,c.pos().getX(),c.pos().getY(),c.pos().getZ())){unloaded++;reason="unloaded";}
             else {
-                Block actual=mc.theWorld.getBlock(c.pos().getX(),c.pos().getY(),c.pos().getZ());
-                if(!replace&&!actual.isAir(mc.theWorld,c.pos().getX(),c.pos().getY(),c.pos().getZ())&&!actual.isReplaceable(mc.theWorld,c.pos().getX(),c.pos().getY(),c.pos().getZ())){conflicts++;reason="occupied";}
+                // A cell to be emptied is never a conflict: clearing it is what was asked.
+                if(!replace&&!c.clear()&&!baritone.compat.LegacyPlacement.empty(mc.theWorld,c.pos().getX(),c.pos().getY(),c.pos().getZ())){conflicts++;reason="occupied";}
                 String protection=WorkAccess.protection(c.pos(),override);if(protection!=null){protectedCount++;reason=protection;}
             }
             if(!c.clear())try{required.merge(material(c),1,Integer::sum);}catch(IllegalArgumentException e){unsupported++;reason=e.getMessage();}
@@ -163,7 +162,7 @@ final class ConstructionPlan {
     /** Fresh diff of the selected cells: blueprint compares every cell, builder only what its schematic predicate rejects. */
     Map<String,Object> preview(boolean override) {
         if(strict)return stepped(inspect(cells,replace(),override,this::correct));
-        var pending=cells.stream().filter(c->!correct(c)).map(this::desired).toList();var out=inspect(pending,true,override);
+        var pending=cells.stream().filter(c->!correct(c)).map(this::desired).toList();var out=inspect(pending,replace(),override);
         out.put("mode","builder");out.put("selected",cells.size());out.put("acceptedBySchematic",cells.size()-pending.size());out.put("settings",settings.values);return stepped(out);
     }
     /** The order the job would build in: every step with its cell count, the first 256 of them. */

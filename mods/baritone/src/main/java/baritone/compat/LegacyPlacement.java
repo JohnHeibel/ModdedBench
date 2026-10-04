@@ -14,6 +14,13 @@ import net.minecraft.item.ItemStack;
 /** Native placement prediction shared by source builder and its approximate material inventory. */
 public final class LegacyPlacement {
     private LegacyPlacement(){}
+    /**
+     * The one meaning of an empty cell: a block placed into it replaces what is there (air, tall grass, a snow layer,
+     * water). It is the game's own answer, the one ItemBlock asks before it decides where a click lands.
+     */
+    public static boolean empty(net.minecraft.world.World world,int x,int y,int z){Block b=world.getBlock(x,y,z);return b.isAir(world,x,y,z)||b.isReplaceable(world,x,y,z);}
+    /** Where a block placed by a click on `side` of `clicked` lands: in the clicked cell itself when that is empty, else beside it. */
+    public static BlockPos landing(boolean clickedEmpty,BlockPos clicked,EnumFacing side){return clickedEmpty?clicked:clicked.offset(side);}
     public static IBlockState predict(IPlayerContext ctx,ItemStack stack,BlockPos target,EnumFacing face,float hitX,float hitY,float hitZ,float yaw){
         return predict(ctx,stack,target,face,hitX,hitY,hitZ,yaw,ctx.player().getPosition(1));
     }
