@@ -70,6 +70,11 @@ public class MovementAscend extends Movement {
 
     public static double cost(CalculationContext context, int x, int y, int z, int destX, int destZ) {
         IBlockState toPlace = context.get(destX, y, destZ);
+        // ModdedBench: a ladder is climbed from inside its cell (MovementPillar). A jump onto one lands in that cell, short
+        // of dest, and the climb that follows starts below where it was planned from.
+        if (toPlace.getBlock() == Blocks.LADDER) {
+            return COST_INF;
+        }
         double additionalPlacementCost = 0;
         if (!MovementHelper.canWalkOn(context, destX, y, destZ, toPlace)) {
             additionalPlacementCost = context.costOfPlacingAt(destX, y, destZ, toPlace);
