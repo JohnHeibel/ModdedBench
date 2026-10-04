@@ -1140,7 +1140,7 @@ and list what is loaded, with load errors.
 
 | Tool | What it does |
 | --- | --- |
-| `mb_methods` | List bridge methods advertised by the GTNH profile; also caches their effects for lane routing of mb_call |
+| `mb_methods` | List the bridge's raw methods with one line each, or with name the matching ones whole; also caches their effects for lane routing of mb_call |
 | `mb_status` | Bridge status, the clock (paused, why, operator hold), your goal stack (mb_goal) with its stall signal, world notes near you, how long the run has been going, and your l… |
 | `mb_cost` | What your own tool calls cost over the last `hours`: calls, failures and minutes per tool, and the time between calls |
 | `mb_call` | Call any advertised bridge method with JSON parameters |

@@ -307,7 +307,7 @@ class GTNHProfileTests(unittest.TestCase):
         core, inv, work, quests = (module_with(srv, a) for a in ("mb_status", "mb_gui", "mb_route", "mb_quest_observe"))
         fake = self.use(FakeKernel(lambda method, params: {"png": base64.b64encode(b"png").decode(), "width": 1, "height": 1}
                                    if method == "sys.screenshot" else {"method": method}))
-        self.assertEqual(core.mb_methods()["method"], "sys.methods")
+        self.assertEqual(core.mb_methods("no such"), {"methods": {}}); self.assertIn(("sys.methods", {}), fake.calls)
         self.assertEqual(core.mb_status()["method"], "sys.capabilities")
         self.assertEqual(core.mb_obs("player", {"detail": "full"})["method"], "obs.player")
         self.assertIn(("obs.player", {"detail": "full"}), fake.calls)
