@@ -385,11 +385,9 @@ status. Then decide:
    case and you should do it freely.
 3. **Tool gap that needs Java** (a new observation of a mod's tile entity, a
    new interaction primitive, a Baritone behaviour): edit under `mods/`,
-   rebuild, install, restart the game, reconnect. It loses nothing durable
-   (jobs, notes, memory, quests persist) and it costs a client restart, minutes
-   in which nothing is played, so one restart is better spent on several
-   changes. Do it when a Python workaround would be a hack that you would need
-   again in the next chapter.
+   rebuild, install, restart the game, reconnect. This costs minutes and loses
+   nothing durable (jobs, notes, memory, quests persist). Do it when a Python
+   workaround would be a hack that you would need again in the next chapter.
 
 **A worked example of what this looks like.** The pack ships VisualProspecting,
 which records every ore vein a player finds and draws it on their map. The
