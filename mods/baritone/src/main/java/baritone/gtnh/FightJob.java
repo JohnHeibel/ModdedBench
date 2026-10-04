@@ -190,7 +190,7 @@ final class FightJob implements Navigation.Job {
     }
     private List<Entity> matching(Predicate<Entity> rule,double radius){
         var me=mc.thePlayer;List<Entity> out=new ArrayList<>();
-        // Distance first: it is two subtractions, the rule may walk a class's ancestry and sight traces a ray.
+        // Distance first: it is arithmetic, where the rule may walk a class's ancestry and sight traces a ray.
         for(Object value:mc.theWorld.loadedEntityList)
             if(value instanceof Entity e&&e!=me&&!dead(e)&&e.getDistanceToEntity(me)<=radius&&rule.test(e)&&me.canEntityBeSeen(e))out.add(e);
         out.sort(Comparator.comparingDouble(e->e.getDistanceSqToEntity(me)));return out;
