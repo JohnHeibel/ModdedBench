@@ -48,6 +48,18 @@ class ConsoleTests(unittest.TestCase):
             self.assertFalse(console.OVERLAY.exists()); self.assertIn("Steam Macerator", (console.BRIEF / "PROMPT.md").read_text(encoding="utf-8"))
             self.assertIn(".state/run.json", steps[-1][-1])  # the old run's start, end and token cap do not carry into the new one
 
+    def test_the_probe_reads_the_end_of_the_log_and_not_the_whole_file(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "codex-loop.log").write_bytes(b"x" * 3_000_000 + "\u00e9nd of the log".encode()); Path(tmp, "run.json").write_text('{"startedAt": 1}')
+            read = []
+            def spy(path, mode):
+                f = open(path, mode); inner = f.read; f = type("F", (), {"seek": f.seek, "close": f.close, "read": lambda self: read.append(inner()) or read[-1]})(); return f
+            space = {"s": Path(tmp), "open": spy}; exec(console.TAIL, space); r = space["r"]
+            self.assertTrue(r("codex-loop.log").endswith("\u00e9nd of the log")); self.assertEqual(24000, len(read[0]))
+            self.assertEqual(('{"startedAt": 1}', ""), (r("run.json"), r("absent")))
+        self.assertIn(console.TAIL, console.AGENT_PROBE); compile(console.AGENT_PROBE, "probe", "exec")
+
     @unittest.skipUnless(shutil.which("sh"), "runs the loop's shell line")
     def test_the_loop_line_passes_the_prompt_and_arguments_and_keeps_what_the_loop_writes_as_it_dies(self):
         import os, subprocess, tempfile
