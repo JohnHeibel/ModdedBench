@@ -43,4 +43,30 @@ public class WorkSpecTest {
         // 24 x 24 x 24 is 13,824 cells as a box and 3,176 as a shell: the shell is a job.
         assertEquals(3176,WorkSpec.cells(Map.of("selection",Map.of("min",List.of(0,1,0),"max",List.of(23,24,23),"shape","shell","block",Map.of("id","pack:block")))).size());
     }
+    @Test public void aCellMaySayHowItIsClickedAndWhatToReadAfter(){
+        var cells=WorkSpec.cells(Map.of("origin",List.of(0,60,0),"uses",List.of(Map.of("pos",List.of(0,4,0),"item",Map.of("empty",true))),"cells",List.of(
+            Map.of("pos",List.of(0,4,0),"id","mod:machine","click",Map.of("look",Map.of("toward","down"),"sneak",false)),
+            Map.of("pos",List.of(1,4,0),"id","mod:pipe","expect",List.of(Map.of("method","obs.block","path","meta","equals",2))),
+            Map.of("pos",List.of(2,4,0),"id","pack:block"))));
+        assertEquals(Integer.valueOf(0),cells.get(0).click().look().toward());assertEquals(Boolean.FALSE,cells.get(0).click().sneak());
+        assertEquals(ClickSpec.ANY,cells.get(1).click());assertEquals(new BlockPos(1,64,0),cells.get(1).expect().get(0).pos());
+        assertNull("a plain cell",cells.get(2).click());assertTrue(cells.get(2).expect().isEmpty());
+        for(Map<String,Object> bad:List.<Map<String,Object>>of(
+                Map.of("cells",List.of(Map.of("pos",List.of(0,64,0),"clear",true,"click",Map.of()))),
+                Map.of("cells",List.of(Map.of("pos",List.of(0,64,0),"id","pack:block","click",Map.of("facing","north")))),
+                Map.of("cells",List.of(Map.of("pos",List.of(0,64,0),"id","pack:block","expect",List.of(Map.of("method","act.use","equals",1))))),
+                // The old ways to call a build with clicks are gone: one tool, one call shape.
+                Map.of("steps",List.of(Map.of("pos",List.of(0,64,0),"id","pack:block"))),
+                Map.of("access",Map.of("allow",true),"cells",List.of(Map.of("pos",List.of(0,64,0),"id","pack:block"))),
+                Map.of("cells",List.of(Map.of("pos",List.of(0,64,0),"id","pack:block")),"uses",List.of(Map.of("pos",List.of(0,64,0)))))){
+            try{WorkSpec.cells(bad);fail("accepted "+bad);}catch(IllegalArgumentException expected){}
+        }
+    }
+    @Test public void aJobTakesAtMost256ClickCellsAndUsesTogether(){
+        List<Map<String,Object>> cells=new ArrayList<>();
+        for(int i=0;i<StepPlan.CLICKS;i++)cells.add(Map.of("pos",List.of(i%16,64,i/16),"id","pack:block","click",Map.of("face","up")));
+        assertEquals(StepPlan.CLICKS,WorkSpec.cells(Map.of("cells",cells)).size());
+        try{WorkSpec.cells(Map.of("cells",cells,"uses",List.of(Map.of("pos",List.of(0,64,0),"item",Map.of("empty",true)))));fail("accepted more than the cap");}
+        catch(IllegalArgumentException expected){assertTrue(expected.getMessage(),expected.getMessage().contains("several jobs"));}
+    }
 }

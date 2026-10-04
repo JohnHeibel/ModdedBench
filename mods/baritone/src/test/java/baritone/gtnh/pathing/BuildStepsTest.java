@@ -103,6 +103,48 @@ public class BuildStepsTest {
         // steps existed; a matching cell, of whatever step, is never dug.
         assertTrue(PlanBreaks.allowed(false,false,false,true,false));assertFalse(PlanBreaks.allowed(false,true,false,true,false));
     }
+    /** Two stages, each with plain cells, click cells and uses: what one mb_build call with click cells and uses holds. */
+    private static Map<String,Object> clickPlan(){
+        Map<String,Object> front=Map.of("look",Map.of("toward","north"));
+        return Map.of("cells",List.of(cell(0,64,0,0),cell(1,64,0,0),cell(0,65,0,0),
+                Map.of("pos",List.of(1,65,0),"id","mod:machine","click",front),Map.of("pos",List.of(2,64,0),"id","mod:machine","click",front),
+                cell(0,64,2,1),Map.of("pos",List.of(1,64,2),"id","mod:pipe","stage",1,"click",Map.of("face","east"))),
+            "uses",List.of(Map.of("pos",List.of(1,65,0),"item",Map.of("id","mod:tool")),Map.of("pos",List.of(2,64,0),"item",Map.of("empty",true)),
+                Map.of("pos",List.of(1,64,2),"item",Map.of("id","mod:tool"),"stage",1)));
+    }
+    @Test public void inAStageThePlainCellsComeFirstThenItsClickCellsThenItsUses(){
+        var cells=WorkSpec.cells(clickPlan());var steps=new BuildSteps(cells,StepPlan.uses(clickPlan()));
+        assertEquals(List.of(Map.of("stage",0,"y",64,"cells",2),Map.of("stage",0,"y",65,"cells",1),Map.of("stage",0,"phase","clicks","cells",2),Map.of("stage",0,"phase","uses","uses",2),
+            Map.of("stage",1,"y",64,"cells",1),Map.of("stage",1,"phase","clicks","cells",1),Map.of("stage",1,"phase","uses","uses",1)),steps.list());
+        assertEquals(List.of(BuildSteps.CELLS,BuildSteps.CELLS,BuildSteps.CLICKS,BuildSteps.USES,BuildSteps.CELLS,BuildSteps.CLICKS,BuildSteps.USES),
+            java.util.stream.IntStream.range(0,steps.count()).map(steps::kind).boxed().toList());
+        assertEquals(3,steps.uses(0));assertEquals(6,steps.uses(1));assertEquals(1,steps.stage(4));
+        // A click cell is of its stage's click step whatever its height, and the source builder is never shown one.
+        Map<BlockPos,Cell> desired=new HashMap<>();cells.forEach(c->desired.put(c.pos(),c));
+        for(int step=0;step<=steps.count();step++){
+            var shown=steps.schematic(desired,step);
+            assertTrue("step "+step,shown.values().stream().allMatch(c->c.click()==null));
+            assertEquals("step "+step,step==0?2:step<4?3:4,shown.size());
+        }
+        // Nor may a walk put anything into a click cell before its step.
+        assertFalse(steps.visible(new BlockPos(2,64,0),1));assertTrue(steps.visible(new BlockPos(2,64,0),2));
+        assertEquals(Map.of("stage",0,"phase","clicks"),steps.where(new BlockPos(1,65,0),0));
+        assertEquals("a use has no cell: where the order stands",Map.of("stage",1,"phase","uses"),steps.where(null,6));
+        assertTrue("a plan without clicks is shown whole when it is done, as before",new BuildSteps(room()).schematic(Map.of(),4).isEmpty());
+    }
+    @Test public void aResumedJobLandsInThePhaseTheWorldAndTheJournalLeaveOpen(){
+        var plan=clickPlan();var cells=WorkSpec.cells(plan);var steps=new BuildSteps(cells,StepPlan.uses(plan));
+        // What the job counts each tick: wrong plain cells, click cells not yet settled, uses the journal has no result for.
+        assertEquals("nothing built",0,BuildSteps.current(0,new int[]{2,1,2,2,1,1,1}));
+        assertEquals("plain cells stand: the click cells",2,BuildSteps.current(0,new int[]{0,0,1,2,1,1,1}));
+        assertEquals("click cells stand: the uses",3,BuildSteps.current(0,new int[]{0,0,0,1,1,1,1}));
+        assertEquals("the first stage is done: the next one's plain cells",4,BuildSteps.current(0,new int[]{0,0,0,0,1,1,1}));
+        assertEquals(6,BuildSteps.current(0,new int[]{0,0,0,0,0,0,1}));assertEquals(7,BuildSteps.current(0,new int[7]));
+        // A plain cell that breaks while the clicks run does not send the job back: it is repaired when the cells are next worked.
+        assertEquals(2,BuildSteps.current(2,new int[]{1,0,1,2,1,1,1}));
+        var first=new BlockPos[7];first[3]=new BlockPos(2,64,0);
+        assertEquals(Map.of("stage",0,"phase","uses","index",4,"of",7,"left",1,"first",List.of(2,64,0)),steps.receipt(3,new int[]{0,0,0,1,1,1,1},first));
+    }
     @Test public void stagesAreValidatedBeforeWork(){
         assertEquals(2,WorkSpec.cells(Map.of("cells",List.of(cell(0,64,0,2)))).get(0).stage());
         assertEquals(0,WorkSpec.cells(Map.of("cells",List.of(cell(0,64,0,0)))).get(0).stage());
