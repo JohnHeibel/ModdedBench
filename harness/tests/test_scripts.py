@@ -14,6 +14,7 @@ class StepKernel(Kernel):
         self.directives = []
 
     def call_reply(self, method, timeout=None, **params):
+        if method == 'sys.methods': return Reply(True, 0, 0, 0, [{'name': 'act.input', 'effect': 'interaction'}])
         directive = params.get('_resume')
         self.directives.append(directive)
         if not directive:
