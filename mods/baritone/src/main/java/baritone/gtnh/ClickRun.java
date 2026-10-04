@@ -494,8 +494,9 @@ final class ClickRun {
      * A screen the job does not own opened. True when a click of this job opened it: the screen is closed, a use is
      * journaled as made (it is not pressed again), and the build stops on that click.
      */
+    boolean awaitsScreen(){return pressed!=null&&job.ticks-pressTick<=40;}
     boolean guiOpened() {
-        if(pressed==null||job.ticks-pressTick>40)return false;
+        if(!awaitsScreen())return false;
         StepPlan.Step s=pressed;pressed=null;
         mc.thePlayer.closeScreen();
         failed=task!=null&&task.step==s?row(task,"gui_opened"):new LinkedHashMap<>(Map.of("click",s.label(),"pos",point(s.pos()),"result","gui_opened"));

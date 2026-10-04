@@ -44,8 +44,9 @@ abstract class BulkJob implements Navigation.Job {
             // Death first: a respawn replaces the player, and that is still a death, not a changed world.
             if(WorkAccess.died(player)){finish("failed","player_died");return;}
             if(mc.theWorld!=world||mc.thePlayer!=player||!journal.scope.equals(ControlRegistry.memory().memory().scope())){cancel("world_or_player_changed");return;}
-            if(!lease.isActive()){cancel("superseded");return;}
+            // A screen takes the lease away as it opens: the job that opened it answers for the screen first.
             if(mc.currentScreen!=null&&!ControlRegistry.controls().ownsPlayerInventory(lease)){guiOpened();return;}
+            if(!lease.isActive()){cancel("superseded");return;}
             // The deadline is a budget, not a verdict: a job that has produced something stops as paused, with its rate in the
             // receipt, and mb_work_resume continues it. A session that produced nothing has failed, whatever earlier ones did,
             // so resuming a stuck job cannot come back paused for ever.
@@ -71,6 +72,8 @@ abstract class BulkJob implements Navigation.Job {
     void releaseProcess() {}
     /** A screen this job does not own is open. */
     void guiOpened(){cancel("gui_opened");}
+    /** Whether a screen opening now would be this job's own doing, to be answered in its next tick rather than cancelled from outside. */
+    boolean awaitsScreen(){return false;}
     /**
      * The job is ending by itself (it finished, stopped, ran out, or was paused) and still has its controls. True when
      * it has something to put back first: it then runs on in state closing, step() does the work and calls closed(),
