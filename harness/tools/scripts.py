@@ -15,7 +15,7 @@ from kernel import call_resuming, resume_arg
 from mbtool import PACKAGE, kernel, resumable, tool
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
-# What a guard interrupt, a guard pause or a paused world says when it ends or refuses a tool's work.
+# What an interrupt, a guard pause or a paused world says when it ends or refuses a tool's work.
 _INTERRUPTS = ("interrupt_latched", "time_paused", "world_paused", "world paused by a guard")
 
 
@@ -39,7 +39,7 @@ def _resuming(fn):
 
 
 class ScriptInterrupted(BaseException):
-    """A guard interrupt or pause met by a tool inside a script. Not an Exception, so the script's own
+    """An interrupt, a pause or a cancellation met by a tool inside a script. Not an Exception, so the script's own
     except Exception cannot swallow it: it stops the script and mb_run reports it."""
 
 
@@ -114,9 +114,10 @@ def mb_run(code: str | None = None, args: dict | None = None, name: str | None =
     only if you expect to use it again soon. Scripts are disposable: most are obsolete within
     the hour, when the base changes or a machine takes the job over. Do not collect or polish
     them; a chore you keep scripting is a production line you have not built yet.
-    A guard interrupt or pause stops the script even inside try/except, and the result says
-    which tool met it (interrupted). Guard settings the script changed with time configure come
-    back as guardsChanged {name: [before, after]}; nothing is put back for you.
+    An interrupt, a paused world or a cancelled job stops the script even inside try/except, and
+    the result says which tool met it and what it was told (interrupted). Guard settings the
+    script changed with time configure come back as guardsChanged {name: [before, after]};
+    nothing is put back for you.
     Write steps as "make sure X holds" (check, then act), so that after an interruption you
     deal with the cause and can simply run it again. The first tool error stops the script:
     you get the error, the line, and what you logged, never a retry. A foreground run must finish
@@ -134,8 +135,10 @@ def mb_run(code: str | None = None, args: dict | None = None, name: str | None =
     60) is its limit; past it the task is stopped and counts as failed (time_limit). Inside a
     background script resume= and time resume/step are refused; a time pause ends the task
     (paused_by_script); guard settings it configures are put back when it ends. A pause by you
-    or the operator is waited out; a guard stop ends it (interrupted) whatever it catches.
-    on_fail="pause" pauses the world if the task fails, crashes, is stopped by a guard or runs
+    or the operator is waited out; a guard's pause, an interrupt or a cancelled job ends it
+    (interrupted) whatever it catches: ended says guard when a guard paused the world
+    (interrupted.pausedBy: which one), cancelled when none did.
+    on_fail="pause" pauses the world if the task fails, crashes, is interrupted or runs
     out of minutes; a cancel or a success never pauses.
     """
     if name is not None and not re.fullmatch(r"[a-z][a-z0-9_]{0,48}", name):
