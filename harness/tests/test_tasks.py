@@ -448,6 +448,22 @@ class TaskKernelTests(TaskTestCase):
         with self.assertRaisesRegex(BridgeError, "time_paused"):
             k.call("act.input")
 
+    def test_a_stopped_task_makes_no_further_game_call_from_the_tool_in_flight(self):
+        k, seen = self.kernel(lambda m, p: {"state": {"paused": True, "reason": "requested_pause"}} if m == "time.status"
+                              else BridgeError("bad_request", "time_paused: the world is paused", m) if m == "act.wait" else {})
+        caught = []
+
+        def tool(method):  # a tool of the script, on the script's thread, when the task is stopped
+            try: k.call(method)
+            except BaseException as e: caught.append(e)
+        waiting = threading.Thread(target=tool, args=("act.wait",), daemon=True); waiting.start()  # waiting out a pause
+        time.sleep(.1); tasks._halt.append("cancelled"); waiting.join(5)
+        self.assertFalse(waiting.is_alive()); del seen[:]
+        calling = threading.Thread(target=tool, args=("act.input",), daemon=True); calling.start(); calling.join(5)
+        self.assertIsInstance(caught[1], scripts.ScriptInterrupted); self.assertEqual(seen, [])
+        k.call("act.stop")  # handing the body back and the task's last word are the main thread's, and still go
+        self.assertEqual([m for m, _ in seen], ["act.stop"])
+
     def test_time_commands_go_through_the_server_relay(self):
         tasks.TASK.update(task="t1", state="done")  # the task's last word: a pause here does not end anything
         server, stop = FakeKernel(), threading.Event()
