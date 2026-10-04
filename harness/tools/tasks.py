@@ -356,7 +356,7 @@ class TaskKernel(Kernel):
     body_gate = None  # the task is the body's owner
 
     def call(self, method, /, timeout=None, **params):
-        if _halt and threading.current_thread() is not threading.main_thread():
+        if _halt and method != "time.status" and threading.current_thread() is not threading.main_thread():
             raise scripts.ScriptInterrupted(_halt[0])  # stopped: the tool in flight makes no further call (the task's own last calls are the main thread's)
         if method in ("time.resume", "time.step") or resume_once.get() is not None:
             raise ValueError("a background task never resumes or steps the world: lifting a pause is your decision, outside the task")

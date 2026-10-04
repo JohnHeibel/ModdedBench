@@ -461,6 +461,8 @@ class TaskKernelTests(TaskTestCase):
         self.assertFalse(waiting.is_alive()); del seen[:]
         calling = threading.Thread(target=tool, args=("act.input",), daemon=True); calling.start(); calling.join(5)
         self.assertIsInstance(caught[1], scripts.ScriptInterrupted); self.assertEqual(seen, [])
+        reading = threading.Thread(target=tool, args=("time.status",), daemon=True); reading.start(); reading.join(5)
+        self.assertEqual((len(caught), [m for m, _ in seen]), (2, ["time.status"])); del seen[:]  # the script's report still reads the clock (guardsChanged)
         k.call("act.stop")  # handing the body back and the task's last word are the main thread's, and still go
         self.assertEqual([m for m, _ in seen], ["act.stop"])
 
