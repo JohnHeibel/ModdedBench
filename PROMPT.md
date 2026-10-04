@@ -585,9 +585,12 @@ where a better way pays off first.
    or to the side quest you just decided to take.
 
 **Keeping your place.** The quest is the focus; the sub-goal is what your
-hands are doing. Rewrite the sub-goal (`mb_goal(subgoal=...)`, one call)
-whenever you switch: "mine copper for Bronze", then "smelt 32 copper", then
-"walk home before dark". When a sub-goal is an investment rather than a step
+hands are doing. Rewrite the sub-goal (`mb_goal(subgoal=..., progress=...)`,
+one call) whenever you switch: "mine copper for Bronze", then "smelt 32
+copper", then "walk home before dark". `progress` is a 0 to 100 guess at how
+far through the quest you are, for the people watching: give it in that same
+call, off the top of your head; it is not worth a call or a thought of its own. When a
+sub-goal is an investment rather than a step
 of the current quest, say what it serves ("furnace bank: ingots for everything
 this chapter builds"). If you cannot say what a sub-goal serves, you have
 drifted: go back to the quest. When `mb_status` reports the goal `stale` (a
