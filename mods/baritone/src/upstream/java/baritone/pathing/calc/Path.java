@@ -24,7 +24,6 @@ import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.Helper;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.Movement;
-import baritone.pathing.movement.Moves;
 import baritone.pathing.path.CutoffPath;
 import baritone.utils.pathing.PathBase;
 
@@ -121,15 +120,28 @@ class Path extends PathBase {
     }
 
     private Movement runBackwards(BetterBlockPos src, BetterBlockPos dest, double cost) {
-        for (Moves moves : Moves.values()) {
+        // ModdedBench: the moves the search had. Two of them can name the same cell (a parkour that cannot be taken names
+        // one it never reached): the step is the one that costs what the search paid for it.
+        Movement step = null;
+        double stepCost = 0, off = Double.POSITIVE_INFINITY;
+        for (baritone.gtnh.pathing.Move moves : context.moves) {
             Movement move = moves.apply0(context, src);
-            if (move.getDest().equals(dest)) {
-                // have to calculate the cost at calculation time so we can accurately judge whether a cost increase happened between cached calculation and real execution
-                // however, taking into account possible favoring that could skew the node cost, we really want the stricter limit of the two
-                // so we take the minimum of the path node cost difference, and the calculated cost
-                move.override(Math.min(move.calculateCost(context), cost));
-                return move;
+            if (move == null || !move.getDest().equals(dest)) {
+                continue;
             }
+            double calculated = move.calculateCost(context);
+            if (step == null || Math.abs(calculated - cost) < off) {
+                step = move;
+                stepCost = calculated;
+                off = Math.abs(calculated - cost);
+            }
+        }
+        if (step != null) {
+            // have to calculate the cost at calculation time so we can accurately judge whether a cost increase happened between cached calculation and real execution
+            // however, taking into account possible favoring that could skew the node cost, we really want the stricter limit of the two
+            // so we take the minimum of the path node cost difference, and the calculated cost
+            step.override(Math.min(stepCost, cost));
+            return step;
         }
         // this is no longer called from bestPathSoFar, now it's in postprocessing
         Helper.HELPER.logDebug("Movement became impossible during calculation " + src + " " + dest + " " + dest.subtract(src));

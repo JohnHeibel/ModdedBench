@@ -94,6 +94,7 @@ public class CalculationContext {
     public final java.util.function.Predicate<BlockPos> positionAllowed;
     private final java.util.function.Predicate<BlockPos> editAllowed;
     public final baritone.gtnh.pathing.Snags snags; // ModdedBench: movement edges this job banned after they snagged
+    public final baritone.gtnh.pathing.Move[] moves; // ModdedBench: the steps this search may take (MoveRegistry)
     private final java.util.function.Predicate<IBlockState> explicitMiningTargets;
 
     public CalculationContext(IBaritone baritone) {
@@ -113,6 +114,7 @@ public class CalculationContext {
         this.positionAllowed = captured.positionAllowed();
         this.editAllowed = captured.editAllowed();
         this.snags = captured.snags();
+        this.moves = captured.moves();
         this.air = captured.air();
         this.breathSafety = Math.max(1, Baritone.settings().breathSafety.value);
         this.explicitMiningTargets = captured.explicitMiningTargets();

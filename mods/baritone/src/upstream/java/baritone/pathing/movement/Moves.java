@@ -30,7 +30,7 @@ import baritone.compat.EnumFacing;
  *
  * @author leijurv
  */
-public enum Moves {
+public enum Moves implements baritone.gtnh.pathing.Move { // ModdedBench: one Move among those of MoveRegistry
     DOWNWARD(0, -1, 0) {
         @Override
         public Movement apply0(CalculationContext context, BetterBlockPos src) {
@@ -345,6 +345,12 @@ public enum Moves {
     Moves(int x, int y, int z) {
         this(x, y, z, false, false);
     }
+
+    @Override public int xOffset() { return xOffset; }
+    @Override public int yOffset() { return yOffset; }
+    @Override public int zOffset() { return zOffset; }
+    @Override public boolean dynamicXZ() { return dynamicXZ; }
+    @Override public boolean dynamicY() { return dynamicY; }
 
     public abstract Movement apply0(CalculationContext context, BetterBlockPos src);
 
