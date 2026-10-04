@@ -125,7 +125,8 @@ def mb_run(code: str | None = None, args: dict | None = None, name: str | None =
     saw instead of going round again. Try a new script on a small count before a large one.
 
     background=True starts the script in its own process and returns {task, started} at once;
-    it resumes a paused world first. The body is busy until the task ends: a game call that would
+    it resumes a paused world first, except a guard's stop, which it refuses with the reason and
+    the threats so that you look before anything moves. The body is busy until the task ends: a game call that would
     move the body is refused with body_busy; reads, notes, goals, files and anything else run (reads
     say bodyBusy: true), and every result carries body {task, name,
     for (seconds), now (its current call)} and, once, finished [...] with each ended task's
