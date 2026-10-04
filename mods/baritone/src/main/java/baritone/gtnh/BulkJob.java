@@ -26,6 +26,8 @@ abstract class BulkJob implements Navigation.Job {
     final Symptoms symptoms=new Symptoms();
     String state="preparing",reason="";
     InputArbiter.Lease lease;
+    /** Open while a job that has ended puts back what it took, under its own controls; see closing(). */
+    final Ending ending=new Ending();
     BulkJob(BaritoneNavigation navigation,WorkJournal journal,Map<String,Object> options) {
         this.navigation=navigation;this.journal=journal;params=new LinkedHashMap<>(journal.spec);params.putAll(options);
         override=bool(options,"overrideProtection",false);allowBreak=bool(params,"allowBreak",false);allowPlace=bool(params,"allowPlace",false);
@@ -43,7 +45,7 @@ abstract class BulkJob implements Navigation.Job {
             if(WorkAccess.died(player)){finish("failed","player_died");return;}
             if(mc.theWorld!=world||mc.thePlayer!=player||!journal.scope.equals(ControlRegistry.memory().memory().scope())){cancel("world_or_player_changed");return;}
             if(!lease.isActive()){cancel("superseded");return;}
-            if(mc.currentScreen!=null&&!ControlRegistry.controls().ownsPlayerInventory(lease)){cancel("gui_opened");return;}
+            if(mc.currentScreen!=null&&!ControlRegistry.controls().ownsPlayerInventory(lease)){guiOpened();return;}
             // The deadline is a budget, not a verdict: a job that has produced something stops as paused, with its rate in the
             // receipt, and mb_work_resume continues it. A session that produced nothing has failed, whatever earlier ones did,
             // so resuming a stuck job cannot come back paused for ever.
@@ -67,20 +69,36 @@ abstract class BulkJob implements Navigation.Job {
     /** What the stall watchdog counts as work besides new ground: progress, and whatever else this job changes on its way. */
     long activity(){return progress();}
     void releaseProcess() {}
+    /** A screen this job does not own is open. */
+    void guiOpened(){cancel("gui_opened");}
+    /**
+     * The job is ending by itself (it finished, stopped, ran out, or was paused) and still has its controls. True when
+     * it has something to put back first: it then runs on in state closing, step() does the work and calls closed(),
+     * and the job ends as it was ending. A cancel never closes: whoever cancels takes the controls.
+     */
+    boolean closing(String terminal,String why){return false;}
+    final boolean closing(){return ending.open()&&!done();}
+    final void closed(){finish("",Ending.DONE,true);}
     /** The reason a job ends for, as that kind of job says it: the shared deadline and watchdog have one wording for all. */
     String named(String why){return why;}
-    final void finish(String terminal,String why) {
-        if(done())return;state=terminal;reason=named(why);
+    final void finish(String terminal,String why){finish(terminal,why,false);}
+    private void finish(String terminal,String why,boolean hard) {
+        if(done())return;
+        String named=ending.open()?why:named(why);
+        if(ending.defer(terminal,named,()->!hard&&lease!=null&&lease.isActive()&&closing(terminal,why))){state="closing";reason=named;journal.save(status());return;}
+        state=ending.terminal(terminal);reason=ending.reason(named);
         try{releaseProcess();}finally{if(lease!=null)lease.close();}
         journal.progress.put("lastTicks",ticks);
         try{journal.save(status());}catch(Exception error){state="failed";reason+="; checkpoint_failed: "+error.getMessage();}
     }
-    @Override public void cancel(String reason){finish("cancelled",reason);}
+    @Override public void cancel(String reason){finish("cancelled",reason,true);}
     @Override public boolean done(){return Set.of("succeeded","failed","cancelled","paused").contains(state);}
     @Override public boolean succeeded(){return state.equals("succeeded");}
     @Override public Map<String,Object> status() {
         Map<String,Object> out=new LinkedHashMap<>();out.put("available",true);out.put("action",journal.kind);out.put("jobId",journal.id);out.put("state",state);out.put("reason",reason);out.put("ticks",ticks);out.put("remainingTicks",remaining);out.put("stall",stall.status());
         out.put("progress",session());out.put("blocksPerMinute",ticks<20?null:Math.round(session()*1200.0/ticks*10)/10.0);
-        out.put("overrideProtection",override);out.put("scope",journal.scope);out.put("controlOwned",lease!=null&&lease.isActive());out.put("serverAcknowledged",false);out.put("symptoms",symptoms.summary());return out;
+        out.put("overrideProtection",override);out.put("scope",journal.scope);out.put("controlOwned",lease!=null&&lease.isActive());out.put("serverAcknowledged",false);out.put("symptoms",symptoms.summary());
+        if(!ending.cut().isEmpty())out.put("closingCut",ending.cut());
+        return out;
     }
 }
