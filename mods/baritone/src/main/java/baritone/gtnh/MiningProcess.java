@@ -44,13 +44,15 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
     private int unplugged;
     // What each swing broke besides the block it was aimed at. The job knows no tool by name, so a 3x3 hammer or a vein
     // miner shows up here as a measurement, and a swing that took a protected block ends the job. A swing is one unbroken
-    // hold of the attack on one block with one tool; start and limit time it against the game's own break estimate.
-    private record Swing(BlockPos target,net.minecraft.block.Block block,Map<BlockPos,net.minecraft.block.Block> around,int due,int start,String tool,int limit){}
+    // hold of the attack on one block with one tool; start times it against the game's own break estimate, asked every
+    // tick and kept at its longest (afloat or in the air the game breaks slower). `open` is false in a region the harness
+    // refuses to edit.
+    private record Swing(BlockPos target,net.minecraft.block.Block block,Map<BlockPos,net.minecraft.block.Block> around,int due,int start,String tool,boolean open){}
     private final List<Map<String,Object>> ineffective=new ArrayList<>();
     private Swing swing;
     private final List<Swing> settling=new ArrayList<>();
     private final Set<BlockPos> aimed=new HashSet<>();
-    private int broken,extraBroken,reachableAttackTicks;
+    private int broken,extraBroken,reachableAttackTicks,swingLimit,swingBudget;
     private final List<List<Integer>> extraAt=new ArrayList<>();
     private Integer dropsLeft;
     MiningProcess(BaritoneNavigation nav,WorkJournal journal,Map<String,Object> options){
@@ -110,9 +112,11 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
         return out;
     }
     @Override int progress(){return mc.thePlayer==player?gained():progressSeen;}
-    // Digging toward a target is work before any ore arrives, and so is the first scan of the bounds, which stands still,
-    // and so is holding a swing the game promised to finish (its own limit ends a useless one): a slow block is no stall.
-    @Override long activity(){return progress()+(long)broken+(observation.passes==0?observation.cursor:0)+(swing==null?0:ticks-swing.start());}
+    // Digging toward a target is work before any ore arrives, and so is the first scan of the bounds, which stands still.
+    @Override long activity(){return progress()+(long)broken+(observation.passes==0?observation.cursor:0);}
+    // Holding a swing the game promised to finish is waiting for as long as that promise runs: a slow block is no stall.
+    // A block the game will never break, a protected one, or a swing past its limit is excused nothing.
+    @Override int excused(){return Math.max(super.excused(),swingBudget);}
     @Override String phase(){return "reference_mine";}
     @Override public boolean planningWhilePaused(){return !done()&&ticks==0&&!started&&observation.passes==0;}
     @Override public void planWhilePaused(){
@@ -256,14 +260,21 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
         var over=mc.objectMouseOver;var held=mc.thePlayer.getHeldItem();var tool=held==null?null:MiningTools.toolKind(held);
         BlockPos aim=engine.getInputOverrideHandler().isInputForcedDown(baritone.api.utils.input.Input.CLICK_LEFT)&&over!=null
             &&over.typeOfHit==net.minecraft.util.MovingObjectPosition.MovingObjectType.BLOCK?new BlockPos(over.blockX,over.blockY,over.blockZ):null;
+        swingBudget=0;
         if(swing!=null){
             var t=swing.target();
-            if(world.getBlock(t.getX(),t.getY(),t.getZ())!=swing.block()){broken++;settling.add(new Swing(t,swing.block(),swing.around(),ticks+5,swing.start(),swing.tool(),0));swing=null;}
+            if(world.getBlock(t.getX(),t.getY(),t.getZ())!=swing.block()){broken++;settling.add(new Swing(t,swing.block(),swing.around(),ticks+5,swing.start(),swing.tool(),false));swing=null;}
             else if(aim==null||!aim.equals(t)||!Objects.equals(tool,swing.tool()))swing=null; // let go, looked away or changed tool: that swing ended short
-            else if(ticks-swing.start()>swing.limit()){
-                if(tool!=null&&MiningTools.ineffective.add(tool)&&ineffective.size()<8)ineffective.add(Map.of("tool",tool,
-                    "block",String.valueOf(net.minecraft.block.Block.blockRegistry.getNameForObject(swing.block())),"at",point(t),"heldTicks",ticks-swing.start()));
-                swing=null;return false;
+            else{
+                // Only a break the game promised can fail: an unbreakable block, or one in a region the harness refuses to edit,
+                // stays for reasons that say nothing about the tool.
+                swingLimit=Math.max(swingLimit,swing.open()?MiningTools.swingLimit(swing.block().getPlayerRelativeBlockHardness(mc.thePlayer,world,t.getX(),t.getY(),t.getZ())):Integer.MAX_VALUE);
+                if(ticks-swing.start()>swingLimit){
+                    if(tool!=null&&MiningTools.ineffective.add(tool)&&ineffective.size()<8)ineffective.add(Map.of("tool",tool,
+                        "block",String.valueOf(net.minecraft.block.Block.blockRegistry.getNameForObject(swing.block())),"at",point(t),"heldTicks",ticks-swing.start()));
+                    swing=null;return false;
+                }
+                if(swingLimit!=Integer.MAX_VALUE)swingBudget=swingLimit;
             }
         }
         for(var it=settling.iterator();it.hasNext();){
@@ -282,12 +293,7 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
             var b=world.getBlock(aim.getX()+dx,aim.getY()+dy,aim.getZ()+dz);
             if((dx|dy|dz)!=0&&b.getMaterial()!=net.minecraft.block.material.Material.air)around.put(new BlockPos(aim.getX()+dx,aim.getY()+dy,aim.getZ()+dz),b);}
         if(aimed.size()>4096)aimed.clear();aimed.add(aim);
-        var block=world.getBlock(aim.getX(),aim.getY(),aim.getZ());
-        double expected=MiningTools.breakTicks(block.getPlayerRelativeBlockHardness(mc.thePlayer,world,aim.getX(),aim.getY(),aim.getZ()));
-        // Only a break the game promised can fail: an unbreakable block, or one in a region the harness refuses to edit,
-        // stays for reasons that say nothing about the tool.
-        int limit=Double.isInfinite(expected)||WorkAccess.protection(aim,override)!=null?Integer.MAX_VALUE:(int)Math.min(72000,Math.max(60,3*expected+20));
-        swing=new Swing(aim,block,around,0,ticks,tool,limit);return false;
+        swing=new Swing(aim,world.getBlock(aim.getX(),aim.getY(),aim.getZ()),around,0,ticks,tool,WorkAccess.protection(aim,override)==null);swingLimit=0;return false;
     }
     private boolean wet(BlockPos p){
         for(int[] d:new int[][]{{0,1,0},{1,0,0},{-1,0,0},{0,0,1},{0,0,-1}})if(world.getBlock(p.getX()+d[0],p.getY()+d[1],p.getZ()+d[2]).getMaterial().isLiquid())return true;

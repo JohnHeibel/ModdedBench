@@ -34,6 +34,14 @@ public class MiningToolsTest {
         assertEquals(1,MiningTools.breakTicks(1),0);
         assertEquals(4,MiningTools.breakTicks(.25),0);
     }
+    @Test public void aSwingMayBeHeldThreeTimesTheGamesEstimate() {
+        assertEquals(60,MiningTools.swingLimit(1));assertEquals(60,MiningTools.swingLimit(Double.POSITIVE_INFINITY));
+        // A hardness-3 block by hand: 300 ticks promised, and the same block from the water is promised five times later.
+        assertEquals(920,MiningTools.swingLimit(1/300.0));assertEquals(4520,MiningTools.swingLimit(1/1500.0));
+        assertEquals(72000,MiningTools.swingLimit(1e-9));
+        // No promise, no limit: the stall watchdog ends that hold, not the tool measurement.
+        for(double strength:new double[]{0,-1,Double.NaN})assertEquals(Integer.MAX_VALUE,MiningTools.swingLimit(strength));
+    }
     @Test public void invalidAndUnbreakableStrengthsStayRejected() {
         for(double strength:new double[]{Double.NaN,Double.NEGATIVE_INFINITY,-1,0})
             assertEquals(Double.POSITIVE_INFINITY,MiningTools.breakTicks(strength),0);
