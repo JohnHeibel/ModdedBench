@@ -128,6 +128,11 @@ final class MiningJob implements Navigation.Job {
     static Vec3 reachable(Minecraft mc,World world,BlockPos target) {
         return reachable(mc,world,target,mc.thePlayer.getPosition(1));
     }
+    /** False only where reachable() is null whatever lies between: every point it tries is within .67 of the block's centre. */
+    static boolean near(Vec3 eye,BlockPos target,double reach) {
+        double dx=target.getX()+.5-eye.xCoord,dy=target.getY()+.5-eye.yCoord,dz=target.getZ()+.5-eye.zCoord;
+        return dx*dx+dy*dy+dz*dz<=(reach+1)*(reach+1);
+    }
     static Vec3 reachable(Minecraft mc,World world,BlockPos target,Vec3 eye) {
         for(double y:new double[]{.95,.5,.05}) for(double x:new double[]{.5,.15,.85}) for(double z:new double[]{.5,.15,.85}) {
             Vec3 point=Vec3.createVectorHelper(target.getX()+x,target.getY()+y,target.getZ()+z);
