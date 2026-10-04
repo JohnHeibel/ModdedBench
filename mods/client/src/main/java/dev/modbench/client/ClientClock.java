@@ -60,9 +60,7 @@ public final class ClientClock implements ClockHooks.Driver {
     public void expectThreat(int entityId) { if(supported) send(Json.object("type","expect_threat","entityId",entityId)); }
     /** A fight job started (ticks>0, its mobs within radius) or ended (0): see SimulationClock.fight. */
     public void fight(int ticks, double radius) { if(supported) send(Json.object("type","fight","ticks",ticks,"radius",radius)); }
-    /** Pauses a running job waits out: a request, the operator, a lost connection or a clock fault. */
-    private static final java.util.Set<String> WAITED_OUT=java.util.Set.of("requested_pause","operator_hold","client_disconnected",
-        "client_unresponsive","agent_disconnected","paused_packet_overflow","clock_protocol_error","step");
+    private static final java.util.Set<String> WAITED_OUT=SimulationClock.WAITED_OUT;
     /**
      * Paused by anything that wants the model's attention: a guard, a failed action, or one of its own interrupt watches
      * (interrupt:NAME). Any reason not listed as waited out counts, so a new guard ends work without being added here.

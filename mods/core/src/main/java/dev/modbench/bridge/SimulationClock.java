@@ -30,7 +30,11 @@ public final class SimulationClock {
     public String reason() { return reason; }
     public boolean pauseOnDisconnect() { return pauseOnDisconnect; }
     public boolean actionFailed() { return actionFailed; }
+    /** Pauses a running job waits out: a request, the operator, a lost connection or a clock fault. Any other reason is a guard's. */
+    public static final java.util.Set<String> WAITED_OUT=java.util.Set.of("requested_pause","operator_hold","client_disconnected",
+        "client_unresponsive","agent_disconnected","paused_packet_overflow","clock_protocol_error","step");
     public void pause(String why) {
+        if(paused && !WAITED_OUT.contains(reason)) return; // a guard's reason is what the model is told: nothing overwrites it until the resume
         boolean newEvent = !paused || !reason.equals(why);
         transition(true); reason=why;
         if (newEvent) {
