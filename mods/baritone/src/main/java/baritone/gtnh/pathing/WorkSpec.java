@@ -55,9 +55,16 @@ public final class WorkSpec {
     /**
      * stage: the part of the plan this block belongs to, 0 first (see BuildSteps). anyMeta: the cell named no meta,
      * so any variant of the block satisfies it (a block that faces the way it is placed has no meta to ask for).
+     * click: how the block is clicked into place, for a cell that says (a click cell: the click executor places it,
+     * after the plain cells of its stage); null for a plain cell. expect: what to read once it stands.
      */
-    public record Cell(BlockPos pos,String id,int meta,boolean clear,Map<String,Object> item,Map<String,Object> replace,Map<String,Object> verify,int stage,boolean anyMeta) {
-        public Cell(BlockPos pos,String id,int meta,boolean clear){this(pos,id,meta,clear,Map.of(),Map.of(),Map.of(),0,false);}
+    public record Cell(BlockPos pos,String id,int meta,boolean clear,Map<String,Object> item,Map<String,Object> replace,Map<String,Object> verify,int stage,boolean anyMeta,ClickSpec click,List<Expectation> expect) {
+        public Cell(BlockPos pos,String id,int meta,boolean clear){this(pos,id,meta,clear,Map.of(),Map.of(),Map.of(),0,false,null,List.of());}
+    }
+    static BlockPos translated(BlockPos local,BlockPos origin) {
+        long x=(long)local.getX()+origin.getX(),y=(long)local.getY()+origin.getY(),z=(long)local.getZ()+origin.getZ();
+        if(Math.abs(x)>30000000||y<1||y>254||Math.abs(z)>30000000)throw new IllegalArgumentException("translated cell outside world bounds");
+        return new BlockPos((int)x,(int)y,(int)z);
     }
     public static void verification(Map<String,Object> verify) {
         fields(verify,Set.of("pickedItem"));
@@ -65,7 +72,7 @@ public final class WorkSpec {
     }
     public static List<Cell> cells(Map<String,Object> spec) {
         // stallTicks and retry are what a resume may add to any job's saved spec (BaritoneNavigation.resume).
-        fields(spec,Set.of("name","cells","selection","origin","size","replaceExisting","timeoutTicks","overrideProtection","allowBreak","allowPlace","jobId","stallTicks","retry","_timeout_ms"));
+        fields(spec,Set.of("name","cells","selection","uses","origin","size","replaceExisting","timeoutTicks","overrideProtection","allowBreak","allowPlace","jobId","stallTicks","retry","_timeout_ms"));
         for(String key:List.of("replaceExisting","overrideProtection","allowBreak","allowPlace"))bool(spec,key,false);
         integer(spec,"timeoutTicks",12000,1,72000);
         if(spec.containsKey("size")){List<?> size=list(spec.get("size"));if(size.size()!=3)throw new IllegalArgumentException("size needs three dimensions");for(int i=0;i<3;i++)integer(Map.of("size",size.get(i)),"size",1,1,i==1?256:30000000);}
@@ -94,17 +101,19 @@ public final class WorkSpec {
         Set<BlockPos> seen=new HashSet<>();List<Cell> cells=new ArrayList<>();
         for(Map<String,Object> e:entries) {
             if(e.containsKey("tileNbt")||e.containsKey("nbt"))throw new IllegalArgumentException("tile state requires an explicit normal-interaction adapter; do not silently discard schematic NBT");
-            fields(e,Set.of("pos","id","meta","clear","item","replace","verify","stage","tile","name"));  // tile, name: what nav.copy saw, so a copy builds as it is; never read
+            fields(e,Set.of("pos","id","meta","clear","item","replace","verify","stage","click","expect","tile","name"));  // tile, name: what nav.copy saw, so a copy builds as it is; never read
             verification(child(e,"verify"));
-            BlockPos local=pos(e.get("pos"));long x=(long)local.getX()+origin.getX(),y=(long)local.getY()+origin.getY(),z=(long)local.getZ()+origin.getZ();
-            if(Math.abs(x)>30000000||y<1||y>254||Math.abs(z)>30000000)throw new IllegalArgumentException("translated cell outside world bounds");
-            BlockPos p=new BlockPos((int)x,(int)y,(int)z);if(!seen.add(p))throw new IllegalArgumentException("duplicate cell "+p);
+            BlockPos p=translated(pos(e.get("pos")),origin);if(!seen.add(p))throw new IllegalArgumentException("duplicate cell "+p);
             boolean clear=bool(e,"clear",false);String id=string(e,"id","");if(!clear&&(id.isBlank()||!id.contains(":")))throw new IllegalArgumentException("namespaced block id required");
             if(clear&&!child(e,"verify").isEmpty())throw new IllegalArgumentException("clear cells cannot require a picked item");
             int stage=integer(e,"stage",0,0,BuildSteps.STAGES-1);
             if(stage>0&&clear)throw new IllegalArgumentException("a clear cell has no stage: emptying is never delayed");
-            cells.add(new Cell(p,id,integer(e,"meta",0,0,15),clear,child(e,"item"),child(e,"replace"),child(e,"verify"),stage,!clear&&!e.containsKey("meta")));
+            // An expect alone makes a click cell too: placed by any click, then read.
+            ClickSpec click=e.containsKey("click")?ClickSpec.parse(child(e,"click")):e.containsKey("expect")?ClickSpec.ANY:null;
+            if(click!=null&&clear)throw new IllegalArgumentException("a clear cell takes no click");
+            cells.add(new Cell(p,id,integer(e,"meta",0,0,15),clear,child(e,"item"),child(e,"replace"),child(e,"verify"),stage,!clear&&!e.containsKey("meta"),click,StepPlan.expectations(e,origin,p)));
         }
+        if(cells.stream().filter(c->c.click()!=null).count()+StepPlan.uses(spec).size()>StepPlan.CLICKS)throw new IllegalArgumentException("more than "+StepPlan.CLICKS+" click cells and uses; a larger build is several jobs");
         cells.sort(Comparator.comparingInt((Cell c)->c.clear?0:1).thenComparingInt(c->c.clear?-c.pos.getY():c.pos.getY()).thenComparingInt(c->c.pos.getX()).thenComparingInt(c->c.pos.getZ()));
         return List.copyOf(cells);
     }
