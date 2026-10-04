@@ -51,4 +51,17 @@ public class SnagsTest {
         for(int i=0;i<=Snags.MAX_BANS;i++){assertNull(snags.failure());snags.failed(new Snags.Edge(i,64,0,i+1,64,0),0,at(i,64,0));}
         assertEquals("snagged_at_"+Snags.MAX_BANS+",64,0",snags.failure());
     }
+
+    @Test public void bannedEdgesFarApartDoNotEndTheJob() {
+        // A long job meets a wall every twenty blocks and walks round each one.
+        Snags snags=new Snags();
+        for(int i=0;i<40;i++)snags.failed(new Snags.Edge(i*20,64,0,i*20+1,64,0),0,at(i*20,64,0));
+        assertNull(snags.failure());
+        // The search still scans a short list: the newest bans, the oldest forgotten.
+        assertEquals(Snags.KEPT,((List<?>)snags.status().get("banned")).size());
+        assertTrue(snags.allows(0,64,0,1,64,0));assertFalse(snags.allows(780,64,0,781,64,0));
+        // Nine in one place still end it, wherever the earlier ones were.
+        for(int i=0;i<=Snags.MAX_BANS;i++){assertNull(snags.failure());snags.failed(new Snags.Edge(2000,64,i,2000,64,i+1),0,at(2000,64,i));}
+        assertEquals("snagged_at_2000,64,"+Snags.MAX_BANS,snags.failure());
+    }
 }

@@ -13,12 +13,12 @@ import java.util.*;
  * The search thread reads the bans; everything else runs on the game thread.
  */
 public final class Snags {
-    public static final int TICKS=8,RETRIES=2,MAX_BANS=8;
+    public static final int TICKS=8,RETRIES=2,MAX_BANS=8,NEAR=8,KEPT=32;
     public record Edge(int sx,int sy,int sz,int dx,int dy,int dz){
         List<List<Integer>> points(){return List.of(List.of(sx,sy,sz),List.of(dx,dy,dz));}
     }
     public enum Verdict{RETRY,BAN}
-    // Copy-on-write, at most MAX_BANS+1 long: the search scans it per movement without allocating.
+    // Copy-on-write, the newest KEPT: the search scans it per movement without allocating.
     private volatile Edge[] banned=new Edge[0];
     private final Map<Edge,Integer> tries=new HashMap<>();
     private int still;
@@ -38,16 +38,21 @@ public final class Snags {
         int n=tries.merge(edge,1,Integer::sum);
         Map<String,Object> row=new LinkedHashMap<>(detail);row.put("edge",edge.points());row.put("failures",n);last=row;
         if(n<=retries)return Verdict.RETRY;
-        if(allows(edge.sx(),edge.sy(),edge.sz(),edge.dx(),edge.dy(),edge.dz())){Edge[] more=Arrays.copyOf(banned,banned.length+1);more[banned.length]=edge;banned=more;}
-        // A job that keeps finding new walls is not going to find a way round them: stop with the last one.
-        if(banned.length>MAX_BANS)fail(cause());
+        if(allows(edge.sx(),edge.sy(),edge.sz(),edge.dx(),edge.dy(),edge.dz())){
+            Edge[] more=Arrays.copyOfRange(banned,banned.length<KEPT?0:1,banned.length+1);more[more.length-1]=edge;banned=more;
+        }
+        // A job that keeps finding new walls in one place is not going to find a way round them: stop with the last one.
+        // Walls far apart are a long job's ordinary share, each one walked round.
+        int near=0;
+        for(Edge e:banned)if(Math.abs(e.sx()-edge.sx())<=NEAR&&Math.abs(e.sy()-edge.sy())<=NEAR&&Math.abs(e.sz()-edge.sz())<=NEAR)near++;
+        if(near>MAX_BANS)fail(cause());
         return Verdict.BAN;
     }
     public boolean allows(int sx,int sy,int sz,int dx,int dy,int dz){
         for(Edge e:banned)if(e.sx()==sx&&e.sy()==sy&&e.sz()==sz&&e.dx()==dx&&e.dy()==dy&&e.dz()==dz)return false;
         return true;
     }
-    /** The job cannot go on here: backing out failed, or too many edges were banned. The job ends with this cause. */
+    /** The job cannot go on here: backing out failed, or too many edges were banned in one place. The job ends with this cause. */
     public void fail(String cause){if(failure==null)failure=cause;}
     public String failure(){return failure;}
     /** snagged_at_x,y,z (where the player stood) for the last failure, or null when none happened. */
