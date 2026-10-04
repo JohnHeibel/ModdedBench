@@ -115,9 +115,9 @@ queries are `obs.scan`, `obs.terrain`, `obs.fluid` and `obs.tools`.
 | `mb_process` | action | Runs one upstream process: `goal`, `explore`, `get_to_block`, `farm`. |
 | `mb_mine` | action | Quantity mining by block/item selectors in bounds or a radius; success is measured inventory gain. |
 | `mb_scan` | read | Paged scan of loaded blocks by selector (`obs.scan`). |
-| `mb_build_preview` | read | Fresh diff of a plan against the world as counts and the first few of each list, the material allocation, and the build order as `steps`. |
-| `mb_build` | action | Builds explicit cells, a selection or a drawing (at most 4,096 cells a job) one step (stage, then layer) at a time. There is one behaviour: no mode, no settings. A job that does not finish stops with one reason and one cell (below). |
-| `mb_build_pause` | control | Pauses active build work (`stopped.reason: requested`); the `jobId` stays resumable. |
+| `mb_build_preview` | read | Fresh diff of a plan against the world as counts and the first few of each list, the material allocation, and the build order as `steps`. For click cells and uses, `clicks {count, checked, ready, problems}`: whether each has a stance now, in the job's reason words. |
+| `mb_build` | action | Builds explicit cells, a selection or a drawing (at most 4,096 cells a job) one step (stage, then layer) at a time. There is one behaviour: no mode, no settings. A cell or legend entry may carry `click {face?, hit?, look?, sneak?}` and `expect`, and `uses` adds right clicks on blocks that stand; they are made inside the same job, after the plain cells of their stage. A job that does not finish stops with one reason and one cell (below). |
+| `mb_build_pause` | control | Pauses active build work (`stopped.reason: requested`); the `jobId` stays resumable. A build with blocks out for a click or scaffolds standing answers `closing` and puts them right first. |
 | `mb_build_materials` | read | Placeable states currently in inventory. |
 | `mb_schematic_import` | read | Reads an MCEdit `.schematic` or a canonical JSON plan inside the game's `schematics/` directory into `{plan:{cells,origin,size},size,count,skipped,tileEntities}`. Sponge `.schem` and Litematica are not read. |
 | `mb_schematic_build` | read/action | Imports, then previews (default) or builds the nested `plan`. |
@@ -134,9 +134,13 @@ net-gain completion, the build contract and its limits are in
 
 A build receipt has `placed`, `removed`, `left {count, first}` (cells still
 wrong, the first 8), `step {stage, y, index, of, left, first}` (where the build
-order stands) and `cost`. One that did not succeed adds
-`stopped {reason, pos, step}`; `pos` is absent only when no cell is to blame.
-The reasons:
+order stands) and `cost`. A plan with clicks adds `clicks {of, done, verified,
+unverified, alreadyPresent, unverifiedFirst}` (the per-click list is the job's
+`.clicks.jsonl`), and a finished job `accessLeft` and `scaffoldLeft
+{count, first}` for what it took out or put up and could not put right. One
+that did not succeed adds `stopped {reason, pos, step}`; `pos` is absent only
+when no cell is to blame, and a stopped click is there in full as
+`stopped.click`. The reasons:
 
 | `stopped.reason` | What it says | Comes with |
 | --- | --- | --- |
@@ -149,6 +153,19 @@ The reasons:
 | `stalled` | The stall watchdog (`stallTicks`, 200) fired and neither of the two above explains it. | |
 | `timeout` | `timeout_ticks` ran out. | |
 | `requested` | `mb_build_pause`. | |
+| `no_vantage` | A click: places to stand exist, and from none is the face in view and reach. | `stopped.click.blocking` |
+| `look_unreachable` | A click: the face can be clicked, but not while facing the way `look` asks. | |
+| `support_missing` | A click: no block stands where it would have to land. | |
+| `hit_not_on_face` | A click: the `hit` point is not on the face named. | |
+| `no_route_from_here` | A click: a stance exists and no walk reaches it. | |
+| `aim_mismatch` | A click: the game's own ray hit something else from 16 stances. | `stopped.click.aimedAt`, `nativeHit` |
+| `placement_rejected` | A click: the game took 3 clicks and no block appeared. | |
+| `expect_failed`, `expect_timeout` | The click was made and the read did not show what `expect` asks, or did not answer. Not made again. | `stopped.click.expect` |
+| `gui_opened` | A use opened a screen: closed, counted as made, and the job stopped. | |
+| `unknown_after_restart` | A use was cut off between the press and its result; it is never pressed twice. | |
+| `use_target_changed` | A use: the block at `pos` is not the `id` it names. | |
+| `access_failed` | A block in the way of a click could not be taken out. | |
+| `no_empty_hand` | A use with `{empty: true}` and no empty hotbar slot. | |
 
 Endings every job shares are not build reasons and keep their own words:
 `player_died`; the cancellations `superseded`, `interrupted`,

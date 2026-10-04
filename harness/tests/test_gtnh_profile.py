@@ -390,10 +390,10 @@ class GTNHProfileTests(unittest.TestCase):
         work.mb_work_status("job-7")
         self.assertEqual(fake.calls[-1], ("nav.work_status", {"jobId":"job-7"}))
         work.mb_work_resume("job-7", {"timeoutTicks":400,"overrideProtection":True})
-        self.assertEqual(fake.last("nav.resume"), ("nav.resume", {"timeout":60.0,"jobId":"job-7",
+        self.assertEqual(fake.last("nav.resume"), ("nav.resume", {"timeout":510.0,"jobId":"job-7",
             "timeoutTicks":400,"overrideProtection":True}))
         work.mb_work_resume("job-7")  # the job keeps its own budget, unknown here: the wait covers the longest one
-        self.assertEqual(fake.last("nav.resume")[1]["timeout"], 5430.0)
+        self.assertEqual(fake.last("nav.resume")[1]["timeout"], 5880.0)  # and a build's closing
         for tool in (work.mb_route, work.mb_mine, work.mb_build, work.mb_copy, work.mb_schematic_build, work.mb_work_resume):
             self.assertNotIn("timeout_s", inspect.signature(tool).parameters)
         quests.mb_quest_observe("00000000-0000-0000-0000-000000000001")
@@ -556,7 +556,11 @@ class GTNHProfileTests(unittest.TestCase):
         for name in ("mb_build", "mb_build_preview", "mb_schematic_build", "mb_copy"):
             self.assertFalse({"mode", "settings", "stall_ticks"} & set(inspect.signature(getattr(tools, name)).parameters), name)
         self.assertEqual(list(inspect.signature(tools.mb_build).parameters), ["cells", "selection", "origin", "replace_existing",
-                         "override_protection", "timeout_ticks", "allow_break", "allow_place", "size", "drawing"])
+                         "override_protection", "timeout_ticks", "allow_break", "allow_place", "size", "drawing", "uses"])
+        # Clicks ride on the one build: no second way to call it.
+        for name in ("mb_build", "mb_build_preview"):
+            self.assertFalse({"steps", "pattern", "access"} & set(inspect.signature(getattr(tools, name)).parameters), name)
+        self.assertFalse(hasattr(tools, "mb_pattern"))
         fake = self.use(FakeKernel(lambda method, params: {"state":"completed"}))
         cells = [{"pos":[i,0,0], "id":"minecraft:stone", "meta":0} for i in range(4097)]
         for call, method in ((tools.mb_build, "nav.build"), (tools.mb_build_preview, "nav.build_preview")):
@@ -599,6 +603,36 @@ class GTNHProfileTests(unittest.TestCase):
         for bad in (["#", "x"], ["#p", "p"], "#p", [], ["#", ""], ["#", 1]):
             with self.assertRaises(ValueError): plan.from_drawing({**drawing, "stages": bad})
 
+    def test_a_legend_entry_carries_its_click_to_every_cell_drawn_with_it_and_uses_ride_along(self):
+        import mbtools_gtnh.work as work
+        fake = self.use(FakeKernel(lambda method, params: {}))
+        expect = [{"method": "obs.block", "path": "meta", "equals": 2}]
+        drawing = {"origin": [100, 64, 200], "stages": ["#", "M", "p"], "layers": [["#####"], ["Mppp."]],
+                   "legend": {"#": {"id": "pack:base"}, "M": {"id": "pack:machine", "click": {"look": {"toward": "south"}}, "expect": expect},
+                              "p": {"id": "pack:pipe", "click": {"face": "east"}}}}
+        uses = [{"pos": [0, 1, 0], "item": {"empty": True}, "click": {"face": "up"}}]
+        for call, method in ((work.mb_build, "nav.build"), (work.mb_build_preview, "nav.build_preview")):
+            call(drawing=drawing, uses=uses)
+            sent = fake.last(method)[1]
+            self.assertEqual([c.get("click") for c in sent["cells"]], [None] * 5 + [{"look": {"toward": "south"}}] + [{"face": "east"}] * 3)
+            self.assertEqual([c.get("expect") for c in sent["cells"]], [None] * 5 + [expect] + [None] * 3)
+            self.assertNotIn("click", sent["cells"][0])  # a plain cell is sent as it always was
+            self.assertEqual((sent["uses"], sent["origin"]), (uses, [100, 64, 200]))
+            self.assertFalse({"steps", "pattern", "access"} & set(sent))
+            # Uses alone are a call: clicks on what stands, and nothing to place.
+            call(uses=uses, origin=[100, 64, 200])
+            sent = fake.last(method)[1]
+            self.assertEqual((sent["uses"], "cells" in sent, "selection" in sent), (uses, False, False))
+            with self.assertRaises(ValueError): call()
+            with self.assertRaises(ValueError): call(uses=[])
+            with self.assertRaises(ValueError): call(cells=[{"pos": [0, 0, 0], "id": "a:b"}], selection={"min": [0, 0, 0], "max": [0, 0, 0]}, uses=uses)
+            call(cells=[{"pos": [0, 0, 0], "id": "a:b"}])
+            self.assertNotIn("uses", fake.last(method)[1])
+        # A build that may dig or scaffold is waited on for its budget and for the putting back that may follow it.
+        for allowed, ticks in (({}, 1000), ({"allow_break": True}, 1000 + work.CLOSING), ({"allow_place": True}, 1000 + work.CLOSING)):
+            work.mb_build(uses=uses, timeout_ticks=1000, **allowed)
+            self.assertEqual(fake.last("nav.build")[1]["timeout"], work._wait(ticks))
+
     def test_schematic_import_and_build_use_java_plan_and_explicit_overrides(self):
         tools = module_with(self.loaded(), "mb_schematic_build")
         plan = {"plan":{"cells":[{"pos":[0,0,0],"id":"a:b"}],"origin":[0,0,0],"size":[1,1,1]},
@@ -617,7 +651,7 @@ class GTNHProfileTests(unittest.TestCase):
         result = tools.mb_schematic_build("x", preview=False, replace_existing=False, allow_break=False, allow_place=True, timeout_ticks=77)
         request = fake.last("nav.build")[1]
         self.assertFalse(request["replaceExisting"]); self.assertFalse(request["allowBreak"]); self.assertTrue(request["allowPlace"])
-        self.assertEqual((request.get("settings"), request["timeoutTicks"], request["timeout"]), (None, 77, 35.775))
+        self.assertEqual((request.get("settings"), request["timeoutTicks"], request["timeout"]), (None, 77, tools._wait(77 + tools.CLOSING)))  # allow_place: the budget, and the closing that may follow it
         self.assertEqual(result["result"], {"state":"succeeded"})
         fake.reply = lambda method, params: {"count": 0, "cells": []}   # cells only count inside the nested plan
         with self.assertRaises(ValueError): tools.mb_schematic_build("x")
@@ -641,7 +675,7 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual(previewed["request"]["cells"], 2); self.assertIn("preview", previewed)
         built = tools.mb_copy(bounds, build=True, allow_break=True, timeout_ticks=300)
         method, request = fake.last("nav.build")
-        self.assertEqual((request["origin"], request["allowBreak"], request["timeoutTicks"], request["timeout"]), ([0,0,0], True, 300, 52.5))
+        self.assertEqual((request["origin"], request["allowBreak"], request["timeoutTicks"], request["timeout"]), ([0,0,0], True, 300, 502.5))  # the budget, and the closing a build may add to it
         self.assertEqual(built["result"], {"state":"succeeded"})
         for bad in ({}, {"min":[0,0,0]}, {"min":1,"max":2}):
             with self.assertRaises(ValueError): tools.mb_copy(bad)

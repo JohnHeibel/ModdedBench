@@ -48,9 +48,26 @@ def _with(receipt: Any, key: str, fact: Any) -> Any:
     return {**receipt, key: fact} if fact is not None and isinstance(receipt, dict) else receipt
 
 
+CLOSING = 6000  # the most ticks a build takes past its budget to put back what it took out and take away its scaffolds
+
+
+def _plan(cells, selection, uses, origin, size, **options) -> dict:
+    """The request of a build or its preview: cells or a selection, uses with either or alone."""
+    if cells is not None and selection is not None or cells is None and selection is None and not uses:
+        raise ValueError("provide exactly one of cells, selection or drawing (uses may stand alone)")
+    params = dict(options)
+    if cells is not None: params["cells"] = cells
+    if selection is not None: params["selection"] = selection
+    if uses: params["uses"] = uses
+    if origin is not None: params["origin"] = origin
+    if size is not None: params["size"] = size
+    return params
+
+
 def _build_call(method: str, params: dict) -> Any:
     """One request: a job's plan is at most 4096 cells (Java says so when it is more)."""
-    timeout_s = _wait(params["timeoutTicks"]) if params.get("timeoutTicks") else None  # a preview has no budget: the default wait
+    closing = CLOSING if params.get("allowBreak") or params.get("allowPlace") else 0  # without either there is nothing to put back
+    timeout_s = _wait(params["timeoutTicks"] + closing) if params.get("timeoutTicks") else None  # a preview has no budget: the default wait
     return notes.tracked(method, timeout_s, **params)
 
 
@@ -490,28 +507,27 @@ def mb_build_preview(cells: list[dict] | None = None, selection: dict | None = N
                      origin: list[int] | None = None, replace_existing: bool = False,
                      override_protection: bool = False, allow_break: bool = False,
                      allow_place: bool = False, size: list[int] | None = None,
-                     drawing: dict | None = None) -> Any:
+                     drawing: dict | None = None, uses: list[dict] | None = None) -> Any:
     """Read-only: what mb_build would find and need for the same plan. Nothing in the world changes.
 
-    It takes what mb_build takes (cells, selection or drawing; mb_build has the formats, the build
-    order and the 4096-cell cap) and answers with counts and the first few of each list:
+    It takes what mb_build takes (cells, selection or drawing, and uses; mb_build has the formats,
+    the build order and the caps) and answers with counts and the first few of each list:
     total, correct, mismatched, matches; unloaded, protected, unsupported (no item places that
     block: name one with the cell's item); conflicts (cells that want a block and hold another: the
     build stops as occupied unless replace_existing); materials, one row per item {selector, needed,
     allocated, missing} against what you carry now, and missingItems, their sum; differences, the
     first 8 cells that do not match with what is there; steps, the build order as {stage, y, cells}.
     anyMeta lists the ids read as "any variant". It does not load chunks, reserve inventory or prove
-    that a cell can be reached.
+    that a plain cell can be reached. For click cells and uses it does look: clicks {count, checked
+    (the first 32), ready, problemCount, problems: up to 8 of {click, pos, reason}} says whether each
+    has a spot to stand and a face in view once the cells before it stand, with mb_build's reason
+    words; no route is searched.
     """
     if drawing is not None:
         if cells is not None or selection is not None: raise ValueError("provide exactly one of cells, selection or drawing")
         cells, origin = plan.from_drawing(drawing)
-    if (cells is None) == (selection is None): raise ValueError("provide exactly one of cells or selection")
-    params = {"replaceExisting": replace_existing, "overrideProtection": override_protection,
-              "allowBreak": allow_break, "allowPlace": allow_place,
-              "cells" if cells is not None else "selection": cells if cells is not None else selection}
-    if origin is not None: params["origin"] = origin
-    if size is not None: params["size"] = size
+    params = _plan(cells, selection, uses, origin, size, replaceExisting=replace_existing, overrideProtection=override_protection,
+                   allowBreak=allow_break, allowPlace=allow_place)
     return _with(_build_call("nav.build_preview", params), "anyMeta", _any_meta(params))
 
 
@@ -520,18 +536,20 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
              origin: list[int] | None = None, replace_existing: bool = False,
              override_protection: bool = False, timeout_ticks: int = 12000,
              allow_break: bool = False, allow_place: bool = False,
-             size: list[int] | None = None, drawing: dict | None = None) -> Any:
+             size: list[int] | None = None, drawing: dict | None = None,
+             uses: list[dict] | None = None) -> Any:
     """Build a plan of blocks and return the job's receipt. A build runs one way; nothing selects another.
 
     What to build, said in exactly one of three ways. A job takes at most 4096 cells: a larger build
     is several jobs.
-      cells: [{pos, id, meta?, item?, verify?: {pickedItem: itemSelector}, clear?, replace?, stage?}],
-        pos relative to origin when origin is given. clear: true asks for the cell to be empty.
+      cells: [{pos, id, meta?, item?, verify?: {pickedItem: itemSelector}, clear?, replace?, stage?,
+        click?, expect?}], pos relative to origin when origin is given. clear: true asks for the
+        cell to be empty.
       selection: inclusive {min, max} with shape fill|replace|walls|shell|clear|sphere|hsphere|
         cylinder|hcylinder (with axis), block {id, meta?} and an optional replace selector.
       drawing: {origin: [x,y,z], layers, legend, stages?} in the format mb_view returns: layers
         bottom first, rows north to south, one character per block west to east, legend
-        {char: {id, meta?}}; '.', ' ' and '+' are left alone. Dictionary layers with y use that
+        {char: {id, meta?, item?, click?, expect?}}; '.', ' ' and '+' are left alone. Dictionary layers with y use that
         absolute height, including subsets or gaps; plain row lists use consecutive heights from origin.
     Registry ids are required. A cell, legend entry or selection block without meta accepts any
     variant of the block, which is what you want for blocks that face the way they are placed
@@ -574,13 +592,52 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
       steps: stage 0 y64 base (5), stage 1 y65 the two ends (2), stage 2 y65 the line (3).
       The line is placed last, so both ends stand when its pieces go in.
 
+    Clicks, for a block whose facing, side or connection comes from how it is clicked in or from a
+    click made on it afterwards. All of it is optional; leave out what does not matter.
+      click, on a cell or on a legend entry (then every cell drawn with that character):
+        {face?, hit?, look?, sneak?}. face: which face of the block beside the cell is clicked (up is
+        the top of the block below; east is the east face of the block to its west). hit: [x, y, z],
+        the point on that block, 0..1 each. look: {toward: north|south|east|west|up|down} or
+        {yaw?, pitch?} (a number or [low, high]; yaw 0 south, 90 west; pitch 90 straight down): how
+        you face as you click. sneak: held unless false. {} asks only for a careful, checked click.
+      expect, beside click: up to 4 of {method, params?, pos?, path, equals | contains | changed: true}:
+        an obs.* read (of the cell unless pos is given), a path into its result (a.b[0].c, "" the
+        whole) and what must hold after the click. The job compares; it never interprets the value.
+      uses: [{pos, item, click?, expect?, id?, stage?, name?}], right clicks on blocks that stand, in
+        the order given: item is a selector {id, meta?, ...} to hold or {empty: true}, face and hit
+        are of the block itself, sneak is held only if true, id is what must stand there. pos is
+        relative to origin (the drawing's). uses may be the whole call, with no cells.
+    In each stage the plain cells go first, then its click cells (the job orders them: what a click
+    lands on stands first, and a block that would hide another's click goes after it), then its uses.
+    A job takes at most 256 clicks, and the click cells of one stage lie near each other (a plan
+    that asks otherwise is refused as clicks_too_spread). A click is made from a place to
+    stand with the face in plain view and in reach, and with allow_break the job may take out up to
+    3 ordinary blocks that are in the way and puts the same blocks back (never a tile entity, a
+    fluid, a plan cell or a block within 4 of a tile entity).
+    Example: a machine placed while you face south, pipes laid each against the one before, a tool
+    used on the machine's top.
+      mb_build(drawing={"origin": [100, 64, 200], "stages": ["#", "M", "p"],
+                        "legend": {"#": {"id": "minecraft:stonebrick"},
+                                   "M": {"id": "mod:machine", "click": {"look": {"toward": "south"}}},
+                                   "p": {"id": "mod:pipe", "click": {"face": "east"}}},
+                        "layers": [["#####"], ["Mppp."]]},
+               uses=[{"pos": [0, 1, 0], "item": {"id": "mod:tool"}, "click": {"face": "up"},
+                      "expect": [{"method": "obs.block", "path": "meta", "changed": True}]}])
+
     Receipt. state succeeded (reason schematic_verified) means every cell was looked at again and
     matches. Every receipt has jobId, placed, removed, left {count, first: up to 8 cells still
     wrong}, step {stage, y, index, of, left, first} (where the order stands: the index-th of `of`
     steps, `left` cells of it and of earlier steps still wrong), symptoms (what happened to you, as
-    in mb_mine), and labels (the region notes of yours the build touches).
+    in mb_mine), and labels (the region notes of yours the build touches). A plan with clicks adds
+    clicks {of, done, verified (its expect held), unverified, alreadyPresent, unverifiedFirst: up to
+    8}; the full list is in the job's .clicks.jsonl. Before it ends, a job puts back what it took out
+    for a click and takes away the scaffolds it placed outside the plan (state closing while it
+    does); accessLeft and scaffoldLeft {count, first} list what it could not, and are yours to mend.
     A job that ends any other way adds stopped {reason, pos, step: {stage, y}}: one reason, and the
-    one cell it is about (pos is absent only when no cell is to blame). The reasons:
+    one cell it is about (pos is absent only when no cell is to blame). In a click phase step is
+    {stage, phase: clicks|uses} and stopped.click is that click in full: what was aimed at and hit,
+    what is present, what the expect read, and for a click with no stance what blocks the view. The
+    reasons:
       occupied           pos wants a block and holds a different one, and replace_existing is false.
                          A plan that starts that way is refused before any input (state failed), with
                          `occupied` {count, first: up to 8}.
@@ -596,6 +653,21 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
                          no new ground stood on, and neither of the two above explains it.
       timeout            timeout_ticks ran out.
       requested          mb_build_pause.
+      no_vantage         a click: there are places to stand but from none is the face in view and reach
+                         (stopped.click.blocking names what is in the way; allow_break may open it).
+      look_unreachable   a click: the face can be clicked, but not while facing the way look asks.
+      support_missing    a click: no block stands where the click would have to land.
+      hit_not_on_face    a click: the hit point is not on the face named.
+      no_route_from_here a click: a stance exists and no walk reaches it (allow_place may).
+      aim_mismatch       a click: aimed at the point from 16 stances and the game's ray hit elsewhere.
+      placement_rejected a click: the game took 3 clicks and no block appeared.
+      expect_failed, expect_timeout   a click was made and the read did not show what expect asks,
+                         or did not answer. The click is not made again.
+      gui_opened         a use opened a screen; the job closed it and stopped. The use counts as made.
+      unknown_after_restart   a use was cut off between the press and its result: look, then resume.
+      use_target_changed a use: the block at pos is not the id it names.
+      access_failed      a block in the way of a click could not be taken out.
+      no_empty_hand      a use with {empty: true}: no hotbar slot is empty.
     A job can also end as any job does: player_died, or cancelled (superseded, interrupted,
     gui_opened, world_or_player_changed), or with the game's own error text as the reason.
     A stop is state paused, or failed (error code build_failed, the receipt inside) when it stalled
@@ -607,12 +679,8 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
     if drawing is not None:
         if cells is not None or selection is not None: raise ValueError("provide exactly one of cells, selection or drawing")
         cells, origin = plan.from_drawing(drawing)
-    if (cells is None) == (selection is None): raise ValueError("provide exactly one of cells or selection")
-    params = {"replaceExisting": replace_existing, "overrideProtection": override_protection,
-              "allowBreak": allow_break, "allowPlace": allow_place, "timeoutTicks": timeout_ticks,
-              "cells" if cells is not None else "selection": cells if cells is not None else selection}
-    if origin is not None: params["origin"] = origin
-    if size is not None: params["size"] = size
+    params = _plan(cells, selection, uses, origin, size, replaceExisting=replace_existing, overrideProtection=override_protection,
+                   allowBreak=allow_break, allowPlace=allow_place, timeoutTicks=timeout_ticks)
     return _with(_labelled(_build_call("nav.build", params), params), "anyMeta", _any_meta(params))
 
 
@@ -620,8 +688,8 @@ def _labelled(receipt: Any, params: dict) -> Any:
     """Name the region notes of the model's own that a build touched: its plan, said back to it, never a refusal."""
     if not isinstance(receipt, dict): return receipt
     at = params.get("origin") or [0, 0, 0]
-    if "cells" in params: spots = [[at[i] + c["pos"][i] for i in range(3)] for c in params["cells"]]
-    else: spots = [params["selection"].get("min"), params["selection"].get("max")]
+    if "selection" in params: spots = [params["selection"].get("min"), params["selection"].get("max")]
+    else: spots = [[at[i] + c["pos"][i] for i in range(3)] for c in params.get("cells", []) + params.get("uses", [])]
     if not spots or not all(isinstance(s, list) for s in spots): return receipt
     labels = plan.labels_at(kernel(), [min(s[i] for s in spots) for i in range(3)], [max(s[i] for s in spots) for i in range(3)])
     return {**receipt, "labels": labels} if labels else receipt
@@ -750,7 +818,10 @@ def _untranslated(name: str | None) -> bool:
 
 @tool(rung=1, lane="control", coverage=["machine"])
 def mb_build_pause() -> Any:
-    """Pause the active build and return its receipt (stopped.reason requested); mb_work_resume continues it."""
+    """Pause the active build and return its receipt (stopped.reason requested); mb_work_resume continues it.
+
+    A build that took blocks out for a click or placed scaffolds puts them right first: the receipt then says state
+    closing, and the mb_build call that is waiting (or mb_work_status(jobId)) has the final one."""
     return kernel().call("nav.build_pause")
 
 
@@ -788,7 +859,7 @@ def mb_work_resume(job_id: str, options: dict | None = None) -> Any:
     input is not blindly replayed.
     """
     # Without a fresh budget the job keeps its own, which is not known here: wait as long as the longest one.
-    try: receipt = notes.tracked("nav.resume", _wait((options or {}).get("timeoutTicks", 72000)), jobId=job_id, **(options or {}))
+    try: receipt = notes.tracked("nav.resume", _wait((options or {}).get("timeoutTicks", 72000) + CLOSING), jobId=job_id, **(options or {}))
     except BridgeError as error:
         failed = ((error.reply or {}).get("error") or {}).get("receipt")
         if isinstance(failed, dict): _left(failed)

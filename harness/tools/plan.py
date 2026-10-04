@@ -38,7 +38,7 @@ def cells(drawing: dict) -> list[dict]:
             for dx, c in enumerate(row):
                 if c in (AIR, SKIP, PLANNED, PLAYER): continue
                 if c not in legend or not legend[c].get("id"): raise ValueError(f"drawing uses {c!r} at layer {dy} row {dz} column {dx}, which its legend does not define")
-                out.append({"pos": [dx, dy, dz], **{k: v for k, v in legend[c].items() if k in ("id", "meta", "item")},
+                out.append({"pos": [dx, dy, dz], **{k: v for k, v in legend[c].items() if k in ("id", "meta", "item", "click", "expect")},
                             **({"stage": stage[c]} if stage.get(c) else {})})
     if not out: raise ValueError("the drawing has no blocks: every character is '.', ' ' or '+'")
     return out
