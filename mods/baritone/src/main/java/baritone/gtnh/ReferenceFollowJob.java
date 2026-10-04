@@ -54,7 +54,9 @@ final class ReferenceFollowJob implements Navigation.Job {
         String type=target.containsKey("type")?target.get("type").toString():null;
         String name=target.containsKey("name")?target.get("name").toString():null;
         String kind=target.containsKey("class")?target.get("class").toString():null;
-        return e->(id==null||id==e.getEntityId())&&(kind==null||is(e.getClass(),kind))&&(uuid==null||uuid.equals(e.getUniqueID()))&&
+        // The walk up a class's ancestry is the same for every entity of that class.
+        Map<Class<?>,Boolean> kinds=new java.util.concurrent.ConcurrentHashMap<>();
+        return e->(id==null||id==e.getEntityId())&&(kind==null||kinds.computeIfAbsent(e.getClass(),c->is(c,kind)))&&(uuid==null||uuid.equals(e.getUniqueID()))&&
             (type==null||type.equals(net.minecraft.entity.EntityList.getEntityString(e)))&&(name==null||name.equals(e.getCommandSenderName()));
     }
     private static boolean is(Class<?> type,String name){
