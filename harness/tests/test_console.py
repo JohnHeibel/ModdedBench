@@ -28,6 +28,11 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(([console.LOOP_FREE], console.LOOP), (steps[-2][-1:], loop))
         self.assertLess(loop.index("flock -n .state/loop.lock"), loop.index("rm -f .state/STOP"))  # a start that is refused leaves the running loop's stop request
 
+    def test_start_sends_only_the_budgets_the_operator_filled_in(self):
+        self.assertEqual(start({})[2][:2], ["--max-turns", "200"]); self.assertNotIn("--max-minutes", start({"maxMinutes": None, "maxTokens": 0})[2])  # blank: the loop keeps the run's stored end and cap
+        args = start({"maxMinutes": 90, "maxTokens": 2e6, "model": "gpt-x"})[2]
+        self.assertEqual(args[:8], ["--max-turns", "200", "--max-minutes", "90.0", "--max-tokens", "2000000", "--", "-m"])
+
     @unittest.skipUnless(shutil.which("sh"), "runs the loop's shell line")
     def test_the_loop_line_passes_the_prompt_and_arguments_and_keeps_what_the_loop_writes_as_it_dies(self):
         import os, subprocess, tempfile

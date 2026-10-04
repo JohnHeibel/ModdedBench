@@ -63,7 +63,7 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 # One line of JSON about the loop, produced inside the agent container.
 AGENT_PROBE = ("import json,subprocess,pathlib;s=pathlib.Path('.state');r=lambda n:(s/n).read_text(errors='replace') if (s/n).exists() else '';"
                "print(json.dumps({'running':subprocess.run(['pgrep','-f','[c]odex_loop.py'],capture_output=True).returncode==0,"
-               "'stopRequested':(s/'STOP').exists(),'thread':r('codex-loop.json'),'prompt':pathlib.Path('/brief/PROMPT.md').exists(),"
+               "'stopRequested':(s/'STOP').exists(),'thread':r('codex-loop.json'),'run':r('run.json'),'prompt':pathlib.Path('/brief/PROMPT.md').exists(),"
                "'commits':subprocess.run(['git','rev-list','--count','modbench-base..HEAD'],capture_output=True,text=True).stdout.strip(),"
                "'log':r('codex-loop.log')[-6000:],'err':r('codex-loop.err')[-2000:]}))")
 # One loop per checkout: two would drive one Codex thread and one body. The lock is flock's, so it lasts exactly as long as the
@@ -170,6 +170,9 @@ class Console:
             if time.monotonic() - self.login[0] > 60:
                 self.login = (time.monotonic(), sh([*COMPOSE, "exec", "-T", "agent", "codex", "login", "status"]).returncode == 0)
             agent["loggedIn"] = self.login[1]
+            try:  # what the run has been billed so far, as the loop counts it against run.json's tokenCap (feed.Feed.billed)
+                t = json.loads((OVERLAY / "live.json").read_text(encoding="utf-8"))["stats"]["tokens"]; agent["billed"] = t["input"] + t.get("uncounted", 0) + t.get("estimated", 0)
+            except (OSError, ValueError, KeyError, TypeError): pass
         deploys = []
         for folder in sorted((runtime.RUNTIME / "deploys").glob("*"), reverse=True)[:8]:
             req, res = runtime.load_json(folder / "request.json"), runtime.load_json(folder / "result.json")
@@ -330,7 +333,11 @@ class Console:
             # Codex's readable summary of each reasoning step, for the stream's feed; the model's own reasoning is unchanged by it.
             extra = [*(extra or ["--"]), "-c", 'model_reasoning_summary="detailed"']
             # Turns are recovery, not a unit of the run: the run is sized in minutes and tokens, and a turn is cut where it stands.
-            budget = ["--max-turns", "200", "--max-minutes", str(max(1, min(float(a.get("maxMinutes") or 120), 100000))), "--max-tokens", str(max(100000, min(int(a.get("maxTokens") or 50_000_000), 10**11)))]
+            # A field left blank is not sent: the loop then continues to the end and the cap the run already has (.state/run.json),
+            # so a restart does not hand the run another full budget. The page fills in 120 min and 50 M when nothing is stored.
+            budget = ["--max-turns", "200"]
+            if a.get("maxMinutes"): budget += ["--max-minutes", str(max(1, min(float(a["maxMinutes"]), 100000)))]
+            if a.get("maxTokens"): budget += ["--max-tokens", str(max(100000, min(int(a["maxTokens"]), 10**11)))]
             self.run_job(name, [[*COMPOSE, "up", "-d", "gateway", "agent"], [*agent, "sh", "-c", LOOP_FREE], [*COMPOSE, "exec", "-d", "agent", "sh", "-c", LOOP, "sh", *budget, *extra]])
         elif name == "agent.stop": self.run_job(name, [[*agent, "sh", "-c", "mkdir -p .state && touch .state/STOP"]])
         elif name == "agent.kill": self.run_job(name, [[*agent, "sh", "-c", "pkill -f '[c]odex_loop.py'; pkill -x codex; pkill -f '[h]arness/mcp/server.py'; true"]])
