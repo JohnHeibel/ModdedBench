@@ -211,7 +211,7 @@ class GTNHProfileTests(unittest.TestCase):
         merged = server._with_fields(one, {"body": {"task": "t1"}})
         self.assertEqual((json.loads(merged.content[0].text), merged.structuredContent), ({"a": 1, "body": {"task": "t1"}},) * 2)
         plain = server._with_fields(CallToolResult(content=[TextContent(type="text", text="ok")]), {"bodyBusy": True})
-        self.assertEqual([c.text for c in plain.content], ["ok", '{"bodyBusy": true}'])
+        self.assertEqual([c.text for c in plain.content], ["ok", '{"bodyBusy":true}'])
         self.assertIs(server._with_fields(one, {}), one)
 
     def test_failed_reload_retains_last_good_tools(self):
