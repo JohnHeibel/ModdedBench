@@ -180,7 +180,11 @@ def start(code: str, args: dict | None, name: str | None, on_fail: str | None, m
     if not 0 < minutes <= 60: raise ValueError("minutes is more than 0 and at most 60")
     if live() or held(): raise BridgeError("body_busy", refusal(live()), "mb_run")
     out, k = {}, kernel()
-    if (k.call("time.status", timeout=5).get("state") or {}).get("paused"):
+    clock = k.call("time.status", timeout=5).get("state") or {}
+    if clock.get("paused"):
+        if not clock.get("held") and clock.get("reason") not in WAITED_OUT:  # a guard's stop the model may not have seen yet
+            raise BridgeError("time_paused", f"a guard stopped the world ({clock.get('reason')}; threats: {json.dumps(clock.get('threats') or [])}). "
+                              "A background task does not lift a guard's stop: look, make safe, then start it", "mb_run")
         record = {}; k._resume_for(record); out["resumedWorld"] = record  # as resume=True does; an operator hold refuses it
     task_id = uuid.uuid4().hex[:8]
     TASKS.mkdir(parents=True, exist_ok=True); (TASKS / f"{task_id}.py").write_text(code, encoding="utf-8")

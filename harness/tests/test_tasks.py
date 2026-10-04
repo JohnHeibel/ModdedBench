@@ -120,8 +120,15 @@ class BodyLockTests(TaskTestCase):
         self.assertRaisesRegex(ValueError, "background task", interrupts.get_supervisor)
         self.assertEqual(tasks.deliver(), [])  # only the model's own process hands results over
 
+    def test_start_does_not_lift_a_guard_stop(self):
+        self.k.clock.update(paused=True, reason="health_dropped", threats=[{"type": "Zombie", "distance": 1.1}])
+        self.k._resume_for = lambda record: self.fail("a guard's stop was lifted")
+        with mock.patch.object(tasks.subprocess, "Popen") as popen, self.assertRaisesRegex(BridgeError, "health_dropped.*Zombie"):
+            tasks.start("def main(): pass", None, None, None, 5)
+        popen.assert_not_called()
+
     def test_start_resumes_a_paused_world_and_spawns_the_runner(self):
-        self.k.clock["paused"] = True
+        self.k.clock.update(paused=True, reason="requested_pause")
         resumed = []
         self.k._resume_for = lambda record: (resumed.append(1), record.update(resumed=True))
         with mock.patch.object(tasks.subprocess, "Popen") as popen:
