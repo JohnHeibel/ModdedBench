@@ -103,6 +103,8 @@ final class FluidFixture {
     Object createGeometry() throws Exception {return create("geometry");}
     Object createLongRoute() throws Exception {return create("long_route");}
     Object createWork() throws Exception {return create("work");}
+    /** The work course in a larger journalled volume: the course keeps its place, the rest is the caller's to fill. */
+    Object createWork(int width,int depth,int top) throws Exception {return create("work",width,depth,FLOOR,top);}
     Object createUi() throws Exception {return create("gui");}
     private UiFixture ui() {
         if(saved==null||!saved.getString("kind").equals("gui")) throw new IllegalArgumentException("GUI fixture required");
@@ -111,14 +113,15 @@ final class FluidFixture {
     Object positionUi(String name) {return ui().position(name);}
     Object statusUi() {return ui().status();}
     private Object create(String kind) throws Exception {
+        boolean route=kind.equals("long_route");return create(kind,route?432:WIDTH,route?5:DEPTH,route?172:FLOOR,route?225:TOP);
+    }
+    private Object create(String kind,int width,int depth,int floor,int top) throws Exception {
         if(saved!=null) throw new IllegalArgumentException("restore existing fluid fixture first");
         EntityPlayerMP p=player();
         if(p.isDead||p.getHealth()<=0) throw new IllegalArgumentException("fixture requires a living player; recover before creating a journal");
         ItemStack tool=kind.equals("fluid")?miningTool():null;
         if(p.theItemInWorldManager.getGameType()!=net.minecraft.world.WorldSettings.GameType.SURVIVAL) throw new IllegalArgumentException("fixture tests require survival player");
         int x=(int)Math.floor(p.posX)-4,z=(int)Math.floor(p.posZ)-4;
-        int width=kind.equals("long_route")?432:WIDTH,depth=kind.equals("long_route")?5:DEPTH;
-        int floor=kind.equals("long_route")?172:FLOOR,top=kind.equals("long_route")?225:TOP;
         // Explicit fixture setup may load/generate the server chunks needed for its
         // course. The client still receives them normally as the player travels.
         if(kind.equals("long_route")) for(int cx=x>>4;cx<=(x+width-1)>>4;cx++) for(int cz=z>>4;cz<=(z+depth-1)>>4;cz++)

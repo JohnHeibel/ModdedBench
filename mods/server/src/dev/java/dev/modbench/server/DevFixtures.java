@@ -46,13 +46,14 @@ final class DevFixtures {
         runtime.fixture("dev.replay.place","Teleport the only connected player to {x,y,z,yaw?,pitch?} in a cloned world; changes no blocks","privileged",r->replay.place(r.params));
         runtime.fixture("dev.replay.status","The player as the server sees it, and block id/meta at {cells:[[x,y,z],...]} (<=64)","read",r->replay.status(r.params));
         WorkProcessFixture processes=new WorkProcessFixture(server);
-        runtime.fixture("dev.work_process_fixture.create","Create journalled bounded mining/building course with native ToolBuilder loadout","privileged",r->processes.create());
+        runtime.fixture("dev.work_process_fixture.create","Create journalled bounded mining/building course with native ToolBuilder loadout {width?:32..64,depth?:16..64,top?:185..200,bare?}; bare leaves the floor free of the built-in courses","privileged",r->processes.create(r.params));
         runtime.fixture("dev.work_process_fixture.position","Position development player {name:ore_line|selection|build|descend_start|descend_step_1|descend_step_2|descend_goal}","privileged",r->processes.position(Json.string(r.params,"name","ore_line")));
         runtime.fixture("dev.work_process_fixture.status","Authoritative targets, exact metadata, inventory and selected hotbar slot","privileged",r->processes.status());
-        runtime.fixture("dev.work_process_fixture.set_block","Fixture-only bounded block setter {x,y,z,id,meta}; exact registry ID required","privileged",r->processes.setBlock(r.params));
+        runtime.fixture("dev.work_process_fixture.set_block","Fixture-only bounded block setter {x,y,z,id,meta,nbt?,world?}; exact registry ID required; nbt is the tile entity as text (the snbt of inspect_block and region); world:true takes world coordinates in loaded chunks, put back by restore","privileged",r->processes.setBlock(r.params));
         runtime.fixture("dev.work_process_fixture.set_stack","Fixture-only inventory setter {slot,id,meta,count,nbt}; exact registry ID required","privileged",r->processes.setStack(r.params));
-        runtime.fixture("dev.work_process_fixture.inspect_block","Independent fixture evidence: authoritative tile NBT, inventory and fluids {x,y,z}","read",r->processes.inspectBlock(r.params));
-        runtime.fixture("dev.work_process_fixture.supply_energy","Supply bounded fixture EU input {x,y,z,eu<=32768}; does not configure faces, connections or modes","privileged",r->processes.supplyEnergy(r.params));
-        runtime.fixture("dev.work_process_fixture.restore","Restore original player/inventory/health and remove journalled course","privileged",r->processes.restore());
+        runtime.fixture("dev.work_process_fixture.inspect_block","Independent fixture evidence: authoritative tile NBT (tile as JSON, snbt as text), inventory and fluids {x,y,z,world?}","read",r->processes.inspectBlock(r.params));
+        runtime.fixture("dev.work_process_fixture.region","Every non-air cell of {min:[x,y,z],max:[x,y,z],world?} (<=16384 cells) as {pos,id,meta,snbt?}","read",r->processes.region(r.params));
+        runtime.fixture("dev.work_process_fixture.supply_energy","Supply bounded fixture EU input {x,y,z,eu<=32768,world?}; does not configure faces, connections or modes","privileged",r->processes.supplyEnergy(r.params));
+        runtime.fixture("dev.work_process_fixture.restore","Restore original player/inventory/health, remove journalled course and put back world cells changed outside it","privileged",r->processes.restore());
     }
 }
