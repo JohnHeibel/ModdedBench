@@ -43,8 +43,9 @@ final class ClickWorld {
     }
     /** Copy cells until done or the budget is spent: true when the copy is complete. */
     boolean step(long budgetNanos) {
-        long end=System.nanoTime()+budgetNanos;int total=w*h*d;
-        while(cursor<total&&System.nanoTime()<end)for(int i=0;i<64&&cursor<total;i++,cursor++) {
+        long start=System.nanoTime();int total=w*h*d;
+        // Elapsed time against the budget: a deadline added to the clock overflows for an unbounded budget.
+        while(cursor<total&&System.nanoTime()-start<budgetNanos)for(int i=0;i<64&&cursor<total;i++,cursor++) {
             int y=cursor%h+min.getY(),z=(cursor/h)%d+min.getZ(),x=cursor/(h*d)+min.getX();
             BlockPos p=new BlockPos(x,y,z);Voxel v=voxel(world,x,y,z);cells.put(p,v);
             if(!v.replaceable()&&v.kind()!=TerrainGrid.UNKNOWN&&WorkAccess.protection(p,override)!=null)protectedCells.add(p);
