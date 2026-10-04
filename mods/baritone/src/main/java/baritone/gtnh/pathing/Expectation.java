@@ -49,7 +49,7 @@ public record Expectation(String method,Map<String,Object> params,BlockPos pos,S
         Object at=root;
         for(String key:segments(path)) {
             if(at instanceof Map<?,?> m){if(!m.containsKey(key))return MISSING;at=m.get(key);}
-            else if(at instanceof List<?> l&&key.matches("\\d+")){int i=Integer.parseInt(key);if(i>=l.size())return MISSING;at=l.get(i);}
+            else if(at instanceof List<?> l&&key.matches("\\d{1,9}")){int i=Integer.parseInt(key);if(i>=l.size())return MISSING;at=l.get(i);}
             else return MISSING;
         }
         return at;

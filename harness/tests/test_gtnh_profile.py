@@ -479,6 +479,8 @@ class GTNHProfileTests(unittest.TestCase):
         with self.assertRaises(ValueError): plan.from_drawing({"origin": [0, 0, 0], "layers": [["x"]], "legend": {}})
         kind = {"id": "mod:machines", "item": {"id": "mod:machines", "meta": 41}, "verify": {"pickedItem": {"id": "mod:machines", "meta": 41}}, "count": 1, "name": "seen"}
         self.assertEqual(plan.from_drawing({"origin": [0, 0, 0], "layers": [["h"]], "legend": {"h": kind}})[0], [{"pos": [0, 0, 0], **{k: kind[k] for k in ("id", "item", "verify")}}])
+        with self.assertRaisesRegex(ValueError, "clik"):  # a misspelt key is said, not built as a plain block
+            plan.from_drawing({"origin": [0, 0, 0], "layers": [["h"]], "legend": {"h": {"id": "mod:machines", "clik": {"face": "up"}}}})
         fake = self.use(FakeKernel(lambda method, params: {"method": method, **params}))
         h, v, shot = 2.9, .6, []  # a vanilla arrow: drag .99, gravity .05
         for _ in range(6): shot.append([h, v]); h, v = h * .99, v * .99 - .05

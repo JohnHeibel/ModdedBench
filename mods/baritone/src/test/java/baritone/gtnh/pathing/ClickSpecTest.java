@@ -41,7 +41,6 @@ public class ClickSpecTest {
         ClickSpec.Look l=ClickSpec.parse(Map.of("look",Map.of("yaw",List.of(350,370)))).look();
         assertTrue(l.accepts(0,0));assertTrue(l.accepts(355,0));assertTrue(l.accepts(-5,0));assertFalse(l.accepts(20,0));assertFalse(l.accepts(340,0));
         assertTrue(ClickSpec.parse(Map.of("look",Map.of("yaw",List.of(0,360)))).look().any());
-        ClickSpec.Look exact=ClickSpec.parse(Map.of("look",Map.of("pitch",30))).look();
-        assertTrue(exact.accepts(0,30));assertFalse(exact.accepts(0,31));
+        assertThrows(IllegalArgumentException.class,()->ClickSpec.parse(Map.of("look",Map.of("pitch",30))));
     }
 }

@@ -433,7 +433,10 @@ final class ReferenceConstructionProcess extends BulkJob {
     @Override void guiOpened(){if(clicks.guiOpened()){blamed=clicks.blame();finish("paused","gui_opened");}else super.guiOpened();}
     /** Ending with a living player and no screen: cells out for access are put back and scaffold outside the plan taken away first. */
     @Override boolean closing(String terminal,String why){
-        if(WorkAccess.died(player)||mc.theWorld!=world||mc.thePlayer!=player||mc.currentScreen!=null||!clicks.close())return false;
+        if(WorkAccess.died(player)||mc.theWorld!=world||mc.thePlayer!=player)return false;
+        // Dropping what is in flight closes the job's own item selection; a screen still open after that is somebody else's.
+        boolean owed=clicks.close();
+        if(mc.currentScreen!=null||!owed)return false;
         engine.getPathingBehavior().forceCancel();engine.getInputOverrideHandler().release();passStep=-1;
         remaining=Math.max(remaining,clicks.budget());return true;
     }

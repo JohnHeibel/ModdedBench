@@ -20,11 +20,25 @@ public final class ClickSpace {
     }
     public final BlockPos min,max;
     private final Map<BlockPos,Voxel> cells,changed;
+    /** Where tile entities are: those of the copy, and those the game named around it. */
+    private final Collection<BlockPos> tiles;
     /** The copy these changes were made to, which keeps the one whole grid; null for the copy itself. */
     private final ClickSpace base;
     private TerrainGrid grid;
-    public ClickSpace(BlockPos min,BlockPos max,Map<BlockPos,Voxel> cells){this(min,max,Map.copyOf(cells),Map.of(),null);}
-    private ClickSpace(BlockPos min,BlockPos max,Map<BlockPos,Voxel> cells,Map<BlockPos,Voxel> changed,ClickSpace base){this.min=min;this.max=max;this.cells=cells;this.changed=changed;this.base=base;}
+    public ClickSpace(BlockPos min,BlockPos max,Map<BlockPos,Voxel> cells){this(min,max,cells,List.of());}
+    /** around: tile entities beyond the copy's edge, so that a cell near the edge knows of a machine just past it. */
+    public ClickSpace(BlockPos min,BlockPos max,Map<BlockPos,Voxel> cells,Collection<BlockPos> around) {
+        this(min,max,Map.copyOf(cells),Map.of(),null,new HashSet<>(around));
+        cells.forEach((p,v)->{if(v.tile())tiles.add(p);});
+    }
+    private ClickSpace(BlockPos min,BlockPos max,Map<BlockPos,Voxel> cells,Map<BlockPos,Voxel> changed,ClickSpace base,Collection<BlockPos> tiles){this.min=min;this.max=max;this.cells=cells;this.changed=changed;this.base=base;this.tiles=tiles;}
+    private static boolean within(BlockPos a,BlockPos b,int d){return Math.abs(a.getX()-b.getX())<=d&&Math.abs(a.getY()-b.getY())<=d&&Math.abs(a.getZ()-b.getZ())<=d;}
+    /** A tile entity within d (Chebyshev) of p, a changed cell that holds one included. */
+    public boolean nearTile(BlockPos p,int d) {
+        for(BlockPos t:tiles)if(within(t,p,d))return true;
+        for(var e:changed.entrySet())if(e.getValue().tile()&&within(e.getKey(),p,d))return true;
+        return false;
+    }
     public boolean inside(BlockPos p){return p.getX()>=min.getX()&&p.getY()>=min.getY()&&p.getZ()>=min.getZ()&&p.getX()<=max.getX()&&p.getY()<=max.getY()&&p.getZ()<=max.getZ();}
     private static final Voxel UNKNOWN=new Voxel(TerrainGrid.UNKNOWN,List.of(),List.of(),false,false,"unknown");
     public Voxel at(BlockPos p){if(!inside(p))return UNKNOWN;Voxel v=changed.get(p);return v!=null?v:cells.getOrDefault(p,UNKNOWN);}
@@ -34,7 +48,7 @@ public final class ClickSpace {
     public ClickSpace with(Map<BlockPos,Voxel> changes) {
         if(changes.isEmpty())return this;
         Map<BlockPos,Voxel> next=new HashMap<>(changed);changes.forEach((p,v)->{if(inside(p))next.put(p,v);});
-        return new ClickSpace(min,max,cells,next,base==null?this:base);
+        return new ClickSpace(min,max,cells,next,base==null?this:base,tiles);
     }
     public ClickSpace with(BlockPos p,Voxel v){return with(Map.of(p,v));}
     /**

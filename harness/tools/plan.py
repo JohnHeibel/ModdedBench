@@ -17,11 +17,16 @@ from mbtools_gtnh import notes
 AIR, PLAYER, PLANNED, SKIP = ".", "@", "+", " "
 CHARS = "#=%*&$~^ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 MAX_CELLS, RARE, LOOKUPS = 9000, 6, 32
+# What a legend entry says of a block to build, and what mb_view writes there besides (read, and not built).
+BUILT, VIEWED = ("id", "meta", "item", "verify", "replace", "click", "expect"), ("count", "name", "tile")
 
 
 def cells(drawing: dict) -> list[dict]:
     """The drawing's blocks as mb_build cells, relative to its origin. '.', ' ' and '+' are left alone."""
     legend = {c: ({"id": v} if isinstance(v, str) else v) for c, v in (drawing.get("legend") or {}).items()}
+    for c, entry in legend.items():
+        unknown = sorted(set(entry) - set(BUILT) - set(VIEWED))
+        if unknown: raise ValueError(f"legend entry {c!r} has {unknown}, which is not built: a legend entry holds {', '.join(BUILT)}")
     stage = _stages(drawing.get("stages"), legend)
     out = []
     heights = set()
@@ -38,7 +43,7 @@ def cells(drawing: dict) -> list[dict]:
             for dx, c in enumerate(row):
                 if c in (AIR, SKIP, PLANNED, PLAYER): continue
                 if c not in legend or not legend[c].get("id"): raise ValueError(f"drawing uses {c!r} at layer {dy} row {dz} column {dx}, which its legend does not define")
-                out.append({"pos": [dx, dy, dz], **{k: v for k, v in legend[c].items() if k in ("id", "meta", "item", "verify", "replace", "click", "expect")},
+                out.append({"pos": [dx, dy, dz], **{k: v for k, v in legend[c].items() if k in BUILT},
                             **({"stage": stage[c]} if stage.get(c) else {})})
     if not out: raise ValueError("the drawing has no blocks: every character is '.', ' ' or '+'")
     return out

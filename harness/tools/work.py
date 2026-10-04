@@ -600,7 +600,7 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
         {face?, hit?, look?, sneak?}. face: which face of the block beside the cell is clicked (up is
         the top of the block below; east is the east face of the block to its west). hit: [x, y, z],
         the point on that block, 0..1 each. look: {toward: north|south|east|west|up|down} or
-        {yaw?, pitch?} (a number or [low, high]; yaw 0 south, 90 west; pitch 90 straight down): how
+        {yaw?, pitch?} (each [low, high] in degrees; yaw 0 south, 90 west; pitch 90 straight down): how
         you face as you click. sneak: held unless false. {} asks only for a careful, checked click.
       expect, beside click: up to 4 of {method, params?, pos?, path, equals | contains | changed: true}:
         an obs.* read (of the cell unless pos is given), a path into its result (a.b[0].c, "" the

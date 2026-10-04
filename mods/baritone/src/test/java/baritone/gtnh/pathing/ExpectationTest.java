@@ -39,4 +39,7 @@ public class ExpectationTest {
         assertThrows(IllegalArgumentException.class,()->parse(Map.of("method","obs.block","changed",false)));
         assertThrows(IllegalArgumentException.class,()->parse(Map.of("method","obs.block","equals",1,"when","later")));
     }
+    @Test public void anIndexNoListCouldHoldIsMissingNotAnError() {
+        assertSame(Expectation.MISSING,Expectation.extract(java.util.Map.of("a",java.util.List.of(1,2)),"a[99999999999]"));
+    }
 }
