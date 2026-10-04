@@ -96,6 +96,20 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual(error["procedureReceipts"][0]["transfer"]["moved"], 2)
         self.assertEqual(error["reply"]["error"]["receipt"]["state"], "failed")
 
+    def test_an_argument_the_tool_does_not_take_is_refused_not_dropped(self):
+        srv = self.loaded()
+        ran = []
+        def clock(method: str = "status") -> dict:
+            """reads or sets the clock"""
+            ran.append(method); return {"did": method}
+        srv.add_tool(clock, name="mb_clock_probe")
+        result = asyncio.run(srv.call_tool("mb_clock_probe", {"action": "pause"}))  # would otherwise run as status
+        self.assertTrue(result.isError)
+        self.assertEqual(result.structuredContent["error"]["code"], "bad_request")
+        self.assertIn("action", result.structuredContent["error"]["msg"]); self.assertIn("method", result.structuredContent["error"]["msg"])
+        self.assertEqual(ran, [])
+        self.assertFalse(asyncio.run(srv.call_tool("mb_clock_probe", {"method": "pause"})).isError); self.assertEqual(ran, ["pause"])
+
     def test_modified_input_primes_pose_and_preserves_click_parameters(self):
         core = module_with(self.loaded(), "mb_act")
         fake = self.use(FakeKernel(lambda method, params: {"completed": True}))
