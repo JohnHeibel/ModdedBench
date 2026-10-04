@@ -34,7 +34,7 @@ abstract class BulkJob implements Navigation.Job {
         remaining=integer(params,"timeoutTicks",12000,1,72000);stall=WorkAccess.stall(params);
     }
     void begin() {
-        lease=ControlRegistry.controls().arbiter().acquire("baritone_"+journal.kind,this::cancel,override,true);
+        lease=ControlRegistry.controls().arbiter().acquire("baritone_"+journal.kind,this::revoked,override,true);
         sessionStart=progress();
         journal.save(status());
     }
@@ -70,9 +70,11 @@ abstract class BulkJob implements Navigation.Job {
     /** What the stall watchdog counts as work besides new ground: progress, and whatever else this job changes on its way. */
     long activity(){return progress();}
     void releaseProcess() {}
+    /** The controls were taken away. For a screen this job's own click opened, the job answers in its next tick: it closes the screen and says which click. */
+    private void revoked(String reason){if(reason.endsWith("gui_open")&&awaitsScreen())return;cancel(reason);}
     /** A screen this job does not own is open. */
     void guiOpened(){cancel("gui_opened");}
-    /** Whether a screen opening now would be this job's own doing, to be answered in its next tick rather than cancelled from outside. */
+    /** Whether a screen opening now would be this job's own doing. */
     boolean awaitsScreen(){return false;}
     /**
      * The job is ending by itself (it finished, stopped, ran out, or was paused) and still has its controls. True when

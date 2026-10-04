@@ -96,11 +96,7 @@ public final class BaritoneNavigation implements Navigation {
         if(baritone.gtnh.pathing.MovementTrace.on())out.put("trace",baritone.gtnh.pathing.MovementTrace.recent(600));
         return out;
     }
-    @Override public void cancel(String reason){
-        // A screen a job's own click opened is that job's to close and report, in its next tick.
-        if(reason.endsWith("gui_open")&&active instanceof BulkJob job&&!job.done()&&job.awaitsScreen())return;
-        if(active!=null&&!active.done())active.cancel(reason);apiSession.stop(reason);
-    }
+    @Override public void cancel(String reason){if(active!=null&&!active.done())active.cancel(reason);apiSession.stop(reason);}
     void stop(){cancel("cancelled");}
     void runApi(java.util.function.Consumer<baritone.api.IBaritone> activation){
         WorkAccess.player();stop();activation.accept(reference);
