@@ -64,9 +64,12 @@ public final class BuildSteps {
      * of a lining under a ceiling, the end of a blind passage). So each pending cell has a depth, the number of pending
      * cells between it and a side that stays open, and a cell waits while a pending neighbour lies deeper. Cells with open
      * sides everywhere hold nothing back; cells with no way out at all have no depth, and neither wait nor are waited for.
-     * open: whether a cell that is not pending is empty.
+     * pending: every cell the plan still fills, later steps too: an empty cell that a later step fills is no side that stays
+     * open. now: the ones this pass may fill; only they wait, and only for each other. open: whether a cell that is not
+     * pending is empty.
      */
-    public static Held held(Set<BlockPos> pending,Predicate<BlockPos> open) {
+    public static Held held(Set<BlockPos> pending,Predicate<BlockPos> open){return held(pending,pending,open);}
+    public static Held held(Set<BlockPos> pending,Set<BlockPos> now,Predicate<BlockPos> open) {
         Map<BlockPos,Integer> depth=new HashMap<>();ArrayDeque<BlockPos> queue=new ArrayDeque<>();
         for(BlockPos p:pending)for(int[] side:SIDES){BlockPos n=beside(p,side);if(!pending.contains(n)&&open.test(n)){depth.put(p,0);queue.add(p);break;}}
         if(depth.size()==pending.size())return Held.NONE;
@@ -75,7 +78,10 @@ public final class BuildSteps {
             for(int[] side:SIDES){BlockPos n=beside(p,side);if(pending.contains(n)&&depth.putIfAbsent(n,next)==null)queue.add(n);}
         }
         Set<BlockPos> held=new HashSet<>(),first=new HashSet<>();
-        for(var e:depth.entrySet())for(int[] side:SIDES){BlockPos n=beside(e.getKey(),side);Integer d=depth.get(n);if(d!=null&&d>e.getValue()){held.add(e.getKey());first.add(n);}}
+        for(var e:depth.entrySet())if(now.contains(e.getKey()))for(int[] side:SIDES){
+            BlockPos n=beside(e.getKey(),side);Integer d=depth.get(n);
+            if(d!=null&&d>e.getValue()&&now.contains(n)){held.add(e.getKey());first.add(n);}
+        }
         return held.isEmpty()?Held.NONE:new Held(Set.copyOf(held),Set.copyOf(first));
     }
     /** Preview: every step in order with the number of cells it holds. */

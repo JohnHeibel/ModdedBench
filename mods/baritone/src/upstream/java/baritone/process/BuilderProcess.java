@@ -83,8 +83,10 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
     public java.util.function.BiFunction<BlockPos,Goal,Goal> placementGoalAdapter=(pos,goal)->goal;
     public java.util.function.BiFunction<BlockPos,Goal,Goal> breakGoalAdapter=(pos,goal)->goal;
     public java.util.function.Supplier<Goal> accessGoal=()->null;
+    /** Cells above the feet that are placed although nothing is over them. */
+    public java.util.function.Predicate<BlockPos> placeFromBelow=pos->false;
     public java.util.function.BiPredicate<IBlockState,IBlockState> approximateMaterialMatches;
-    public void resetAdapters(){stateValidator=(current,desired,itemVerify)->true;beforePlace=pos->{};mayBreak=pos->true;mayPlace=pos->true;movementMayPlace=pos->true;stateComparison=null;placementGoalAdapter=(p,g)->g;breakGoalAdapter=(p,g)->g;accessGoal=()->null;approximateMaterialMatches=null;}
+    public void resetAdapters(){stateValidator=(current,desired,itemVerify)->true;beforePlace=pos->{};mayBreak=pos->true;mayPlace=pos->true;movementMayPlace=pos->true;stateComparison=null;placementGoalAdapter=(p,g)->g;breakGoalAdapter=(p,g)->g;accessGoal=()->null;placeFromBelow=pos->false;approximateMaterialMatches=null;}
     public int repeats(){return numRepeats;}
     public Vec3i origin(){return origin;}
     public Set<BetterBlockPos> incorrectPositions(){return incorrectPositions==null?Set.of():Set.copyOf(incorrectPositions);}
@@ -291,7 +293,7 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
                         // A ceiling provides an existing clickable support above
                         // the player. Native reach and collision still decide
                         // whether that face can actually place this cell.
-                        if (dy > 0 && bcc.bsi.get0(x, y + 1, z).getBlock() == Blocks.AIR) {
+                        if (dy > 0 && bcc.bsi.get0(x, y + 1, z).getBlock() == Blocks.AIR && !placeFromBelow.test(new BlockPos(x, y, z))) {
                             continue;
                         }
                         desirableOnHotbar.add(desired);

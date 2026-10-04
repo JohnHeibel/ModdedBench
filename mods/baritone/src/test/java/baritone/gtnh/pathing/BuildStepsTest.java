@@ -146,4 +146,15 @@ public class BuildStepsTest {
         var held=BuildSteps.held(Set.of(at(0,65,0),at(1,65,0),at(9,65,0)),p->p.equals(at(9,66,0)));
         assertSame(BuildSteps.Held.NONE,held);
     }
+    @Test public void anEmptyCellALaterStepFillsIsNoOpenSide(){
+        // The same lining three high under a ceiling at y 68, built a level at a time: on the middle level the cell above each
+        // corner is empty, and is itself a cell of the lining.
+        Set<BlockPos> lining=new HashSet<>(),level=new HashSet<>();
+        for(int y=65;y<=67;y++)for(int x=1;x<=5;x++)for(int z=1;z<=5;z++)if(x==1||x==5||z==1||z==5){lining.add(at(x,y,z));if(y<=66)level.add(at(x,y,z));}
+        java.util.function.Predicate<BlockPos> room=p->p.getY()>=65&&p.getY()<=67&&p.getX()>=1&&p.getX()<=5&&p.getZ()>=1&&p.getZ()<=5;
+        var held=BuildSteps.held(lining,level,room);
+        assertEquals(Set.of(at(1,65,1),at(5,65,1),at(1,65,5),at(5,65,5),at(1,66,1),at(5,66,1),at(1,66,5),at(5,66,5)),held.first());
+        assertTrue(held.held().contains(at(4,66,1))&&held.held().contains(at(5,66,2)));
+        assertTrue(held.held().stream().allMatch(level::contains));
+    }
 }
