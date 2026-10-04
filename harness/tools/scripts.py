@@ -128,7 +128,8 @@ def mb_run(code: str | None = None, args: dict | None = None, name: str | None =
     it resumes a paused world first. The body is busy until the task ends: a game call that would
     move the body is refused with body_busy; reads, notes, goals, files and anything else run (reads
     say bodyBusy: true), and every result carries body {task, name,
-    for (seconds), now (its current call)} and, once, finished [...] with each ended task's
+    for (seconds), now (its current call), and paused (the reason) while the world is paused: the
+    task works on nothing until it resumes} and, once, finished [...] with each ended task's
     result or error and line. mb_task waits for it or cancels it. minutes (default 20, at most
     60) is its limit; past it the task is stopped and counts as failed (time_limit). Inside a
     background script resume= and time resume/step are refused; a time pause ends the task
