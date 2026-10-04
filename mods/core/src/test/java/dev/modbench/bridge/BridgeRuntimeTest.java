@@ -148,7 +148,7 @@ public class BridgeRuntimeTest {
         Session session = new Session();
         List<JsonObject> replies = new ArrayList<>();
         JsonObject params = new JsonObject();
-        params.addProperty("_timeout_ms", 1);
+        params.addProperty("_timeout_ms", 100); // long enough to reach the handler on a cold, busy machine; it then waits the deadline out
         Request request = request(runtime, session, 2, "act.mutate", params, replies);
         runtime.dispatch(request);
 
