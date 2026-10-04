@@ -11,7 +11,22 @@ sys.path.insert(0, str(REPO / "harness" / "console"))
 import console
 
 
+def start(args, job=None):
+    """The steps the console's Start would run, with nothing started: (steps, the shell line of the loop, its arguments)."""
+    import types
+    from unittest import mock
+    c = object.__new__(console.Console); c.job = job or {"name": "", "running": False}
+    c.supervisor = c.backups = types.SimpleNamespace(poll=lambda: None)  # both count as running: Start starts neither
+    steps = []; c.run_job = lambda name, s: steps.extend(s)
+    with mock.patch.object(console.subprocess, "Popen"), mock.patch.object(console, "sh"): c.act("agent.start", args)
+    return steps, steps[-1][steps[-1].index("-c") + 1], steps[-1][steps[-1].index("-c") + 3:]
+
+
 class ConsoleTests(unittest.TestCase):
+    def test_start_keeps_what_the_loop_writes_as_it_dies(self):
+        _, loop, _ = start({})
+        self.assertIn("mkdir -p .state", loop); self.assertTrue(loop.endswith(">/dev/null 2>>.state/codex-loop.err"))
+
     def test_the_shipped_prompt_has_every_placeholder_the_console_fills(self):
         text = console.fill_prompt((REPO / "PROMPT.md").read_text(encoding="utf-8"), "Steam Macerator", "Tier 0.5 - Steam Age")
         self.assertIn('TARGET_QUEST      = "Steam Macerator"', text); self.assertIn('REPO              = "/work/modbench"', text)

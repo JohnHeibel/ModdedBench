@@ -76,7 +76,7 @@ function render(s){
     health:p.health,food:p.food,dimension:w.dimension??p.dimension,quests:q.error?q.error:Object.entries(q).filter(([k,v])=>typeof v!=="object").map(([k,v])=>k+"="+v).join("  ")});
   $("deploys").innerHTML=s.deploys.length?"<table>"+s.deploys.map(d=>`<tr><td>${esc(d.time)}</td><td>${esc((d.components||[]).join(", "))}</td><td>${d.ok?"installed":d.ok===false?"rolled back":"pending"}</td><td>${esc(d.reason||d.error||"")}</td></tr>`).join("")+"</table>":'<div class="note">none</div>';
   $("jobtitle").textContent=s.job.name?`Last action: ${s.job.name} ${s.job.running?"(running)":s.job.ok?"(done)":"(failed)"}`:"Last action";
-  if(s.job.name)$("job").textContent=s.job.log; const log=$("log"),end=log.scrollTop+log.clientHeight>=log.scrollHeight-8; log.textContent=a.log||""; if(end)log.scrollTop=log.scrollHeight}
+  if(s.job.name)$("job").textContent=s.job.log; const log=$("log"),end=log.scrollTop+log.clientHeight>=log.scrollHeight-8; log.textContent=(a.err&&!a.running?"--- .state/codex-loop.err (what the loop wrote as it failed) ---\n"+a.err+"\n--- log ---\n":"")+(a.log||""); if(end)log.scrollTop=log.scrollHeight}
 async function refresh(){try{const r=await fetch("/api/state",{headers:{"X-Console-Token":T}});const s=await r.json();if(s.error)$("err").textContent=s.error;else render(s)}catch(e){$("err").textContent="console not answering: "+e}}
 refresh();setInterval(refresh,3000);
 </script>
