@@ -27,7 +27,6 @@ import baritone.api.pathing.movement.ActionCosts;
 import baritone.api.utils.BetterBlockPos;
 import baritone.pathing.calc.openset.BinaryHeapOpenSet;
 import baritone.pathing.movement.CalculationContext;
-import baritone.pathing.movement.Moves;
 import baritone.utils.pathing.BetterWorldBorder;
 import baritone.utils.pathing.Favoring;
 import baritone.utils.pathing.MutableMoveResult;
@@ -98,7 +97,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         int timeCheckInterval = 1 << 6;
         int pathingMaxChunkBorderFetch = Baritone.settings().pathingMaxChunkBorderFetch.value; // grab all settings beforehand so that changing settings during pathing doesn't cause a crash or unpredictable behavior
         double minimumImprovement = Baritone.settings().minimumImprovementRepropagation.value ? MIN_IMPROVEMENT : 0;
-        Moves[] allMoves = Moves.values();
+        baritone.gtnh.pathing.Move[] allMoves = calcContext.moves; // ModdedBench: the walker's own and MoveRegistry's
         while (!openSet.isEmpty() && numEmptyChunk < pathingMaxChunkBorderFetch && !cancelRequested) {
             if ((numNodes & (timeCheckInterval - 1)) == 0) { // only call this once every 64 nodes (about half a millisecond)
                 long now = System.currentTimeMillis(); // since nanoTime is slow on windows (takes many microseconds)
@@ -119,20 +118,20 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
                 return Optional.of(new Path(startNode, loopFreeEnd(currentNode), numNodes, goal, calcContext));
             }
             plannedUnderWater[0] = currentNode.submerged; // ModdedBench: see MovementHelper.PLANNED_UNDER_WATER
-            for (Moves moves : allMoves) {
-                int newX = currentNode.x + moves.xOffset;
-                int newZ = currentNode.z + moves.zOffset;
+            for (baritone.gtnh.pathing.Move moves : allMoves) {
+                int newX = currentNode.x + moves.xOffset();
+                int newZ = currentNode.z + moves.zOffset();
                 if ((newX >> 4 != currentNode.x >> 4 || newZ >> 4 != currentNode.z >> 4) && !calcContext.isLoaded(newX, newZ)) {
                     // only need to check if the destination is a loaded chunk if it's in a different chunk than the start of the movement
-                    if (!moves.dynamicXZ) { // only increment the counter if the movement would have gone out of bounds guaranteed
+                    if (!moves.dynamicXZ()) { // only increment the counter if the movement would have gone out of bounds guaranteed
                         numEmptyChunk++;
                     }
                     continue;
                 }
-                if (!moves.dynamicXZ && !worldBorder.entirelyContains(newX, newZ)) {
+                if (!moves.dynamicXZ() && !worldBorder.entirelyContains(newX, newZ)) {
                     continue;
                 }
-                if (currentNode.y + moves.yOffset > 256 || currentNode.y + moves.yOffset < 0) {
+                if (currentNode.y + moves.yOffset() > 256 || currentNode.y + moves.yOffset() < 0) {
                     continue;
                 }
                 res.reset();
@@ -146,14 +145,14 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
                     throw new IllegalStateException(moves + " calculated implausible cost " + actionCost);
                 }
                 // check destination after verifying it's not COST_INF -- some movements return a static IMPOSSIBLE object with COST_INF and destination being 0,0,0 to avoid allocating a new result for every failed calculation
-                if (moves.dynamicXZ && !worldBorder.entirelyContains(res.x, res.z)) { // see issue #218
+                if (moves.dynamicXZ() && !worldBorder.entirelyContains(res.x, res.z)) { // see issue #218
                     continue;
                 }
-                if (!moves.dynamicXZ && (res.x != newX || res.z != newZ)) {
+                if (!moves.dynamicXZ() && (res.x != newX || res.z != newZ)) {
                     throw new IllegalStateException(moves + " " + res.x + " " + newX + " " + res.z + " " + newZ);
                 }
-                if (!moves.dynamicY && res.y != currentNode.y + moves.yOffset) {
-                    throw new IllegalStateException(moves + " " + res.y + " " + (currentNode.y + moves.yOffset));
+                if (!moves.dynamicY() && res.y != currentNode.y + moves.yOffset()) {
+                    throw new IllegalStateException(moves + " " + res.y + " " + (currentNode.y + moves.yOffset()));
                 }
                 if (!calcContext.positionAllowed.test(new baritone.compat.BlockPos(res.x,res.y,res.z))) {
                     continue;
