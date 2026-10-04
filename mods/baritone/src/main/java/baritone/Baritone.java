@@ -70,9 +70,10 @@ public final class Baritone implements IBaritone {
         farm=new baritone.process.FarmProcess(this);processes.registerProcess(farm);
         backfill=new baritone.process.BackfillProcess(this);processes.registerProcess(backfill);
         inventory.placementTarget=(x,y,z)->builder.placeAt(x,y,z,bsi.get0(x,y,z));
+        baritone.api.utils.SettingsUtil.readAndApply(SETTINGS,baritone.api.utils.SettingsUtil.SETTINGS_DEFAULT_NAME);
+        // Both below are set after the saved file is read, so a file from an earlier run cannot undo them.
         // Keep visible aiming as the GTNH default; packet/movement hooks also support freeLook.
         SETTINGS.freeLook.value=false;
-        baritone.api.utils.SettingsUtil.readAndApply(SETTINGS,baritone.api.utils.SettingsUtil.SETTINGS_DEFAULT_NAME);
         // Native items have a pickup delay; allow the final drop/packet handoff
         // without adding any wait between blocks while targets remain.
         SETTINGS.mineDropLoiterDurationMSThanksLouca.value=1000L;

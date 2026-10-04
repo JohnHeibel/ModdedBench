@@ -72,6 +72,21 @@ public class ReferenceSettingsTest {
         assertFalse(settings.allowWaterBucketFall.value);
     }
 
+    @Test public void aSavedSettingsFileCannotUndoTheForcedDefaults() throws Exception {
+        Path directory=dataDirectory.resolve("baritone");
+        if(Files.isRegularFile(directory))Files.delete(directory); // the failed-save test leaves a file in its place
+        Files.createDirectories(directory);
+        try{
+            Files.writeString(directory.resolve("settings.txt"),"freeLook true\nmineDropLoiterDurationMSThanksLouca 250\nstallTicks 345\n");
+            var primary=baritone.api.BaritoneAPI.Provider.class.getDeclaredField("primary");primary.setAccessible(true);primary.set(baritone.api.BaritoneAPI.getProvider(),null);
+            engine=new Baritone();
+            var settings=Baritone.settings();
+            assertFalse(settings.freeLook.value);assertEquals(1000L,(long)settings.mineDropLoiterDurationMSThanksLouca.value);
+            // Everything else in the file still applies.
+            assertEquals(345,(int)settings.stallTicks.value);
+        }finally{Files.deleteIfExists(directory.resolve("settings.txt"));Files.deleteIfExists(directory);}
+    }
+
     private static void installMinecraftDataDirectory(Path directory) throws Exception {
         Class<?> unsafeClass=Class.forName("sun.misc.Unsafe",true,ClassLoader.getSystemClassLoader());
         Field unsafeField=unsafeClass.getDeclaredField("theUnsafe");unsafeField.setAccessible(true);Object unsafe=unsafeField.get(null);
