@@ -146,10 +146,12 @@ never considered something or gave no reason.
 - `corpus.py` turns the loop's log, the feed and the agent's journal into a folder
   of short dated lines, an hour to a file (4 s for a three-day run; redone at most
   once a minute, and only when someone asks).
-- `ask.py` runs Codex with a fresh context per question (`MB_ASK_MODEL`, default
-  `gpt-5.6-luna`, medium effort). The model has four read-only searches over that
-  folder (`look.py`) and nothing else: no shell, no web, no files, no sub-agents,
-  none of the game's tools. About 15 s and 50,000 input tokens a question.
+- `ask.py` runs Codex with a fresh context per question (`ASK_MODEL` and
+  `ASK_EFFORT` in `docker/.env`, default `gpt-6-luna` at high effort). The model
+  has four read-only searches over that folder (`look.py`) and nothing else: no
+  shell, no web, no files, no sub-agents, none of the game's tools. About 25 s and
+  90,000 input tokens a question; `gpt-5.6-luna` at medium was as accurate on the
+  same questions for 14 s and 53,000. At medium effort `gpt-6-luna` misread lines.
 - `bot.py` is the chat side. Anyone may ask; one question is answered at a time,
   three may wait, each viewer may ask every two minutes and the bot takes twenty
   an hour (`--line`, `--wait`, `--hourly`). The question is given to the model as a

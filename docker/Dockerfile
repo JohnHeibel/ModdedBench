@@ -54,10 +54,11 @@ COPY docker/squid.conf /etc/squid/squid.conf
 CMD ["sh", "-c", "socat TCP-LISTEN:47223,fork,reuseaddr TCP4:host.docker.internal:47223 & touch /var/log/squid/access.log && chown squid /var/log/squid/access.log && tail -F /var/log/squid/access.log & exec squid -N"]
 
 # asker: answers viewers' questions in chat from the run's logs (harness/asker). Its own Codex login, the logs read only, no route to the game.
+# Codex is pinned: ask.py switches the model's other tools off by name, and those names were checked against this version.
 FROM node:22-bookworm-slim AS asker
 COPY harness/mcp/requirements.txt /tmp/requirements.txt
 RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip ca-certificates && rm -rf /var/lib/apt/lists/* \
- && npm install -g @openai/codex && pip3 install --break-system-packages --no-cache-dir -r /tmp/requirements.txt \
+ && npm install -g @openai/codex@0.160.0 && pip3 install --break-system-packages --no-cache-dir -r /tmp/requirements.txt \
  && useradd -m asker && mkdir -p /home/asker/.codex /data && chown asker:asker /home/asker/.codex /data
 COPY harness/asker /opt/modbench/asker
 COPY harness/runner/feed.py /opt/modbench/runner/feed.py

@@ -12,8 +12,9 @@ import argparse, json, os, re, shutil, subprocess, sys, tempfile, time
 from pathlib import Path
 
 # It searches the logs and does nothing else. Code mode stays: it is how these models call a tool, and its script host has no files, no network and no processes.
-OFF = ("shell_tool", "unified_exec", "apps", "plugins", "skill_search", "multi_agent", "image_generation", "view_image")
-MODEL, EFFORT, SECONDS, WORDS = os.environ.get("MB_ASK_MODEL", "gpt-5.6-luna"), os.environ.get("MB_ASK_EFFORT", "medium"), 150, 60
+# Which tools a model is handed changes with the Codex version: this list was probed on 0.153.4 and 0.160.0, and the image pins the latter.
+OFF = ("shell_tool", "unified_exec", "apps", "plugins", "skill_search", "multi_agent", "multi_agent_v2", "goals", "image_generation", "view_image")
+MODEL, EFFORT, SECONDS, WORDS = os.environ.get("MB_ASK_MODEL", "gpt-6-luna"), os.environ.get("MB_ASK_EFFORT", "high"), 150, 60
 
 BRIEF = """You answer one question from a viewer of a live stream where an AI agent ("the AI") plays GT New Horizons, a modded Minecraft factory game, on its own. You have the AI's logs through four tools. Find out what actually happened and answer in one or two short sentences.
 
