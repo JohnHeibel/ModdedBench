@@ -54,6 +54,8 @@ public final class PauseCoordinator {
     private String stepReason="step";
     private JsonObject lastStep;
     private boolean held;
+    /** Ticks a step still had when the operator's hold paused it: the release steps those, instead of running freely. */
+    private int heldStep;
 
     public PauseCoordinator(SimulationClock clock, Barrier background, Barrier computers, Host host) {
         this.clock=clock;this.background=background;this.computers=computers;this.host=host;
@@ -130,8 +132,8 @@ public final class PauseCoordinator {
         held=value;
         // A release resumes only the pause the hold made: a world already paused (an agent thinking, a guard,
         // a disconnect) or paused again during the hold stays paused, so a backup's hold never sets it running.
-        if(!value) { if(clock.paused() && clock.reason().equals("operator_hold")) command("time.resume",new JsonObject(),result->{ if(result.has("error")) held=true; }); }
-        else if(!clock.paused()) command("time.pause",Json.object("reason","operator_hold"),result->{});
+        if(!value) { if(clock.paused() && clock.reason().equals("operator_hold")) command("time.resume",Json.object("ticks",heldStep),result->{ if(result.has("error")) held=true; }); }
+        else if(!clock.paused()) { heldStep=stepTicks;command("time.pause",Json.object("reason","operator_hold"),result->{}); }
     }
     private void interrupt(String reason) {
         if(completion!=null) { Consumer<JsonObject> previous=completion;completion=null;owner=null;

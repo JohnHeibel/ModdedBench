@@ -254,6 +254,20 @@ public class PauseCoordinatorTest {
     }
 
     @Test
+    public void anOperatorHoldInsideAStepGivesTheStepItsRemainingTicksBack() {
+        Fixture f=new Fixture();settlePause(f);
+        f.coordinator.command("time.resume",Json.object("ticks",10),f.replies::add);
+        assertEquals(4,run(f,4));
+        f.coordinator.hold(true);assertFalse(f.coordinator.before());
+        f.coordinator.hold(false);
+        assertEquals("the release steps what was left, not a free run",6,run(f,100));
+        assertEquals("step",f.clock.reason());
+        f.coordinator.before();f.command("time.resume");run(f,3);
+        f.coordinator.hold(true);f.coordinator.before();f.coordinator.hold(false);
+        assertEquals("a hold outside a step still releases to a running world",50,run(f,50));
+    }
+
+    @Test
     public void aPlainResumeSupersedesAStepAndRunsFreely() {
         Fixture f=new Fixture();settlePause(f);
         f.coordinator.command("time.step",Json.object("ticks",10),f.replies::add);
