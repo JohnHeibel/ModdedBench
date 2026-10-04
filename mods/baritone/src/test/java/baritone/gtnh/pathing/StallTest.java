@@ -25,14 +25,24 @@ public class StallTest {
     }
 
     @Test public void pacingBetweenTwoFarPlacesStallsOnceTheGroundRepeats() {
-        // Back and forth over ten blocks, a lap every 100 ticks: the old two-block rule never tripped on this.
+        // Back and forth over ten blocks, a lap every 100 ticks: the old two-block rule never tripped on this. The first
+        // lap is a way in and back out; the second is the repeat.
         int tripped=run(new Stall(800),5000,t->{int phase=t%100;return new int[]{phase<50?phase/5:10-(phase-50)/5,64,0};},t->0);
-        assertTrue(tripped>0&&tripped<=800+100);
+        assertTrue(tripped>0&&tripped<=800+200);
+    }
+
+    @Test public void oneWalkBackOutOfADeadEndIsNotAStall() {
+        // Sixty blocks into a dead end and the same sixty back out, five ticks a block, under a 200-tick window.
+        Stall stall=new Stall(200);
+        assertEquals(-1,run(stall,600,t->new int[]{t<300?t/5:60-(t-300)/5,64,0},t->0));
+        // Going in a third time over the same ground is the loop.
+        int tripped=run(stall,600,t->new int[]{t/5,64,0},t->0);
+        assertTrue(""+tripped,tripped>0&&tripped<=200+5);
     }
 
     @Test public void circlingALoopStallsToo() {
         int tripped=run(new Stall(400),5000,t->{double a=t*2*Math.PI/200;return new int[]{(int)Math.floor(12*Math.cos(a)),70,(int)Math.floor(12*Math.sin(a))};},t->0);
-        assertTrue(tripped>0&&tripped<=400+200);
+        assertTrue(tripped>0&&tripped<=400+400);
     }
 
     @Test public void progressResetsTheWatchAndMarksTheJobAdvanced() {
@@ -53,8 +63,9 @@ public class StallTest {
     }
 
     @Test public void replanningBetweenTwoCellsIsNoNewGround() {
-        // A pit replan loop: the start alternates between the landing cell and one mid-fall, never a third.
-        assertEquals(201,run(new Stall(200),2000,t->new int[]{58,t%3==0?19:17,-159},t->0));
+        // A pit replan loop: the start alternates between the landing cell and one mid-fall, never a third. Each is
+        // new ground on its first two entries.
+        assertEquals(204,run(new Stall(200),2000,t->new int[]{58,t%3==0?19:17,-159},t->0));
     }
 
     @Test public void zeroTurnsItOff() {
@@ -88,7 +99,7 @@ public class StallTest {
     @Test public void searchesBackToBackOnTheSameGroundStillStallAtMostOneBudgetLate() {
         // A re-plan loop: a search is in flight on nearly every tick, the player never reaches new ground.
         int plain=run(new Stall(200),2000,t->new int[]{58,t%3==0?19:17,-159},t->0);
-        assertEquals(201,plain);
+        assertEquals(204,plain);
         assertEquals(plain+100,runSearching(new Stall(200),2000,t->new int[]{58,t%3==0?19:17,-159},t->100));
     }
 

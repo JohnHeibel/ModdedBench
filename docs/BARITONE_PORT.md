@@ -231,6 +231,9 @@ bounded checkpoint; collections over 128 entries appear as
 permissions, never a different plan, and re-observes the world before acting.
 `nav.build_pause` releases controls and leaves the job resumable (after its
 closing, when it has something to put back); server time keeps running.
+A job beginning deletes the journals beyond the newest twenty that ended and
+the newest twenty paused of each kind, with their spec and ledger, so an
+older job can no longer be resumed.
 
 ## Schematic import and copy
 

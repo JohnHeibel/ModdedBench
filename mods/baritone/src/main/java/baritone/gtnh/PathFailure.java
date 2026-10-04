@@ -13,12 +13,10 @@ final class PathFailure {
     private PathFailure(){}
     /** On the game thread. `calculationsBefore` is the engine's count when the job started; `detail` gets the evidence. */
     static String cause(Baritone engine,long calculationsBefore,baritone.api.pathing.goals.Goal goal,Map<String,Object> detail){
-        var snags=engine.snags;
-        if(snags.failure()!=null||snags.anyBanned()){detail.put("snags",snags.status());return snags.failure()!=null?snags.failure():snags.cause();}
         var pathing=engine.getPathingBehavior();
-        if(pathing.calculationsStarted()==calculationsBefore)return "stopped_before_searching";
-        var last=pathing.lastCalculation();detail.put("lastCalculation",last);
-        if(snags.cause()!=null)detail.put("snags",snags.status());
+        var last=pathing.calculationsStarted()==calculationsBefore?null:pathing.lastCalculation();
+        String early=before(engine.snags,last,detail);
+        if(early!=null)return early;
         String type=String.valueOf(last.get("type"));
         if(type.equals("EXCEPTION"))return "search_exception";
         if(!type.equals("FAILURE"))return "path_calculation_failed";
@@ -35,6 +33,15 @@ final class PathFailure {
             if(goalLoaded!=null)detail.put("goalLoaded",goalLoaded);
         }
         return searchEnded(why,goalLoaded);
+    }
+    /**
+     * What ends the job before the search is read: the snag that ended it, or no search having run (`last` null). A snag
+     * the job got past (an edge banned, then walked around) is evidence beside the search's own end, not the cause.
+     */
+    static String before(baritone.gtnh.pathing.Snags snags,Map<String,Object> last,Map<String,Object> detail){
+        if(last!=null)detail.put("lastCalculation",last);
+        if(snags.failure()!=null||snags.cause()!=null)detail.put("snags",snags.status());
+        return snags.failure()!=null?snags.failure():last==null?"stopped_before_searching":null;
     }
     /**
      * A search that returned no path at all, by why its loop ended. Only the reason changes: whatever partial path a search
