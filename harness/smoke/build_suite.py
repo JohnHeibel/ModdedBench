@@ -20,6 +20,8 @@ a scenario that passed before and fails now is a regression.
   buried        the same with every face covered: stops as no_stance naming the cell and what is in the way, nothing else touched
   lining        a roofed room lined on every inside wall face from inside it: the corners under the ceiling lie behind the two cells
                 beside them, so they go in first
+  lining_pocket the same room with a chest in a corner: the chest and the cell over it stay out of the lining, and the corner
+                under the ceiling over that closed-in cell still goes in before the two cells that would shut it off
   terrain       a hall on natural ground, whatever stands there dug out: 11 x 11 and 5 high with a door, 320 cells
   hall          only when named (--only hall): run 2's hall, 25 x 25 and 7 high, 1728 cells, resumed until done
 
@@ -182,18 +184,22 @@ class Suite(bs.Shells):
               and by.get("id") == STONE and sum(abs(a - b) for a, b in zip(by.get("pos") or [0, 0, 0], self.at(origin, cell))) == 1 and found == STONE and not others)
         return {"passed": ok, "receipt": r, "why": f"state={r.get('state')} stopped={stop} cell={found} othersTouched={len(others)} ticks={r.get('ticks')}"}
 
-    def lining(self):
+    def lining(self, chest=None):
         origin = self.arena(); self.stacks((WOOD, 64), (DIRT, 16))
         door = [[3, 0, 6], [3, 1, 6]]
         room = [[x, y, z] for x in range(7) for z in range(7) for y in range(4) if (y == 3 or x in (0, 6) or z in (0, 6)) and [x, y, z] not in door]
         for r in room: self.s.call(bs.FIX + ".set_block", x=bs.PLOT[0] + r[0], y=bs.FLOOR + r[1], z=bs.PLOT[1] + r[2], id=STONE, meta=0)
-        ring = [[x, y, z] for y in range(3) for x in range(1, 6) for z in range(1, 6) if (x in (1, 5) or z in (1, 5)) and [x, y, z] not in ([3, 0, 5], [3, 1, 5])]
+        if chest: self.s.call(bs.FIX + ".set_block", x=bs.PLOT[0] + chest[0], y=bs.FLOOR, z=bs.PLOT[1] + chest[2], id="minecraft:chest", meta=3)
+        kept = ([3, 0, 5], [3, 1, 5]) + (([chest[0], 0, chest[2]], [chest[0], 1, chest[2]]) if chest else ())   # the doorway; the chest and the space its lid needs
+        ring = [[x, y, z] for y in range(3) for x in range(1, 6) for z in range(1, 6) if (x in (1, 5) or z in (1, 5)) and [x, y, z] not in kept]
         cells = [{"pos": c, "id": WOOD} for c in ring]
         self.stand([origin[0] + 3.5, bs.FLOOR, origin[2] + 3.5])
         r = call(work.mb_build, cells=cells, origin=origin, timeout_ticks=6000)
         wrong = self.wrong(origin, cells); others = self.wrong(origin, [{"pos": c, "id": STONE} for c in room])
         return {"passed": r.get("state") == "succeeded" and not wrong and not others, "receipt": r,
                 "why": f"state={r.get('state')} stopped={r.get('stopped')} ticks={r.get('ticks')} wrong={len(wrong)} first={[[w[i] - origin[i] for i in range(3)] for w in wrong[:4]]} roomTouched={len(others)}"}
+
+    def lining_pocket(self): return self.lining(chest=(1, 0, 5))
 
     def terrain(self): return self.hall(SMALL, "terrainRuns", 80)
 
@@ -230,7 +236,7 @@ class Suite(bs.Shells):
 
     def run(self):
         all_ = {**{n: (lambda n=n: self.shell_case(n)) for n in bs.CASES},
-                **{n: getattr(self, n) for n in ("staged", "unfinishable", "missing", "occupied", "timeout", "any_meta", "clear", "hidden", "buried", "lining", "terrain", "hall")}}
+                **{n: getattr(self, n) for n in ("staged", "unfinishable", "missing", "occupied", "timeout", "any_meta", "clear", "hidden", "buried", "lining", "lining_pocket", "terrain", "hall")}}
         names = [n for n in (self.args.only or [n for n in all_ if n != "hall"]) if n not in (self.args.skip or [])]
         try: past = json.loads(OUT.read_text())
         except (OSError, ValueError): past = {}
