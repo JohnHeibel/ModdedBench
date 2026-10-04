@@ -84,14 +84,15 @@ final class ReferenceProcessJob implements Navigation.Job,PlansWhilePaused {
         // Explore and farm have no end of their own: their duration running out is a pause, not a success; the others failed to arrive.
         if(ticks++>=duration){finish(kind.equals("farm")||kind.equals("explore")?"paused":"failed","timeout");return;}
         first.before(ticks,mc.thePlayer);
-        // A farm's work shows in the inventory (harvest in, seeds out); everything else only in new ground.
-        var feet=engine.getPlayerContext().playerFeet();
-        if(stall.tick(kind.equals("farm")?inventory():0,feet.x,feet.y,feet.z,WorkAccess.searchBudget(engine))){finish(stall.advanced()?"paused":"failed",stall.reason());return;}
+        // The first scan of the bounds stands still by design: the stall watch starts once there is something to walk to.
         if(scan!=null){
             scan.tick();
             if(scan.passes==0)return;
             if(!started){engine.getGetToBlockProcess().getToBlock(scan);started=true;}
         }
+        // A farm's work shows in the inventory (harvest in, seeds out); everything else only in new ground.
+        var feet=engine.getPlayerContext().playerFeet();
+        if(stall.tick(kind.equals("farm")?inventory():0,feet.x,feet.y,feet.z,WorkAccess.searchBudget(engine))){finish(stall.advanced()?"paused":"failed",stall.reason());return;}
         engine.tickStart();first.after(ticks);var current=engine.getPathingBehavior().getCurrent();
         if(engine.snags.failure()!=null){finish("failed",engine.snags.failure());return;}
         if(current!=null)current.getPath().movements().forEach(m->movements.add(m.getClass().getSimpleName()));
