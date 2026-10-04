@@ -187,4 +187,6 @@ public abstract class BridgeRuntime {
     protected abstract void controlsChanged(String reason);
     protected abstract void maintainControls();
     protected void admit(Request request) {}
+    /** A request is ending in an error; called before its reply is built, on whichever thread ended it. */
+    protected void failed(Request request) {}
 }
