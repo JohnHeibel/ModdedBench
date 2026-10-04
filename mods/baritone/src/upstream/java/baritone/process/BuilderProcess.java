@@ -705,7 +705,16 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
             }
         });
         List<Goal> toBreak = new ArrayList<>();
-        breakable.forEach(pos -> toBreak.add(breakGoal(pos, bcc)));
+        // Beside a block this job may not break there is nothing to do, so it must not count as arrival while
+        // placeable cells wait: only what toBreakNearPlayer would break may be the fallback.
+        List<Goal> canBreak = new ArrayList<>();
+        breakable.forEach(pos -> {
+            Goal goal = breakGoal(pos, bcc);
+            toBreak.add(goal);
+            if (bcc.breakCostMultiplierAt(pos.x, pos.y, pos.z, bcc.bsi.get0(pos)) < COST_INF) {
+                canBreak.add(goal);
+            }
+        });
         List<Goal> toPlace = new ArrayList<>();
         placeable.forEach(pos -> {
             if (!placeable.contains(pos.down()) && !placeable.contains(pos.down(2))) {
@@ -717,7 +726,7 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
         sourceLiquids.forEach(pos -> toPlace.add(placementGoal(pos, bcc)));
 
         if (!toPlace.isEmpty()) {
-            return new JankyGoalComposite(new GoalComposite(toPlace.toArray(new Goal[0])), new GoalComposite(toBreak.toArray(new Goal[0])));
+            return new JankyGoalComposite(new GoalComposite(toPlace.toArray(new Goal[0])), new GoalComposite(canBreak.toArray(new Goal[0])));
         }
         if (toBreak.isEmpty()) {
             if (logMissing && !missing.isEmpty()) {
