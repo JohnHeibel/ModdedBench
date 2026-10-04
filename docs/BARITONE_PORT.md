@@ -13,7 +13,7 @@ without it; only `nav.*` and `obs.scan`/`terrain`/`fluid`/`tools` need it.
 | `src/upstream/java` | 156 upstream files, adapted in place. `UPSTREAM_SOURCES.json` records each file's original path and SHA-256; the Gradle build verifies them. Modified files carry a notice. The hash pins provenance, not text identity after adaptation. |
 | `src/main/java/baritone/compat` | Version boundary: coordinates, vectors, block state as registry id plus metadata, loaded-chunk index, native placement, inventory swaps, events, rendering. No fake `net.minecraft` classes. |
 | `src/main/java/baritone/gtnh` | ModdedBench side: `BaritoneNavigation` (the `Navigation` implementation the client registers), job wrappers (`Reference*Job`, `MiningProcess`, `ReferenceConstructionProcess`), the validated build plan (`ConstructionPlan`), `PlanImport`, `WorkJournal`, tool and placement adapters. |
-| package `baritone.gtnh.pathing` | Minecraft-free code written for this project and unit tested without a game: work and construction spec validation (`WorkSpec`, `ConstructionMask`), the build order and break rule (`BuildSteps`, `PlanBreaks`), `DeferredClearance`, the corridor constraint (`Corridor`), `GoalRange`, and terrain observation helpers (`TerrainGrid`, `CollisionBox`, `LadderFacing`, `FluidPolicy`). There is no second path search; all routing is upstream's. |
+| package `baritone.gtnh.pathing` | Minecraft-free code written for this project and unit tested without a game: work and construction spec validation (`WorkSpec`, `ConstructionMask`), the build order and break rule (`BuildSteps`, `PlanBreaks`), `DeferredClearance`, the corridor constraint (`Corridor`), `GoalRange`, and terrain observation helpers (`TerrainGrid`, `CollisionBox`, `LadderFacing`, `FluidPolicy`). `Move` and `MoveRegistry` are how a kind of movement is added to the search, with the added ones in `baritone.gtnh.moves` ([MOVEMENTS.md](MOVEMENTS.md)). There is no second path search; all routing is upstream's. |
 
 The GUI input transformer and widget inspection in `mods/core` and
 `mods/client` are this project's own code, not Baritone's; the client has no
@@ -52,14 +52,14 @@ cancelled and a superseded search cannot install its result into a newer job.
 - Anticipated-drop expiry counts simulation ticks, so a pause does not exhaust
   it; the grace is 1,000 ms of simulation (upstream: 250 ms).
 - Not synthesised because 1.7.10 lacks them: auto-jump, Frost Walker, Depth
-  Strider, elytra, moving world border.
+  Strider, upstream's elytra flight, moving world border.
 
 ## Not ported or unsupported
 
 | Item | State |
 | --- | --- |
 | Upstream chat command framework, `GuiClick`, multiple bots, `baritone.api` binary compatibility | Not implemented. MCP tools cover the operations. |
-| Flight (modded or otherwise) | Out of scope. |
+| Flight | Gliding on worn wings is an added move, and other moves that take off and land are added the same way ([MOVEMENTS.md](MOVEMENTS.md)). Resting in the air (hover, creative flight) is not built. |
 | Water-bucket fall recovery | Disabled: the clutch is a provider boundary with no verified fluid-container provider. |
 | Swimming | Verified still vanilla water only. Modded fluids are excluded regardless of temperature. Flowing-water targets fail path calculation. |
 | Mining a block with liquid directly above | Rejected by the inherited `MovementHelper` safety rule (seen with water-capped obsidian). |

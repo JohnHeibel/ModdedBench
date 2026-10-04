@@ -8,6 +8,8 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-04** Movement registry: a kind of movement is one class and one line (`MoveRegistry`), with gliding on
+  worn wings as the worked example; `docs/MOVEMENTS.md` says how to add one and what hovering would still need.
 - **2026-10-03** Background body tasks: `mb_run(background=True)` runs a script in its own
   process holding a body lock while the model keeps thinking; acting tools refuse with
   `body_busy`, every result carries `body`/`finished`, `mb_task` waits or cancels (never pauses).
