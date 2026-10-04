@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -35,6 +36,7 @@ OUT = mc.ROOT / ".runtime" / "evidence" / "builder-shell.json"
 FIX = "dev.work_process_fixture"
 BLOCK = "minecraft:dirt"
 PLOT, FLOOR = (22, 7), 176      # arena-relative low corner: clear of the arena's own courses, open floor on every side
+BARE = re.compile(r"[^,}\]]*")   # a number in text NBT: everything up to the end of its entry
 # start: arena cell relative to the shell's low corner. honest: an unfinished build passes if its receipt says so exactly.
 CASES: dict[str, dict] = {
     "door_inside": dict(door=True, start=(3, 3)),
@@ -49,6 +51,57 @@ def shell(door: bool) -> list[dict]:
              if (x in (0, 6) or z in (0, 6)) and not (door and (x, z) == (0, 3) and y < 2)]
     roof = [(x, 3, z) for x in range(7) for z in range(7)]
     return [{"pos": list(p), "id": BLOCK, "meta": 0} for p in walls + roof]
+
+
+def snbt(text: str):
+    """A tile entity's text NBT (the snbt of region and inspect_block) as dicts and lists; a leaf stays the token as written."""
+    i = 0
+
+    def quoted() -> str:
+        nonlocal i; j = i + 1
+        while text[j] != '"': j += 2 if text[j] == "\\" else 1
+        token, i = text[i:j + 1], j + 1
+        return token
+
+    def value():
+        nonlocal i
+        if text[i] == "{":
+            out, i = {}, i + 1
+            while text[i] != "}":
+                if text[i] == '"': key = quoted()
+                else: j = text.index(":", i); key, i = text[i:j], j
+                i += 1; out[key] = value(); i += text[i] == ","
+            i += 1; return out
+        if text[i] == "[" and text[i + 1:i + 3] not in ("B;", "I;"):
+            out, i = [], i + 1
+            while text[i] != "]":
+                i = text.index(":", i) + 1; out.append(value()); i += text[i] == ","
+            i += 1; return out
+        if text[i] == '"': return quoted()
+        j = text.index("]", i) + 1 if text[i] == "[" else BARE.match(text, i).end()
+        token, i = text[i:j], j
+        return token
+    return value()
+
+
+def leaves(node, path: tuple = ()) -> dict[tuple, object]:
+    """{path: token} for every leaf of parsed tile NBT; a path is the keys and list indices that lead to it."""
+    if not node or not isinstance(node, (dict, list)): return {path: node}
+    return {p: v for k, child in (node.items() if isinstance(node, dict) else enumerate(node)) for p, v in leaves(child, path + (k,)).items()}
+
+
+def diff(before: dict, after: dict, allowed=(), ignore=()) -> list[dict]:
+    """The cells that differ between two Shells.region pictures, outside the `allowed` positions. Tile NBT is compared
+    leaf by leaf without the paths in `ignore` (Shells.volatile learns them); a cell that differs lists its changed paths."""
+    keep, skip, out = {tuple(p) for p in allowed}, {tuple(p) for p in ignore}, []
+    for pos in sorted(before.keys() | after.keys()):
+        a, b = before.get(pos), after.get(pos)
+        if pos in keep or a == b: continue
+        la, lb = (leaves(snbt(c["snbt"])) if c and c.get("snbt") else {} for c in (a, b))
+        paths = sorted((p for p in la.keys() | lb.keys() if p not in skip and la.get(p) != lb.get(p)), key=str)
+        block = [c and [c["id"], c["meta"]] for c in (a, b)]
+        if block[0] != block[1] or paths: out.append({"pos": list(pos), "before": block[0], "after": block[1], "paths": [list(p) for p in paths]})
+    return out
 
 
 class Shells(Course):
@@ -76,15 +129,19 @@ class Shells(Course):
 
     def teardown(self):
         for step in (lambda: self.c.call("act.stop"),
-                     lambda: self.s.call(FIX + ".restore") if self.active and not self.args.keep else None,
+                     lambda: self.restore() if self.active and not self.args.keep else None,
                      lambda: self.c.call("time.configure", **{**(self.previous_clock or {}), "pauseOnDisconnect": False})):
             try: step()
             except Exception as e: self.evidence.setdefault("teardownErrors", []).append(str(e))
 
-    def arena(self) -> list[int]:
-        """A fresh arena for every case: the last case's shell goes with the old one."""
-        if self.active: self.s.call(FIX + ".restore"); self.active = False
-        origin = self.s.call(FIX + ".create", timeout=300)["origin"]; self.active = True
+    def restore(self):
+        self.active = False; failed = self.s.call(FIX + ".restore").get("worldCellsFailed")
+        if failed: self.evidence.setdefault("worldCellsFailed", []).extend(failed); print("NOT PUT BACK:", failed, flush=True)
+
+    def arena(self, **create) -> list[int]:
+        """A fresh arena for every case: the last case's shell goes with the old one. create: width, depth, top, bare."""
+        if self.active: self.restore()
+        origin = self.s.call(FIX + ".create", timeout=300, **create)["origin"]; self.active = True
         for slot in (0, 1): self.s.call(FIX + ".set_stack", slot=slot, id=BLOCK, meta=0, count=64)
         return [origin[0] + PLOT[0], FLOOR, origin[2] + PLOT[1]]
 
@@ -96,9 +153,27 @@ class Shells(Course):
             if abs(p[0] - at[0]) < .05 and abs(p[2] - at[2]) < .05 and abs(p[1] - at[1]) < .6: break
             time.sleep(.1)
         else: raise RuntimeError(f"client never reached the start {at}")
-        tick = self.c.call_reply("obs.player").tick
-        while self.c.call_reply("obs.player").tick < tick + 20: time.sleep(.05)   # inventory and chunk sync
+        self.wait(20)   # inventory and chunk sync
         return self.c.call("obs.player")["pos"]
+
+    def wait(self, ticks: int):
+        tick = self.c.call_reply("obs.player").tick
+        while self.c.call_reply("obs.player").tick < tick + ticks: time.sleep(.05)
+
+    def set_block(self, rel, id: str, meta: int = 0, nbt: str | None = None):
+        """A block at a plot-relative cell; nbt is its tile entity as text, the snbt that region and inspect_block return."""
+        self.s.call(FIX + ".set_block", x=PLOT[0] + rel[0], y=FLOOR + rel[1], z=PLOT[1] + rel[2], id=id, meta=meta, **({"nbt": nbt} if nbt else {}))
+
+    def region(self, lo, hi) -> dict[tuple, dict]:
+        """{plot-relative pos: {id, meta, snbt?}} for every non-air cell of a plot-relative box, as the server has it."""
+        off = (PLOT[0], FLOOR, PLOT[1])
+        cells = self.s.call(FIX + ".region", min=[a + o for a, o in zip(lo, off)], max=[a + o for a, o in zip(hi, off)])["cells"]
+        return {tuple(a - o for a, o in zip(c.pop("pos"), off)): c for c in cells}
+
+    def volatile(self, lo, hi, ticks: int = 5) -> set[tuple]:
+        """The tile NBT paths that change by themselves: the same box read twice, `ticks` apart. Hand it to diff as ignore."""
+        before = self.region(lo, hi); self.wait(ticks)
+        return {tuple(p) for d in diff(before, self.region(lo, hi)) for p in d["paths"]}
 
     def blocks(self, cells: list[list[int]]) -> dict[tuple, str]:
         found = {}
