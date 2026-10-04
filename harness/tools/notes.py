@@ -680,8 +680,8 @@ def mb_goal(chapter: str | None = None, quest: str | None = None, subgoal: str |
     chapter changes rarely; quest changes when one is claimed and verified or parked
     with a note; subgoal is the immediate step ("mine copper for the bronze quest") and
     should be rewritten whenever you switch. serves names what the sub-goal is for when
-    it is not the current quest: a named investment ("second coke oven: charcoal for
-    the next three quests"). If you cannot say what a sub-goal serves, you have drifted.
+    it is not the current quest: a named investment ("furnace bank: ingots for
+    everything this chapter builds"). If you cannot say what a sub-goal serves, you have drifted.
     progress is a number, 0 to 100: how far through the current quest you think you
     are right now. Pass it whenever you rewrite the sub-goal. It is a quick guess for
     the people watching: do not work it out or look anything up for it, and it may go
