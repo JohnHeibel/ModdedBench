@@ -45,11 +45,31 @@ class CodexLoopTests(unittest.TestCase):
         codex_loop._mark_run(path, 1600.0, 50.5)  # a fresh thread 10 min in, same end within a minute
         self.assertEqual(json.loads(path.read_text())["startedAt"], 1000.0)
         codex_loop._mark_run(path, 2000.0, 240)   # an operator's extension moves the end, not the start
-        self.assertEqual(json.loads(path.read_text()), {"startedAt": 1000.0, "endsAt": 2000.0 + 240 * 60})
+        self.assertEqual(json.loads(path.read_text()), {"startedAt": 1000.0, "endsAt": 2000.0 + 240 * 60, "tokenCap": None})
         codex_loop._mark_run(path, 16400.0 + 599, 60)  # the end passed under ten minutes ago: the same run
         self.assertEqual(json.loads(path.read_text())["startedAt"], 1000.0)
         codex_loop._mark_run(path, 90000.0, 60)   # long after the end: a new run
-        self.assertEqual(json.loads(path.read_text()), {"startedAt": 90000.0, "endsAt": 90000.0 + 3600})
+        self.assertEqual(json.loads(path.read_text()), {"startedAt": 90000.0, "endsAt": 90000.0 + 3600, "tokenCap": None})
+
+    def test_a_start_that_names_no_budget_continues_to_the_runs_stored_end_and_cap(self):
+        path = self.repo / "run.json"
+        first = codex_loop._mark_run(path, 1000.0, 60, 5000, billed=200)
+        self.assertEqual(first, {"startedAt": 1000.0, "endsAt": 4600.0, "tokenCap": 5200})
+        self.assertEqual(codex_loop._mark_run(path, 2000.0, None, None, billed=900), first)   # a restart: the same end, not sixty more minutes
+        self.assertEqual(codex_loop._mark_run(path, 3000.0, 120, None, billed=900), {"startedAt": 1000.0, "endsAt": 10200.0, "tokenCap": 5200})  # only the field that was filled moves
+        self.assertEqual(codex_loop._mark_run(path, 3000.0, None, 1000, billed=900)["tokenCap"], 1900)
+        path.write_text('{"startedAt": "x", "endsAt": [], "tokenCap": 7}')  # junk is not a budget
+        self.assertEqual(codex_loop._mark_run(path, 50.0, None), {"startedAt": 50.0, "endsAt": None, "tokenCap": 7})
+        # In the loop: the stored end is the one that ends a later start, and a filled field moves it.
+        done = [{"events": [{"type": "thread.started", "thread_id": "T-1"}, message("MISSION COMPLETE")]}]
+        self.assertEqual("complete", self.loop(done, max_minutes=60, max_tokens=10**9)[0])
+        stored = json.loads((self.repo / ".state" / "run.json").read_text())
+        self.assertEqual("complete", self.loop(done)[0]); self.assertEqual(stored, json.loads((self.repo / ".state" / "run.json").read_text()))
+        live = json.loads((self.repo / ".state" / "overlay" / "live.json").read_text())["budget"]
+        self.assertAlmostEqual(live["startedAt"] + live["minutes"] * 60, stored["endsAt"], delta=1)  # the overlay counts down to the same end
+        (self.repo / ".state" / "run.json").write_text(json.dumps({**stored, "endsAt": stored["startedAt"] - 60})); (self.repo / "calls.json").unlink()
+        self.assertEqual("time_budget", codex_loop.run(self.repo, codex=["never-run"], ready=lambda: True, quests=lambda: None))  # the run is over until the operator extends it
+        self.assertEqual("complete", self.loop(done, max_minutes=5)[0])
 
     def test_a_screenshot_is_estimated_by_its_tiles_not_its_base64(self):
         from feed import Feed, BASE
