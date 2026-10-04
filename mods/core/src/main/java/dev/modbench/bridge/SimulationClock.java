@@ -30,7 +30,11 @@ public final class SimulationClock {
     public String reason() { return reason; }
     public boolean pauseOnDisconnect() { return pauseOnDisconnect; }
     public boolean actionFailed() { return actionFailed; }
+    /** Pauses a running job waits out: a request, the operator, a lost connection or a clock fault. Any other reason is a guard's. */
+    public static final java.util.Set<String> WAITED_OUT=java.util.Set.of("requested_pause","operator_hold","client_disconnected",
+        "client_unresponsive","agent_disconnected","paused_packet_overflow","clock_protocol_error","step");
     public void pause(String why) {
+        if(paused && !WAITED_OUT.contains(reason)) return; // a guard's reason is what the model is told: nothing overwrites it until the resume
         boolean newEvent = !paused || !reason.equals(why);
         transition(true); reason=why;
         if (newEvent) {
@@ -49,19 +53,19 @@ public final class SimulationClock {
     }
     /**
      * Thresholds and burning pause once, as the value crosses into danger, and re-arm only when it has recovered:
-     * a guard that re-paused every tick while air stayed low would leave no ticks to swim out with.
+     * a guard that re-paused every tick while air stayed low would leave no ticks to swim out with. Only the guard
+     * that paused counts as reported: a value in danger under another pause (a step's end, another guard) pauses in its turn.
      */
     public void observe(float health, int air, int food, boolean onFire) {
         boolean lowHealth=healthBelow>=0 && health<=healthBelow, lowAir=airBelow>=0 && air<=airBelow;
         boolean lowFood=foodBelow>=0 && food<=foodBelow, fire=burning && onFire;
         if(!paused) {
-            if(healthDrop && !fighting() && lastHealth!=null && health<lastHealth) pause("health_dropped");
-            else if(lowHealth && !inDanger[0]) pause("health_threshold");
-            else if(lowAir && !inDanger[1]) pause("air_threshold");
-            else if(fire && !inDanger[2]) pause("burning");
-            else if(lowFood && !inDanger[3]) pause("food_threshold");
+            if(healthDrop && !fighting() && lastHealth!=null && health<lastHealth) { pause("health_dropped"); inDanger[0]=lowHealth; } // the hit reports the health it left
+            else if(lowHealth && !inDanger[0]) { pause("health_threshold"); inDanger[0]=true; }
+            else if(lowAir && !inDanger[1]) { pause("air_threshold"); inDanger[1]=true; }
+            else if(fire && !inDanger[2]) { pause("burning"); inDanger[2]=true; }
+            else if(lowFood && !inDanger[3]) { pause("food_threshold"); inDanger[3]=true; }
         }
-        if(paused) { inDanger[0]|=lowHealth; inDanger[1]|=lowAir; inDanger[2]|=fire; inDanger[3]|=lowFood; }
         inDanger[0]&=lowHealth; inDanger[1]&=lowAir; inDanger[2]&=fire; inDanger[3]&=lowFood;
         lastHealth=health;
     }
@@ -102,6 +106,7 @@ public final class SimulationClock {
         healthDrop=hd; actionFailed=af; pauseOnDisconnect=disconnect; healthBelow=hb; airBelow=ab;
         foodBelow=fb; burning=fire; threatWithin=tw; knownThreats.clear();
         lastHealth=null; java.util.Arrays.fill(inDanger,false);
+        if(threatWithin<0) threats=new com.google.gson.JsonArray(); // the host stops looking for threats: none it listed before is still known to be one
     }
     private void transition(boolean value) {
         if(paused==value) return;

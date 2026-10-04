@@ -206,9 +206,10 @@ def refusal(st: dict | None) -> str:
 
 
 _releasing = threading.local()  # release() hands the body back, so its calls pass the gate
-# Game calls that change state but never the body: stopping, the transport's own, and world-memory bookkeeping (a
-# region's protection is not here: changing it cancels the running job).
-UNGATED = ("act.stop", "requests.cancel", "sys.methods", "memory.waypoint", "memory.route", "memory.record")
+# Game calls that change state but never the body: stopping, the transport's own, world-memory bookkeeping (a
+# region's protection is not here: changing it cancels the running job), and the model's own watches firing and
+# being acknowledged, which are what it armed them for while the task works.
+UNGATED = ("act.stop", "requests.cancel", "sys.methods", "memory.waypoint", "memory.route", "memory.record", "interrupt.fire", "interrupt.ack")
 
 
 def gate(k: Kernel, method: str) -> None:
@@ -274,7 +275,11 @@ def deliver(folder: Path | None = None, limit: int = 5) -> list[dict]:
 def fields(read: bool = False, folder: Path | None = None) -> dict:
     """The body and finished fields the server adds to every tool result."""
     out, st = {}, live(folder)
-    if st: out["body"] = body(st)
+    if st:
+        out["body"] = body(st)
+        try: clock = kernel().call("time.status", timeout=5).get("state") or {}
+        except Exception: clock = {}
+        if clock.get("paused"): out["body"]["paused"] = clock.get("reason")  # no tick runs, so the task works on nothing until the world resumes
     if st and read: out["bodyBusy"] = True
     done = deliver(folder)
     if done: out["finished"] = done
@@ -365,6 +370,8 @@ class TaskKernel(Kernel):
     body_gate = None  # the task is the body's owner
 
     def call(self, method, /, timeout=None, **params):
+        if _halt and method != "time.status" and threading.current_thread() is not threading.main_thread():
+            raise scripts.ScriptInterrupted(_halt[0])  # stopped: the tool in flight makes no further call (the task's own last calls are the main thread's)
         if method in ("time.resume", "time.step") or resume_once.get() is not None:
             raise ValueError("a background task never resumes or steps the world: lifting a pause is your decision, outside the task")
         if method.startswith("time.") and method != "time.status":
@@ -387,7 +394,7 @@ class TaskKernel(Kernel):
         while True:
             clock = Kernel.call(self, "time.status", timeout=5).get("state") or {}
             if not clock.get("paused"): return True
-            if not clock.get("held") and clock.get("reason") not in WAITED_OUT: return False
+            if _halt or not clock.get("held") and clock.get("reason") not in WAITED_OUT: return False
             time.sleep(0.5)
 
     def _clock(self, method, timeout, params):
@@ -474,14 +481,17 @@ def finish(k, out: dict, why: str | None) -> dict:
     elif "stopped" in out: state_ = "failed"
     else: state_ = "done"
     TASK.update(state=state_, endedAt=time.time(), now=None, log=out.get("log", [])[-40:],
-                ended=why or {"done": "returned", "failed": "error", "interrupted": "guard", "paused_by_script": "pause"}[state_])
+                ended=why or {"done": "returned", "failed": "error", "interrupted": "cancelled", "paused_by_script": "pause"}[state_])
     if state_ == "done": TASK["result"] = out.get("result")
     elif state_ in ("failed", "interrupted", "paused_by_script") and out.get("stopped"):
         TASK.update(error=out["stopped"], line=out.get("line"), source=out.get("source"))
     if state_ == "interrupted":
-        TASK["interrupted"] = dict(out["interrupted"])
-        try: TASK["interrupted"]["pausedBy"] = (k.call("time.status", timeout=5).get("state") or {}).get("reason")
-        except Exception: pass
+        TASK["interrupted"] = dict(out["interrupted"])  # its error says what the tool met; a guard is named only when one paused the world
+        try: clock = k.call("time.status", timeout=5).get("state") or {}
+        except Exception: clock = {}
+        if clock.get("paused"):
+            TASK["interrupted"]["pausedBy"] = clock["reason"]
+            if clock["reason"] not in WAITED_OUT: TASK["ended"] = "guard"
     if TASK.get("guards"):
         try:
             now = (k.call("time.status", timeout=5).get("state") or {}).get("conditions") or {}

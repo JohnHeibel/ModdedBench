@@ -23,8 +23,8 @@ from websockets.sync.client import connect
 
 cancel_scope = contextvars.ContextVar("bridge_cancel_scope", default=None)
 reply_trace = contextvars.ContextVar("bridge_reply_trace", default=None)
-# Set by a tool call made with resume=True: the first action it sends that a paused world refuses resumes the world
-# and is sent again, once, and the dict records what pause was lifted. A pause after that is news and stays.
+# Set by a tool call made with resume=True: the first action it sends resumes a paused world, and the dict records what
+# pause was lifted. The directive is spent on that action, paused or not: a pause after it is news and stays.
 resume_once = contextvars.ContextVar("bridge_resume_once", default=None)
 
 
@@ -52,7 +52,9 @@ def call_resuming(fn: Callable, resume: bool | int, /, *args, **kwargs) -> Any:
         raise
     finally:
         resume_once.reset(token)
-    if record.get("resumed") and isinstance(result, dict): result = {**result, "resumedWorld": record}
+    if isinstance(result, dict):
+        result = {**result, "resumedWorld": record} if record.get("resumed") else {**result, "resumeUnused":
+            "the world was not paused at this call's first action" if "resumed" in record else "this call sent no action"}
     return result
 
 
@@ -255,28 +257,41 @@ class Kernel:
 
     def call(self, method: str, /, timeout: float | None = None, **params) -> Any:
         wanted = resume_once.get()
-        if wanted is not None and not wanted.get("resumed") and not method.startswith("time."):
-            # The client resumes a paused world for the first action that needs it and runs that action on the first
-            # resumed tick; reads ignore the directive. ticks N steps N ticks instead of resuming.
-            params["_resume"] = wanted.get("ticks") or True
+        armed = wanted is not None and "resumed" not in wanted and not method.startswith("time.") and self._acts(method)
+        if armed:
+            # The client resumes a paused world for the tool call's first action and runs that action on the first
+            # resumed tick. Only that action carries the directive: a world that pauses later in the same tool call
+            # (a guard) is not resumed through. ticks N steps N ticks instead of resuming.
+            params["_resume"] = wanted.get("ticks") or True; wanted["resumed"] = False
         r = self.call_reply(method, timeout, **params)
         if not r.ok and str((r.error or {}).get("msg", "")).startswith("pause has not settled") and self._await_settled():
             r = self.call_reply(method, timeout, **params)  # refused before it ran: this is still its first run
         asked = r.raw.get("resumedWorld")
-        if wanted is not None and isinstance(asked, dict):
-            wanted.update(asked, resumed=not asked.get("stayedPaused"))  # stayedPaused: the action failed at once, so the client sent no resume
-        if not r.ok and wanted is not None and not wanted.get("resumed") and str((r.error or {}).get("msg", "")).startswith("time_paused"):
+        if armed and isinstance(asked, dict):
+            wanted.update(asked, resumed=True)
+            if wanted.pop("stayedPaused", False): del wanted["resumed"]  # the action failed at once and the client sent no resume: the directive is not spent
+        if not r.ok and armed and not wanted.get("resumed") and str((r.error or {}).get("msg", "")).startswith("time_paused"):
             params.pop("_resume", None)  # a client without resume-and-act: resume first, then send it again
             self._resume_for(wanted)  # the refused request never ran, so sending it again is its first run
             r = self.call_reply(method, timeout, **params)
         if not r.ok:
             msg = (r.error or {}).get("msg", "")
-            if wanted is None and msg.startswith("time_paused"):
+            if wanted is None and msg.startswith("time_paused") and "by a guard" not in msg:  # a guard's pause is one to look at first
                 msg += " (or call the tool again with resume=True: it resumes the world and acts in one step)"
             if isinstance(asked, dict) and asked.get("stayedPaused"):
                 msg += " (the action ended at once, so the world was not resumed: it is still paused)"
             raise BridgeError((r.error or {}).get("code", "?"), msg, method, r.raw)
         return r.data
+
+    def _acts(self, method: str) -> bool:
+        """Whether the game says the method does more than read (sys.methods, asked once per connection)."""
+        effects = self.__dict__.get("_effects")
+        if effects is None:
+            r = self.call_reply("sys.methods", 10)
+            if not r.ok: return True
+            raw = r.data.get("methods", r.data) if isinstance(r.data, dict) else r.data
+            effects = self._effects = {n: m.get("effect") for n, m in (raw.items() if isinstance(raw, dict) else ((m["name"], m) for m in raw))}
+        return effects.get(method) != "read"
 
     def _await_settled(self, limit_s: float = 3.0) -> bool:
         """A step's pause settles a few ticks after it is reported; wait that out instead of handing the model a refusal."""

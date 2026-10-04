@@ -100,6 +100,18 @@ public class SimulationClockTest {
     }
 
     @Test
+    public void turningTheThreatGuardOffForgetsTheThreatsItListed() {
+        SimulationClock clock = new SimulationClock(() -> 0L);
+        clock.configure(Json.object("threatWithin", 12.0));
+        clock.threats(threats("7"));
+        clock.resume();
+        clock.configure(Json.object("healthDrop", true)); // Another guard's change leaves the list alone.
+        assertEquals(1, clock.status().getAsJsonArray("threats").size());
+        clock.configure(Json.object("threatWithin", -1)); // Nothing refreshes the list from here on: a stale mob must not stay "after you".
+        assertEquals(0, clock.status().getAsJsonArray("threats").size());
+    }
+
+    @Test
     public void aFightQuietsItsOwnHitsAndMobsButNotTheOtherGuards() {
         SimulationClock clock = new SimulationClock(() -> 0L);
         JsonObject config = new JsonObject();
@@ -196,6 +208,44 @@ public class SimulationClockTest {
     }
 
     @Test
+    public void aGuardIsReportedByItsOwnPauseAndNotSilencedByAnother() {
+        SimulationClock clock = new SimulationClock(() -> 0L);
+        clock.configure(Json.object("airBelow", 100, "burning", true, "healthDrop", true, "healthBelow", 8.0));
+        clock.observe(20.0F, 300);
+        clock.pause("step"); // A step ends, or the model pauses, with a value in danger that no pause has reported.
+        clock.observe(20.0F, 90);
+        clock.resume();
+        clock.observe(20.0F, 90, 20, true);
+        assertEquals("air_threshold", clock.status().get("reason").getAsString());
+        clock.resume();
+        clock.observe(20.0F, 80, 20, true); // Air is reported; the fire that came with it gets its own pause.
+        assertEquals("burning", clock.status().get("reason").getAsString());
+        clock.resume();
+        clock.observe(20.0F, 70, 20, true);
+        assertFalse(clock.paused());
+        clock.observe(6.0F, 70, 20, true); // A hit that takes health under its floor is one event, reported once.
+        assertEquals("health_dropped", clock.status().get("reason").getAsString());
+        clock.resume();
+        clock.observe(6.0F, 70, 20, true);
+        assertFalse(clock.paused());
+    }
+
+    @Test
+    public void aGuardsReasonIsKeptWhileItsPauseLasts() {
+        SimulationClock clock = new SimulationClock(() -> 0L);
+        clock.pause("health_dropped");
+        clock.pause("client_disconnected");
+        clock.pause("requested_pause");
+        clock.pause("action_failed");
+        assertEquals("health_dropped", clock.reason());
+        assertEquals(1, clock.status().getAsJsonArray("events").size());
+        clock.resume();
+        clock.pause("requested_pause");
+        clock.pause("action_failed"); // A pause that is only waited out still gives way to one that wants attention.
+        assertEquals("action_failed", clock.reason());
+    }
+
+    @Test
     public void invalidConfigurationLeavesEveryConditionUntouched() {
         SimulationClock clock = new SimulationClock(() -> 0L);
         JsonObject valid = new JsonObject();
@@ -238,7 +288,7 @@ public class SimulationClockTest {
         assertEquals(25L, clock.policy.status().get("pausedMs").getAsLong());
         assertEquals(0L, clock.policy.status().get("simulationTicks").getAsLong());
 
-        for (int i = 0; i < 40; i++) clock.policy.pause("event-" + i);
+        for (int i = 0; i < 40; i++) { clock.policy.resume(); clock.policy.pause("event-" + i); }
         JsonArray events = clock.policy.status().getAsJsonArray("events");
         assertEquals(32, events.size());
         assertEquals("event-8", events.get(0).getAsJsonObject().get("reason").getAsString());

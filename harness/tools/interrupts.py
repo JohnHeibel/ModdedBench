@@ -28,6 +28,7 @@ from mbtools_gtnh.core import methods_map
 _OPS = {"eq": lambda a,b:a==b, "ne":lambda a,b:a!=b, "lt":lambda a,b:a<b,
         "lte":lambda a,b:a<=b, "gt":lambda a,b:a>b, "gte":lambda a,b:a>=b}
 DEFAULT_DIR = Path(__file__).resolve().parents[2] / ".state" / "interrupts"
+WAIT_SLICE = 5.0  # seconds between mb_wait's looks at the clock
 TRANSPORT = (ConnectionError, TimeoutError)
 
 def _wakes_runner(event):
@@ -438,10 +439,17 @@ def mb_wait(after: int = 0, timeout_s: float = 600) -> Any:
     Returns {woke, cursor, events, gap}; pass cursor back as after (0 replays retained history). On wake read
     events[].data.payload.modelPrompt, observe, then mb_interrupt('ack', event_id=data.eventId)
     if the receipt says latched. gap=true means older events were dropped: check mb_interrupt status.
+    Nothing you wait for happens in a paused world, so a wait never sits in one: paused when you call
+    or paused while you wait (a guard), it returns at once with woke false and paused: the reason.
     """
     if after < 0 or not 1 <= timeout_s <= 900: raise ValueError("after>=0, timeout_s 1..900 required")
-    supervisor = get_supervisor(); end = time.monotonic() + timeout_s
+    supervisor = get_supervisor(); end = time.monotonic() + timeout_s; wait = 0  # the first look does not wait: the world may be paused already
     while True:
-        e = supervisor.events(after, 1000, max(0, end - time.monotonic())); after = e["cursor"]
+        e = supervisor.events(after, 1000, wait); after = e["cursor"]
         woke = [x for x in e["events"] if _wakes_runner(x)]
-        if woke or e["gap"] or time.monotonic() >= end: return {"woke": bool(woke or e["gap"]), "cursor": after, "events": woke, "gap": e["gap"]}
+        out = {"woke": bool(woke or e["gap"]), "cursor": after, "events": woke, "gap": e["gap"]}
+        if woke or e["gap"] or time.monotonic() >= end: return out
+        try: clock = kernel().call("time.status", timeout=5).get("state") or {}
+        except Exception: clock = {}  # no bridge: the journal's transport events say so, and the wait goes on as before
+        if clock.get("paused"): return {**out, "paused": clock.get("reason")}
+        wait = max(0, min(WAIT_SLICE, end - time.monotonic()))

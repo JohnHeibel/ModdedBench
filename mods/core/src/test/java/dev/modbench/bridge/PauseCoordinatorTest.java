@@ -241,6 +241,33 @@ public class PauseCoordinatorTest {
     }
 
     @Test
+    public void aGuardOnAStepsLastTickEndsTheStepAndIsItsReason() {
+        Fixture f=new Fixture();settlePause(f);
+        f.clock.configure(Json.object("airBelow",100));
+        f.coordinator.command("time.resume",Json.object("ticks",3),f.replies::add);
+        int[] air={300,300,90};
+        for(int tick=0;tick<3;tick++) { int now=air[tick];assertTrue(f.coordinator.before());f.coordinator.after(()->f.clock.observe(20.0F,now)); }
+        assertEquals("air_threshold",f.clock.reason());
+        assertFalse(f.coordinator.before());
+        JsonObject last=f.coordinator.status().getAsJsonObject("lastStep");
+        assertEquals(3,last.get("ran").getAsInt());assertEquals("air_threshold",last.get("endedBy").getAsString());
+    }
+
+    @Test
+    public void anOperatorHoldInsideAStepGivesTheStepItsRemainingTicksBack() {
+        Fixture f=new Fixture();settlePause(f);
+        f.coordinator.command("time.resume",Json.object("ticks",10),f.replies::add);
+        assertEquals(4,run(f,4));
+        f.coordinator.hold(true);assertFalse(f.coordinator.before());
+        f.coordinator.hold(false);
+        assertEquals("the release steps what was left, not a free run",6,run(f,100));
+        assertEquals("step",f.clock.reason());
+        f.coordinator.before();f.command("time.resume");run(f,3);
+        f.coordinator.hold(true);f.coordinator.before();f.coordinator.hold(false);
+        assertEquals("a hold outside a step still releases to a running world",50,run(f,50));
+    }
+
+    @Test
     public void aPlainResumeSupersedesAStepAndRunsFreely() {
         Fixture f=new Fixture();settlePause(f);
         f.coordinator.command("time.step",Json.object("ticks",10),f.replies::add);

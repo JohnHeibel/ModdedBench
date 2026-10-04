@@ -2,6 +2,7 @@
 # Copyright (c) 2026 ModdedBench contributors
 """Background tasks (harness/tools/tasks.py) against fake kernels and fake processes; no bridge, no game."""
 import importlib
+import itertools
 import json
 import os
 import signal
@@ -16,7 +17,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'mcp'))
 import mbtool  # noqa: E402
-from kernel import BridgeError, Kernel, resume_once  # noqa: E402
+from kernel import BridgeError, Kernel, Reply, resume_once  # noqa: E402
 from mbtools_gtnh import core, interrupts, scripts, tasks, work  # noqa: E402
 
 
@@ -82,7 +83,37 @@ class Methods:
                 {"name": "act.stop", "effect": "interaction"}]
 
 
+class Game(Kernel):
+    """The model's connection with a fake game behind it: every call meets the body gate, as on the real one."""
+    CONTEXT = {"worldId": "w", "dimension": 0, "bridgeId": "b", "worldEpoch": 1}
+
+    def __init__(self):
+        self.timeout, self._ids, self.sent = 5.0, itertools.count(1), []
+
+    def _request(self, req, timeout):
+        method = req["method"]; self.sent.append(method)
+        if method == "sys.methods":
+            return Reply(True, 0, 0, 0, [{"name": "obs.player", "effect": "read", "watchable": True}, {"name": "obs.batch", "effect": "read"},
+                                         {"name": "interrupt.status", "effect": "read"}, {"name": "interrupt.fire", "effect": "interaction"},
+                                         {"name": "interrupt.ack", "effect": "interaction"}, {"name": "act.input", "effect": "interaction"}])
+        if method == "obs.batch": return Reply(True, 0, 0, 0, {"values": {"me": {"health": 6}}, "errors": {}, "context": self.CONTEXT})
+        return Reply(True, 0, 0, 0, {"context": self.CONTEXT, "operationId": 1})
+
+
 class BodyLockTests(TaskTestCase):
+    def test_a_watch_fires_and_is_acknowledged_while_a_task_has_the_body(self):
+        k = Game()
+        sup = interrupts.InterruptSupervisor(k, self.dir / "watches", poll_s=10, fire_backoff_s=.001); self.addCleanup(sup.close)
+        sup.add("low", {"queries": {"me": {"method": "obs.player"}}, "condition": {"lt": ["me.health", 8]}, "effects": ["notify", "pause"]})
+        self.put("t1", name="vein")
+        sup.poll()
+        until = time.monotonic() + 2
+        while time.monotonic() < until and not [e for e in sup.events(0)["events"] if e["kind"] in ("triggered", "reaction_error")]: time.sleep(.01)
+        self.assertEqual([e["kind"] for e in sup.events(0)["events"] if e["kind"] in ("triggered", "reaction_error")], ["triggered"])
+        self.assertEqual(k.sent.count("interrupt.fire"), 1)
+        k.call("interrupt.ack", eventId="e1")
+        self.assertRaises(BridgeError, k.call, "act.input")  # the body itself stays the task's
+
     def test_game_calls_that_move_the_body_are_refused_with_the_task_named_and_reads_are_marked(self):
         self.put("t1", name="vein", now="mb_mine")
         k = Methods()
@@ -99,6 +130,14 @@ class BodyLockTests(TaskTestCase):
         read, acted = tasks.fields(read=True), tasks.fields(read=False)
         self.assertEqual((read["body"]["task"], read["body"]["now"], read["bodyBusy"]), ("t1", "mb_mine", True))
         self.assertNotIn("bodyBusy", acted)
+
+    def test_a_live_task_in_a_paused_world_says_why_it_is_paused(self):
+        self.put("t1", name="vein", now="mb_mine")
+        self.assertNotIn("paused", tasks.fields()["body"])  # a running world: the task is working
+        self.k.clock.update(paused=True, reason="health_dropped")
+        self.assertEqual(tasks.fields(read=True)["body"]["paused"], "health_dropped")  # no tick runs, so neither does the task
+        self.k.call = mock.Mock(side_effect=TimeoutError("no bridge"))
+        self.assertEqual(tasks.fields()["body"]["task"], "t1")  # no clock to read: the body fields still come
 
     def test_a_free_body_adds_nothing_and_a_held_lock_refuses_a_start(self):
         k = Methods()
@@ -338,9 +377,10 @@ class RunnerTests(TaskTestCase):
 
     def test_a_guard_stop_ends_the_task_whatever_it_catches_and_on_fail_pauses(self):
         def act(): raise BridgeError("bad_request", "interrupt_latched: 1 delivered", "act.input")
+        self.k.clock.update(paused=True, reason="interrupt:low")
         st = self.run_task("def main():\n for _ in range(3):\n  try: act()\n  except BaseException: pass\n return 'carried on'",
                            {"act": act}, on_fail="pause")
-        self.assertEqual((st["state"], st["ended"], st["interrupted"]["tool"]), ("interrupted", "guard", "act"))
+        self.assertEqual((st["state"], st["ended"], st["interrupted"]["tool"], st["interrupted"]["pausedBy"]), ("interrupted", "guard", "act", "interrupt:low"))
         self.assertEqual(sum(c["tool"] == "act" for c in self.calls()), 1)  # no second call after the stop
         self.assertTrue(st["paused"])
 
@@ -364,6 +404,19 @@ class FinishTests(TaskTestCase):
         st = tasks.finish(self.k, {"result": 1, "log": []}, None)
         self.assertNotIn("guards", st); self.assertIsNone(st.get("guardsChanged"))
         self.assertNotIn("time.configure", self.k.methods())
+
+    def test_an_interrupted_task_says_what_actually_stopped_it(self):
+        out = {"stopped": "BridgeError: cancelled", "line": 2, "log": [], "interrupted": {"tool": "mb_goto", "error": "cancelled: superseded by act.stop"}}
+        tasks.TASK.update(self.put("t1"))
+        st = tasks.finish(self.k, dict(out), None)  # the world runs: no guard, its job was cancelled
+        self.assertEqual((st["state"], st["ended"]), ("interrupted", "cancelled")); self.assertNotIn("pausedBy", st["interrupted"])
+        self.k.clock.update(paused=True, reason="requested_pause")
+        st = tasks.finish(self.k, dict(out), None)  # a pause, but not a guard's
+        self.assertEqual((st["ended"], st["interrupted"]["pausedBy"]), ("cancelled", "requested_pause"))
+        self.k.clock.update(paused=True, reason="health_dropped")
+        st = tasks.finish(self.k, dict(out), None)
+        self.assertEqual((st["ended"], st["interrupted"]["pausedBy"]), ("guard", "health_dropped"))
+        self.assertEqual(tasks.finish(None, dict(out), None)["ended"], "cancelled")  # no bridge: no guard is claimed
 
     def test_a_script_pause_ends_the_task_as_paused_by_script(self):
         tasks.TASK.update(self.put("t1", on_fail="pause", pausedByScript=True))
@@ -426,6 +479,24 @@ class TaskKernelTests(TaskTestCase):
                            else BridgeError("bad_request", "time_paused: the world is paused", m))
         with self.assertRaisesRegex(BridgeError, "time_paused"):
             k.call("act.input")
+
+    def test_a_stopped_task_makes_no_further_game_call_from_the_tool_in_flight(self):
+        k, seen = self.kernel(lambda m, p: {"state": {"paused": True, "reason": "requested_pause"}} if m == "time.status"
+                              else BridgeError("bad_request", "time_paused: the world is paused", m) if m == "act.wait" else {})
+        caught = []
+
+        def tool(method):  # a tool of the script, on the script's thread, when the task is stopped
+            try: k.call(method)
+            except BaseException as e: caught.append(e)
+        waiting = threading.Thread(target=tool, args=("act.wait",), daemon=True); waiting.start()  # waiting out a pause
+        time.sleep(.1); tasks._halt.append("cancelled"); waiting.join(5)
+        self.assertFalse(waiting.is_alive()); del seen[:]
+        calling = threading.Thread(target=tool, args=("act.input",), daemon=True); calling.start(); calling.join(5)
+        self.assertIsInstance(caught[1], scripts.ScriptInterrupted); self.assertEqual(seen, [])
+        reading = threading.Thread(target=tool, args=("time.status",), daemon=True); reading.start(); reading.join(5)
+        self.assertEqual((len(caught), [m for m, _ in seen]), (2, ["time.status"])); del seen[:]  # the script's report still reads the clock (guardsChanged)
+        k.call("act.stop")  # handing the body back and the task's last word are the main thread's, and still go
+        self.assertEqual([m for m, _ in seen], ["act.stop"])
 
     def test_time_commands_go_through_the_server_relay(self):
         tasks.TASK.update(task="t1", state="done")  # the task's last word: a pause here does not end anything
