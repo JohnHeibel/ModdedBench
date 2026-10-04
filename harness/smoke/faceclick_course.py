@@ -290,7 +290,7 @@ class Clicks:
         def add(pos, block, stage, **more): cells.append({"pos": [at[0] + pos[0], pos[1], at[2] + pos[2]], **block, "stage": stage, **more})
         look = lambda way, front: {"click": {"look": {"toward": way}}, "expect": [{"method": "obs.tile", "path": "tile.mFacing", "equals": front}]}
         # (kind, how the player faces as it goes in, the front that makes): a machine fronts whoever places it.
-        low = {(0, 0, 0): (41, "east", 4), (0, 0, 1): (41, "east", 4), (1, 0, 0): (111, "south", 2), (2, 0, 1): (81, "west", 5),
+        low = {(0, 0, 0): (41, "east", 4), (0, 0, 1): (41, "east", 4), (1, 0, 0): (90, "south", 2), (2, 0, 1): (81, "west", 5),
                (2, 0, 2): (71, "north", 3), (1, 0, 2): (1000, "north", 3)}
         for x in range(3):
             for z in range(3):
@@ -304,7 +304,7 @@ class Clicks:
         add((3, 0, 1), {"id": "minecraft:chest"}, 1)
         cables = [(-n, 0, z) for z in (0, 1) for n in (1, 2, 3)]
         for c in cables: add(c, part(1246), 2, click={"face": "west"})   # each on the west face of what stands east of it
-        kit = [(DIRT, 64), (casing["id"], 11, 11), (coil["id"], 16, 0), (GT, 1, 1000), (GT, 2, 41), (GT, 1, 111), (GT, 1, 71), (GT, 1, 81), (GT, 1, 91),
+        kit = [(DIRT, 64), (casing["id"], 11, 11), (coil["id"], 16, 0), (GT, 1, 1000), (GT, 2, 41), (GT, 1, 90), (GT, 1, 71), (GT, 1, 81), (GT, 1, 91),
                (GT, 6, 1246), ("minecraft:chest", 1)]
         origin = self.scene({}, kit, start=(5, 6))
         seen = call(work.mb_build_preview, cells=cells, origin=origin, allow_place=True)
