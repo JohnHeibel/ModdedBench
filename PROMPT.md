@@ -1195,7 +1195,7 @@ and list what is loaded, with load errors.
 | `mb_quest_status` | Report native Better Questing availability and catalogue counts |
 | `mb_quest_sync` | Queue Better Questing's native full quest/progress and chapter synchronization query |
 | `mb_quest_search` | Search localized quest UUIDs, titles and descriptions with pagination |
-| `mb_quest_lines` | Read native quest-line order, layout and per-player state totals |
+| `mb_quest_lines` | Read quest lines in book order: per-player state totals and every quest's id, title and state |
 | `mb_quest_observe` | Observe one quest UUID: prerequisites, task progress/config and rewards |
 | `mb_quest_detect` | Hand a quest its tasks: the quest book's detect button, checkboxes included |
 | `mb_quest_select_choice` | Select one observed native reward option through the normal BQ packet |
