@@ -549,7 +549,7 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
         cylinder|hcylinder (with axis), block {id, meta?} and an optional replace selector.
       drawing: {origin: [x,y,z], layers, legend, stages?} in the format mb_view returns: layers
         bottom first, rows north to south, one character per block west to east, legend
-        {char: {id, meta?, item?, click?, expect?}}; '.', ' ' and '+' are left alone. Dictionary
+        {char: {id, meta?, item?, verify?, replace?, click?, expect?}}; '.', ' ' and '+' are left alone. Dictionary
         layers with y use that absolute height, including subsets or gaps; plain row lists use
         consecutive heights from origin.
     Registry ids are required. A cell, legend entry or selection block without meta accepts any
