@@ -161,7 +161,7 @@ stands. The reasons a build has of its own:
 | `missing_materials` | Upstream has nothing it can do for the cells it is shown and `pos` is one no carried item places; `missing` lists up to 16 `{selector, needed, allocated, missing}` | paused |
 | `attempt_limit` | The eighth click the game took into `pos` still did not make the block appear | paused |
 | `mismatch` | The click about to be taken would make another variant at `pos` than the plan's (nothing is placed), or a block this job placed came out as another variant, or upstream holds every shown cell done and the plan's own comparison does not | paused |
-| `no_stance` | The stall watchdog fired and every cell still workable has no standing spot from which a face to place it against is in view; `pos` is the first | paused if the session did something, else failed |
+| `no_stance` | The stall watchdog fired and every cell still workable has no standing spot from which a face to place it against (or, for a block to remove, that block) is in view; `pos` is the first, `blockedBy` what the view of a block to remove ends on | paused if the session did something, else failed |
 | `no_route` | The watchdog fired and the last path search covered everything reachable without finding a place to work from | as above |
 | `stalled` | The watchdog fired (`stallTicks`, 200) and neither of the two above explains it, or upstream paused with material in hand | as above |
 | `timeout` | `timeoutTicks` ran out | as above |

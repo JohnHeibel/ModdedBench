@@ -16,6 +16,8 @@ a scenario that passed before and fails now is a regression.
   timeout       a 200-tick budget: pauses as timeout with its jobId; resumed, it finishes
   any_meta      a block that faces the way it is placed, without meta: verified whichever way it landed
   clear         a built shell taken down again by a clear selection: every cell air
+  hidden        a block to replace in a wall, a block outside the plan in front of it: seen only from behind, so the job walks round
+  buried        the same with every face covered: stops as no_stance naming the cell and what is in the way, nothing else touched
   terrain       a hall on natural ground, whatever stands there dug out: 11 x 11 and 5 high with a door, 320 cells
   hall          only when named (--only hall): run 2's hall, 25 x 25 and 7 high, 1728 cells, resumed until done
 
@@ -156,13 +158,36 @@ class Suite(bs.Shells):
         return {"passed": not built and r2.get("state") == "succeeded" and not left, "receipt": r2,
                 "why": f"built wrong={len(built)} | clear: state={r2.get('state')} stopped={r2.get('stopped')} removed={r2.get('removed')} notAir={len(left)} ticks={r2.get('ticks')}"}
 
-    def terrain(self): return self.hall(SMALL)
+    def walled(self, extra):
+        """A 3 x 3 cobblestone wall with `extra` blocks beside it, none of it in the plan but the one cell asked for as planks."""
+        origin = self.arena(); self.stacks((DIRT, 64), (WOOD, 8))
+        rel = [[x, y, 3] for x in (2, 3, 4) for y in range(3)] + extra; cell = extra[0][:2] + [3]
+        for r in rel: self.s.call(bs.FIX + ".set_block", x=bs.PLOT[0] + r[0], y=bs.FLOOR + r[1], z=bs.PLOT[1] + r[2], id=STONE, meta=0)
+        self.stand([origin[0] + 3.5, bs.FLOOR, origin[2] + .5])
+        r = call(work.mb_build, cells=[{"pos": cell, "id": WOOD}], origin=origin, replace_existing=True, timeout_ticks=3000)
+        others = self.wrong(origin, [{"pos": p, "id": STONE} for p in rel if p != cell])
+        return origin, cell, r, others, self.blocks([self.at(origin, cell)]).get(tuple(self.at(origin, cell)))
 
-    def hall(self, size=HALL):
+    def hidden(self):
+        origin, cell, r, others, found = self.walled([[3, 1, 2]])
+        return {"passed": r.get("state") == "succeeded" and found == WOOD and not others, "receipt": r,
+                "why": f"state={r.get('state')} stopped={r.get('stopped')} cell={found} othersTouched={len(others)} ticks={r.get('ticks')}"}
+
+    def buried(self):
+        origin, cell, r, others, found = self.walled([[3, 1, 2], [3, 1, 4]])
+        stop = r.get("stopped") or {}; by = stop.get("blockedBy") or {}
+        ok = (r.get("state") in ("paused", "failed") and stop.get("reason") == "no_stance" and stop.get("pos") == self.at(origin, cell)
+              and by.get("id") == STONE and sum(abs(a - b) for a, b in zip(by.get("pos") or [0, 0, 0], self.at(origin, cell))) == 1 and found == STONE and not others)
+        return {"passed": ok, "receipt": r, "why": f"state={r.get('state')} stopped={stop} cell={found} othersTouched={len(others)} ticks={r.get('ticks')}"}
+
+    def terrain(self): return self.hall(SMALL, "terrainRuns", 80)
+
+    def hall(self, size=HALL, counter="hallRuns", south=0):
+        """Each run takes fresh ground: 40 blocks east of the last of its kind, the small one 80 south of the large."""
         self.arena()   # the fixture journals the player and lets the suite hand out blocks; the hall stands on real ground
-        runs = self.history.get("hallRuns", 0) if self.args.hall_index is None else self.args.hall_index
-        if self.args.hall_index is None: self.history["hallRuns"] = runs + 1
-        ox, oz = self.args.hall_at[0] + 40 * runs, self.args.hall_at[1]; cx, cz = ox + size[0] // 2, oz + size[2] // 2
+        runs = self.history.get(counter, 0) if self.args.hall_index is None else self.args.hall_index
+        if self.args.hall_index is None: self.history[counter] = runs + 1
+        ox, oz = self.args.hall_at[0] + 40 * runs, self.args.hall_at[1] + south; cx, cz = ox + size[0] // 2, oz + size[2] // 2
         column = [[cx, y, cz] for y in range(110, 46, -1)]; found = self.blocks(column)
         ground = next((c[1] for c in column if found.get(tuple(c), AIR) != AIR and not any(k in found[tuple(c)].lower() for k in ("leaves", "log", "plant", "tallgrass", "flower", "snow_layer"))), 63)
         origin = [ox, ground, oz]; cells, door = hall_cells(size)
@@ -190,7 +215,7 @@ class Suite(bs.Shells):
 
     def run(self):
         all_ = {**{n: (lambda n=n: self.shell_case(n)) for n in bs.CASES},
-                **{n: getattr(self, n) for n in ("staged", "unfinishable", "missing", "occupied", "timeout", "any_meta", "clear", "terrain", "hall")}}
+                **{n: getattr(self, n) for n in ("staged", "unfinishable", "missing", "occupied", "timeout", "any_meta", "clear", "hidden", "buried", "terrain", "hall")}}
         names = [n for n in (self.args.only or [n for n in all_ if n != "hall"]) if n not in (self.args.skip or [])]
         try: past = json.loads(OUT.read_text())
         except (OSError, ValueError): past = {}
