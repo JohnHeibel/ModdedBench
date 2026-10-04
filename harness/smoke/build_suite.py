@@ -120,7 +120,7 @@ class Suite(bs.Shells):
 
     def occupied(self):
         origin = self.arena(); cells = bs.shell(True); rel = [6, 1, 3]; cell = self.at(origin, rel)
-        self.s.call(bs.FIX + ".set_block", x=bs.PLOT[0] + rel[0], y=bs.FLOOR + rel[1], z=bs.PLOT[1] + rel[2], id=STONE, meta=0)
+        self.set_block(rel, STONE)
         self.stand([origin[0] + 3.5, bs.FLOOR, origin[2] + 3.5])   # and a second for the client to see the block
         r = call(work.mb_build, cells=cells, origin=origin, allow_break=True)
         occ = r.get("occupied") or {}; placed = [w for w in self.wrong(origin, cells, want=AIR) if w != cell]
