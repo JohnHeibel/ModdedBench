@@ -169,6 +169,11 @@ public interface MovementHelper extends ActionCosts, Helper {
                 return MAYBE;
             }
         }
+        // ModdedBench: a ladder's thin box against its wall leaves the middle of the cell free, and climbing (MovementPillar,
+        // MovementDownward) is done standing in it; by its box alone no ladder could be entered.
+        if (block == Blocks.LADDER) {
+            return YES;
+        }
         // ModdedBench: the game's collision boxes decide (cocoa, skulls, trapdoors, cauldrons included); a block with a tile entity per position
         if (block.hasTileEntity(state.meta)) {
             return MAYBE;
