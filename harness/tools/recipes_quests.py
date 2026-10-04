@@ -236,7 +236,7 @@ def mb_recipes(id: str = "", meta: int | None = None, nbt: str | None = None, mo
     are searched, so pick a handler first.
     detail='full' returns ONE recipe whatever limit says: pick it with index.
     This observes recipes; it does not craft, spawn items or alter the current GUI.
-    Your notes on the item and on any ingredient shown come back under "notes": read them before making an ingredient by hand.
+    Your notes on the item and on any ingredient shown are named under "notes": read them (mb_notes get) before making an ingredient by hand.
     """
     if detail == "full": limit = min(limit, 1) if limit else limit  # a full recipe is thousands of tokens: one at a time, by index
     if index >= 0: limit = 1  # an index names one recipe; the bridge refuses the lookup with limit=0

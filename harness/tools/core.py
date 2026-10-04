@@ -184,7 +184,7 @@ def mb_obs(method: str, params: dict | None = None) -> Any:
     tanks do not prove no fluid, and reported side views may overlap.
     light {radius:8,height:4,limit:32} lists where mobs can spawn near you (block light 7 or
     less on a solid top), nearest first: what to torch before you work, sleep or build there.
-    Observing a block or entity that carries a world note returns it under "notes".
+    Observing a block or entity that carries a world note names it under "notes".
     player includes your potion effects and the blocks at your feet, head and under you.
     """
     return notes.tracked(method_name("obs", method), None, **(params or {}))
