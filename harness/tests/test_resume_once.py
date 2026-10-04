@@ -94,6 +94,21 @@ def test_resume_with_ticks_steps_instead():
     assert server._resume_arg(True) is True and server._resume_arg(3) == 3 and server._resume_arg(0) is False
 
 
+def test_an_action_that_fails_at_once_leaves_the_world_paused():
+    class Refusing(ResumingClient):
+        def call_reply(self, method, timeout=None, **params):
+            if params.get("_resume") and self.ran == 0:
+                self.ran += 1; self.sent.append((method, params["_resume"]))
+                return Reply(False, 0, 0, 0, error={"code": "path_failed", "msg": "goal_not_standable"},
+                             raw={"resumedWorld": {"pausedBy": "step", "threats": [], "ticks": 40, "stayedPaused": True}})
+            return super().call_reply(method, timeout, **params)
+    k = Refusing(); record = {"ticks": 40}; resume_once.set(record)
+    with pytest.raises(BridgeError, match="goal_not_standable .*still paused"): k.call("nav.process")
+    assert not record["resumed"] and k.paused
+    k.call("nav.process")  # the directive was not used up: the next action carries it
+    assert k.sent[-1] == ("nav.process", 40) and record["resumed"] and not k.paused
+
+
 class SettlingWorld(Kernel):
     """A step's pause that reports 'pausing' for `polls` status reads, then settles."""
     def __init__(self, polls, end="paused"):
