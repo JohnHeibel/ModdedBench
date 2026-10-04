@@ -152,9 +152,10 @@ already be open: an open Prism starts the game with its own environment.
 
 `/overlay/data` is the same data as JSON, for a layout of your own. The loop writes
 it (`harness/runner/feed.py`) to `.runtime/outbox/overlay`: `feed.jsonl`, whose
-`mark` lines are the run's milestones with timestamps, and `live.json`. Nothing is
-asked of the model for this: the goal is the one it keeps with `mb_goal`, and
-action lines are templates over its tool calls. Initialize clears both files.
+`mark` lines are the run's milestones with timestamps, and `live.json`. One thing is
+asked of the model for this: `mb_goal`'s optional `progress`, its quick guess at how
+far the current quest is. The rest is what it does anyway: the goal is the one it
+keeps with `mb_goal`, and action lines are templates over its tool calls. Initialize clears both files.
 
 ## Operating by hand
 
