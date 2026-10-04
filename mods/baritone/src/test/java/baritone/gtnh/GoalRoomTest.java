@@ -161,4 +161,20 @@ public class GoalRoomTest {
         assertEquals("search_failed_timeout",PathFailure.searchEnded("timeout",true));
         assertEquals("search_failed_unknown",PathFailure.searchEnded(null,null));
     }
+
+    @Test public void aSnagTheJobGotPastIsEvidenceNotTheCause(){
+        // An edge banned early, then a search that failed far from it: the search names the end, and both are kept.
+        var snags=new baritone.gtnh.pathing.Snags();
+        snags.failed(new baritone.gtnh.pathing.Snags.Edge(3,64,0,4,64,0),0,Map.of("kind","snagged","at",List.of(3,64,0)));
+        Map<String,Object> last=Map.of("type","FAILURE"),detail=new LinkedHashMap<>();
+        assertNull(PathFailure.before(snags,last,detail));
+        assertSame(last,detail.get("lastCalculation"));assertNotNull(detail.get("snags"));
+        // The snag that ended the job is the cause, with the last search still beside it.
+        snags.fail("snagged_at_3,64,0");detail.clear();
+        assertEquals("snagged_at_3,64,0",PathFailure.before(snags,last,detail));
+        assertSame(last,detail.get("lastCalculation"));assertNotNull(detail.get("snags"));
+        // No search ran and nothing snagged.
+        detail.clear();assertEquals("stopped_before_searching",PathFailure.before(new baritone.gtnh.pathing.Snags(),null,detail));
+        assertTrue(detail.isEmpty());
+    }
 }

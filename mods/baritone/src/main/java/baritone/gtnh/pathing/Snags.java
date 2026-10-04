@@ -50,7 +50,6 @@ public final class Snags {
     /** The job cannot go on here: backing out failed, or too many edges were banned. The job ends with this cause. */
     public void fail(String cause){if(failure==null)failure=cause;}
     public String failure(){return failure;}
-    public boolean anyBanned(){return banned.length>0;}
     /** snagged_at_x,y,z (where the player stood) for the last failure, or null when none happened. */
     public String cause(){
         if(last==null)return null;
