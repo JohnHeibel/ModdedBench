@@ -75,7 +75,7 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
         // the resume still counts and ore fetched from a chest meanwhile does not.
         int now=have(),legacy=journal.progress.containsKey("initialCount")?Math.max(0,now-integer(journal.progress,"initialCount",now,0,1000000)):0;
         gainedBefore=integer(journal.progress,"gained",legacy,0,1000000);baseline=now-gainedBefore;
-        observation=new MiningObservation(world,bounds,blocks,items);
+        observation=new MiningObservation(world,bounds,blocks,items,WorkAccess::feet);
         if(!bool(options,"retry",false))for(Object p:list(journal.progress.getOrDefault("unreachable",List.of())))unreachable.add(pos(p));
         rejectedSeen=unreachable.size();
     }
@@ -156,7 +156,8 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
                     &&observation.has(drop.getEntityItem())
                     &&observation.acceptsDrop(new baritone.compat.BlockPos(drop.posX,drop.boundingBox.minY,drop.posZ))
                     &&retriedDrops.add(new DropLocation(drop.getEntityId(),new baritone.compat.BlockPos(drop.posX,drop.boundingBox.minY,drop.posZ))))newDrop=true;
-            if(newDrop){engine.bsi=new baritone.utils.BlockStateInterface(engine.getPlayerContext());process.mine(0,observation);process.avoid(unreachable);}
+            // The engine was offered only the nearest matches: before its stopping is read as nothing left, it is offered more.
+            if(newDrop||observation.widen()){engine.bsi=new baritone.utils.BlockStateInterface(engine.getPlayerContext());process.mine(0,observation);process.avoid(unreachable);}
             if(!process.isActive()){
                 state="awaiting_inventory";
                 if(inactiveTicks>Math.max(20,(Baritone.settings().mineDropLoiterDurationMSThanksLouca.value+49)/50))finish("failed","no_remaining_reachable_targets_or_drops");
@@ -198,15 +199,17 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
         var pathing=engine.getPathingBehavior();var goal=pathing.getGoal();var feet=WorkAccess.feet();
         if(goal==null||!goal.isInGoal(feet)||!mc.thePlayer.onGround||!pathing.isSafeToCancel()
                 ||engine.getInputOverrideHandler().isInputForcedDown(baritone.api.utils.input.Input.CLICK_LEFT))return;
+        var eye=mc.thePlayer.getPosition(1);double reach=mc.playerController.getBlockReachDistance();
         for(var p:engine.getMineProcess().knownLocations().stream().sorted(Comparator.comparingDouble(feet::distanceSq)).toList()){
             if(p.getY()<feet.getY())continue; // Never turn an idle stance into a downward dig.
+            if(!MiningJob.near(eye,p,reach))continue; // nothing is read or traced for a target no ray could reach
             var block=engine.bsi.get0(p);
             if(!observation.has(block)||baritone.pathing.movement.MovementHelper.avoidBreaking(engine.bsi,p.getX(),p.getY(),p.getZ(),block))continue;
-            var point=MiningJob.reachable(mc,world,p);if(point==null)continue;
+            var point=MiningJob.reachable(mc,world,p,eye);if(point==null)continue;
             var input=engine.getInputOverrideHandler();input.clearAllKeys();
             baritone.pathing.movement.MovementHelper.switchToBestToolFor(engine.getPlayerContext(),block);
             if(engine.getInventoryBehavior().hasPendingMove())return;
-            var eye=mc.thePlayer.getPosition(1);double dx=point.xCoord-eye.xCoord,dy=point.yCoord-eye.yCoord,dz=point.zCoord-eye.zCoord;
+            double dx=point.xCoord-eye.xCoord,dy=point.yCoord-eye.yCoord,dz=point.zCoord-eye.zCoord;
             lease.look((float)Math.toDegrees(Math.atan2(-dx,dz)),(float)-Math.toDegrees(Math.atan2(dy,Math.hypot(dx,dz))));
             dev.modbench.api.ControlRegistry.targeting().refresh();var hit=mc.objectMouseOver;
             if(hit!=null&&hit.typeOfHit==net.minecraft.util.MovingObjectPosition.MovingObjectType.BLOCK
@@ -236,7 +239,7 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
         Integer count=done()?finalCount:mc.thePlayer==player?have():null;out.put("items",start==null?items:"any");
         out.put("currentCount",count);out.put("gained",count==null?null:Math.max(0,count-baseline));
         out.put("scanPasses",observation==null?0:observation.passes);out.put("scannedWhilePaused",scannedWhilePaused);out.put("scanCursor",observation==null?0:observation.cursor);
-        out.put("scanVolume",bounds==null?0:bounds.volume());out.put("targets",lastKnown);out.put("bounds",journal.spec.get("bounds"));
+        out.put("scanVolume",bounds==null?0:bounds.volume());out.put("scanMatches",observation==null?0:observation.matches());out.put("scanOffered",observation==null?0:observation.observedLocations().size());out.put("targets",lastKnown);out.put("bounds",journal.spec.get("bounds"));
         out.put("initialTargetDiagnostics",diagnostics);
         out.put("reachableAttackTicks",reachableAttackTicks);
         // Targets it left, and why: will_not_break_here names the fluid beside it (plug or drain that, or pass besideFluid).
