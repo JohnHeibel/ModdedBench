@@ -359,9 +359,10 @@ class RunnerTests(TaskTestCase):
 
     def test_a_guard_stop_ends_the_task_whatever_it_catches_and_on_fail_pauses(self):
         def act(): raise BridgeError("bad_request", "interrupt_latched: 1 delivered", "act.input")
+        self.k.clock.update(paused=True, reason="interrupt:low")
         st = self.run_task("def main():\n for _ in range(3):\n  try: act()\n  except BaseException: pass\n return 'carried on'",
                            {"act": act}, on_fail="pause")
-        self.assertEqual((st["state"], st["ended"], st["interrupted"]["tool"]), ("interrupted", "guard", "act"))
+        self.assertEqual((st["state"], st["ended"], st["interrupted"]["tool"], st["interrupted"]["pausedBy"]), ("interrupted", "guard", "act", "interrupt:low"))
         self.assertEqual(sum(c["tool"] == "act" for c in self.calls()), 1)  # no second call after the stop
         self.assertTrue(st["paused"])
 
@@ -385,6 +386,19 @@ class FinishTests(TaskTestCase):
         st = tasks.finish(self.k, {"result": 1, "log": []}, None)
         self.assertNotIn("guards", st); self.assertIsNone(st.get("guardsChanged"))
         self.assertNotIn("time.configure", self.k.methods())
+
+    def test_an_interrupted_task_says_what_actually_stopped_it(self):
+        out = {"stopped": "BridgeError: cancelled", "line": 2, "log": [], "interrupted": {"tool": "mb_goto", "error": "cancelled: superseded by act.stop"}}
+        tasks.TASK.update(self.put("t1"))
+        st = tasks.finish(self.k, dict(out), None)  # the world runs: no guard, its job was cancelled
+        self.assertEqual((st["state"], st["ended"]), ("interrupted", "cancelled")); self.assertNotIn("pausedBy", st["interrupted"])
+        self.k.clock.update(paused=True, reason="requested_pause")
+        st = tasks.finish(self.k, dict(out), None)  # a pause, but not a guard's
+        self.assertEqual((st["ended"], st["interrupted"]["pausedBy"]), ("cancelled", "requested_pause"))
+        self.k.clock.update(paused=True, reason="health_dropped")
+        st = tasks.finish(self.k, dict(out), None)
+        self.assertEqual((st["ended"], st["interrupted"]["pausedBy"]), ("guard", "health_dropped"))
+        self.assertEqual(tasks.finish(None, dict(out), None)["ended"], "cancelled")  # no bridge: no guard is claimed
 
     def test_a_script_pause_ends_the_task_as_paused_by_script(self):
         tasks.TASK.update(self.put("t1", on_fail="pause", pausedByScript=True))

@@ -467,14 +467,17 @@ def finish(k, out: dict, why: str | None) -> dict:
     elif "stopped" in out: state_ = "failed"
     else: state_ = "done"
     TASK.update(state=state_, endedAt=time.time(), now=None, log=out.get("log", [])[-40:],
-                ended=why or {"done": "returned", "failed": "error", "interrupted": "guard", "paused_by_script": "pause"}[state_])
+                ended=why or {"done": "returned", "failed": "error", "interrupted": "cancelled", "paused_by_script": "pause"}[state_])
     if state_ == "done": TASK["result"] = out.get("result")
     elif state_ in ("failed", "interrupted", "paused_by_script") and out.get("stopped"):
         TASK.update(error=out["stopped"], line=out.get("line"), source=out.get("source"))
     if state_ == "interrupted":
-        TASK["interrupted"] = dict(out["interrupted"])
-        try: TASK["interrupted"]["pausedBy"] = (k.call("time.status", timeout=5).get("state") or {}).get("reason")
-        except Exception: pass
+        TASK["interrupted"] = dict(out["interrupted"])  # its error says what the tool met; a guard is named only when one paused the world
+        try: clock = k.call("time.status", timeout=5).get("state") or {}
+        except Exception: clock = {}
+        if clock.get("paused"):
+            TASK["interrupted"]["pausedBy"] = clock["reason"]
+            if clock["reason"] not in WAITED_OUT: TASK["ended"] = "guard"
     if TASK.get("guards"):
         try:
             now = (k.call("time.status", timeout=5).get("state") or {}).get("conditions") or {}
