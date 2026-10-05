@@ -74,7 +74,7 @@ def mb_methods(name: str = "") -> Any:
 
 @tool(lane="read", coverage=["meta"])
 def mb_status() -> Any:
-    """Bridge status, the clock (paused, why, operator hold), your goal stack (mb_goal) with its stall signal, world notes near you, how long the run has been going, and your last two hours' cost (mb_cost).
+    """Bridge status, the clock (paused, why, a hold and whose), your goal stack (mb_goal) with its stall signal, world notes near you, how long the run has been going, and your last two hours' cost (mb_cost).
 
     Call it at the start of every session and after every compaction: it is the heartbeat.
     Also, when there are any: body (your running background task), finished (tasks whose result
@@ -87,7 +87,7 @@ def mb_status() -> Any:
     out = dict(out, brief=f"Your standing brief is {brief if os.path.isfile(brief) else 'PROMPT.md at the repository root'}. If you cannot recall its mission and rules, re-read it now.")
     try:
         clock = k.call("time.status", timeout=5).get("state", {})
-        out["clock"] = {key: clock.get(key) for key in ("mode", "paused", "reason", "held", "simulationTicks", "threats")}
+        out["clock"] = {key: clock.get(key) for key in ("mode", "paused", "reason", "held", "heldBy", "simulationTicks", "threats") if key in clock}
         out["goal"] = notes.goal(k)
         free = k.call("obs.inventory", detail="counts", timeout=5).get("emptySlots")
         out["inventory"] = f"{free} of 36 slots free" + ("" if free is None or free > 6 else ": store or discard (mb_move_items) before you gather, craft in bulk or claim rewards")

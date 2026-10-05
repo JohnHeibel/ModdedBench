@@ -83,7 +83,7 @@ public final class ClientClock implements ClockHooks.Driver {
         if(!paused || resuming) return;
         if(!supported || connection==null || !connection.isChannelOpen()) throw new IllegalArgumentException("server does not advertise ModdedBench time control");
         if(agent!=null && agent.connected && agent!=r.session) throw new IllegalArgumentException("time control belongs to another connected agent session");
-        if(Json.bool(state,"held",false)) throw new IllegalArgumentException("the operator is holding the world paused; wait for the release");
+        if(Json.bool(state,"held",false)) throw new IllegalArgumentException(PauseCoordinator.heldRefusal(Json.string(state,"heldBy","operator")));
         if(!"paused".equals(Json.string(state,"mode",""))) throw new IllegalArgumentException("pause has not settled; inspect time.status before resuming");
         agent=r.session;armed=r;armedThread=Thread.currentThread();resuming=creditTick=true;resumeSent=false;resumeTicks=ticks;
         JsonObject record=Json.object("pausedBy",pauseReason(),"threats",state.has("threats")?state.get("threats"):new com.google.gson.JsonArray());

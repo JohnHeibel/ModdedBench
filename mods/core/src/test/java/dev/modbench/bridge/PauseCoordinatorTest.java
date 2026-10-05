@@ -81,6 +81,23 @@ public class PauseCoordinatorTest {
     }
 
     @Test
+    public void aHoldSaysWhoseItIsAndARefusedResumeSaysWhatToExpect() {
+        Fixture f=new Fixture();
+        f.coordinator.hold("backup");
+        assertFalse(f.coordinator.before());
+        assertEquals("backup",f.coordinator.status().get("heldBy").getAsString());
+        f.command("time.resume");
+        assertTrue(f.replies.get(0).get("error").getAsString().contains("routine backup"));
+        f.coordinator.hold("operator"); // the operator's Pause takes a backup's hold over
+        assertEquals("operator",f.coordinator.status().get("heldBy").getAsString());
+        f.command("time.resume");
+        assertTrue(f.replies.get(1).get("error").getAsString().contains("operator"));
+        f.coordinator.hold((String)null);
+        assertTrue(f.coordinator.before());
+        assertFalse(f.coordinator.status().has("heldBy"));
+    }
+
+    @Test
     public void releaseLeavesAPauseTheHoldDidNotMake() {
         Fixture f=new Fixture();
         f.command("time.pause");f.coordinator.before();
