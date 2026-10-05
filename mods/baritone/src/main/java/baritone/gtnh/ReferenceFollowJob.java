@@ -68,7 +68,7 @@ final class ReferenceFollowJob implements Navigation.Job {
         if(done())return;
         if(WorkAccess.died(player)){finish("failed","player_died");return;}
         if(mc.theWorld!=world||mc.thePlayer!=player||!scope.equals(ControlRegistry.memory().memory().scope())){cancel("world_changed");return;}
-        if(!lease.isActive()){cancel("control_lost");return;}
+        if(!lease.isActive()){cancel(WorkAccess.lost(lease,"control_lost"));return;}
         if(mc.currentScreen!=null&&!ControlRegistry.controls().ownsPlayerInventory(lease)){cancel("gui_open");return;}
         if(!engine.getFollowProcess().isActive()){finish("failed","no_loaded_matching_entity");return;}
         targets=engine.getFollowProcess().following().stream().map(Entity::getEntityId).toList();

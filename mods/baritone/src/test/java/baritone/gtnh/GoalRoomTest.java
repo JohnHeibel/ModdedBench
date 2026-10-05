@@ -153,6 +153,10 @@ public class GoalRoomTest {
 
     @Test public void aFailedSearchIsNamedForHowItEnded(){
         assertEquals("no_route_to_goal",PathFailure.searchEnded("exhausted",null));
+        // The search was refused an edit in a protected region: the reason says which.
+        assertEquals("no_route_to_goal; the search was refused edits in protected_region:base,shed",PathFailure.refusedBy("no_route_to_goal",java.util.List.of("base","shed")));
+        assertEquals("no_route_to_goal",PathFailure.refusedBy("no_route_to_goal",null));
+        assertEquals("no_route_to_goal",PathFailure.refusedBy("no_route_to_goal",java.util.List.of()));
         // The frontier reached unloaded chunks; the goal is not there.
         assertEquals("no_route_in_loaded_chunks",PathFailure.searchEnded("unloaded_chunks",true));
         // The goal is in unloaded chunks, or its cells are not known: as before.

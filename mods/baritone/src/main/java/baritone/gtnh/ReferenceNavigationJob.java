@@ -79,7 +79,7 @@ final class ReferenceNavigationJob implements Navigation.Job,PlansWhilePaused {
         if(done())return;
         if(WorkAccess.died(player)){finish("failed","player_died");return;}
         if(mc.theWorld!=world||mc.thePlayer!=player||!scope.equals(ControlRegistry.memory().memory().scope())){cancel("world_changed");return;}
-        if(!lease.isActive()){cancel("control_lost");return;}
+        if(!lease.isActive()){cancel(WorkAccess.lost(lease,"control_lost"));return;}
         if(mc.currentScreen!=null&&!dev.modbench.api.ControlRegistry.controls().ownsPlayerInventory(lease)){cancel("gui_open");return;}
         if(++ticks>timeout){finish("failed","timeout");return;}
         first.before(ticks,mc.thePlayer);

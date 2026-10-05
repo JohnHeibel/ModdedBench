@@ -152,6 +152,8 @@ final class WorkAccess {
         var s=baritone.Baritone.settings();return (int)Math.min(72000,(Math.max(s.failureTimeoutMS.value,s.planAheadFailureTimeoutMS.value)+49)/50);
     }
     /** A dead player, or the one that died and was replaced by a respawn. */
+    /** A job found its controls gone: why the arbiter took them (a protected region's refusal, a screen, lost focus), or `otherwise` when it did not say. */
+    static String lost(dev.modbench.api.InputArbiter.Lease lease,String otherwise){String why=lease.endedWhy();return why==null?otherwise:why;}
     static boolean died(Object player){return player instanceof net.minecraft.entity.EntityLivingBase p&&(p.isDead||p.getHealth()<=0);}
     static String protection(BlockPos p,boolean override){return ControlRegistry.memory().editProblem(p.getX(),p.getY(),p.getZ(),override,true);}
 }

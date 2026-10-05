@@ -26,6 +26,9 @@ public final class InputArbiter {
         boolean isActive();
         default boolean overrideProtection() {return false;}
         default boolean automatedEdits() {return false;}
+        /** Why the arbiter took this lease away (a revoke's reason, or "preempted"); null while it is held, and when its
+         * owner closed it. A job that finds its lease gone says this rather than guess. */
+        default String endedWhy() {return null;}
         /** From now until it ends, this lease may use an item whose rays reach no block in a protected region (a raised
          * sword, a drawn bow); clicks on blocks still need overrideProtection. */
         void permitInPlaceItemUse();
@@ -217,6 +220,7 @@ public final class InputArbiter {
     }
 
     private void notifyRevoked(LeaseImpl lease, String reason) {
+        lease.endedWhy = reason;
         try { lease.onRevoked.accept(reason); } catch (RuntimeException ignored) { }
     }
 
@@ -236,6 +240,7 @@ public final class InputArbiter {
         private final boolean overrideProtection,automatedEdits;
         private boolean active = true;
         private volatile boolean inPlaceItemUse;
+        private volatile String endedWhy;
 
         private LeaseImpl(String label, Consumer<String> onRevoked, boolean overrideProtection,boolean automatedEdits) {
             this.automatedEdits=automatedEdits;
@@ -251,6 +256,7 @@ public final class InputArbiter {
         @Override public boolean overrideProtection() {return isActive() && overrideProtection;}
         @Override public boolean automatedEdits() {return isActive() && automatedEdits;}
         @Override public void permitInPlaceItemUse() {inPlaceItemUse=true;}
+        @Override public String endedWhy() {return endedWhy;}
         @Override public void close() { InputArbiter.this.close(this); }
     }
 }

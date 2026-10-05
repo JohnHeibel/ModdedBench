@@ -376,9 +376,13 @@ public class ReferencePathingTest {
         Terrain t=new Terrain();t.set(1,64,0,Blocks.STONE,0);
         var region=new WorldMemory.Region("base",new WorldMemory.Pos(0,63,0),new WorldMemory.Pos(2,66,0));
         var c=context(t,false,new WorldMemory.Snapshot(1,Map.of(),Map.of(),Map.of("base",region)));
+        assertTrue(c.protectedMet.isEmpty());
         assertTrue(MovementTraverse.cost(c,0,64,0,1,0)>=ActionCosts.COST_INF);
+        assertEquals("the region that refused the dig is on record for a failed search to name",java.util.Set.of("base"),c.protectedMet);
         t.set(1,64,0,Blocks.AIR,0);
-        assertTrue(MovementTraverse.cost(context(t,false,capturedProtection(region)),0,64,0,1,0)<ActionCosts.COST_INF);
+        var open=context(t,false,capturedProtection(region));
+        assertTrue(MovementTraverse.cost(open,0,64,0,1,0)<ActionCosts.COST_INF);
+        assertTrue("walking through a region asks it for nothing",open.protectedMet.isEmpty());
     }
     private static WorldMemory.Snapshot capturedProtection(WorldMemory.Region region){return new WorldMemory.Snapshot(1,Map.of(),Map.of(),Map.of(region.name(),region));}
     @Test public void unverifiedForgeFluidsAreNotAirAndCannotBeExcavatedThrough(){

@@ -107,7 +107,7 @@ final class FightJob implements Navigation.Job {
         var me=mc.thePlayer;
         if(WorkAccess.died(player)){finish("failed","player_died");return;}
         if(mc.theWorld!=world||me!=player||!scope.equals(ControlRegistry.memory().memory().scope())){cancel("world_changed");return;}
-        if(!lease.isActive()){cancel("control_lost");return;}
+        if(!lease.isActive()){cancel(WorkAccess.lost(lease,"control_lost"));return;}
         if(mc.currentScreen!=null){cancel("gui_open");return;}
         if(ticks++>=duration){finish("failed","duration_elapsed");return;}
         if(me.getHealth()<=bailHealth){finish("failed","health_at_bail_line");return;}

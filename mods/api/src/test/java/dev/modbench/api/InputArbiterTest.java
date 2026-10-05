@@ -99,6 +99,25 @@ public class InputArbiterTest {
         assertEquals(keys(), applied.get(applied.size() - 1));
     }
 
+    @Test public void aLeaseTheArbiterTookSaysWhy() {
+        InputArbiter arbiter = new InputArbiter(new InputArbiter.Sink() {
+            @Override public void applyKeys(Set<Integer> pressed) { }
+            @Override public void applyLook(float yaw, float pitch) { }
+        });
+        // The callback may fail or decline to end its job: the reason is still the lease's to give.
+        InputArbiter.Lease refused = arbiter.acquire("walk", reason -> { throw new IllegalStateException("callback failed"); });
+        assertNull(refused.endedWhy());
+        arbiter.revoke("protected_region:base");
+        assertFalse(refused.isActive());
+        assertEquals("protected_region:base", refused.endedWhy());
+
+        InputArbiter.Lease first = arbiter.acquire("first", ignored -> { });
+        InputArbiter.Lease second = arbiter.acquire("second", ignored -> { });
+        assertEquals("preempted", first.endedWhy());
+        second.close();
+        assertNull("its owner closed it: nothing was taken", second.endedWhy());
+    }
+
     private static Set<Integer> keys(Integer... values) {
         return new LinkedHashSet<Integer>(java.util.Arrays.asList(values));
     }
