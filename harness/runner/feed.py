@@ -54,7 +54,7 @@ LINES = {  # tool -> line from (arguments, result); anything absent gets the gen
     "mb_scan": lambda a, r: "looking for " + _name(a.get("blocks") or [{"id": "blocks"}]),
     "mb_inventory": lambda a, r: "checking inventory", "mb_find": lambda a, r: "looking for " + _name(a.get("selector")),
     "mb_transfer": lambda a, r: f"moving {a.get('count', '')} {_name(a.get('expected'))}".replace("  ", " "),
-    "mb_note_write": lambda a, r: "note: " + str((a.get("patch") or {}).get("title") or a.get("id")),
+    "mb_note_new": lambda a, r: "note: " + str(a.get("title") or a.get("id")),
     "mb_note_append": lambda a, r: "note: " + str(a.get("id")),
     "mb_notes": lambda a, r: "reading notes", "mb_memory": lambda a, r: _said(a.get("method") or "status", "map memory: "),
     "mb_quest_claim": lambda a, r: "claimed a quest", "mb_quest_detect": lambda a, r: "handing in a quest",
@@ -114,8 +114,7 @@ def _recipe(a, r, me):
                       "target": _name(r.get("target") or a), "total": r.get("total")}
 
 def _notes(a, r, me):
-    if r.get("title"): return "note", {"title": r["title"], "text": str(r.get("text", ""))[:500], "tags": r.get("tags") or []}
-    if "notes" in r: return "note", {"title": "searching its notes", "titles": [n.get("title") for n in r["notes"]][:8]}
+    if "notes" in r: return "note", {"title": "looking up its notes", "titles": [n.get("title") for n in r["notes"]][:8]}
 
 SCRIPTS = Path(__file__).resolve().parents[2] / "harness" / "scripts"
 
@@ -166,7 +165,7 @@ POP = {  # tool -> (arguments, result, last known position of the player) -> (ki
                                          "matches": [{"pos": m.get("pos"), "name": _name(m)} for m in r.get("matches") or []][:40], "me": me}),
     "mb_map": lambda a, r, me: ("map", {k: r.get(k) for k in ("bounds", "blocksPerPixel", "player", "layer")}),
     "mb_screenshot": lambda a, r, me: ("shot", {}),
-    "mb_note_write": lambda a, r, me: ("note", {"title": (a.get("patch") or {}).get("title") or a.get("id"), "text": str((a.get("patch") or {}).get("text", ""))[:500], "wrote": True}) if r.get("saved") else None,  # the receipt does not repeat the note
+    "mb_note_new": lambda a, r, me: ("note", {"title": a.get("title") or a.get("id"), "text": str(a.get("text", ""))[:500], "wrote": True}) if r.get("file") else None,  # the receipt does not repeat the note
 }
 
 

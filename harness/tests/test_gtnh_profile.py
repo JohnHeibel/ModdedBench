@@ -28,7 +28,7 @@ TOOLS = {
     "mb_interrupt", "mb_interrupt_events", "mb_wait", "mb_wiki_search", "mb_wiki_read", "mb_goal", "mb_move_items", "mb_hold", "mb_craft", "mb_run",
     "mb_act", "mb_call", "mb_cost", "mb_gui", "mb_keys", "mb_map", "mb_methods", "mb_obs", "mb_screenshot", "mb_status", "mb_stop", "mb_time",
     "mb_recipe_status", "mb_item_search", "mb_item_info", "mb_recipes", "mb_fluid_search", "mb_recipe_handlers", "mb_recipe_view", "mb_recipe_inspect",
-    "mb_memory", "mb_route", "mb_inventory", "mb_find", "mb_transfer", "mb_click_slot", "mb_notes", "mb_note_write", "mb_note_append",
+    "mb_memory", "mb_route", "mb_inventory", "mb_find", "mb_transfer", "mb_click_slot", "mb_notes", "mb_note_new", "mb_note_append",
     "mb_follow", "mb_fight", "mb_view", "mb_process", "mb_settings", "mb_cache",
     "mb_mine", "mb_build_preview", "mb_build", "mb_copy",
     "mb_schematic_import", "mb_schematic_build", "mb_scan", "mb_work_status",
@@ -174,7 +174,7 @@ class GTNHProfileTests(unittest.TestCase):
         lanes = {n: tm.tools[n]["lane"] for tm in srv.modules.values() for n in tm.tools}
         self.assertEqual({lanes[n] for n in ("mb_obs", "mb_inventory", "mb_notes", "mb_item_search", "mb_status", "mb_build_preview")}, {"read"})
         self.assertEqual({lanes[n] for n in ("mb_stop", "mb_build_pause", "mb_interrupt")}, {"control"})
-        self.assertEqual({lanes[n] for n in ("mb_build", "mb_mine", "mb_route", "mb_transfer", "mb_note_write", "mb_note_append")}, {"act"})
+        self.assertEqual({lanes[n] for n in ("mb_build", "mb_mine", "mb_route", "mb_transfer", "mb_note_new", "mb_note_append")}, {"act"})
         self.assertTrue(all(callable(lanes[n]) for n in ("mb_call", "mb_time", "mb_gui", "mb_copy", "mb_settings")))
         registered = srv._tool_manager._tools["mb_obs"]
         self.assertEqual(registered.meta["moddedbench"]["lane"], "read")
@@ -640,8 +640,8 @@ class GTNHProfileTests(unittest.TestCase):
             plan.from_drawing({**drawing, "legend": {"a": {"clear": False}}})
         self.use(FakeKernel(lambda method, params: {"obs.player": {"pos": [11.5, 64, 20.5]},
             "nav.copy": {"plan": {"cells": [{"pos": [2, 0, 0], "id": "minecraft:dirt"}]}}}.get(method, {})))
-        note = {"id": "excavation", "title": "Excavation", "attachments": [{"kind": "region", "min": [10, 64, 20], "max": [12, 64, 20]}], "data": {"drawing": drawing}}
-        with patch.object(plan.notes, "read_notes", return_value={"notes": [note]}):
+        note = {"id": "excavation", "title": "Excavation", "anchors": [{"kind": "region", "min": [10, 64, 20], "max": [12, 64, 20]}], "tags": []}
+        with patch.object(plan.notes, "lookup", return_value=[note]), patch.object(plan.notes, "data", return_value={"drawing": drawing}):
             viewed = plan.mb_view(bounds={"min": [10, 64, 20], "max": [12, 64, 20]}, lookups=0)
         self.assertEqual(viewed["layers"][0]["rows"], [".@#"])
         self.assertEqual(next(t["plan"] for t in viewed["things"] if t.get("id") == "excavation"), {"unbuiltInView": 1})

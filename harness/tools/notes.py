@@ -1,36 +1,36 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 # Copyright (c) 2026 ModdedBench contributors
-"""Durable world notes (SQLite, one file per server world) and their surfacing as a side effect of play.
+"""Durable world notes (plain files, one folder per server world) and their surfacing as a side effect of play.
 
-Only capture/resolve contact Minecraft. Stored observations are never silently refreshed.
-Notes live under MODBENCH_NOTES_DIR (default <repo>/.state/notes). Store objects are cached in
-``mbtool.state["notes"]["stores"]``; the "already shown" cache is ``mbtool.state["notes"]["shown"]``.
+A note is ``<notes dir>/<world id>/<id>.md``: header lines (title, tags, status, created, and one ``anchor:``
+line of JSON per thing it is about), a blank line, the text. ``<id>.json`` beside it is its data; ``auto/``
+holds the harness's own journal. The model reads, searches and edits the files itself. The harness reads only
+headers (cached until a file changes) to say where notes are, and writes a file only to create a note, add a
+dated entry, journal a work outcome or keep the goal stack. A header that does not parse costs that note its
+anchors and is reported; it never raises. Harness writes take a per-world file lock and commit the folder to
+git when git is there, so the model's own edits are in the history too. Only capture contacts Minecraft.
+Notes live under MODBENCH_NOTES_DIR (default <repo>/.state/notes).
 
 Surfacing: ``surface()`` names at most SURFACE_LIMIT notes (id, title, updated) for a transition (arrival,
 observing a block/entity, entering a region, session start), most relevant first, and suppresses a
 note already shown in the last SHOWN_TTL_S seconds unless the player has moved MOVE_RESET blocks.
 ``tracked()`` wraps ``kernel().call`` for the methods that mark such transitions and attaches the
 notes under a ``"notes"`` key only when non-empty. Terminal work outcomes are journaled as ``auto``
-notes keyed by location (a repeat at the same place updates instead of duplicating); they surface
-like any other and are left out of a search unless it asks for them.
-
-Search is plain text: every word of the query somewhere in the note, or one regular expression tried on
-each line, and the lines that matched as grep prints them. Nothing is scored or ranked; results come
-newest-changed first (history sequence), a page at a time. The only
-durable clock is the wall clock written on each revision (createdAt/updatedAt, UTC): memory.context
-carries no game time and the simulation tick counter restarts with the server.
+notes keyed by location (a repeat at the same place rewrites the note); they surface like any other.
 """
 from __future__ import annotations
 
-from contextlib import closing
-from datetime import datetime, timedelta, timezone
+from contextlib import closing, contextmanager
+from datetime import datetime, timezone
 import hashlib
 import json
 import math
 import os
 from pathlib import Path
 import re
+import shutil
 import sqlite3
+import subprocess
 import sys
 import time
 from typing import Any
@@ -42,10 +42,8 @@ SURFACE_LIMIT = 5
 SUBJECT_KINDS = ("item", "topic")
 SHOWN_TTL_S = 600.0      # a note shown less than this ago is not repeated...
 MOVE_RESET = 48.0        # ...unless the player has moved this far since it was shown
-GATE_S, GATE_BLOCKS = 3.0, 4.0  # skip the store entirely when polled again from the same spot
-SEARCH_CHARS = 6000      # characters of "notes" one mb_notes search returns (max_chars) unless it asks for another size
-HITS, LINE = 5, 160      # per note in a search: matching lines shown, and characters of each line
-UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+GATE_S, GATE_BLOCKS = 3.0, 4.0  # skip the folder entirely when polled again from the same spot
+STATUSES = ("open", "done", "archived")
 DEFAULT_DIR = Path(__file__).resolve().parents[2] / ".state" / "notes"
 WORK = {"nav.goto": "goto", "nav.route": "route", "nav.process": "process", "nav.follow": "follow", "nav.fight": "fight",
         "nav.mine": "mine", "nav.build": "build", "nav.resume": "resume"}
@@ -72,43 +70,16 @@ def _now():
     return datetime.now(timezone.utc)
 
 
-def _age(then, now):
-    """How long ago in real time, coarsely: 40m, 5h, 3d."""
-    s = max(0, int((now - then).total_seconds()))
-    return f"{s // 60}m" if s < 7200 else f"{s // 3600}h" if s < 172800 else f"{s // 86400}d"
-
-
-def _when(value, name, now):
-    """A time filter: an age ("90m", "5h", "3d": that long before now) or a UTC time ("2026-10-04T12:00")."""
-    try:
-        if isinstance(value, str) and value[-1:] in UNITS and value[:-1].isdigit():
-            return now - timedelta(seconds=int(value[:-1]) * UNITS[value[-1]])
-        at = datetime.fromisoformat(value)
-        return at if at.tzinfo else at.replace(tzinfo=timezone.utc)
-    except (TypeError, ValueError, OverflowError):
-        raise ValueError(f'{name} must be an age like "90m", "5h", "3d" or a UTC time like "2026-10-04T12:00"') from None
-
-
-def _grep(lines, hits, pattern, context):
-    """The matching lines and their neighbours as grep -n -C prints them ("12:" a match, "13-" context); a long line is cut around its match."""
-    out = []
-    for j in sorted({j for i in hits for j in range(max(0, i - context), min(len(lines), i + context + 1))}):
-        m = pattern.search(lines[j])
-        start = max(0, m.start() - LINE // 2) if m else 0
-        out.append(f"{j + 1}{':' if m else '-'}{'...' if start else ''}{lines[j][start:start + LINE]}")
-    return "\n".join(out)
-
-
 def _pos(value):
     if not isinstance(value, (list, tuple)) or len(value) != 3:
         raise ValueError("position must be [x,y,z]")
     return [_int(v, "coordinate", -30000000 if i != 1 else 0, 30000000 if i != 1 else 255) for i, v in enumerate(value)]
 
 
-def attachment(value):
-    """Validate anchors, retaining only explicit provenance; entity IDs alone are never durable."""
+def anchor(value):
+    """Validate one anchor, retaining only explicit provenance; entity IDs alone are never durable."""
     if not isinstance(value, dict):
-        raise ValueError("attachment must be an object")
+        raise ValueError("anchor must be an object")
     a = json.loads(_json(value))
     kind = a.get("kind")
     keys = {"kind", "dimension", "label", "observedAt"}
@@ -124,15 +95,15 @@ def attachment(value):
         keys |= {"uuid", "uuidScope", "lastSeen", "observed"}
         a["uuid"] = str(uuid.UUID(a.get("uuid", "")))
         if a.get("uuidScope") != "server":
-            raise ValueError("entity attachment requires a server UUID from obs.entity, not a client/session UUID")
+            raise ValueError("entity anchor requires a server UUID from obs.entity, not a client/session UUID")
         a["lastSeen"] = _pos(a.get("lastSeen"))
     elif kind in SUBJECT_KINDS:  # not a place: an item type ("modid:name" or "modid:name:meta") or a free topic ("machine:boiler")
         keys = (keys - {"dimension"}) | {kind}
         a[kind] = _text(a.get(kind), kind, 128).strip().casefold()
     else:
-        raise ValueError("attachment kind must be block, entity, location, region, item or topic")
+        raise ValueError("anchor kind must be block, entity, location, region, item or topic")
     if set(a) - keys:
-        raise ValueError(f"unknown attachment fields: {sorted(set(a)-keys)}")
+        raise ValueError(f"unknown anchor fields: {sorted(set(a)-keys)}")
     if kind not in SUBJECT_KINDS:
         _int(a.get("dimension"), "dimension", -2**31, 2**31-1)
     for key in ("label", "observedAt"):
@@ -142,7 +113,7 @@ def attachment(value):
         allowed = {"id", "meta", "tileClass"} if kind == "block" else {"type", "name"}
         observed = a["observed"]
         if not isinstance(observed, dict) or set(observed) - allowed or len(_json(observed)) > 2048:
-            raise ValueError("invalid attachment observation")
+            raise ValueError("invalid anchor observation")
         if "meta" in observed:
             _int(observed["meta"], "block metadata", 0, 15)
         for key, val in observed.items():
@@ -151,241 +122,224 @@ def attachment(value):
     return a
 
 
-class NotesStore:
-    """One database per server world UUID, across dimensions. Each operation opens its own connection."""
-    def __init__(self, path, world_id):
-        self.path = Path(path)
-        self.world_id = str(uuid.UUID(world_id))
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with closing(self.connect()) as db, db:
-            db.execute("BEGIN IMMEDIATE")
-            version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1):
-                raise ValueError(f"unsupported notes database version {version}; database preserved")
-            db.execute("CREATE TABLE IF NOT EXISTS meta (world_id TEXT NOT NULL)")
-            row = db.execute("SELECT world_id FROM meta").fetchone()
-            if row and row[0] != self.world_id:
-                raise ValueError("notes database world identity mismatch")
-            if row is None:
-                db.execute("INSERT INTO meta VALUES (?)", (self.world_id,))
-            db.execute("CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, snapshot TEXT NOT NULL)")
-            db.execute("CREATE TABLE IF NOT EXISTS history (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL, revision INTEGER NOT NULL, operation TEXT UNIQUE NOT NULL, request_hash TEXT NOT NULL, snapshot TEXT NOT NULL, UNIQUE(id,revision))")
-            db.execute("CREATE INDEX IF NOT EXISTS history_note_sequence ON history(id,seq)")
-            db.execute("PRAGMA user_version=1")
-
-    def connect(self):
-        db = sqlite3.connect(self.path, timeout=15)
-        try:
-            db.execute("PRAGMA journal_mode=WAL")
-            db.execute("PRAGMA synchronous=FULL")
-            return db
-        except BaseException:
-            db.close()
-            raise
-
-    def status(self):
-        with closing(self.connect()) as db:
-            return {"worldId": self.world_id, "file": str(self.path.resolve()), "format": 1,
-                    "notes": db.execute("SELECT count(*) FROM notes").fetchone()[0],
-                    "sequence": db.execute("SELECT coalesce(max(seq),0) FROM history").fetchone()[0],
-                    "integrity": db.execute("PRAGMA quick_check").fetchone()[0]}
-
-    def get(self, id):
-        with closing(self.connect()) as db:
-            row = db.execute("SELECT snapshot FROM notes WHERE id=?", (_text(id, "id", 96),)).fetchone()
-            if row is None:
-                raise ValueError("note not found in this world")
-            return json.loads(row[0])
-
-    def write(self, id, expected_revision, operation_id, patch):
-        _text(id, "id", 96)
-        _text(operation_id, "operation_id", 128)
-        entry = expected_revision is None  # append(): one dated entry, on whatever revision is current
-        if not entry:
-            _int(expected_revision, "expected_revision")
-        if not isinstance(patch, dict) or not patch or set(patch) - ({"append"} if entry else {"title", "text", "tags", "status", "attachments", "data"}):
-            raise ValueError("patch must contain title, text, tags, status, attachments and/or data")
-        request_hash = hashlib.sha256(_json([id, expected_revision, patch]).encode()).hexdigest()
-        with closing(self.connect()) as db, db:
-            db.execute("BEGIN IMMEDIATE")
-            prior = db.execute("SELECT request_hash,snapshot,seq FROM history WHERE operation=?", (operation_id,)).fetchone()
-            if prior:
-                if prior[0] != request_hash:
-                    raise ValueError("operation_id already used with different arguments")
-                return {"saved": True, "replayed": True, "sequence": prior[2], "note": json.loads(prior[1])}
-            row = db.execute("SELECT revision,snapshot FROM notes WHERE id=?", (id,)).fetchone()
-            actual = row[0] if row else 0
-            if entry and not row:
-                raise ValueError("note not found in this world")
-            if not entry and actual != expected_revision:
-                raise ValueError(f"note revision conflict: expected {expected_revision}, current {actual}; read before editing")
-            now = _now().isoformat()
-            note = json.loads(row[1]) if row else dict(id=id, worldId=self.world_id, createdAt=now, tags=[], status="open", data={})
-            if entry:
-                note["text"] = "\n".join(filter(None, [note["text"].rstrip(), f"[{now[:16]}] {_text(patch['append'], 'text', 32768).strip()}"]))
-            else:
-                note.update(patch)
-            _text(note.get("title"), "title", 256)
-            _text(note.get("text"), "text", 32768, empty=True)
-            if not isinstance(note["tags"], list) or len(note["tags"]) > 32:
-                raise ValueError("tags must be a list of at most 32 strings")
-            note["tags"] = sorted({_text(t, "tag", 96).strip().casefold() for t in note["tags"]})
-            if note["status"] not in {"open", "done", "archived"}:
-                raise ValueError("status must be open, done or archived")
-            if not isinstance(note.get("attachments"), list) or not 1 <= len(note["attachments"]) <= 32:
-                raise ValueError("note requires 1..32 attachments")
-            note["attachments"] = [attachment(a) for a in note["attachments"]]
-            if not isinstance(note["data"], dict) or len(_json(note["data"]).encode()) > 16384:
-                raise ValueError("data must be a JSON object of at most 16 KiB")
-            note.update(revision=actual+1, updatedAt=now)
-            serialized = _json(note)
-            if len(serialized.encode()) > 128*1024:
-                raise ValueError("note exceeds 128 KiB")
-            db.execute("INSERT INTO notes VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,snapshot=excluded.snapshot", (id, actual+1, serialized))
-            seq = db.execute("INSERT INTO history(id,revision,operation,request_hash,snapshot) VALUES (?,?,?,?,?)", (id, actual+1, operation_id, request_hash, serialized)).lastrowid
-            return {"saved": True, "replayed": False, "sequence": seq, "note": note}
-
-    def append(self, id, operation_id, text):
-        """Add a dated entry ("[2026-10-04T12:00] text", UTC) as a new last line of an existing note. No revision guard: entries only add."""
-        return self.write(id, None, operation_id, {"append": text})
-
-    def history(self, id, before_revision=None, limit=20):
-        _int(limit, "limit", 1, 100)
-        before = _int(before_revision, "before_revision", 1) if before_revision is not None else 2**63-1
-        with closing(self.connect()) as db:
-            rows = db.execute("SELECT snapshot FROM history WHERE id=? AND revision<? ORDER BY revision DESC LIMIT ?", (_text(id, "id", 96), before, limit+1)).fetchall()
-        notes = [json.loads(row[0]) for row in rows[:limit]]
-        return {"revisions": notes, "nextBeforeRevision": notes[-1]["revision"] if len(rows) > limit else None}
-
-    def search(self, query="", tags=None, status=None, kind=None, dimension=None, near=None, radius=32, region=None, entity_uuid=None, subject=None, cursor=None, limit=20, detail="summary",
-               regex=False, case=False, context=1, since=None, before=None, author=None, max_chars=None):
-        """Grep over the notes that pass every filter, newest-changed first. A note matches or it does not: nothing is scored."""
-        _int(limit, "limit", 1, 100)
-        _int(context, "context", 0, 5)
-        if max_chars is not None:
-            _int(max_chars, "max_chars", 1000, 20000)
-        if detail not in ("summary", "full"):
-            raise ValueError("detail must be summary or full")
-        _text(query, "query", 512, empty=True)
-        regex, case = bool(regex), bool(case)
-        try:  # every word has to be in the note; a line is shown when any of them is on it
-            words = [re.compile(w if regex else re.escape(w), 0 if case else re.IGNORECASE) for w in ([query] if regex else query.split())]
-            pattern = re.compile("|".join(f"(?:{w.pattern})" for w in words), 0 if case else re.IGNORECASE) if words else None
-        except re.error as error:
-            raise ValueError(f"query is not a valid regular expression: {error}") from None
-        if tags is not None and (not isinstance(tags, list) or len(tags) > 32):
-            raise ValueError("tags must be a list of at most 32 strings")
-        tags = {_text(t, "tag", 96).strip().casefold() for t in tags or []}
-        if status not in (None, "open", "done", "archived", "all") or kind not in (None, "block", "entity", "location", "region", *SUBJECT_KINDS):
-            raise ValueError("invalid status or attachment kind")
-        if author not in (None, "me", "auto", "all"):
-            raise ValueError("author must be me, auto or all")
-        author = author or ("all" if "auto" in tags else "me")  # asking for the tag is asking for them
-        if dimension is not None:
-            _int(dimension, "dimension", -2**31, 2**31-1)
-        if near is not None:
-            near = _pos(near)
-            if isinstance(radius, bool) or not isinstance(radius, (int, float)) or not math.isfinite(radius) or not 0 <= radius <= 30000000:
-                raise ValueError("radius must be 0..30000000")
-        if region is not None:
-            region = attachment(dict(kind="region", dimension=0, **region))
-        if (near is not None or region is not None) and dimension is None:
-            raise ValueError("spatial search requires a dimension")
-        if entity_uuid is not None:
-            entity_uuid = str(uuid.UUID(entity_uuid))
-        fingerprint = hashlib.sha256(_json([self.world_id, query, regex, case, since, before, author, sorted(tags), status, kind, dimension, near, radius, region, entity_uuid, subject]).encode()).hexdigest()
-        now = _now()
-        since, before = (v if v is None else _when(v, name, now) for name, v in (("since", since), ("before", before)))
-        after, ceiling = 2**63-1, None
-        if cursor is not None:
-            if not isinstance(cursor, dict) or cursor.get("query") != fingerprint:
-                raise ValueError("cursor belongs to another query/world")
-            after = _int(cursor.get("after"), "cursor.after")
-            ceiling = _int(cursor.get("sequence"), "cursor.sequence")
-        subjects = None if subject is None else {str(v).strip().casefold() for v in ([subject] if isinstance(subject, str) else subject)}
-        def matches(a):
-            if a["kind"] in SUBJECT_KINDS:  # no place: matched by subject, never by a spatial filter
-                return near is None and region is None and entity_uuid is None and kind in (None, a["kind"]) and (subjects is None or a[a["kind"]] in subjects)
-            if subjects is not None:
-                return False
-            if dimension is not None and a["dimension"] != dimension or kind is not None and a["kind"] != kind:
-                return False
-            if entity_uuid is not None and (a["kind"] != "entity" or a["uuid"] != entity_uuid):
-                return False
-            if near is not None and _box_distance(a, near) > radius:
-                return False
-            lo = a.get("min", a.get("pos", a.get("lastSeen")))
-            hi = a.get("max", lo)
-            return region is None or all(lo[i] <= region["max"][i] and hi[i] >= region["min"][i] for i in range(3))
-        with closing(self.connect()) as db:
-            if ceiling is None:
-                ceiling = db.execute("SELECT coalesce(max(seq),0) FROM history").fetchone()[0]
-            rows = db.execute("SELECT h.seq,h.snapshot FROM notes n JOIN history h ON h.seq=(SELECT max(seq) FROM history WHERE id=n.id AND seq<=?) WHERE h.seq<? ORDER BY h.seq DESC", (ceiling, after))
-            found, size, more = [], 1, False  # size: characters of the "notes" list as the server serialises it
-            for seq, snapshot in rows:
-                note = json.loads(snapshot)
-                if status not in (None, "all") and note["status"] != status or status is None and note["status"] == "archived":
-                    continue
-                changed = datetime.fromisoformat(note["updatedAt"])
-                if author != "all" and ("auto" in note["tags"]) != (author == "auto") or since and changed < since or before and changed >= before:
-                    continue
-                if not tags.issubset(note["tags"]) or not any(matches(a) for a in note["attachments"]):
-                    continue
-                lines = note["text"].split("\n")
-                if not all(any(w.search(line) for line in [note["id"], note["title"], *note["tags"], *lines]) for w in words):
-                    continue
-                hits = [i for i, line in enumerate(lines) if pattern.search(line)] if pattern else []
-                result = dict(note, age=_age(changed, now))
-                if detail == "summary":
-                    result = dict({k: v for k, v in result.items() if k not in {"text", "data"}}, bodyCharacters=len(note["text"]),
-                                  excerpt=_grep(lines, hits[:HITS], pattern, context) if hits else note["text"][:280], **({"matchingLines": len(hits)} if hits else {}))
-                cost = len(_json(result)) + 1
-                if len(found) == limit or max_chars and found and size + cost > max_chars:
-                    more = True
-                    break
-                if max_chars and size + cost > max_chars:  # one note larger than the whole page: name it, do not send it
-                    result = dict({k: result[k] for k in ("id", "title", "revision", "updatedAt", "age")}, bodyCharacters=len(note["text"]), omitted="larger than max_chars: get reads it")
-                    cost = len(_json(result)) + 1
-                found.append(result)
-                size, after = size + cost, seq
-        return {"worldId": self.world_id, "notes": found, "detail": detail, "sequence": ceiling, "now": now.isoformat()[:16],
-                "nextCursor": {"after": after, "sequence": ceiling, "query": fingerprint} if more else None,
-                "spatialBasis": "stored attachment coordinates; entity lastSeen is historical"}
-
-    def backup(self, output):
-        """Consistent standalone SQLite backup, including committed WAL; never copy only a live .sqlite3 file."""
-        path = Path(output).resolve()
-        if path.exists():
-            raise ValueError("backup destination already exists")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with closing(self.connect()) as source, closing(sqlite3.connect(path)) as target:
-            source.backup(target)
-        return str(path)
-
-
-def _box_distance(a, point):
-    """Euclidean distance from a point to an attachment's box (0 inside a region / at the anchor)."""
-    lo = a.get("min", a.get("pos", a.get("lastSeen")))
-    hi = a.get("max", lo)
-    return math.sqrt(sum(max(lo[i]-point[i], 0, point[i]-hi[i])**2 for i in range(3)))
-
+# ---- the files ----
 
 def notes_dir() -> Path:
     return Path(os.environ.get("MODBENCH_NOTES_DIR", DEFAULT_DIR))
 
 
-def store_for(world_id) -> NotesStore:
-    """Cached per world in mbtool.state (survives reloads); the schema check runs once per process."""
+@contextmanager
+def _locked(world_id):
+    """One harness writer per world at a time, across threads and processes (a background task writes too). Closing the file lets go."""
+    notes_dir().mkdir(parents=True, exist_ok=True)
+    with open(notes_dir() / f"{world_id}.lock", "a+b") as f:
+        if os.name == "nt":
+            import msvcrt
+            f.seek(0)
+            while True:
+                try: msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1); break
+                except OSError: time.sleep(0.01)
+        else:
+            import fcntl
+            fcntl.flock(f, fcntl.LOCK_EX)
+        yield
+
+
+def _commit(root, message):
+    """History: the folder is its own git repository when git is there. The model's edits ride in with the next harness write."""
+    try:
+        git = lambda *a: subprocess.run(["git", "-C", str(root), "-c", "user.name=notes", "-c", "user.email=notes@modbench", *a], capture_output=True, timeout=20)
+        if not (root / ".git").exists(): git("init", "-q")
+        if (root / ".git").exists(): git("add", "-A"); git("commit", "-qm", message)  # never the repository this folder may sit inside
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def _replace(path, content):
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(content, encoding="utf-8", newline="\n")
+    os.replace(tmp, path)
+
+
+def _put(root, id, title, anchors, text="", tags=(), status="open", data=None, created=None, auto=False, updated=None):
+    """Write one note whole: <id>.md (header, blank line, text) and, when it has data, <id>.json beside it."""
+    if not isinstance(id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}", id):
+        raise ValueError("id must be 1..96 letters, digits, '.', '_' or '-': it is the file name")
+    title = " ".join(_text(title, "title", 256).splitlines())
+    _text(text, "text", 2**24, empty=True)
+    tags = sorted({" ".join(_text(t, "tag", 96).replace(",", " ").split()).casefold() for t in tags or ()})
+    if status not in STATUSES:
+        raise ValueError("status must be open, done or archived")
+    if not isinstance(anchors, list) or not 1 <= len(anchors) <= 32:
+        raise ValueError("a note needs 1..32 anchors")
+    if data is not None and not isinstance(data, dict):
+        raise ValueError("data must be a JSON object")
+    head = {"title": title, "tags": ", ".join(tags), "status": status, "created": created or _now().isoformat(timespec="seconds")}
+    content = "".join(f"{k}: {v}\n" for k, v in head.items()) + "".join(f"anchor: {_json(anchor(a))}\n" for a in anchors) + "\n" + text + "\n"
+    path = (root / "auto" if auto else root) / f"{id}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if data: _replace(path.with_suffix(".json"), json.dumps(data, ensure_ascii=False, indent=1, allow_nan=False) + "\n")
+    _replace(path, content)
+    if updated: os.utime(path, (updated, updated))
+    return path
+
+
+def export(database, root):
+    """Once, for a world whose notes were a SQLite database: every note becomes a file. The database stays as it was (it has the old revisions)."""
+    tmp = root.with_name(root.name + ".tmp")
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True)
+    with closing(sqlite3.connect(f"{Path(database).resolve().as_uri()}?mode=ro", uri=True)) as db:
+        for (snapshot,) in db.execute("SELECT snapshot FROM notes"):
+            n = json.loads(snapshot)
+            _put(tmp, re.sub(r"[^A-Za-z0-9._-]", "_", n["id"]), n["title"], n["attachments"], n["text"], n["tags"], n["status"], n["data"], n["createdAt"],
+                 "auto" in n["tags"], datetime.fromisoformat(n["updatedAt"]).timestamp())
+    os.replace(tmp, root)
+    _commit(root, f"exported from {Path(database).name}")
+
+
+def folder(world_id, make=False) -> Path:
+    """<notes dir>/<world id>, which may not exist yet. A database from before notes were files is exported the first time."""
     world_id = str(uuid.UUID(world_id))
-    path = notes_dir() / f"{world_id}.sqlite3"
-    stores = state.setdefault("notes", {}).setdefault("stores", {})
-    store = stores.get(world_id)
-    if store is None or store.path != path:
-        store = stores[world_id] = NotesStore(path, world_id)
-    return store
+    root, old = notes_dir() / world_id, notes_dir() / f"{world_id}.sqlite3"
+    if not root.exists() and old.exists():
+        with _locked(world_id):
+            if not root.exists(): export(old, root)
+    if make: root.mkdir(parents=True, exist_ok=True)
+    return root
 
 
-def capture(kernel, context, kind, **params):
+def _read(path, auto=False):
+    """One note's header, cached until the file changes. A header that does not parse leaves the note without anchors and says why."""
+    stat = path.stat()
+    cache = state.setdefault("notes", {}).setdefault("headers", {})
+    hit = cache.get(str(path))
+    if hit and hit[0] == (stat.st_mtime_ns, stat.st_size):
+        return hit[1]
+    note = dict(id=path.stem, title=path.stem, tags=[], status="open", anchors=[], auto=auto, file=str(path), mtime=stat.st_mtime_ns,
+                updated=datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat()[:16])
+    try:
+        keys = set()
+        for line in path.read_text(encoding="utf-8").split("\n\n", 1)[0].splitlines():
+            key, colon, value = line.partition(":")
+            key, value = key.strip(), value.strip()
+            if not colon: raise ValueError(f"header line is not 'key: value': {line[:60]!r}")
+            keys.add(key)
+            if key == "anchor": note["anchors"].append(anchor(json.loads(value)))
+            elif key == "tags": note["tags"] = sorted({t.strip().casefold() for t in value.split(",") if t.strip()})
+            elif key in ("title", "status", "created") and value: note[key] = value
+        if "title" not in keys: raise ValueError("the file does not start with a 'title:' line")
+        if note["status"] not in STATUSES: raise ValueError("status must be open, done or archived")
+    except (ValueError, OSError) as error:
+        note.update(anchors=[], status="open", unreadable=str(error)[:200])
+    if len(cache) > 4096: cache.clear()
+    cache[str(path)] = ((stat.st_mtime_ns, stat.st_size), note)
+    return note
+
+
+def scan(world_id) -> list[dict]:
+    """Every note of a world, by header."""
+    root, out = folder(world_id), []
+    for where, auto in ((root, False), (root / "auto", True)):
+        for path in sorted(where.glob("*.md")):
+            try: out.append(_read(path, auto))
+            except OSError: pass  # removed as it was listed
+    return out
+
+
+def get(world_id, id) -> dict:
+    root = folder(world_id)
+    for path, auto in ((root / f"{id}.md", False), (root / "auto" / f"{id}.md", True)):
+        if isinstance(id, str) and re.fullmatch(r"[A-Za-z0-9._-]+", id) and path.is_file():
+            return _read(path, auto)
+    raise ValueError("note not found in this world")
+
+
+def data(note) -> dict:
+    """A note's <id>.json; {} when it has none."""
+    path = Path(note["file"]).with_suffix(".json")
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (ValueError, OSError) as error:
+        raise ValueError(f"{path} is not readable JSON: {error}") from None
+    if not isinstance(value, dict):
+        raise ValueError(f"{path} must hold a JSON object")
+    return value
+
+
+def save(world_id, id, title, anchors, text="", new=False, **more) -> dict:
+    """A harness write of a whole note; with new, only when there is none by that id."""
+    with _locked(world_id):
+        root = folder(world_id, make=True)
+        if new and any((d / f"{id}.md").exists() for d in (root, root / "auto")):
+            raise ValueError(f"note {id} exists: edit {root / f'{id}.md'}")
+        path = _put(root, id, title, anchors, text, **more)
+        _commit(root, f"{id}: {title}"[:120])
+    return _read(path, more.get("auto", False))
+
+
+def append(world_id, id, text) -> dict:
+    """Add a dated entry ("[2026-10-04T12:00] text", UTC) as a new last line. A retry of the entry that is already last adds nothing."""
+    entry = _text(text, "text", 2**24).strip()
+    with _locked(world_id):
+        note = get(world_id, id)
+        path = Path(note["file"])
+        body = path.read_text(encoding="utf-8")
+        replayed = re.search(r"(?:^|\n)\[[0-9T:-]{16}\] " + re.escape(entry) + r"\s*$", body) is not None
+        if not replayed:
+            gap = "" if body.endswith("\n") or not body else "\n"
+            if "\n\n" not in body + gap: gap += "\n"  # a header with no text yet: the entry must not land in it
+            with path.open("a", encoding="utf-8", newline="\n") as f: f.write(f"{gap}[{_now().isoformat()[:16]}] {entry}\n")
+            _commit(folder(world_id), f"{id}: entry")
+        return {"file": str(path), "bytes": path.stat().st_size, **({"replayed": True} if replayed else {})}
+
+
+def _box_distance(a, point):
+    """Euclidean distance from a point to an anchor's box (0 inside a region / at the anchor)."""
+    lo = a.get("min", a.get("pos", a.get("lastSeen")))
+    hi = a.get("max", lo)
+    return math.sqrt(sum(max(lo[i]-point[i], 0, point[i]-hi[i])**2 for i in range(3)))
+
+
+def find(world_id, dimension=None, near=None, radius=32, region=None, entity_uuid=None, subject=None, kind=None, status=None, auto=False) -> list[dict]:
+    """The notes with an anchor that passes every filter given, newest-changed first. auto: False leaves the journal out, None takes both."""
+    if status not in (None, *STATUSES, "all") or kind not in (None, "block", "entity", "location", "region", *SUBJECT_KINDS):
+        raise ValueError("invalid status or anchor kind")
+    if dimension is not None:
+        _int(dimension, "dimension", -2**31, 2**31-1)
+    if near is not None:
+        near = _pos(near)
+        if isinstance(radius, bool) or not isinstance(radius, (int, float)) or not math.isfinite(radius) or not 0 <= radius <= 30000000:
+            raise ValueError("radius must be 0..30000000")
+    if region is not None:
+        region = anchor(dict(kind="region", dimension=0, **region))
+    if (near is not None or region is not None) and dimension is None:
+        raise ValueError("a search by place requires a dimension")
+    if entity_uuid is not None:
+        entity_uuid = str(uuid.UUID(entity_uuid))
+    subjects = None if subject is None else {str(v).strip().casefold() for v in ([subject] if isinstance(subject, str) else subject)}
+    def matches(a):
+        if a["kind"] in SUBJECT_KINDS:  # no place: matched by subject, never by a spatial filter
+            return near is None and region is None and entity_uuid is None and kind in (None, a["kind"]) and (subjects is None or a[a["kind"]] in subjects)
+        if subjects is not None:
+            return False
+        if dimension is not None and a["dimension"] != dimension or kind is not None and a["kind"] != kind:
+            return False
+        if entity_uuid is not None and (a["kind"] != "entity" or a["uuid"] != entity_uuid):
+            return False
+        if near is not None and _box_distance(a, near) > radius:
+            return False
+        lo = a.get("min", a.get("pos", a.get("lastSeen")))
+        hi = a.get("max", lo)
+        return region is None or all(lo[i] <= region["max"][i] and hi[i] >= region["min"][i] for i in range(3))
+    found = [n for n in scan(world_id) if (auto is None or n["auto"] == auto) and any(matches(a) for a in n["anchors"])
+             and (n["status"] == status or status == "all" or status is None and n["status"] != "archived")]
+    return sorted(found, key=lambda n: -n["mtime"])
+
+
+def capture(kernel, context, kind=None, **params):
     dimension = context["dimension"]
     a = dict(kind=kind, dimension=dimension, observedAt=datetime.now(timezone.utc).isoformat())
     if kind == "entity":
@@ -412,58 +366,23 @@ def capture(kernel, context, kind, **params):
     after = kernel.call("memory.context")
     if any(after[key] != context[key] for key in ("worldId", "dimension")):
         raise ValueError("world/dimension changed during capture; observe again")
-    return {"worldId": context["worldId"], "attachment": attachment(a)}
+    return anchor(a)
 
 
-def read_notes(kernel, method, params):
+def lookup(kernel, **filters) -> list[dict]:
+    """find() in the player's world and, unless a dimension is named, the dimension the player is in."""
     context = kernel.call("memory.context")
-    params = dict(params or {})
-    if method == "context":
-        return context
-    if method == "capture":
-        return capture(kernel, context, **params)
-    store = store_for(context["worldId"])
-    if method == "status":
-        return dict(store.status(), context=context)
-    if method == "get":
-        note, now = store.get(**params), _now()
-        return dict(note, age=_age(datetime.fromisoformat(note["updatedAt"]), now), now=now.isoformat()[:16])
-    if method == "history":
-        return store.history(**params)
-    if method == "search":
-        if params.get("near") == "player":
-            params["near"] = context["pos"]
-        params.setdefault("dimension", context["dimension"])
-        return store.search(**params)
-    if method == "resolve":
-        note = store.get(params["id"])
-        resolved = []
-        for a in note["attachments"]:
-            result = dict(attachment=a, status="annotation")
-            if a["kind"] in SUBJECT_KINDS:
-                pass
-            elif a["dimension"] != context["dimension"]:
-                result["status"] = "different_dimension"
-            elif a["kind"] in {"block", "entity"}:
-                try:
-                    args = dict(uuid=a["uuid"]) if a["kind"] == "entity" else dict(pos=a["pos"])
-                    current = capture(kernel, context, a["kind"], **args)["attachment"]
-                    result.update(current=current, status="observed")
-                    if a["kind"] == "block":
-                        result["status"] = "identity_matches" if a.get("observed") and a["observed"] == current.get("observed") else "identity_changed_or_unrecorded"
-                except (BridgeError, ValueError) as error:
-                    result.update(status="not_observed", reason=str(error))
-            resolved.append(result)
-        return {"note": note, "resolved": resolved, "saved": False,
-                "identityLimit": "matching block ID/metadata cannot distinguish replacement by an identical block"}
-    raise ValueError("notes method must be context, status, capture, get, search, history or resolve")
+    if filters.get("near") == "player":
+        filters["near"] = _floor(context["pos"])
+    filters.setdefault("dimension", context["dimension"])
+    return find(context["worldId"], **filters)
 
 
-def write_note(kernel, world_id, id, expected_revision, operation_id, patch):
-    context = kernel.call("memory.context")
-    if str(uuid.UUID(world_id)) != context["worldId"]:
-        raise ValueError("world changed; note write refused")
-    return store_for(world_id).write(id, expected_revision, operation_id, patch)
+def where(kernel) -> dict:
+    """The folder of this world's notes, and the files in it whose header cannot be read."""
+    world = kernel.call("memory.context", timeout=5)["worldId"]
+    bad = [{"file": n["file"], "why": n["unreadable"]} for n in scan(world) if "unreadable" in n]
+    return {"notesFolder": str(folder(world, make=True)), **({"notesUnreadable": bad} if bad else {})}
 
 
 # ---- surfacing as a side effect ----
@@ -494,31 +413,28 @@ def surface(kernel, *, position=None, dimension=None, block=None, entity=None, s
             if last and last[0] == dimension and now - last[1] < GATE_S and _dist(last[2], position) < GATE_BLOCKS:
                 return []
         context = context or kernel.call("memory.context", timeout=5)
-        world = str(uuid.UUID(context["worldId"]))
-        if not (notes_dir() / f"{world}.sqlite3").exists():
-            return []
+        world = context["worldId"]
         dimension = context["dimension"] if dimension is None else dimension
         here = _floor(position or context["pos"])
         cache["last"] = (dimension, now, here)
-        store = store_for(world)
         if subjects is not None:
-            anchor, found = here, store.search(subject=subjects, author="all", limit=100)["notes"] if subjects else []
+            spot, found = here, find(world, subject=subjects, auto=None) if subjects else []
         elif entity is not None:
-            anchor, found = here, store.search(entity_uuid=entity, author="all", limit=100)["notes"]
+            spot, found = here, find(world, entity_uuid=entity, auto=None)
         elif block is not None:
-            anchor = _floor(block)
-            found = store.search(dimension=dimension, near=anchor, radius=0, author="all", limit=100)["notes"]
+            spot = _floor(block)
+            found = find(world, dimension, near=spot, radius=0, auto=None)
         else:
-            anchor, found = here, store.search(dimension=dimension, near=here, radius=radius, author="all", limit=100)["notes"]
+            spot, found = here, find(world, dimension, near=here, radius=radius, auto=None)
         shown = cache.setdefault("shown", {})
         out = []
-        for note in sorted(found, key=lambda n: (_nearest(n, anchor, dimension)[0], n["status"] != "open")):
-            key = (note["id"], note["revision"])
+        for note in sorted(found, key=lambda n: (_nearest(n, spot, dimension), n["status"] != "open")):
+            key = (note["id"], note["mtime"])
             prior = shown.get(key)
             if prior and now - prior[0] < SHOWN_TTL_S and _dist(prior[1], here) < MOVE_RESET:
                 continue
             shown[key] = (now, here)
-            out.append(_compact(note))
+            out.append({"id": note["id"], "title": note["title"], "updated": note["updated"]})  # that the note exists and how old it is: its file has the rest
             if len(out) == SURFACE_LIMIT:
                 break
         if len(shown) > 512:
@@ -530,17 +446,8 @@ def surface(kernel, *, position=None, dimension=None, block=None, entity=None, s
         return []
 
 
-def _nearest(note, anchor, dimension):
-    best = (math.inf, None)
-    for a in note["attachments"]:
-        if a.get("dimension") == dimension and a["kind"] not in SUBJECT_KINDS:
-            best = min(best, (_box_distance(a, anchor), a), key=lambda x: x[0])
-    return best if best[1] is not None else (math.inf, note["attachments"][0])
-
-
-def _compact(note):
-    """What rides along on another tool's result: that the note exists and how old it is. mb_notes get reads it."""
-    return {"id": note["id"], "title": note["title"], "updated": (note.get("updatedAt") or "")[:16]}
+def _nearest(note, spot, dimension):
+    return min((_box_distance(a, spot) for a in note["anchors"] if a.get("dimension") == dimension and a["kind"] not in SUBJECT_KINDS), default=math.inf)
 
 
 def item_subjects(result, limit=64):
@@ -577,7 +484,7 @@ def _work_pos(result):
 
 
 def journal(kernel, method, result, error=None, context=None):
-    """Auto-journal a terminal work outcome as an ``auto`` note at its location; repeats there update the note."""
+    """Auto-journal a terminal work outcome as a note in auto/ at its location; a repeat there rewrites the note."""
     kind = WORK.get(method)
     if kind is None:
         return None
@@ -592,20 +499,13 @@ def journal(kernel, method, result, error=None, context=None):
     dim = context["dimension"]
     cell = [v // 4 * 4 for v in pos]
     outcome = "failed" if error is not None else "done"
-    note_id = f"auto-{kind}-{dim}-{cell[0]}-{cell[1]}-{cell[2]}"
     facts = {k: receipt.get(k) for k in ("jobId", "action", "state", "reason", "blocksPlaced", "blocksMined", "placed", "removed", "ticks") if receipt.get(k) is not None}
     if error is not None:
         facts.update(code=error.code, msg=error.msg)
     reason = facts.get("reason") or facts.get("msg") or ""
     title = f"{kind} {outcome} at {pos[0]},{pos[1]},{pos[2]}" + (f": {reason}"[:200] if reason else "")
-    store = store_for(context["worldId"])
-    try:
-        current = store.get(note_id)["revision"]
-    except ValueError:
-        current = 0
-    patch = {"title": title[:256], "text": _json(facts), "tags": ["auto", kind, outcome], "status": "open" if error else "done",
-             "attachments": [{"kind": "location", "dimension": dim, "pos": pos, "label": f"{kind} {outcome}"}]}
-    return store.write(note_id, current, f"auto-{uuid.uuid4()}", patch)["note"]
+    return save(context["worldId"], f"auto-{kind}-{dim}-{cell[0]}-{cell[1]}-{cell[2]}", title[:256], [{"kind": "location", "dimension": dim, "pos": pos, "label": f"{kind} {outcome}"}],
+                _json(facts), tags=["auto", kind, outcome], status="open" if error else "done", auto=True)
 
 
 def after(method, params, result):
@@ -662,98 +562,72 @@ def tracked(method, timeout=None, **params):
 
 # ---- tools ----
 
-def _receipt(done):
-    """What a write answers with: the receipt, not the note again."""
-    note = done["note"]
-    return {**{k: v for k, v in done.items() if k != "note"}, "id": note["id"], "revision": note["revision"], "size": len(note["text"]), "attachments": note["attachments"]}
-
-
 @tool(lane="read", coverage=["memory"])
-def mb_notes(method: str = "search", params: dict | None = None) -> Any:
-    """Durable world notes: context, status, capture, search, get, history, resolve.
+def mb_notes(method: str = "find", params: dict | None = None) -> Any:
+    """World notes are files, one <id>.md each, in the folder mb_status names (notesFolder): read, search and edit them with your shell. find and capture are what a file cannot do.
 
-    Notes also surface on their own (under "notes", as id, title and updated: get reads one)
-    when you arrive somewhere, observe a block/entity that has one, enter an annotated
-    region, or call mb_status.
-    capture: {kind:block,pos:[x,y,z]}, {kind:entity,entityId:observedId} or uuid,
-    {kind:location,pos?:[x,y,z]}, {kind:region,min:[x,y,z],max:[x,y,z]},
-    {kind:item,item:"modid:name" or "modid:name:meta"} for an item TYPE (there is no
-    per-stack identity), {kind:topic,topic:"machine:boiler"} for anything that is not a
-    place: a machine kind, a mod, a quest, a technique, a wiki lesson. Item notes surface
-    when that item shows up in mb_inventory, mb_item_info or mb_recipes; topic notes are
-    found with search {subject:"machine:boiler"} (subject also takes a list). Returns
-    worldId and attachment for mb_note_write. Entity UUIDs must come from the server;
-    use obs.entities to discover transient IDs. Captures do not save notes.
-    search: {query,regex:false,case:false,context:1,since,before,author:me|auto|all,
-    tags:[all-required-tags],status:open|done|archived|all,kind,near:[x,y,z]|player,
-    radius:32,region:{min,max},entity_uuid,subject,dimension,limit:20,max_chars:6000,
-    cursor,detail:summary|full}. Every filter given must hold; nothing is ranked.
-    query is plain text: a note is found when every word of it is somewhere in the
-    note's text, id, title or tags, ignoring case unless case:true. With regex:true
-    the whole query is one regular expression tried on each line, which is also how
-    to ask for words side by side.
-    since/before select by when a note last changed: an age ("90m", "5h", "3d", in
-    real time) or a UTC time ("2026-10-04T12:00").
-    author: me (the default) is your notes; auto is the ones the harness journals
-    (work outcomes, tagged "auto"); all is both.
-    Results come newest-changed first, each with its anchors, its age and an excerpt:
-    the lines that matched, as grep -n prints them ("12:" a match, "13-" one of the
-    context lines around it; the first 5, matchingLines counts them all), or the start
-    of the text when no line matched. get reads the full note.
-    A page ends at limit notes or max_chars characters (1000..20000), whichever comes
-    first; a note too large for a page is listed with "omitted". Follow nextCursor
-    unchanged with the same filters for the next page; pages retain a consistent snapshot.
-    Defaults to current dimension and excludes archived notes; dimension:null searches
-    all dimensions (spatial searches require one). Entity proximity uses lastSeen.
-    get: {id} returns the note with createdAt, updatedAt, age and now (UTC); an entry
-    added with mb_note_append starts with its own time.
-    history: {id,before_revision?,limit:20}. resolve: {id} inspects currently loaded
-    attachments without overwriting notes; absence never proves destruction.
-    Block identity checks cannot detect replacement by an identical block.
-    Notes are annotations, not protection rules or verified facts. Keep useful plans,
-    machine quirks, adapter source references and construction reservations here.
+    A note is header lines, a blank line, then the text. The header: title, tags
+    (comma separated), status (open, done or archived), created, and one "anchor:"
+    line for each thing the note is about. Every line of it is yours to edit, and the
+    file's modification time is when the note last changed. <id>.json beside a note is
+    its data. auto/ holds the notes the harness journals for work outcomes. A header
+    that cannot be read costs the note its anchors until it is mended: find and
+    mb_status name such files under "notesUnreadable".
+    Notes surface on their own (under "notes", as id, title and updated) when you arrive
+    somewhere, observe a block/entity that has one, enter an annotated region, or call
+    mb_status; a note on an item when that item shows up in mb_inventory, mb_item_info
+    or mb_recipes.
+    find: {near:[x,y,z]|player,radius:32,region:{min,max},entity_uuid,subject,kind,
+    dimension,status:open|done|archived|all,auto:false}. The notes with an anchor that
+    passes every filter given, newest-changed first, each with its file and anchors.
+    subject is an item ("modid:name" or "modid:name:meta") or a topic, or a list of them.
+    Defaults to the current dimension and leaves out archived notes and auto/
+    (auto:true lists auto/ instead); dimension:null takes every dimension (near and
+    region need one). Entity proximity uses lastSeen.
+    capture: one anchor as mb_note_new takes it, observed now and not saved. Returns
+    the "anchor:" line to add to the header of a note you already have.
+    Notes are annotations, not protection rules or verified facts.
     """
-    if method == "search":
-        params = dict(params or {}, max_chars=(params or {}).get("max_chars") or SEARCH_CHARS)
-    return read_notes(kernel(), method, params)
+    k, params = kernel(), dict(params or {})
+    if method == "capture":
+        a = capture(k, k.call("memory.context"), **params)
+        return {"anchor": a, "line": f"anchor: {_json(a)}"}
+    if method == "find":
+        found = lookup(k, **params)
+        return {**where(k), "notes": [{"id": n["id"], "title": n["title"], "updated": n["updated"], "file": ("auto/" if n["auto"] else "") + n["id"] + ".md",
+                                       **{key: n[key] for key in ("tags", "status") if n[key] not in ([], "open")}, "anchors": n["anchors"]} for n in found]}
+    raise ValueError("notes method must be find or capture")
 
 
 @tool(coverage=["memory"])
-def mb_note_write(world_id: str, id: str, expected_revision: int,
-                  operation_id: str, patch: dict) -> Any:
-    """Create/update a durable note with history and a retry-safe receipt.
+def mb_note_new(id: str, title: str, anchors: list, text: str = "", tags: list | None = None, data: dict | None = None) -> Any:
+    """Create a note: writes <id>.md with its header and text, and returns the file. After that the file is the note.
 
-    Use worldId from mb_notes context/capture. Create with expected_revision:0 and
-    patch:{title,text,attachments:[capturedAttachment,...],tags?:[],status?:open,data?:{}}.
-    Update with the observed revision and only changed fields. Text/arrays replace
-    those fields; mb_note_append adds to the text without resending it. data holds
-    model-defined JSON, e.g. adapter source paths.
-    Use a distinct operation_id for each edit; after a timeout retry
-    exactly the same arguments and operation_id. A stale revision fails without edits.
-    Archive with patch:{status:archived}; restore with status:open. No destructive delete;
-    history preserves prior content, which can be copied into a new guarded revision.
-    Region annotations do not prevent normal progression or automatically protect blocks.
-    Stored under MODBENCH_NOTES_DIR (default .state/notes), across JVM/MCP restarts.
-    Returns the receipt, not the note again: saved, replayed, sequence, id, revision,
-    size (characters of text) and the attachments as stored.
+    anchors, one or more, say what the note is about: {kind:block,pos:[x,y,z]},
+    {kind:entity,entityId:observedId} or uuid, {kind:location,pos?:[x,y,z]},
+    {kind:region,min:[x,y,z],max:[x,y,z]}, {kind:item,item:"modid:name" or
+    "modid:name:meta"} for an item TYPE (there is no per-stack identity),
+    {kind:topic,topic:"machine:boiler"} for anything that is not a place: a machine
+    kind, a mod, a quest, a technique, a wiki lesson. Places are in the dimension you
+    are in; a block or entity is observed now and what was seen is kept in the anchor.
+    Entity UUIDs must come from the server; use obs.entities to discover transient IDs.
+    id is the file name: letters, digits, '.', '_' and '-'. data is a JSON object
+    written to <id>.json. Fails when a note by that id exists.
     """
-    return _receipt(write_note(kernel(), world_id, id, expected_revision, operation_id, patch))
+    k = kernel(); context = k.call("memory.context")
+    note = save(context["worldId"], id, title, [capture(k, context, **a) for a in anchors], text, new=True, tags=tags, data=data)
+    return {"file": note["file"], "anchors": note["anchors"]}
 
 
 @tool(coverage=["memory"])
-def mb_note_append(id: str, text: str, operation_id: str) -> Any:
-    """Add a dated entry to the end of an existing note without reading or resending its text.
+def mb_note_append(id: str, text: str) -> Any:
+    """Add a dated entry to the end of a note: a new last line, "[2026-10-04T12:00] " (now, UTC) and then your text.
 
-    The entry becomes a new last line of the note's text: "[2026-10-04T12:00] " (when it
-    was written, UTC) and then your text, so a reader of the note sees how old each
-    entry is (mb_notes get and search return now to compare with). It needs no world
-    id and no revision: entries only add, and the note's revision goes up by one.
-    Use a distinct operation_id for each entry; after a timeout retry exactly the same
-    arguments and operation_id, and the entry is not added twice. Fails when the note
-    does not exist in this world (create it with mb_note_write) or its text would pass
-    32,768 characters. Returns the same receipt as mb_note_write.
+    No entry is lost when something else is appending to the same note. A retry whose
+    text is already the note's last entry adds nothing. Fails when there is no note
+    by that id (mb_note_new creates one). Returns the file and its size in bytes.
     """
-    return _receipt(store_for(kernel().call("memory.context")["worldId"]).append(id, operation_id, text))
+    return append(kernel().call("memory.context")["worldId"], id, text)
 
 
 # ---- goal stack ----
@@ -764,31 +638,29 @@ GOAL_ID, GOAL_FIELDS, STALE_TICKS = "goal-stack", ("chapter", "quest", "subgoal"
 def goal(kernel, changes=None):
     """The pinned goal note plus a stall signal: game ticks since the sub-goal or the inventory last changed."""
     context = kernel.call("memory.context", timeout=5)
-    store = store_for(context["worldId"])
     try:
-        note = store.get(GOAL_ID)
+        note = get(context["worldId"], GOAL_ID)
+        stack = {} if note["status"] == "archived" else data(note)  # archiving the note clears the stack
     except ValueError:
-        note = {"revision": 0, "data": {}}
-    data = {} if note.get("status") == "archived" else dict(note["data"])  # archiving the note clears the stack
+        note, stack = {}, {}
     changes = {k: _int(v, k, 0, 100) if k == "progress" else _text(v, k, 512, empty=True).strip() for k, v in (changes or {}).items() if v is not None}
     if changes:
-        if "progress" not in changes and changes.get("quest", data.get("quest")) != data.get("quest"): data.pop("progress", None)  # the estimate was for the quest before
-        data.update(changes, setAt=datetime.now(timezone.utc).isoformat())
-        text = " / ".join(f"{k}: {data[k]}" for k in GOAL_FIELDS if data.get(k))
-        store.write(GOAL_ID, note["revision"], f"goal-{uuid.uuid4()}", {"title": "Goal stack", "text": text, "data": data, "tags": ["goal"], "status": "open",
-                    "attachments": [{"kind": "topic", "topic": "goal"}]})
-    if not data:
+        if "progress" not in changes and changes.get("quest", stack.get("quest")) != stack.get("quest"): stack.pop("progress", None)  # the estimate was for the quest before
+        stack.update(changes, setAt=datetime.now(timezone.utc).isoformat())
+        text = " / ".join(f"{k}: {stack[k]}" for k in GOAL_FIELDS if stack.get(k))
+        save(context["worldId"], GOAL_ID, "Goal stack", [{"kind": "topic", "topic": "goal"}], text, tags=["goal"], data=stack, created=note.get("created"))
+    if not stack:
         return {"unset": "no goal stack yet: call mb_goal(chapter=..., quest=..., subgoal=..., serves=...)"}
     watch = state.setdefault("goal", {})
     ticks = kernel.call("time.status", timeout=5).get("state", {}).get("simulationTicks", 0)
-    mark = hashlib.sha256(_json([data.get("subgoal"), kernel.call("obs.inventory", detail="counts", timeout=5)]).encode()).hexdigest()
+    mark = hashlib.sha256(_json([stack.get("subgoal"), kernel.call("obs.inventory", detail="counts", timeout=5)]).encode()).hexdigest()
     if mark != watch.get("mark"):
         watch.update(mark=mark, quiet=0)
     else:
         watch["quiet"] = watch.get("quiet", 0) + max(0, ticks - watch.get("ticks", ticks))  # the counter restarts with the server
     watch["ticks"] = ticks
-    out = {**{k: data.get(k, "") for k in GOAL_FIELDS}, "setAt": data.get("setAt"), "quietGameMinutes": round(watch["quiet"] / 1200, 1)}
-    if "progress" in data: out["progress"] = data["progress"]
+    out = {**{k: stack.get(k, "") for k in GOAL_FIELDS}, "setAt": stack.get("setAt"), "quietGameMinutes": round(watch["quiet"] / 1200, 1)}
+    if "progress" in stack: out["progress"] = stack["progress"]
     if watch["quiet"] >= STALE_TICKS:
         out["stale"] = "same sub-goal and same inventory for a game day of running time: say in one sentence why, then change something or re-scope. A running job, an armed wait, or work on the base that does not pass through your hands (wiring, configuring, reading before a build) is a fine reason; put it in the sub-goal."
     return out
@@ -812,12 +684,3 @@ def mb_goal(chapter: str | None = None, quest: str | None = None, subgoal: str |
     It lives in the note "goal-stack", so it survives compaction, restarts and crashes.
     """
     return goal(kernel(), {"chapter": chapter, "quest": quest, "subgoal": subgoal, "serves": serves, "progress": progress})
-
-
-if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description="Back up durable world notes using SQLite's consistent backup API")
-    parser.add_argument("world_id")
-    parser.add_argument("output")
-    args = parser.parse_args()
-    print(store_for(args.world_id).backup(args.output))
