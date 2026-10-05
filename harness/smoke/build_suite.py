@@ -133,7 +133,7 @@ class Suite(bs.Shells):
         self.stand([origin[0] + 3.5, bs.FLOOR, origin[2] + 3.5])   # and a second for the client to see the block
         r = call(work.mb_build, cells=cells, origin=origin, allow_break=True)
         occ = r.get("occupied") or {}; placed = [w for w in self.wrong(origin, cells, want=AIR) if w != cell]
-        ok = (r.get("state") == "failed" and (r.get("stopped") or {}).get("reason") == "occupied" and occ.get("count") == 1
+        ok = (r.get("state") == "failed" and (r.get("stopped") or {}).get("reason") == "occupied" and (r.get("stopped") or {}).get("present") == STONE and occ.get("count") == 1
               and occ.get("first") == [cell] and not placed and not r.get("placed"))
         return {"passed": ok, "receipt": r, "why": f"state={r.get('state')} code={r.get('errorCode')} stopped={r.get('stopped')} occupied={occ} placedAnyway={len(placed)}"}
 
