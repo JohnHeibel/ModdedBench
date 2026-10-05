@@ -25,6 +25,11 @@ a scenario that passed before and fails now is a regression.
   water         two cells of flowing water in a channel, walked to from six blocks off: both end as the block asked for
   oven          a 3 x 3 x 3 box with one empty cell in its middle, started on the middle of its floor: all 26 cells in, the
                 player not shut inside
+  door          a wall three wide and four high with a real two-high door in it over a sill of the wall's own block (glowstone,
+                the arena's floor, takes no door), both door cells drawn as the door block and nothing said of the item: the
+                door stands, lower half under upper
+  door_terrain  the same with a block of terrain in the upper door cell (the run of 2026-10-05: the game takes a door only
+                with both its cells free, and the upper one is a later step)
   terrain       a hall on natural ground, whatever stands there dug out: 11 x 11 and 5 high with a door, 320 cells
   hall          only when named (--only hall): run 2's hall, 25 x 25 and 7 high, 1728 cells, resumed until done
 
@@ -47,7 +52,7 @@ from movement_course import BridgeError, work  # noqa: E402
 
 OUT = mc.ROOT / ".runtime" / "evidence" / "build-suite.json"
 WORK = Path(os.environ.get("MB_CLIENT_WORK", "/clientwork"))
-DIRT, STONE, WOOD, AIR = "minecraft:dirt", "minecraft:cobblestone", "minecraft:planks", "minecraft:air"
+DIRT, STONE, WOOD, AIR, DOOR = "minecraft:dirt", "minecraft:cobblestone", "minecraft:planks", "minecraft:air", "minecraft:wooden_door"
 HALL, SMALL = (25, 7, 25), (11, 5, 11)
 
 
@@ -235,6 +240,20 @@ class Suite(bs.Shells):
         return {"passed": r.get("state") == "succeeded" and not wrong and not inside, "receipt": r,
                 "why": f"state={r.get('state')} stopped={(r.get('stopped') or {}).get('reason')} wrong={len(wrong)} endedInside={inside} ticks={r.get('ticks')}"}
 
+    def door(self, terrain=False):
+        origin = self.arena(); self.stacks((DIRT, 64), (DIRT, 64), (DOOR, 1))
+        if terrain: self.set_block([1, 2, 0], "minecraft:grass")
+        self.stand([origin[0] + 1.5, bs.FLOOR, origin[2] - 2.5])
+        cells = [{"pos": [x, y, 0], "id": DOOR if (x, y) in ((1, 1), (1, 2)) else DIRT} for y in range(4) for x in range(3)]
+        r = call(work.mb_build, cells=cells, origin=origin, replace_existing=True, allow_place=True, timeout_ticks=3000)
+        wrong = self.wrong(origin, cells); found = self.region([1, 1, 0], [1, 2, 0])
+        halves = [(found.get((1, y, 0)) or {}).get("meta") for y in (1, 2)]   # the game's own: the upper half has bit 8
+        ok = r.get("state") == "succeeded" and not wrong and halves[0] is not None and halves[0] < 8 <= (halves[1] or 0)
+        return {"passed": ok, "receipt": r, "why": f"state={r.get('state')} code={r.get('errorCode')} msg={str(r.get('errorMsg'))[:120] if r.get('errorCode') else None} "
+                                                 f"stopped={r.get('stopped')} wrong={wrong} halves={halves} ticks={r.get('ticks')}"}
+
+    def door_terrain(self): return self.door(terrain=True)
+
     def terrain(self): return self.hall(SMALL, "terrainRuns", 80)
 
     def hall(self, size=HALL, counter="hallRuns", south=0):
@@ -270,7 +289,7 @@ class Suite(bs.Shells):
 
     def run(self):
         all_ = {**{n: (lambda n=n: self.shell_case(n)) for n in bs.CASES},
-                **{n: getattr(self, n) for n in ("staged", "unfinishable", "missing", "occupied", "timeout", "any_meta", "clear", "hidden", "buried", "lining", "lining_pocket", "water", "oven", "terrain", "hall")}}
+                **{n: getattr(self, n) for n in ("staged", "unfinishable", "missing", "occupied", "timeout", "any_meta", "clear", "hidden", "buried", "lining", "lining_pocket", "water", "oven", "door", "door_terrain", "terrain", "hall")}}
         names = [n for n in (self.args.only or [n for n in all_ if n != "hall"]) if n not in (self.args.skip or [])]
         try: past = json.loads(OUT.read_text())
         except (OSError, ValueError): past = {}

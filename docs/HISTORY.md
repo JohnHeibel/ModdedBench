@@ -8,6 +8,10 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-05** `mb_build` places doors: a cell whose block is placed by an item that is no block item is clicked
+  in like a click cell, after the plain cells of its stage, and what the plan replaces in such cells is out before the
+  first click; the item is asked of the game when the cell names none. Before, such a cell was refused without `item`
+  and stalled with it (the source builder only knows block items).
 - **2026-10-05** The builder no longer shuts itself in: the block that would close its last walk out waits while
   other cells are left (a 3x3x3 oven had stopped `no_route` at 24 of 30, the builder inside it under its own last
   cell). When it is the last of its step and the finished plan leaves no room inside, the builder walks out
