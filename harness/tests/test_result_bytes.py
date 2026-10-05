@@ -192,6 +192,38 @@ class QuestTests(unittest.TestCase):
             self.assertEqual([(line["name"], line["quests"], "entries" in line) for line in lines], [("Tier 1", 2, False)] * 2)
             self.assertEqual([c[0] for c in k.calls], ["quest.lines"])  # no titles are read for a list of lines
 
+    count = 17
+
+    def chapters(self, method, p):
+        """quest.lines as the bridge pages it: 12 lines with a quest open, then 5 with none, each with its entries."""
+        if method != "quest.lines": return self.reply(method, p)
+        book = [{"id": f"l{n}", "name": f"Chapter {n}", "quests": 3, "completed": n % 2, "unlocked": 0, "unclaimed": 1 - n % 2, "locked": 2 if n < 12 else 3,
+                 "entries": [{"questId": "q007", "x": 0, "y": 0, "state": "LOCKED"}]} for n in range(self.count)]
+        found = [line for line in book if p["query"].lower() in line["name"].lower()]; end = min(p["offset"] + p["limit"], len(found))
+        return {"lines": found[p["offset"]:end], "offset": p["offset"], "limit": p["limit"], "total": len(found), "nextOffset": end if end < len(found) else None, "query": p["query"]}
+
+    def test_the_default_list_is_every_line_with_a_quest_open_on_one_page(self):
+        k = FakeKernel(self.chapters)
+        with patch.object(self.quests, "kernel", lambda: k):
+            found = self.quests.mb_quest_lines()
+            self.assertEqual(([line["name"] for line in found["lines"]], found["lockedLinesNotListed"], found["total"]), ([f"Chapter {n}" for n in range(12)], 5, 17))
+            self.assertFalse(any("entries" in line for line in found["lines"]) or "nextOffset" in found)
+            every = self.quests.mb_quest_lines(locked=True)
+            self.assertEqual((len(every["lines"]), every["lines"][16]["locked"], "lockedLinesNotListed" in every), (17, 3, False))
+            self.assertEqual([c[0] for c in k.calls], ["quest.lines"] * 2)
+            self.count = 120  # more lines than the bridge gives in a call
+            self.assertEqual((lambda far: (far["total"], far["lockedLinesNotListed"]))(self.quests.mb_quest_lines()), (120, 108))
+            self.assertEqual([c[1]["offset"] for c in k.calls[2:]], [0, 100])
+
+    def test_a_query_finds_a_line_locked_or_not_and_pages_as_the_bridge_does(self):
+        k = FakeKernel(self.chapters)
+        with patch.object(self.quests, "kernel", lambda: k):
+            line, = self.quests.mb_quest_lines("chapter 16")["lines"]
+            self.assertEqual((line["locked"], line["entries"]), (3, [{"questId": "q007", "name": "Quest 7", "state": "LOCKED"}]))
+            found = self.quests.mb_quest_lines("chapter")
+            self.assertEqual((len(found["lines"]), found["total"], found["nextOffset"], "lockedLinesNotListed" in found), (10, 17, 10, False))
+            self.assertEqual([line["name"] for line in self.quests.mb_quest_lines("chapter", offset=10)["lines"]], [f"Chapter {n}" for n in range(10, 17)])
+
     def test_observe_drops_raw_config_only_where_the_structured_form_says_as_much(self):
         with patch.object(self.quests, "kernel", lambda: FakeKernel(self.reply)): quest = self.quests.mb_quest_observe("q001")
         self.assertEqual(["config" in r for r in quest["rewards"]], [True, False])  # an item reward has no other description; a choice's options are its config

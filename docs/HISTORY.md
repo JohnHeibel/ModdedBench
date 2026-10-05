@@ -8,6 +8,10 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-05** `mb_quest_lines` lists the lines that have a quest unlocked or completed, all on one page, and counts
+  the fully locked ones it leaves out (`lockedLinesNotListed`); `locked=True` lists every line, a query finds any. In
+  8 h the model listed the book four times, read `total 46, nextOffset 10` each time and never asked for page two:
+  the first ten are the tier lines, so 9 side lines with 87 unlocked quests went unseen.
 - **2026-10-05** `mb_build` places doors: a cell whose block is placed by an item that is no block item is clicked
   in like a click cell, after the plain cells of its stage, and what the plan replaces in such cells is out before the
   first click; the item is asked of the game when the cell names none. Before, such a cell was refused without `item`
