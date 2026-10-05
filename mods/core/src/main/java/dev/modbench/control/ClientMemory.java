@@ -2,7 +2,6 @@
 // Copyright (c) 2026 ModdedBench contributors
 package dev.modbench.control;
 
-import com.google.gson.Gson;
 import dev.modbench.api.MemoryAccess;
 import dev.modbench.api.WorldMemory;
 import dev.modbench.api.WorldMemory.*;
@@ -11,7 +10,6 @@ import java.nio.file.*;
 import java.security.MessageDigest;
 import java.util.*;
 import net.minecraft.client.Minecraft;
-import net.minecraft.util.MovingObjectPosition;
 
 /** Shared world memory, and the record of clicks the attack lock refused. Game-thread only. */
 public final class ClientMemory implements MemoryAccess {
