@@ -370,7 +370,7 @@ public final class QuestAccess {
             int count = big.getClass().getField("stackSize").getInt(big);
             if (!(base instanceof ItemStack stack)) return map("count", count, "stack", null);
             return map("id", Item.itemRegistry.getNameForObject(stack.getItem()), "meta", stack.getItemDamage(),
-                    "nbt", stack.hasTagCompound() ? stack.getTagCompound().toString() : null, "count", count);
+                    "nbt", stack.hasTagCompound() ? Stacks.canonical(stack.getTagCompound()) : null, "count", count);
         }
         catch (ReflectiveOperationException ex) { return map("unavailable", ex.getClass().getSimpleName()); }
     }

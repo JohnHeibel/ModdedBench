@@ -366,7 +366,7 @@ final class NeiAccess {
         return out;
     }
     private JsonObject stackIdentity(ItemStack s) {
-        return Json.object("id",Item.itemRegistry.getNameForObject(s.getItem()),"meta",s.getItemDamage(),"nbt",s.hasTagCompound()?s.getTagCompound().toString():null);
+        return Json.object("id",Item.itemRegistry.getNameForObject(s.getItem()),"meta",s.getItemDamage(),"nbt",s.hasTagCompound()?Stacks.canonical(s.getTagCompound()):null);
     }
     private Object fluid(FluidStack f) { return f==null?null:Json.object("id",f.getFluid().getName(),"name",f.getLocalizedName(),"amount",f.amount,"nbt",f.tag==null?null:f.tag.toString()); }
     private static <T> void remember(LinkedHashMap<String,T> cache,String key,T value,int max) {
