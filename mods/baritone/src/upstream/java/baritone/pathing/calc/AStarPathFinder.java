@@ -233,6 +233,10 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
             searchStats = new java.util.HashMap<>(searchStats);
             searchStats.put("breath", "routes pruned: not enough air to swim them");
         }
+        if (result.isEmpty() && !calcContext.protectedMet.isEmpty()) { // ModdedBench: a search that found nothing names the regions that refused it an edit
+            searchStats = new java.util.HashMap<>(searchStats);
+            searchStats.put("protectedRegions", calcContext.protectedMet.stream().sorted().toList());
+        }
         if (result.isPresent()) {
             logDebug("Took " + (System.currentTimeMillis() - startTime) + "ms, " + numMovementsConsidered + " movements considered");
         }

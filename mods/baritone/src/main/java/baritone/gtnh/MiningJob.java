@@ -59,7 +59,7 @@ final class MiningJob implements Navigation.Job {
         ticks++;
         if(WorkAccess.died(player)) {finish("failed","player_died");return;}
         if(mc.theWorld!=world||mc.thePlayer!=player||mc.currentScreen!=null&&!ControlRegistry.controls().ownsPlayerInventory(lease)) {cancel("world_or_gui_changed");return;}
-        if(!lease.isActive()) {cancel("superseded");return;}
+        if(!lease.isActive()) {cancel(WorkAccess.lost(lease,"superseded"));return;}
         if(--remaining<=0) {finish("failed","timeout");return;}
         // A real released-input tick is required when focus was just restored:
         // 1.7.10 sets leftClickCounter=10000 after closing a GUI. Holding attack

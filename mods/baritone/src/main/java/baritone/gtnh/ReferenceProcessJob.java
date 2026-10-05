@@ -79,7 +79,7 @@ final class ReferenceProcessJob implements Navigation.Job,PlansWhilePaused {
         if(done())return;
         if(WorkAccess.died(player)){finish("failed","player_died");return;}
         if(mc.theWorld!=world||mc.thePlayer!=player||!scope.equals(ControlRegistry.memory().memory().scope())){cancel("world_changed");return;}
-        if(!lease.isActive()){cancel("control_lost");return;}
+        if(!lease.isActive()){cancel(WorkAccess.lost(lease,"control_lost"));return;}
         if(mc.currentScreen!=null&&!ControlRegistry.controls().ownsPlayerInventory(lease)){cancel("gui_open");return;}
         // Explore and farm have no end of their own: their duration running out is a pause, not a success; the others failed to arrive.
         if(ticks++>=duration){finish(kind.equals("farm")||kind.equals("explore")?"paused":"failed","timeout");return;}

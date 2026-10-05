@@ -32,7 +32,14 @@ final class PathFailure {
             goalLoaded=GoalRoom.loaded(goal,(x,y,z)->ForgeSnapshot.loaded(world,x,Math.max(0,Math.min(255,y)),z));
             if(goalLoaded!=null)detail.put("goalLoaded",goalLoaded);
         }
-        return searchEnded(why,goalLoaded);
+        return refusedBy(searchEnded(why,goalLoaded),search.get("protectedRegions"));
+    }
+    /**
+     * A search that found no path and was refused an edit it was otherwise allowed, in a protected region: the reason
+     * names the region. It is what the search met, not proof that the region is all that stands in the way.
+     */
+    static String refusedBy(String ended,Object regions){
+        return regions instanceof List<?> named&&!named.isEmpty()?ended+"; the search was refused edits in protected_region:"+String.join(",",named.stream().map(String::valueOf).toList()):ended;
     }
     /**
      * What ends the job before the search is read: the snag that ended it, or no search having run (`last` null). A snag

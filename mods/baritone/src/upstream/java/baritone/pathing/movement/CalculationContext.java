@@ -208,6 +208,12 @@ public class CalculationContext {
 
     public boolean isPossiblyProtected(int x, int y, int z) {
         if (y < 0 || y > 255 || !worldBorder.canPlaceAt(x,z) || !editAllowed.test(new BlockPos(x,y,z))) return true;
-        return !overrideProtection && !protectedRegions.protectedAt(new dev.modbench.api.WorldMemory.Pos(x,y,z), true).isEmpty();
+        if (overrideProtection) return false;
+        java.util.List<String> regions = protectedRegions.protectedAt(new dev.modbench.api.WorldMemory.Pos(x,y,z), true);
+        if (regions.isEmpty()) return false;
+        protectedMet.addAll(regions);
+        return true;
     }
+    /** ModdedBench: the protected regions that refused this context an edit it was otherwise allowed, for a failed search to name. */
+    public final java.util.Set<String> protectedMet = java.util.concurrent.ConcurrentHashMap.newKeySet();
 }

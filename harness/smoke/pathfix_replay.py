@@ -271,7 +271,7 @@ class Replay(Course):
             elif r["reason"] != "goal_not_standable" or r["why"] != spec["why"]: f.append(f"not refused as {spec['why']}: {r['reason']} / {r['why']}")
             elif (r["ticks"] or 0) > mc.REFUSE_TICKS or r["wallS"] > mc.REFUSE_WALL_S: f.append(f"refusal slow: {r['ticks']} ticks / {r['wallS']} s")
             elif spec["why"] == "no_room_for_the_body" and not r["obstructions"]: f.append("obstruction not named")
-        if e == "label" and not ok and r["reason"] not in REFUSED_LABELS + ("goal_not_standable",): f.append(f"label {r['reason']}")
+        if e == "label" and not ok and r["reason"].split(";")[0] not in REFUSED_LABELS + ("goal_not_standable",): f.append(f"label {r['reason']}")
         verdict = "unverifiable" if world["differs"] and e in ("refuse", "label") else "pass" if not f else "fail"
         return verdict, f
 

@@ -46,7 +46,7 @@ abstract class BulkJob implements Navigation.Job {
             if(mc.theWorld!=world||mc.thePlayer!=player||!journal.scope.equals(ControlRegistry.memory().memory().scope())){cancel("world_or_player_changed");return;}
             // A screen takes the lease away as it opens: the job that opened it answers for the screen first.
             if(mc.currentScreen!=null&&!ControlRegistry.controls().ownsPlayerInventory(lease)){guiOpened();return;}
-            if(!lease.isActive()){cancel("superseded");return;}
+            if(!lease.isActive()){cancel(WorkAccess.lost(lease,"superseded"));return;}
             // The deadline is a budget, not a verdict: a job that has produced something stops as paused, with its rate in the
             // receipt, and mb_work_resume continues it. A session that produced nothing has failed, whatever earlier ones did,
             // so resuming a stuck job cannot come back paused for ever.

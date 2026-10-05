@@ -687,7 +687,9 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
       access_failed      a block in the way of a click could not be taken out.
       no_empty_hand      a use with {empty: true}: no hotbar slot is empty.
     A job can also end as any job does: player_died, or cancelled (superseded, interrupted,
-    gui_opened, world_or_player_changed), or with the game's own error text as the reason.
+    gui_opened, world_or_player_changed, protected_region:<names> when a click of its own was
+    refused there, the receipt's `refused` saying which), or with the game's own error text as
+    the reason.
     A stop is state paused, or failed (error code build_failed, the receipt inside) when it stalled
     or timed out with nothing done this session or never started. Either way mb_work_resume(jobId)
     continues it once what the reason names is dealt with; a resumed or repeated job reads the

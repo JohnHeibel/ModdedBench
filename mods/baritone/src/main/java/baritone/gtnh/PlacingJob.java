@@ -53,7 +53,7 @@ final class PlacingJob implements Navigation.Job {
         if(done()) return;ticks++;
         if(WorkAccess.died(player)) {finish("failed","player_died");return;}
         if(mc.theWorld!=world || mc.thePlayer!=player || mc.currentScreen!=null&&!ControlRegistry.controls().ownsPlayerInventory(lease)) {cancel("world_or_gui_changed");return;}
-        if(!lease.isActive()) {cancel("superseded");return;}
+        if(!lease.isActive()) {cancel(WorkAccess.lost(lease,"superseded"));return;}
         if(--remaining<=0) {finish("failed","timeout");return;}
         String unsafe=unsafe();if(unsafe!=null) {finish("failed",unsafe);return;}
         if(!world.isAirBlock(target.getX(),target.getY(),target.getZ())) {
