@@ -7,7 +7,7 @@ python harness/launcher/backup.py restore <folder> --reason "..."   put a snapsh
 
 A snapshot holds the world with the operator hold (no ticks, so no saves in flight; it is the
 last autosave, at most 45 s of game time old), streams the server's data folder without the
-pack's own files, copies the notes databases through SQLite's backup API, and releases the hold.
+pack's own files, archives the notes folder (the note files and their git history), and releases the hold.
 It then saves what else lives only in the agent's volume: agent.bundle, every commit and ref of
 its checkout (`git bundle --all`; uncommitted edits are not in it), and state.tar.gz, its .state
 without the logs (thread id, run budget, tasks, call log). `restore` puts back the world and the
@@ -42,11 +42,8 @@ OUT, KEEP, OWNER = REPO / ".runtime" / "snapshots", 48, "backup"
 ALPINE = "alpine:3.20"  # the image the build already pulls (docker/Dockerfile); a restore must not depend on what `alpine` is that day
 # The hold file stays out: restored, it would hold the world with nobody left to release it.
 WORLD = "tar -C /data --exclude=./mods --exclude=./libraries --exclude=./logs --exclude=./crash-reports --exclude='./*.jar' --exclude=./modbench-hold -czf - ."
-NOTES = ("import sqlite3,pathlib,tarfile,sys,tempfile\n"
-         "with tempfile.TemporaryDirectory() as t:\n"
-         "    for p in pathlib.Path('.state/notes').glob('*.sqlite3'):\n"
-         "        s,d=sqlite3.connect(p),sqlite3.connect(pathlib.Path(t)/p.name);s.backup(d);d.close();s.close()\n"
-         "    with tarfile.open(fileobj=sys.stdout.buffer,mode='w|gz') as tar: tar.add(t,arcname='notes')\n")
+# The notes are plain files, a folder per world with its own git history; an archive of them as they stand is whole (see tar's exit 1 below).
+NOTES = "mkdir -p .state/notes; tar -C .state --exclude='*.lock' --exclude='*.tmp' -czf - notes; [ $? -le 1 ]"
 # What else exists only in the agent's volume, where one `git clean -fdx` or a lost volume ends it. Read without the hold: neither
 # depends on the world's tick. tar's exit 1 is "a file changed as it was read" (the call log, mid-run), and the archive is whole.
 BUNDLE = "git bundle create -q - --all"
@@ -69,7 +66,7 @@ def snapshot() -> Path | None:
         if not held: time.sleep(5)  # the hold lands on the next tick; let chunk IO drain
         try:
             world = sh("server", "sh", "-c", WORLD, to=folder / "world.tar.gz")
-            notes = sh("agent", "python3", "-c", NOTES, to=folder / "notes.tar.gz")
+            notes = sh("agent", "sh", "-c", NOTES, to=folder / "notes.tar.gz")
         finally:
             if not held: sh("server", "sh", "-c", runtime.hold_cmd(OWNER, False))  # only our own: an operator's Pause during the copy took it over
     except BaseException:
