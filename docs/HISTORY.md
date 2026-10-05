@@ -8,6 +8,16 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-05** `get_to_block` keeps looking while it explores: the engine rescanned for targets only once it
+  knew one, so a search that began with none walked away for its whole duration and never saw a target that loaded
+  on the way. The rescan now runs before the empty case, as `MineProcess` does it; this moves six lines in the pinned
+  upstream `GetToBlockProcess.java`, whose target list is private. Found and first fixed by the agent in a 2 h run;
+  not yet tried in the game on this branch.
+- **2026-10-05** A `get_to_block` target named by registry id is found by `ChunkObservation`: the loaded chunks
+  nearest first within 2 ms a tick before the walk starts, then each chunk that loads later, once, within 0.25 ms a
+  tick. Before, the engine's scanner read every loaded chunk on the client thread at every target update (every 5
+  ticks) while fewer than 64 targets were known: measured outside the game at 35 to 300 ms a sweep for 289 to 1089
+  chunks. Blocks the engine's cache tracks keep the cache path. A match placed in a chunk after it was read is not seen.
 - **2026-10-05** Machine collection (`mb_craft`) looks again when the stale-stack guard refused its click before
   the press because the output grew since the look (a furnace finishing an item in between): twice at most, only on an
   ordinary slot holding the same stack with a larger count, the cursor unchanged and no transaction sent. Before, a
