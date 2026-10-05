@@ -118,6 +118,67 @@ public final class BuildSteps {
         while(!queue.isEmpty()){BlockPos p=queue.poll();for(int[] side:SIDES)reach.accept(beside(p,side));}
         return air;
     }
+    /** A space this large is not one the next block shuts. */
+    private static final int WALK=2048;
+    /**
+     * Of `fill` (the cells that may be filled now), those whose filling would shut the player in: with that one cell in, no
+     * walk leads from `feet` out of the box lo..hi any more. The walk is the plain kind a body can always make: level, down,
+     * or up one onto a block with headroom; `open` says a cell holds nothing to bump into. A cell can only be one of them if
+     * the walk out that is found now passes through it, so that walk's cells are the ones tried. None when the player is
+     * outside the box, in mid-air, or already shut in (nothing is left to keep open). The cells of the player's own body are
+     * never among them: they cannot be filled from where it stands, and they are work that waits outside.
+     */
+    public static Set<BlockPos> shuts(Set<BlockPos> fill,BlockPos feet,Predicate<BlockPos> open,int[] lo,int[] hi) {
+        Set<BlockPos> needs=new HashSet<>();
+        if(fill.isEmpty()||!walksOut(feet,open,lo,hi,needs,null))return Set.of();
+        Set<BlockPos> shuts=new HashSet<>();
+        for(BlockPos c:needs)if(fill.contains(c)&&!c.equals(feet)&&!c.equals(beside(feet,SIDES[2]))&&!walksOut(feet,p->!p.equals(c)&&open.test(p),lo,hi,null,null))shuts.add(c);
+        return shuts;
+    }
+    /**
+     * Whether the finished plan leaves a body room where filling `cell` shuts the player in: a place to stand there with
+     * neither of its two cells `planned` to be filled. Without one the player cannot be inside when the plan is done.
+     */
+    public static boolean room(BlockPos cell,BlockPos feet,Predicate<BlockPos> open,Predicate<BlockPos> planned,int[] lo,int[] hi) {
+        Set<BlockPos> stood=new HashSet<>();
+        walksOut(feet,p->!p.equals(cell)&&open.test(p),lo,hi,null,stood);
+        return stood.stream().anyMatch(p->!planned.test(p)&&!planned.test(beside(p,SIDES[2])));
+    }
+    /** Whether a body at `feet` is shut in once `cell` is filled: no walk from there leaves the box (or it does not fit there). */
+    public static boolean shut(BlockPos cell,BlockPos feet,Predicate<BlockPos> open,int[] lo,int[] hi) {
+        return !walksOut(feet,p->!p.equals(cell)&&open.test(p),lo,hi,null,null);
+    }
+    /**
+     * Whether a walk from `feet` leaves the box; needs (when given) receives the cells that walk passes its body through,
+     * stood (when given) every place the walk can stand.
+     */
+    private static boolean walksOut(BlockPos feet,Predicate<BlockPos> open,int[] lo,int[] hi,Set<BlockPos> needs,Set<BlockPos> stood) {
+        Map<BlockPos,BlockPos> from=new HashMap<>();ArrayDeque<BlockPos> queue=new ArrayDeque<>();
+        Predicate<BlockPos> fits=p->open.test(p)&&open.test(beside(p,SIDES[2]));
+        if(!fits.test(feet))return false;
+        from.put(feet,feet);queue.add(feet);
+        while(!queue.isEmpty()){
+            BlockPos p=queue.poll();
+            if(from.size()>WALK||p.getX()<lo[0]||p.getX()>hi[0]||p.getY()<lo[1]||p.getY()>hi[1]||p.getZ()<lo[2]||p.getZ()>hi[2]){
+                if(needs!=null)for(BlockPos q=p;;q=from.get(q)){
+                    BlockPos before=from.get(q);needs.add(q);needs.add(beside(q,SIDES[2]));
+                    // A step up passes the head through the cell over where it began.
+                    if(q.getY()>before.getY())needs.add(new BlockPos(before.getX(),before.getY()+2,before.getZ()));
+                    if(before.equals(q))break;
+                }
+                return true;
+            }
+            BlockPos below=beside(p,SIDES[3]);
+            if(open.test(below)){if(from.putIfAbsent(below,p)==null)queue.add(below);continue;}   // nothing under it: it falls
+            if(stood!=null)stood.add(p);
+            for(int[] side:SIDES)if(side[1]==0){
+                BlockPos n=beside(p,side),up=beside(n,SIDES[2]);
+                BlockPos to=fits.test(n)?n:!open.test(n)&&fits.test(up)&&open.test(new BlockPos(p.getX(),p.getY()+2,p.getZ()))?up:null;
+                if(to!=null&&from.putIfAbsent(to,p)==null)queue.add(to);
+            }
+        }
+        return false;
+    }
     /** Preview: every step in order with the number of cells (or uses) it holds. */
     public List<Map<String,Object>> list() {
         List<Map<String,Object>> out=new ArrayList<>();

@@ -36,7 +36,10 @@ final class ConstructionPlan {
     /** progress is the journal's map for a job, or a scratch map for a preview. */
     ConstructionPlan(Map<String,Object> params,Map<String,Object> progress,World world) {
         this.params=params;this.world=world;
-        List<Cell> source=validatedCells(params);
+        List<Cell> source=new ArrayList<>(validatedCells(params));
+        // A block whose item is no block item (a door, a bed, a plant from its seed) goes in as the game places it: by a
+        // click with that item, as a click cell does. The source builder predicts what a block item makes, and nothing else.
+        for(int i=0;i<source.size();i++){Cell c=source.get(i);if(!c.clear()&&c.click()==null&&!blockItem(c))source.set(i,new Cell(c.pos(),c.id(),c.meta(),false,c.item(),c.replace(),c.verify(),c.stage(),c.anyMeta(),ClickSpec.ANY,c.expect()));}
         for(Cell c:source)if(!c.clear())blocks.put(c.id(),block(c));
         // A replace selection is decided once, against the world the job first saw, and journaled: a resume builds the same cells.
         Set<String> selected=new HashSet<>();boolean frozen=progress.containsKey("selection");
@@ -52,6 +55,7 @@ final class ConstructionPlan {
         if(!frozen)progress.put("selection",List.copyOf(selected));
         uses=StepPlan.uses(params);for(var use:uses)if(!use.item().containsKey("empty"))WorkAccess.validateItemSelector(use.item());
         cells=List.copyOf(schematic.values());places=StepPlan.places(cells);steps=new BuildSteps(cells,uses);
+        if(places.size()+uses.size()>StepPlan.CLICKS)throw new IllegalArgumentException("more than "+StepPlan.CLICKS+" click cells and uses (a block whose item is not a block item is clicked in too); a larger build is several jobs");
     }
     boolean replace(){return bool(params,"replaceExisting",false);}
     int slot(Cell cell){return cell.clear()?-1:inventorySlot(cell);}
@@ -76,9 +80,17 @@ final class ConstructionPlan {
     }
     static Block block(Cell c){return Registry.block(c.id());}
     static boolean verified(Cell c){return !c.verify().containsKey("pickedItem")||WorkAccess.item(WorkAccess.picked(WorkAccess.MC.theWorld,c.pos()),child(c.verify(),"pickedItem"));}
+    /** Whether the item that places this cell is a block item; true where that cannot be told (an ore name, an unknown id). */
+    private static boolean blockItem(Cell c) {
+        try{return !(material(c).get("id") instanceof String id)||!(Item.itemRegistry.getObject(id) instanceof Item item)||item instanceof ItemBlock;}
+        catch(IllegalArgumentException unmapped){return true;}
+    }
+    /** The item that places the cell: the one it names, else the block's own, else the one the game picks for that block (a door's, a bed's). */
     static Map<String,Object> material(Cell c) {
         if(!c.item().isEmpty()){WorkAccess.validateItemSelector(c.item());return c.item();}
         Block block=block(c);Item item=Item.getItemFromBlock(block);
+        // A mod's hook that throws (it expected its block at that cell) names none.
+        if(item==null)try{item=block.getItem(WorkAccess.MC.theWorld,c.pos().getX(),c.pos().getY(),c.pos().getZ());}catch(RuntimeException|LinkageError failed){}
         if(item==null)throw new IllegalArgumentException("no native item mapping for "+c.id()+"; name the item that places it (cell item)");
         return Map.of("id",Registry.name(item),"meta",block.damageDropped(c.meta()));
     }

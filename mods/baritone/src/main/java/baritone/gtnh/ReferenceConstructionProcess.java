@@ -77,6 +77,23 @@ final class ReferenceConstructionProcess extends BulkJob {
     /** The air that stays air around what the plan still fills (BuildSteps.air), looked at once a step. */
     private Set<BlockPos> stays=Set.of();
     private int staysStep=-1;
+    /** Cells whose filling would shut the player in where it stands (BuildSteps.shuts): they wait while anything else is left to fill. */
+    private Set<BlockPos> shut=Set.of();
+    /** Set while the player walks out of the plan's box: the last cell of this step would shut it in where the finished plan leaves it no room. */
+    private Goal leave;
+    private Set<BlockPos> solid;
+    /** Those cells: no spot that filling one would shut is a spot to fill it from. */
+    private final Set<BlockPos> fromOutside=new HashSet<>();
+    /** A cell is open to a body when the game gives the block in it nothing to collide with. */
+    private boolean open(BlockPos p){return world.getBlock(p.getX(),p.getY(),p.getZ()).getCollisionBoundingBoxFromPool(world,p.getX(),p.getY(),p.getZ())==null;}
+    /** Anywhere outside the box lo..hi. */
+    private record Outside(int[] lo,int[] hi) implements Goal {
+        public boolean isInGoal(int x,int y,int z){return x<lo[0]||x>hi[0]||y<lo[1]||y>hi[1]||z<lo[2]||z>hi[2];}
+        public double heuristic(int x,int y,int z){return isInGoal(x,y,z)?0:1+Math.min(Math.min(x-lo[0],hi[0]-x),Math.min(z-lo[2],hi[2]-z));}
+        public String toString(){return "Outside the plan";}
+    }
+    private int shutKey;
+    private int[] boxLo,boxHi;
     /** Cells with no standing spot level with them or above: these are filled from below, where a face for them is in view. */
     private final Set<BlockPos> fromBelow=new HashSet<>();
     /**
@@ -198,6 +215,35 @@ final class ReferenceConstructionProcess extends BulkJob {
         work=buildStep;for(int i=buildStep-1;i>=0;i--)if(count[i]>0)work=i;
     }
     int clickStep(){return work;}
+    /**
+     * Looks again, once the player has moved or a cell went in, at which cells would shut it in; true when that changed,
+     * and the pass is to be started again without them. When they are all that is left to fill in this step, shut in is
+     * what the plan asks for, and they go in: from inside when the finished plan leaves a body room there, and otherwise
+     * (an oven built around the player, its top still to come) once the player has walked out of the plan's box.
+     */
+    private boolean shuts(){
+        BlockPos feet=WorkAccess.feet();int key=java.util.Objects.hash(feet,placedObserved.size(),pending.size(),buildStep,liftedStep);
+        if(key==shutKey||!mc.thePlayer.onGround||leave!=null)return false;
+        shutKey=key;
+        if(boxLo==null){
+            boxLo=new int[]{Integer.MAX_VALUE,Integer.MAX_VALUE,Integer.MAX_VALUE};boxHi=new int[]{Integer.MIN_VALUE,Integer.MIN_VALUE,Integer.MIN_VALUE};solid=new HashSet<>();
+            for(Cell c:plan.cells)if(!c.clear()){solid.add(c.pos());int[] v={c.pos().getX(),c.pos().getY(),c.pos().getZ()};for(int i=0;i<3;i++){boxLo[i]=Math.min(boxLo[i],v[i]-1);boxHi[i]=Math.max(boxHi[i],v[i]+1);}}
+        }
+        Set<BlockPos> fill=new HashSet<>();
+        if(!cleanupPhase&&liftedStep!=buildStep)for(Cell c:plan.cells){
+            BlockPos p=c.pos();
+            if(!c.clear()&&c.click()==null&&Boolean.FALSE.equals(correct.get(p))&&plan.steps.visible(p,buildStep)&&!held.held().contains(p)&&baritone.compat.LegacyPlacement.empty(world,p.getX(),p.getY(),p.getZ()))fill.add(p);
+        }
+        java.util.function.Predicate<BlockPos> open=this::open;
+        Set<BlockPos> next=BuildSteps.shuts(fill,feet,open,boxLo,boxHi);
+        if(next.containsAll(fill)){
+            for(BlockPos c:next)if(!BuildSteps.room(c,feet,open,solid::contains,boxLo,boxHi))fromOutside.add(c);
+            if(!java.util.Collections.disjoint(fromOutside,next)){leave=new Outside(boxLo,boxHi);placementGoals.clear();}
+            next=Set.of();
+        }
+        if(next.equals(shut))return false;
+        shut=next;return true;
+    }
     /** The click executor's turn: a click is under way, a cell is to be put back, or the step being worked is one of clicks or uses. */
     private boolean clicking(){return clicks.busy()||work<stepLeft.length&&plan.steps.kind(work)!=BuildSteps.CELLS;}
     /** A click cannot be made, or did not do what was asked: the job stops on its cell, to be resumed once that is seen to. */
@@ -298,7 +344,9 @@ final class ReferenceConstructionProcess extends BulkJob {
             }
             // Existing work poses supplement the source goal, never replace it: removing a future goal would keep A*
             // from constructing its own support (notably a pillar), even though a distant existing pose is legal.
-            Goal adapted=adjacent?goal:new GoalComposite(goal,new GoalComposite(legal.stream().map(p->new baritone.process.BuilderProcess.GoalPlace(p.down())).toArray(Goal[]::new)));
+            // A cell filled from outside has only those spots: the source goal is also the spot inside it.
+            Goal[] spots=legal.stream().map(p->new baritone.process.BuilderProcess.GoalPlace(p.down())).toArray(Goal[]::new);
+            Goal adapted=fromOutside.contains(cell.pos())?new GoalComposite(spots):adjacent?goal:new GoalComposite(goal,new GoalComposite(spots));
             placementGoals.put(cell,adapted);return adapted;
         };
         builder.breakGoalAdapter=(target,goal)->{
@@ -328,7 +376,7 @@ final class ReferenceConstructionProcess extends BulkJob {
             if(safe.isEmpty())throw new IllegalStateException("no_observed_clearance_egress_pose");
             egressGoal=new GoalComposite(safe.stream().map(GoalBlock::new).toArray(Goal[]::new));
         }
-        builder.accessGoal=()->clearanceEgress?egressGoal:null;
+        builder.accessGoal=()->clearanceEgress?egressGoal:leave;
         // Immutable explicit permissions match exact observed states inside the plan only.
         Map<BlockPos,IBlockState.StateKey> breaks=new HashMap<>();
         if(left>0)for(Cell cell:plan.cells)if((replace||cell.clear()||soft.contains(cell.pos()))&&Boolean.FALSE.equals(correct.get(cell.pos()))&&!pending.contains(cell.pos())){
@@ -392,11 +440,13 @@ final class ReferenceConstructionProcess extends BulkJob {
     /** no: spots that do not count (those the search found no way to; none when the question is whether a spot exists at all). */
     private Set<BlockPos> vantages(Cell cell,int slot,List<WorkAccess.Pose> poses,BlockPos currentFeet,Set<BlockPos> no){
         boolean below=fromBelow.contains(cell.pos());
-        Set<BlockPos> legal=vantages(cell,slot,poses,currentFeet,below);legal.removeAll(no);
+        // Asked per pose only for a cell that waits for the player to be outside.
+        java.util.function.Predicate<BlockPos> shuts=fromOutside.contains(cell.pos())?f->BuildSteps.shut(cell.pos(),f,this::open,boxLo,boxHi):f->false;
+        Set<BlockPos> legal=vantages(cell,slot,poses,currentFeet,below);legal.removeAll(no);legal.removeIf(shuts);
         // The source builder fills a cell from level with it or above, and from below only under a ceiling. Where no such
         // spot exists (the neighbours it would stand on are filled, there is no headroom, or there is no way to it), the
         // cell is filled from below.
-        if(legal.isEmpty()&&!below){legal=vantages(cell,slot,poses,currentFeet,true);legal.removeAll(no);if(!legal.isEmpty())fromBelow.add(cell.pos());}
+        if(legal.isEmpty()&&!below){legal=vantages(cell,slot,poses,currentFeet,true);legal.removeAll(no);legal.removeIf(shuts);if(!legal.isEmpty())fromBelow.add(cell.pos());}
         return legal;
     }
     private Set<BlockPos> vantages(Cell cell,int slot,List<WorkAccess.Pose> poses,BlockPos currentFeet,boolean below){
@@ -442,7 +492,7 @@ final class ReferenceConstructionProcess extends BulkJob {
         return PlacementGoalSupport.reachUp(baritone.compat.LegacyPlayer.sneakingEyes(mc.thePlayer).y-mc.thePlayer.boundingBox.minY,mc.playerController.getBlockReachDistance());
     }
     private boolean centerForPlacement(){
-        if(!mc.thePlayer.onGround||!pending.isEmpty())return false;
+        if(!mc.thePlayer.onGround||!pending.isEmpty()||leave!=null)return false;   // walking out passes through the cell that waits
         var feet=engine.getPlayerContext().playerFeet();
         double y=mc.thePlayer.boundingBox.minY,x=feet.getX()+.5,z=feet.getZ()+.5;
         if(!ForgeSnapshot.liveStandable(world,feet)||!ForgeSnapshot.liveClear(world,x,y,z,y+1.8))return false;
@@ -489,7 +539,7 @@ final class ReferenceConstructionProcess extends BulkJob {
             if(staysStep!=buildStep){BlockPos feet=WorkAccess.feet();stays=BuildSteps.air(toFill,p->baritone.compat.LegacyPlacement.empty(world,p.getX(),p.getY(),p.getZ()),feet,new BlockPos(feet.getX(),feet.getY()+1,feet.getZ()));staysStep=buildStep;}
             held=BuildSteps.held(toFill,now,stays::contains);
         }
-        Map<BlockPos,IBlockState> frozen=new HashMap<>(shown);frozen.keySet().removeAll(held.held());
+        Map<BlockPos,IBlockState> frozen=new HashMap<>(shown);frozen.keySet().removeAll(held.held());frozen.keySet().removeAll(shut);
         ISchematic schematic=new ISchematic(){
             public int widthX(){return width;}public int heightY(){return height;}public int lengthZ(){return length;}
             public boolean inSchematic(int x,int y,int z,IBlockState current){return frozen.containsKey(new BlockPos(x+minX,y+minY,z+minZ));}
@@ -581,6 +631,7 @@ final class ReferenceConstructionProcess extends BulkJob {
             clearanceEgress=false;journal.progress.put("clearanceEgress",false);
             engine.getPathingBehavior().forceCancel();configure();capture();startPass();journal.save(status());return;
         }
+        if(leave!=null&&mc.thePlayer.onGround&&leave.isInGoal(engine.getPlayerContext().playerFeet())){leave=null;shutKey=0;passStep=-1;}   // out: a new pass below, from here
         // Nothing left that can be placed or cleared, and a block the job may not remove stands in a cell: no walk ends this.
         // One this job clicked in itself came out as another variant than the plan's (a facing, say): that is a mismatch.
         if(open==0&&occupied!=null){blamed=occupied;finish(session()>0?"paused":"failed",pending.contains(occupied)?"mismatch":"occupied");return;}
@@ -595,12 +646,13 @@ final class ReferenceConstructionProcess extends BulkJob {
             if(ticks%20==0)journal.save(status());
             return;
         }
-        if(passStep!=buildStep){engine.getPathingBehavior().forceCancel();startPass();if(done()||closing())return;}
-        else if(!held.held().isEmpty()){
+        if(passStep!=buildStep|shuts()){engine.getPathingBehavior().forceCancel();startPass();if(done()||closing())return;}
+        else if(!held.held().isEmpty()||!shut.isEmpty()){
             // A deeper cell is in: a new pass, with what that frees. Half a stall with none of them in: nothing waits any more
             // in this step, so a cell that cannot be made at all does not keep the rest of the plan back.
+            // The same half stall ends the wait of cells that would shut the player in: with no way to the rest, they are the work.
             boolean freed=held.first().stream().anyMatch(p->correct.getOrDefault(p,false));
-            if(!freed&&(stall.half()||!builder.isActive()))liftedStep=buildStep;
+            if(!freed&&(stall.half()||!builder.isActive())){liftedStep=buildStep;shut=Set.of();}
             if(freed||liftedStep==buildStep){engine.getPathingBehavior().forceCancel();startPass();if(done()||closing())return;}
         }
         if(!builder.isActive()){
@@ -645,6 +697,7 @@ final class ReferenceConstructionProcess extends BulkJob {
             stop=new LinkedHashMap<>();stop.put("reason",reason);
             if(blamed!=null)stop.put("pos",point(blamed));
             if(inTheWay!=null&&reason.equals("no_stance"))stop.put("blockedBy",Map.of("pos",point(inTheWay),"id",baritone.compat.Registry.name(world.getBlock(inTheWay.getX(),inTheWay.getY(),inTheWay.getZ()))));
+            if(blamed!=null&&reason.equals("occupied"))stop.put("present",String.valueOf(baritone.compat.Registry.name(world.getBlock(blamed.getX(),blamed.getY(),blamed.getZ()))));
             var at=plan.steps.where(blamed,buildStep);if(!at.isEmpty())stop.put("step",at);
             if(walk!=null&&(reason.equals("stalled")||reason.equals("no_route")))stop.put("walk",walk);
             out.put("stopped",stop);

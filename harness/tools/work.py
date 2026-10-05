@@ -657,7 +657,8 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
     {stage, phase: clicks|uses} and stopped.click is that click in full: what was aimed at and hit,
     what is present, what the expect read, and for a click with no stance what blocks the view. The
     reasons:
-      occupied           pos wants a block and holds a different one, and replace_existing is false.
+      occupied           pos wants a block and holds a different one (`present`, its id), and
+                         replace_existing is false.
                          A plan that starts that way is refused before any input (state failed), with
                          `occupied` {count, first: up to 8}.
       missing_materials  nothing you carry goes into any cell the order allows now; pos is one such

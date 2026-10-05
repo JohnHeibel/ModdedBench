@@ -683,7 +683,9 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
                 if (LegacyFluids.isFluid(state.getBlock())) {
                     // if the block itself is JUST a liquid (i.e. not just a waterlogged block), we CANNOT break it
                     // TODO for 1.13 make sure that this only matches pure water, not waterlogged blocks
-                    if (!MovementHelper.possiblyFlowing(state)) {
+                    // ModdedBench: a block goes into flowing liquid as it goes into air, so a cell whose block is carried is
+                    // walked to like a source. Left out, a plan with only such cells had no goal and the job paused at once.
+                    if (!MovementHelper.possiblyFlowing(state) || containsBlockState(approxPlaceable, bcc.getSchematic(pos.x, pos.y, pos.z, state))) {
                         // if it's a source block then we want to replace it with a throwaway
                         sourceLiquids.add(pos);
                     } else {

@@ -126,6 +126,7 @@ class Shells(Course):
         rows = self.c.call("nav.settings", operation="get")["settings"]
         self.evidence["settings"] = {r["name"]: r["value"] for r in rows if r.get("value") != r.get("default")}
         print("non-default settings:", self.evidence["settings"] or "none", flush=True)
+        print("allowSprint:", next((r["value"] for r in rows if r["name"] == "allowSprint"), None), flush=True)   # as the client has it after the reset
 
     def teardown(self):
         for step in (lambda: self.c.call("act.stop"),
