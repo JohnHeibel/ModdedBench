@@ -96,6 +96,17 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual(error["procedureReceipts"][0]["transfer"]["moved"], 2)
         self.assertEqual(error["reply"]["error"]["receipt"]["state"], "failed")
 
+    def test_only_a_served_server_keeps_a_call_log(self):
+        self.assertEqual(mbtool.CALL_LOG, os.environ.get("MB_CALL_LOG"))  # nothing names one here; server.main() does, for the run
+        srv = self.loaded(); srv.add_tool(lambda: {"ok": True}, name="mb_log_probe")
+        with tempfile.TemporaryDirectory() as d:
+            log = Path(d) / "calls.jsonl"
+            with patch.object(mbtool, "CALL_LOG", None), patch.object(mbtool, "RUN_CALL_LOG", str(log)):
+                asyncio.run(srv.call_tool("mb_log_probe", {})); self.assertFalse(log.exists())  # a test is not the run
+                self.assertEqual(json.loads(asyncio.run(srv.call_tool("mb_cost", {})).content[0].text)["calls"], 0)
+            with patch.object(mbtool, "CALL_LOG", str(log)):
+                asyncio.run(srv.call_tool("mb_log_probe", {})); self.assertEqual(json.loads(log.read_text())["tool"], "mb_log_probe")
+
     def test_an_argument_the_tool_does_not_take_is_refused_not_dropped(self):
         srv = self.loaded()
         ran = []

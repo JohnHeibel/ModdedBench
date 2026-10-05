@@ -110,7 +110,7 @@ class CodexLoopTests(unittest.TestCase):
         self.assertEqual("token_budget", reason); self.assertEqual(1, len(calls))
         self.assertEqual({"thread": "T-1"}, json.loads((self.repo / ".state" / "codex-loop.json").read_text()))
         self.assertTrue((self.repo / ".state" / "codex-loop.log").read_text().splitlines()[-1].endswith("budget: token_budget"))
-        reason, calls = self.loop([{"events": [{"type": "thread.started", "thread_id": "T-1"}, {"type": "turn.completed", "usage": {"input_tokens": 5}}, message("MISSION COMPLETE")]}], max_minutes=0.0001)
+        reason, calls = self.loop([{"events": [{"type": "thread.started", "thread_id": "T-1"}, {"type": "turn.completed", "usage": {"input_tokens": 5}}, message("MISSION COMPLETE")]}], max_minutes=1e-9)  # too short to move the clock's float: spent as it starts, on any machine
         self.assertEqual("time_budget", reason)  # a spent clock is checked before a turn starts as well
 
     def test_captures_thread_id_resumes_and_stops_on_mission_complete_line(self):

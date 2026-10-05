@@ -67,11 +67,13 @@ class ConsoleTests(unittest.TestCase):
             bin = Path(tmp, "bin"); bin.mkdir(); Path(tmp, ".state").mkdir(); Path(tmp, ".state", "STOP").write_text("")
             (bin / "flock").write_text('#!/bin/sh\necho "$1 $2" > flock.txt; shift 2; exec "$@"\n', newline="\n")  # the lock itself is flock's: only what it is asked is checked
             (bin / "python3").write_text('#!/bin/sh\nfor a in "$@"; do echo "$a"; done > argv.txt; ls .state > state.txt; echo trace >&2; exit 3\n', newline="\n")
+            for fake in bin.iterdir(): fake.chmod(0o755)  # a file that may not be run is not found on a Linux PATH
             env = {**os.environ, "PATH": str(bin) + os.pathsep + os.environ["PATH"]}
+            brief = "/brief/PROMPT.md" if Path("/brief/PROMPT.md").is_file() else "PROMPT.md"  # the agent's container has the mounted one
             done = subprocess.run(["sh", "-c", console.LOOP, "sh", "--max-minutes", "5", "--", "-c", "two words"], cwd=tmp, env=env, capture_output=True, text=True)
             self.assertEqual((3, "", ""), (done.returncode, done.stdout, done.stderr))
             self.assertEqual("-n .state/loop.lock\n", Path(tmp, "flock.txt").read_text())
-            self.assertEqual(["harness/runner/codex_loop.py", "--prompt", "PROMPT.md", "--max-minutes", "5", "--", "-c", "two words"], Path(tmp, "argv.txt").read_text().splitlines())
+            self.assertEqual(["harness/runner/codex_loop.py", "--prompt", brief, "--max-minutes", "5", "--", "-c", "two words"], Path(tmp, "argv.txt").read_text().splitlines())
             self.assertNotIn("STOP", Path(tmp, "state.txt").read_text()); self.assertEqual("trace\n", Path(tmp, ".state", "codex-loop.err").read_text())
 
     @unittest.skipUnless(shutil.which("sh"), "runs the hold's shell lines")

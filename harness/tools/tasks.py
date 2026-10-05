@@ -436,6 +436,7 @@ def _traced(name: str, fn):
 
 
 def log_call(entry: dict) -> None:
+    if not mbtool.CALL_LOG: return
     try:
         with open(mbtool.CALL_LOG, "a", encoding="utf-8") as f: f.write(json.dumps(entry) + "\n")
     except OSError: pass
