@@ -14,10 +14,9 @@ public interface MemoryAccess {
     WorldMemory.Pos feet();
     Map<String,Object> record(String action,String name,boolean replace,double radius) throws Exception;
     void sample();
-    /** Null means permitted. */
-    String editProblem(int x,int y,int z,boolean override,boolean automated);
-    void endTick();
-    /** Called immediately before vanilla block editing; false vetoes the action. */
+    /** The protected regions holding this cell, as protected_region:<names>, for a job deciding what its path and its tool may touch; null when there is none or the job overrides them. */
+    String editProblem(int x,int y,int z,boolean override);
+    /** Called immediately before vanilla block editing; false vetoes the action. Protected regions are not asked here. */
     boolean blockAction(int action,int x,int y,int z,int side);
     /** Clicks vetoed so far: a mark for refusedSince. */
     long refusals();

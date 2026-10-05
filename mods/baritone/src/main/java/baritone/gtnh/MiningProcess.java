@@ -103,7 +103,7 @@ final class MiningProcess extends BulkJob implements PlansWhilePaused {
         // This action has explicit observation bounds. Exploration is a separate
         // process, not permission to start a branch mine when its bounds empty.
         Baritone.settings().exploreForBlocks.value=false;Baritone.settings().legitMine.value=false;
-        engine.overrideProtection=override;engine.positionAllowed=p->true;
+        engine.overrideProtection=override;engine.named=p->false;engine.positionAllowed=p->true;
         engine.explicitMiningTargets=observation::capture;
         Baritone.besideFluid=besideFluid;
         // A plug is never walked back through: the search may not stand in one, nor under one.

@@ -119,6 +119,7 @@ final class ReferenceConstructionProcess extends BulkJob {
         engine.getPathingBehavior().forceCancel();engine.snags.reset();Cost.reset();searchesBefore=engine.getPathingBehavior().calculationsStarted();
         for(var setting:Baritone.settings().allSettings)savedSettings.put(setting,setting.value);
         initializeClearance();configure();engine.overrideProtection=override;engine.positionAllowed=p->true;
+        engine.named=plan.schematic::containsKey; // the plan's own cells are what the job was sent to edit; scaffold and digging on the way are not
         engine.getInputOverrideHandler().attach(lease);
         capture();startPass();
     }
@@ -630,7 +631,7 @@ final class ReferenceConstructionProcess extends BulkJob {
     @Override void releaseProcess(){
         clicks.release();
         engine.getPathingBehavior().forceCancel();engine.getInputOverrideHandler().release();engine.getBuilderProcess().resetAdapters();engine.getPlayerContext().playerController().placed=p->{};engine.explicitMiningTargets=()->s->false;
-        engine.overrideProtection=false;engine.positionAllowed=p->true;
+        engine.overrideProtection=false;engine.named=p->false;engine.positionAllowed=p->true;
         for(var entry:savedSettings.entrySet())ReferenceSettings.copy(entry.getKey(),entry.getValue());
     }
     @Override public Map<String,Object> status(){

@@ -241,8 +241,7 @@ def mb_act(method: str, params: dict | None = None, timeout_s: float = 60.0) -> 
             raise ValueError("poseTicks must be an integer from 0 to 200")
         keys = params.get("keys", [])
         if isinstance(keys, list) and "sneak" in keys and any(key in keys for key in ("attack", "use")) and pose_ticks:
-            prelude = k.call("act.input", timeout=timeout_s, keys=["sneak"], ticks=pose_ticks,
-                             overrideProtection=params.get("overrideProtection", False))
+            prelude = k.call("act.input", timeout=timeout_s, keys=["sneak"], ticks=pose_ticks)
             if prelude.get("completed") is not True:
                 return {"posePrelude": prelude, "actionSent": False}
     result = k.call(method_name("act", method), timeout=timeout_s, **params)
@@ -276,7 +275,7 @@ KEYS = {"list": "obs.keys", "press": "act.press_key"}
 
 @tool(lane=lambda kw: lane_for(KEYS.get(kw.get("method", ""), kw.get("method", "") or "")), coverage=["meta"])
 def mb_keys(method: str, params: dict | None = None) -> Any:
-    """Key bindings: list (obs.keys) or press {name,ticks:1..200,overrideProtection?} (act.press_key)."""
+    """Key bindings: list (obs.keys) or press {name,ticks:1..200} (act.press_key)."""
     name = KEYS.get(method, method)
     if name not in KEYS.values():
         raise ValueError("method must be list or press")
@@ -378,14 +377,16 @@ def mb_memory(method: str = "status", params: dict | None = None) -> Any:
     the full record; status lists route summaries. record: {action:start,name,radius}
     records actual travel; action:stop saves it; cancel discards it. Recordings
     invalidated by disconnect/dimension changes cannot be saved.
-    protect: {name,min:[x,y,z],max:[x,y,z]} protects an inclusive cuboid from
-    incidental navigation/bulk edits (mode:automation, default). Machine use, direct
-    keyboard input and deliberate single-block mining/placement stay normal. Use
-    mode:all_edits to also lock targeted block edits and raw attack/use; empty-hand
-    GUI activation still works. Walking is allowed in either mode. remove: {kind:waypoint|route|region,name}.
-    Changing/removing existing protection requires overrideProtection:true and stops
-    active controls. This flag on a terrain action authorizes only that operation;
-    it is never saved on a route or inherited by the next operation. Protection is
-    an accidental-edit guard, not a sandbox for arbitrary mod effects or edited code.
+    protect: {name,min:[x,y,z],max:[x,y,z]} marks an inclusive cuboid that your jobs
+    will not dig through or build in on their way. It binds what a job's path may do
+    (the blocks a walk, a mine or a build breaks to get through or places to climb and
+    bridge) and which targets a mine takes, and nothing else: walking through it, every
+    click, door and machine, each single block you break or place, and the cells an
+    mb_build names all work there as anywhere. A job that should edit inside takes
+    override_protection=True; that lifts it for that one call and is never saved or
+    inherited. A walk the region refused fails naming it; a mine lists the targets it
+    left as protected_region:<names>. replace:true changes a region; remove:
+    {kind:waypoint|route|region,name}. Changing or removing a region stops the running
+    job. It guards against your own jobs' accidents, not explosions, fluids or mobs.
     """
     return notes.tracked(method_name("memory", method), None, **(params or {}))

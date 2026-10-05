@@ -48,10 +48,10 @@ final class ReferenceNavigationJob implements Navigation.Job,PlansWhilePaused {
         if(ownsLease)baritone.gtnh.pathing.Cost.reset(); // a walk inside another job's lease is that job's cost
         initialCalculations=engine.getPathingBehavior().calculationsStarted();initialSegments=engine.getPathingBehavior().segmentsCompleted();
         try{
-            lease=ownsLease?ControlRegistry.controls().arbiter().acquire("baritone-reference",this::cancel,override,true):parent;
+            lease=ownsLease?ControlRegistry.controls().arbiter().acquire("baritone-reference",this::cancel):parent;
             if(!lease.isActive())throw new IllegalArgumentException("navigation lease is inactive");
             Baritone.settings().allowBreak.value=allowBreak;Baritone.settings().allowPlace.value=allowPlace;
-            engine.overrideProtection=override;
+            engine.overrideProtection=override;if(ownsLease)engine.named=p->false; // a walk inside a build keeps that build's named cells
             engine.explicitMiningTargets=()->s->false;
             if(corridorStart!=null){
                 var corridor=new baritone.gtnh.pathing.Corridor(corridorStart,goals.get(0),radius);

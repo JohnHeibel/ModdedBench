@@ -18,11 +18,10 @@ public final class WorldMemory {
         }
         public List<Integer> list() {return List.of(x,y,z);}
     }
-    public record Region(String name,Pos min,Pos max,String mode) {
-        public Region(String name,Pos min,Pos max) {this(name,min,max,"automation");}
+    /** A cuboid a job's path will not break or place in. It binds the path search only: a click is never refused for it. */
+    public record Region(String name,Pos min,Pos max) {
         public Region {
             validName(name);Objects.requireNonNull(min);Objects.requireNonNull(max);
-            if(!Set.of("automation","all_edits").contains(mode)) throw new IllegalArgumentException("region mode must be automation or all_edits");
             if(min.x>max.x || min.y>max.y || min.z>max.z) throw new IllegalArgumentException("region min must not exceed max");
         }
         public boolean contains(Pos p) {return p.x>=min.x&&p.x<=max.x&&p.y>=min.y&&p.y<=max.y&&p.z>=min.z&&p.z<=max.z;}
@@ -36,9 +35,8 @@ public final class WorldMemory {
     }
     public record Snapshot(long revision,Map<String,Pos> waypoints,Map<String,Route> routes,Map<String,Region> regions) {
         public Snapshot {waypoints=Map.copyOf(waypoints);routes=Map.copyOf(routes);regions=Map.copyOf(regions);}
-        public List<String> protectedAt(Pos pos) {return protectedAt(pos,true);}
-        public List<String> protectedAt(Pos pos,boolean automated) {
-            return regions.values().stream().filter(r->r.contains(pos)&&(automated||r.mode.equals("all_edits"))).map(Region::name).sorted().toList();
+        public List<String> protectedAt(Pos pos) {
+            return regions.values().stream().filter(r->r.contains(pos)).map(Region::name).sorted().toList();
         }
     }
     private final Path file;
@@ -61,22 +59,18 @@ public final class WorldMemory {
         if(values.containsKey(route.name)&&!replace) throw new IllegalArgumentException("route exists; replace:true required");
         values.put(route.name,route);commit(state.waypoints,values,state.regions);
     }
-    public void protect(Region region,boolean overrideProtection) throws IOException {
+    public void protect(Region region,boolean replace) throws IOException {
         Map<String,Region> values=new TreeMap<>(state.regions);
-        if(values.containsKey(region.name)&&!overrideProtection)
-            throw new IllegalArgumentException("changing a protected region requires overrideProtection:true");
+        if(values.containsKey(region.name)&&!replace) throw new IllegalArgumentException("region exists; replace:true required");
         values.put(region.name,region);commit(state.waypoints,state.routes,values);
     }
-    public void remove(String kind,String name,boolean overrideProtection) throws IOException {
+    public void remove(String kind,String name) throws IOException {
         validName(name);
         Map<String,Pos> waypoints=new TreeMap<>(state.waypoints);Map<String,Route> routes=new TreeMap<>(state.routes);Map<String,Region> regions=new TreeMap<>(state.regions);
         Object removed=switch(kind) {
             case "waypoint" -> waypoints.remove(name);
             case "route" -> routes.remove(name);
-            case "region" -> {
-                if(!overrideProtection) throw new IllegalArgumentException("removing protection requires overrideProtection:true");
-                yield regions.remove(name);
-            }
+            case "region" -> regions.remove(name);
             default -> throw new IllegalArgumentException("kind must be waypoint, route or region");
         };
         if(removed==null) throw new IllegalArgumentException("named "+kind+" does not exist");
@@ -113,7 +107,7 @@ public final class WorldMemory {
             }
             for(var e:saved.getAsJsonObject("regions").entrySet()) {
                 JsonObject r=e.getValue().getAsJsonObject();if(!e.getKey().equals(r.get("name").getAsString())) throw new IllegalArgumentException("region key mismatch");
-                regions.put(e.getKey(),new Region(e.getKey(),pos(r.get("min")),pos(r.get("max")),r.has("mode")?r.get("mode").getAsString():"all_edits"));
+                regions.put(e.getKey(),new Region(e.getKey(),pos(r.get("min")),pos(r.get("max"))));
             }
             if(waypoints.size()>1024||routes.size()>128||regions.size()>256) throw new IllegalArgumentException("world memory capacity exceeded");
             state=new Snapshot(revision,waypoints,routes,regions);

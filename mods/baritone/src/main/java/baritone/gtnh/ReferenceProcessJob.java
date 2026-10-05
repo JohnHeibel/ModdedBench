@@ -56,11 +56,11 @@ final class ReferenceProcessJob implements Navigation.Job,PlansWhilePaused {
         for(var s:List.of(settings.allowBreak,settings.allowPlace,settings.exploreForBlocks,settings.rightClickContainerOnArrival,settings.enterPortal))saved.put(s,s.value);
         engine.getPathingBehavior().forceCancel();BlockRules.reset();engine.snags.reset();baritone.gtnh.pathing.Cost.reset();initialCalculations=engine.getPathingBehavior().calculationsStarted();
         try{
-            lease=ControlRegistry.controls().arbiter().acquire("baritone-"+kind,this::cancel,bool(params,"overrideProtection",false),true);
+            lease=ControlRegistry.controls().arbiter().acquire("baritone-"+kind,this::cancel);
             settings.allowBreak.value=bool(params,"allowBreak",false);settings.allowPlace.value=bool(params,"allowPlace",false);
             settings.exploreForBlocks.value=bool(params,"exploreForBlocks",true);
             settings.rightClickContainerOnArrival.value=bool(params,"openOnArrival",false);settings.enterPortal.value=bool(params,"enterPortal",false);
-            engine.overrideProtection=bool(params,"overrideProtection",false);engine.positionAllowed=p->true;engine.explicitMiningTargets=()->s->false;
+            engine.overrideProtection=bool(params,"overrideProtection",false);engine.named=p->false;engine.positionAllowed=p->true;engine.explicitMiningTargets=()->s->false;
             engine.getInputOverrideHandler().attach(lease);engine.bsi=new baritone.utils.BlockStateInterface(engine.getPlayerContext());
             switch(kind){
                 case "goal"->{

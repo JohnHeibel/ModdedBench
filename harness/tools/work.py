@@ -95,8 +95,8 @@ def mb_route(name: str, reverse: bool = False, start_index: int = 0,
     silently taking a distant shortcut. reverse reverses the anchor order; start_index
     indexes that resulting order. A cancelled route can be restarted at the reported
     nextIndex. Raise timeout_ticks for long journeys (<=72000); it counts simulation
-    ticks and is the only timeout. Protection still applies
-    with allow_break/allow_place unless override_protection is explicitly true.
+    ticks and is the only timeout. With allow_break/allow_place a protected region still
+    refuses this walk's digging and placing unless override_protection is true.
     Notes near the arrival position are returned under "notes".
     """
     return notes.tracked("nav.route", _wait(timeout_ticks), name=name, reverse=reverse, startIndex=start_index,
@@ -137,7 +137,7 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = Fal
              max_attackers: int = 2, max_health_loss: float = 10, max_growth: int = 3, weapon_slot: int | None = None, duration_ticks: int = 600,
              crit: bool | None = None, block: bool | None = None, ranged: dict | bool | None = None,
              timeout_s: float = 60.0, target: dict | None = None, hostile: list[dict] | None = None,
-             allow_break: bool = False, allow_place: bool = False, override_protection: bool = False) -> Any:
+             allow_break: bool = False, allow_place: bool = False) -> Any:
     """Fight one mob as a job, the way mb_mine mines: you choose the mob and the limits, it does the footwork.
 
     entity_id comes from mb_obs entities or the clock's threats. It paths to the mob (never breaking
@@ -148,9 +148,6 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = Fal
     in sight. Against more than one melee mob, first stand where only one can reach you (a doorway,
     a one-wide tunnel, a pillar two blocks up) and use hold; pursuing one mob of a group walks you
     into the others. It never chooses to chase a different mob.
-    override_protection=True lets this fight raise a sword (or draw a bow) inside one of your protected
-    regions: item use whose aim reaches no block. Right-clicks on protected blocks under the crosshair stay
-    refused, and break/place remain opt-in; it ends with the job.
     swarm=True is for many small mobs at once (silverfish, a spawner): it stands like hold but
     always swings at whichever hostile is nearest in reach, never stops as outnumbered, and
     defaults crit and block off so every swing lands at the weapon's full rate. It takes no
@@ -208,7 +205,6 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = Fal
     if hostile is not None: params["hostile"] = hostile
     if allow_break: params["allowBreak"] = True
     if allow_place: params["allowPlace"] = True
-    if override_protection: params["overrideProtection"] = True
     if not ranged: return notes.tracked("nav.fight", timeout_s, **params)
     book = notes.notes_dir() / "ballistics.json"  # what each weapon has taught so far: yours to read and correct
     known = json.loads(book.read_text()) if book.is_file() else {}
@@ -406,8 +402,10 @@ def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, q
     the job. dropsLeftInBounds counts matching items still lying in the bounds when it
     ends: drops it never picked up. It stops on full inventory and never equates a vanished
     block with collection. A returned jobId is durable; inspect with mb_work_status
-    and use mb_work_resume after correcting a blocked job. Protection override and
-    terrain permissions apply only to this attempt.
+    and use mb_work_resume after correcting a blocked job. A protected region (mb_memory
+    protect): the job's path will not dig or place in it and no target inside it is taken
+    (skipped as protected_region:<names>); override_protection=True lifts that for this
+    job. The override and the terrain permissions apply only to this attempt.
     timeout_ticks is a budget, not a verdict: the mining rate varies widely (walking,
     digging down, tool swaps); in a dense vein it is typically tens of blocks a minute,
     walking included, and the receipt's blocksPerMinute is the number to size the next
@@ -421,8 +419,8 @@ def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, q
     job ends with reason stalled_no_progress_near_x,y,z, as paused if this session gained something,
     else failed. Pacing or circling on the same ground counts as standing still.
     Every target it leaves is in skipped [{pos, block, why}] (the first 16; skippedCount
-    counts them): unreachable (no path found), will_not_break_here (with the fluid beside it,
-    or a protected region), no_tool_in_inventory_harvests_it, not_exposed, between_bedrock,
+    counts them): unreachable (no path found), will_not_break_here (with the fluid beside it),
+    protected_region:<names>, no_tool_in_inventory_harvests_it, not_exposed, between_bedrock,
     below/above_min/maxYLevelWhileMining. Unreachable targets are journaled: a resume does not
     retry them unless its options pass retry: true.
     vein=[x,y,z], one ore block you have seen, mines the vein it belongs to. Its defaults, each
@@ -525,7 +523,7 @@ def mb_build_preview(cells: list[dict] | None = None, selection: dict | None = N
 
     It takes what mb_build takes (cells, selection or drawing, and uses; mb_build has the formats,
     the build order and the caps) and answers with counts and the first few of each list:
-    total, correct, mismatched, matches; unloaded, protected, unsupported (no item places that
+    total, correct, mismatched, matches; unloaded, unsupported (no item places that
     block: name one with the cell's item); conflicts (cells that want a block and hold another: the
     build stops as occupied unless replace_existing); materials, one row per item {selector, needed,
     allocated, missing} against what you carry now, and missingItems, their sum; differences, the
@@ -687,9 +685,10 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
       access_failed      a block in the way of a click could not be taken out.
       no_empty_hand      a use with {empty: true}: no hotbar slot is empty.
     A job can also end as any job does: player_died, or cancelled (superseded, interrupted,
-    gui_opened, world_or_player_changed, protected_region:<names> when a click of its own was
-    refused there, the receipt's `refused` saying which), or with the game's own error text as
-    the reason.
+    gui_opened, world_or_player_changed), or with the game's own error text as the reason.
+    Protected regions (mb_memory protect) never refuse the cells or uses you name here. They
+    bind the way there: scaffold, digging through, and a block taken out of a click's way are
+    not done inside one unless override_protection is true.
     A stop is state paused, or failed (error code build_failed, the receipt inside) when it stalled
     or timed out with nothing done this session or never started. Either way mb_work_resume(jobId)
     continues it once what the reason names is dealt with; a resumed or repeated job reads the

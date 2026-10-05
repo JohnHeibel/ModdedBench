@@ -34,7 +34,7 @@ abstract class BulkJob implements Navigation.Job {
         remaining=integer(params,"timeoutTicks",12000,1,72000);stall=WorkAccess.stall(params);
     }
     void begin() {
-        lease=ControlRegistry.controls().arbiter().acquire("baritone_"+journal.kind,this::revoked,override,true);
+        lease=ControlRegistry.controls().arbiter().acquire("baritone_"+journal.kind,this::revoked);
         sessionStart=progress();
         journal.save(status());journal.prune();
     }

@@ -127,7 +127,7 @@ final class InteractionOperations {
                 // Native use may synchronously open a screen. The click still needs an honest receipt.
                 if(delivering) {if(!reason.equals("gui_open"))revokedDuringDelivery=reason;}
                 else finish("cancelled",reason);
-            },Json.bool(p,"overrideProtection",false));
+            });
             if(kind.equals("select_hotbar")) {
                 int slot=Json.integer(p,"slot",-1,0,8);
                 if(p.has("expected")&&!Stacks.expected(player.inventory.mainInventory[slot],p.get("expected"))) throw new IllegalArgumentException("stale slot stack");

@@ -44,7 +44,10 @@ public final class Baritone implements IBaritone {
     private final baritone.selection.SelectionManager selections=new baritone.selection.SelectionManager(this);
     private final baritone.cache.WorldProvider worlds=new baritone.cache.WorldProvider(this);
     public BlockStateInterface bsi;
+    /** This job's path may break and place inside protected regions. */
     public boolean overrideProtection;
+    /** The cells this job was sent to edit (a build's plan cells): protected regions do not bind them. Read by path searches on their threads. */
+    public volatile java.util.function.Predicate<BlockPos> named=p->false;
     /** A mining job that plugs each hole it opens may break blocks beside fluid (never lava), as a player does. */
     public static volatile boolean besideFluid;
     public java.util.function.Predicate<BlockPos> positionAllowed=p->true;

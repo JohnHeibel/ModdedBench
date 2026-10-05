@@ -36,8 +36,8 @@ final class ReferenceApiSession {
             // Implicit getter activation must never steal another primitive's input.
             if(ControlRegistry.controls().arbiter().current().active()||mc.currentScreen!=null||mc.thePlayer.getHealth()<=0){engine.getPathingBehavior().forceCancel();reason="control_busy";return;}
             world=mc.theWorld;player=mc.thePlayer;scope=ControlRegistry.memory().memory().scope();ticks=0;reason="active";
-            lease=ControlRegistry.controls().arbiter().acquire("baritone-java-api",this::stop,false,true);
-            engine.overrideProtection=false;engine.positionAllowed=p->true;engine.explicitMiningTargets=()->s->false;
+            lease=ControlRegistry.controls().arbiter().acquire("baritone-java-api",this::stop);
+            engine.overrideProtection=false;engine.named=p->false;engine.positionAllowed=p->true;engine.explicitMiningTargets=()->s->false;
             engine.getInputOverrideHandler().attach(lease);
         }
         try {
@@ -48,7 +48,7 @@ final class ReferenceApiSession {
     void stop(String reason){
         InputArbiter.Lease old=lease;lease=null;this.reason=reason;
         engine.getPathingBehavior().forceCancel();engine.getInputOverrideHandler().release();
-        engine.overrideProtection=false;engine.positionAllowed=p->true;engine.explicitMiningTargets=()->s->false;
+        engine.overrideProtection=false;engine.named=p->false;engine.positionAllowed=p->true;engine.explicitMiningTargets=()->s->false;
         if(old!=null)old.close();
     }
 }

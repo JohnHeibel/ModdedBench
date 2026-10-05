@@ -24,14 +24,9 @@ public final class InputArbiter {
         /** Retain key ownership while returning camera rotation to the client. */
         void clearLook();
         boolean isActive();
-        default boolean overrideProtection() {return false;}
-        default boolean automatedEdits() {return false;}
         /** Why the arbiter took this lease away (a revoke's reason, or "preempted"); null while it is held, and when its
          * owner closed it. A job that finds its lease gone says this rather than guess. */
         default String endedWhy() {return null;}
-        /** From now until it ends, this lease may use an item whose rays reach no block in a protected region (a raised
-         * sword, a drawn bow); clicks on blocks still need overrideProtection. */
-        void permitInPlaceItemUse();
         @Override void close();
     }
 
@@ -40,22 +35,16 @@ public final class InputArbiter {
         private final String label;
         private final long operationId;
         private final boolean active;
-        private final boolean overrideProtection,automatedEdits,inPlaceItemUse;
 
-        private Current(String label, boolean active, boolean overrideProtection, long operationId, boolean automatedEdits, boolean inPlaceItemUse) {
-            this.automatedEdits=automatedEdits;this.inPlaceItemUse=inPlaceItemUse;
+        private Current(String label, boolean active, long operationId) {
             this.operationId=operationId;
             this.label = label;
             this.active = active;
-            this.overrideProtection=overrideProtection;
         }
 
         public String label() { return label; }
         public long operationId() {return operationId;}
         public boolean active() { return active; }
-        public boolean overrideProtection() {return overrideProtection;}
-        public boolean automatedEdits() {return automatedEdits;}
-        public boolean inPlaceItemUse() {return inPlaceItemUse;}
     }
 
     private final Sink sink;
@@ -72,21 +61,12 @@ public final class InputArbiter {
 
     /** Acquires ownership, revoking and releasing the previous owner first. */
     public Lease acquire(String label, Consumer<String> onRevoked) {
-        return acquire(label,onRevoked,false);
-    }
-
-    /** Explicit per-operation override, never inherited by a new input owner. */
-    public Lease acquire(String label,Consumer<String> onRevoked,boolean overrideProtection) {
-        return acquire(label,onRevoked,overrideProtection,false);
-    }
-    /** Automatic terrain work obeys default protected regions; targeted work obeys strict regions. */
-    public Lease acquire(String label,Consumer<String> onRevoked,boolean overrideProtection,boolean automatedEdits) {
         Objects.requireNonNull(label, "label");
         Objects.requireNonNull(onRevoked, "onRevoked");
         if (label.trim().isEmpty()) throw new IllegalArgumentException("label must not be blank");
 
         LeaseImpl previous;
-        LeaseImpl next = new LeaseImpl(label, onRevoked, overrideProtection,automatedEdits);
+        LeaseImpl next = new LeaseImpl(label, onRevoked);
         synchronized (this) {
             previous = owner;
             if (previous != null) previous.active = false;
@@ -117,7 +97,7 @@ public final class InputArbiter {
     }
 
     public synchronized Current current() {
-        return new Current(owner == null ? null : owner.label, owner != null && owner.active, owner != null && owner.active && owner.overrideProtection, owner==null?0:owner.operationId, owner!=null&&owner.active&&owner.automatedEdits, owner!=null&&owner.active&&owner.inPlaceItemUse);
+        return new Current(owner == null ? null : owner.label, owner != null && owner.active, owner==null?0:owner.operationId);
     }
 
     /** Reapplies the active state after the host's normal input processing. */
@@ -237,25 +217,18 @@ public final class InputArbiter {
         private final String label;
         private final long operationId=sequence.incrementAndGet();
         private final Consumer<String> onRevoked;
-        private final boolean overrideProtection,automatedEdits;
         private boolean active = true;
-        private volatile boolean inPlaceItemUse;
         private volatile String endedWhy;
 
-        private LeaseImpl(String label, Consumer<String> onRevoked, boolean overrideProtection,boolean automatedEdits) {
-            this.automatedEdits=automatedEdits;
+        private LeaseImpl(String label, Consumer<String> onRevoked) {
             this.label = label;
             this.onRevoked = onRevoked;
-            this.overrideProtection=overrideProtection;
         }
 
         @Override public void setKeys(Set<Integer> requested) { InputArbiter.this.setKeys(this, requested); }
         @Override public void look(float requestedYaw, float requestedPitch) { InputArbiter.this.look(this, requestedYaw, requestedPitch); }
         @Override public void clearLook() { synchronized(InputArbiter.this){if(owner==this&&active)hasLook=false;} }
         @Override public boolean isActive() { return InputArbiter.this.isOwner(this); }
-        @Override public boolean overrideProtection() {return isActive() && overrideProtection;}
-        @Override public boolean automatedEdits() {return isActive() && automatedEdits;}
-        @Override public void permitInPlaceItemUse() {inPlaceItemUse=true;}
         @Override public String endedWhy() {return endedWhy;}
         @Override public void close() { InputArbiter.this.close(this); }
     }

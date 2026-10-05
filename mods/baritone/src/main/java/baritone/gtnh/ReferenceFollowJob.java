@@ -39,10 +39,10 @@ final class ReferenceFollowJob implements Navigation.Job {
         var settings=Baritone.settings();
         for(var s:List.of(settings.allowBreak,settings.allowPlace,settings.followRadius,settings.followOffsetDistance,settings.followOffsetDirection))saved.put(s,s.value);
         engine.getPathingBehavior().forceCancel();engine.snags.reset();
-        lease=ControlRegistry.controls().arbiter().acquire("baritone-follow",this::cancel,override,true);
+        lease=ControlRegistry.controls().arbiter().acquire("baritone-follow",this::cancel);
         settings.allowBreak.value=bool(params,"allowBreak",false);settings.allowPlace.value=bool(params,"allowPlace",false);
         settings.followRadius.value=radius;settings.followOffsetDistance.value=offset;settings.followOffsetDirection.value=direction;
-        engine.overrideProtection=override;engine.positionAllowed=p->true;engine.explicitMiningTargets=()->s->false;
+        engine.overrideProtection=override;engine.named=p->false;engine.positionAllowed=p->true;engine.explicitMiningTargets=()->s->false;
         engine.getInputOverrideHandler().attach(lease);engine.getFollowProcess().follow(filter);
     }
     /** An entity selector: entityId, uuid, type (the EntityList name obs.entities shows), name, or class (a class or interface

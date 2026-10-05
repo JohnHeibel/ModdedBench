@@ -162,7 +162,7 @@ def mb_view(bounds: dict | None = None, radius: int = 10, below: int = 2, above:
         if isinstance(box, dict):
             box = {**box, **{edge: [box[edge][axis] for axis in ("x", "y", "z")] if isinstance(box[edge], dict) else box[edge] for edge in ("min", "max")}}
         if isinstance(box, dict) and all(box["min"][i] <= hi[i] and box["max"][i] >= lo[i] for i in range(3)):
-            things.append({"what": "protected region", "name": name, "box": {"min": box["min"], "max": box["max"]}, "mode": box.get("mode")})
+            things.append({"what": "protected region", "name": name, "box": {"min": box["min"], "max": box["max"]}})
     here = [me[0] - lo[0], 0 if look_down else me[1] - lo[1], me[2] - lo[2]]
     if all(0 <= here[i] < size[i] for i in range(3)): layers[here[1]][here[2]][here[0]] = PLAYER
     out = {"origin": lo if not look_down else [lo[0], hi[1], lo[2]], "columns": {"west": lo[0], "east": hi[0]}, "rows": {"north": lo[2], "south": hi[2]},

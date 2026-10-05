@@ -41,23 +41,17 @@ public final class BaritoneNavigation implements Navigation {
         return mineBlock(x,y,z,timeoutTicks,true);
     }
     @Override public Job mineBlock(int x,int y,int z,int timeoutTicks,boolean autoTool) {
-        return mineBlock(x,y,z,timeoutTicks,autoTool,false);
-    }
-    @Override public Job mineBlock(int x,int y,int z,int timeoutTicks,boolean autoTool,boolean overrideProtection) {
         if(active!=null && !active.done()) active.cancel("superseded");
-        active=new MiningJob(mc,new BlockPos(x,y,z),timeoutTicks,autoTool,overrideProtection);
+        active=new MiningJob(mc,new BlockPos(x,y,z),timeoutTicks,autoTool);
         return active;
     }
     @Override public Job placeBlock(int x,int y,int z,int timeoutTicks) {
-        return placeBlock(x,y,z,timeoutTicks,false);
+        return placeBlock(x,y,z,timeoutTicks,null);
     }
-    @Override public Job placeBlock(int x,int y,int z,int timeoutTicks,boolean overrideProtection) {
-        return placeBlock(x,y,z,timeoutTicks,overrideProtection,null);
-    }
-    @Override public Job placeBlock(int x,int y,int z,int timeoutTicks,boolean overrideProtection,List<Map<String,Object>> items) {
+    @Override public Job placeBlock(int x,int y,int z,int timeoutTicks,List<Map<String,Object>> items) {
         var selectors=items==null?null:WorkAccess.itemSelectors(items);
         if(active!=null && !active.done()) active.cancel("superseded");
-        active=new PlacingJob(new BlockPos(x,y,z),timeoutTicks,overrideProtection,selectors);return active;
+        active=new PlacingJob(new BlockPos(x,y,z),timeoutTicks,selectors);return active;
     }
     @Override public Map<String,Object> inspectTools(int x,int y,int z) {
         if(mc.theWorld==null||mc.thePlayer==null) throw new IllegalArgumentException("player required");

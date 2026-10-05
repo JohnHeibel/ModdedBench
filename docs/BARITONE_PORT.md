@@ -80,8 +80,8 @@ cancelled and a superseded search cannot install its result into a newer job.
   inventory is a failure.
 - Requested targets are exempt from `allowBreak: false`, scoped to position,
   block and metadata. `allowBreak`/`allowPlace` authorise incidental route
-  edits, which may fall outside the scan bounds. Region protection always
-  applies; `overrideProtection` is per job.
+  edits, which may fall outside the scan bounds. Region protection applies to
+  both the route and the targets; `overrideProtection` is per job.
 - The job does not return the player to where it started. Mining soil-like
   targets can leave the player at the bottom of a 1x1 shaft it dug under its
   own feet (seen live 2026-09-20); leaving needs `nav.goto` with `allowBreak`
@@ -126,7 +126,7 @@ game-thread time per client tick over the job, the survey included).
 
 Placement goes through native right-click handling and never writes blocks.
 Preview is a fresh loaded-world diff judged as the job judges it: counts
-(`total`, `correct`, `mismatched`, `unloaded`, `conflicts`, `protected`,
+(`total`, `correct`, `mismatched`, `unloaded`, `conflicts`,
 `unsupported`, `missingItems`), a shared-stack material allocation, the first
 8 differences and the steps; lists are short and the counts say how much there
 is. A `replace` selection is filtered once at job creation and journaled.

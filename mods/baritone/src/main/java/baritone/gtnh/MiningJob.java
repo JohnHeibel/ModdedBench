@@ -28,16 +28,16 @@ final class MiningJob implements Navigation.Job {
     private final Block original;
     private final int metadata;
     private InputArbiter.Lease lease;
-    private final boolean autoTool,overrideProtection;
+    private final boolean autoTool;
     private InventorySelection selection;
     private final List<Map<String,Object>> toolsUsed=new ArrayList<>();
     private String state="mining",reason="";
     private int remaining,ticks,settling,aimMismatchTicks;
     private Map<String,Object> actualAim=Map.of();
 
-    MiningJob(Minecraft mc,BlockPos target,int timeoutTicks,boolean autoTool,boolean overrideProtection) {
+    MiningJob(Minecraft mc,BlockPos target,int timeoutTicks,boolean autoTool) {
         this.mc=mc; this.target=target;
-        this.overrideProtection=overrideProtection;this.autoTool=autoTool;
+        this.autoTool=autoTool;
         if(mc.theWorld==null||mc.thePlayer==null||mc.currentScreen!=null) throw new IllegalArgumentException("mining needs a player with GUI closed");
         if(timeoutTicks<1||timeoutTicks>6000) throw new IllegalArgumentException("timeoutTicks must be 1..6000");
         world=mc.theWorld;player=mc.thePlayer;remaining=timeoutTicks;
@@ -46,11 +46,9 @@ final class MiningJob implements Navigation.Job {
         if(mc.thePlayer.getHealth()<=0||original.isAir(world,target.getX(),target.getY(),target.getZ())||ForgeFluids.fluid(original)) throw new IllegalArgumentException("target must be a non-fluid block; use native held-item/block interaction for fluids");
         if(!autoTool && !original.canHarvestBlock(mc.thePlayer,metadata)) throw new IllegalArgumentException("selected tool cannot harvest target");
         if(!autoTool && original.getPlayerRelativeBlockHardness(mc.thePlayer,world,target.getX(),target.getY(),target.getZ())<=0) throw new IllegalArgumentException("target cannot be mined with selected tool");
-        String unsafe=unsafe();
-        if(unsafe!=null) throw new IllegalArgumentException(unsafe);
         if(aim()==null) throw new IllegalArgumentException("target is occluded or outside normal reach");
         if(autoTool && !selectTool()) throw new IllegalArgumentException("no_eligible_harvest_tool");
-        lease=ControlRegistry.controls().arbiter().acquire("baritone_mining",this::cancel,overrideProtection,false);
+        lease=ControlRegistry.controls().arbiter().acquire("baritone_mining",this::cancel);
         if(!lease.isActive()) finish("cancelled","input_unavailable");
     }
 
@@ -66,8 +64,6 @@ final class MiningJob implements Navigation.Job {
         // immediately can leave it suppressed for the entire job. Keep native
         // click/harvest hooks rather than bypassing the counter or break speed.
         if(ticks==1){lease.setKeys(Set.of());state="arming";return;}
-        String unsafe=unsafe();
-        if(unsafe!=null) {finish("failed",unsafe);return;}
         boolean changed=world.getBlock(target.getX(),target.getY(),target.getZ())!=original || world.getBlockMetadata(target.getX(),target.getY(),target.getZ())!=metadata;
         if(changed) {
             lease.setKeys(Set.of());
@@ -108,10 +104,6 @@ final class MiningJob implements Navigation.Job {
         lease.setKeys(keys);
     }
 
-    /** The model's own protected regions. Footing, fluids and damage are its to judge; the clock's guards pause on the damage. */
-    private String unsafe() {
-        return dev.modbench.api.ControlRegistry.memory().editProblem(target.getX(),target.getY(),target.getZ(),overrideProtection,false);
-    }
     private boolean selectTool() {
         var choice=MiningTools.choose(world,target,null);
         if(choice.get("bestSlot")==null||!Boolean.TRUE.equals(choice.get("harvestable"))) return false;
@@ -161,7 +153,7 @@ final class MiningJob implements Navigation.Job {
         out.put("available",true);out.put("state",state);out.put("reason",reason);out.put("action","mine_block");
         out.put("target",List.of(target.getX(),target.getY(),target.getZ()));out.put("ticks",ticks);
         out.put("actualAim",actualAim);out.put("aimMismatchTicks",aimMismatchTicks);
-        out.put("overrideProtection",overrideProtection);out.put("autoTool",autoTool);out.put("toolsUsed",toolsUsed);
+        out.put("autoTool",autoTool);out.put("toolsUsed",toolsUsed);
         out.put("controlOwned",lease!=null&&lease.isActive());out.put("serverAcknowledged",false);
         out.put("completionMeaning","target changed in client world; item collection is separate");
         return out;

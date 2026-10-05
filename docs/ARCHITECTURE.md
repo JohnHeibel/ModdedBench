@@ -87,13 +87,15 @@ evidence are in [TIME_CONTROL.md](TIME_CONTROL.md).
 
 ## Control ownership
 
-One `InputArbiter` in core hands out leases for keyboard, mouse and
-"automated edits". Navigation, GUI takeover, interactions and the human all
-go through it, so a job is preempted cleanly rather than fighting over keys.
-Protected regions (world memory) are checked at the placement and breaking
-cost level in Baritone and at the interaction guard in core; `automation`
-mode blocks incidental edits, `all_edits` mode also blocks deliberate ones,
-and every override is scoped to a single operation.
+One `InputArbiter` in core hands out leases for keyboard and mouse.
+Navigation, GUI takeover, interactions and the human all go through it, so a
+job is preempted cleanly rather than fighting over keys; a job whose lease
+was taken reads why from the lease. Protected regions (world memory) are a
+rule for the planner only: they are checked where Baritone prices breaking
+and placing (`CalculationContext.isPossiblyProtected`), so a path never plans
+an edit inside one, and where a mine picks targets. No click is checked
+against them. A job's `overrideProtection` lifts them for that job, and a
+build's own plan cells are exempt (`Baritone.named`).
 
 World memory (waypoints, corridor routes, protected regions) is stored per
 world and dimension, keyed by the server's persistent world UUID plus the
