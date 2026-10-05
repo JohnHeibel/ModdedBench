@@ -220,10 +220,13 @@ class Suite(bs.Shells):
                 "why": f"state={r.get('state')} stopped={r.get('stopped')} wrong={len(wrong)} waterMetaBefore={flowing} ticks={r.get('ticks')}"}
 
     def oven(self):
-        """The coke oven of 2026-10-05: 3 x 3 x 3 with one empty cell in the middle, started on the middle of its floor."""
+        """The coke oven of 2026-10-05: 3 x 3 x 3 with one empty cell in the middle, started on the middle of its floor,
+        under a ceiling one above its top, so nobody stands on it and whoever walls the ring up from inside stays there."""
         origin = self.arena()
         for x in range(3):
             for z in range(3): self.set_block([x, 0, z], DIRT)   # the floor is in: that run's builder stood on it for the rest
+        for x in range(-2, 5):
+            for z in range(-2, 5): self.set_block([x, 3, z], STONE)
         self.stand([origin[0] + 1.5, bs.FLOOR + 1, origin[2] + 1.5])
         cells = [{"pos": [x, y, z], "id": DIRT} for y in range(3) for x in range(3) for z in range(3) if (x, y, z) != (1, 1, 1)]
         r = call(work.mb_build, cells=cells, origin=origin, timeout_ticks=3000)
