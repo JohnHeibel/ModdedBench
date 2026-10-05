@@ -77,6 +77,10 @@ final class ReferenceConstructionProcess extends BulkJob {
     /** The air that stays air around what the plan still fills (BuildSteps.air), looked at once a step. */
     private Set<BlockPos> stays=Set.of();
     private int staysStep=-1;
+    /** Cells whose filling would shut the player in where it stands (BuildSteps.shuts): they wait while anything else is left to fill. */
+    private Set<BlockPos> shut=Set.of();
+    private int shutKey;
+    private int[] boxLo,boxHi;
     /** Cells with no standing spot level with them or above: these are filled from below, where a face for them is in view. */
     private final Set<BlockPos> fromBelow=new HashSet<>();
     /**
@@ -198,6 +202,30 @@ final class ReferenceConstructionProcess extends BulkJob {
         work=buildStep;for(int i=buildStep-1;i>=0;i--)if(count[i]>0)work=i;
     }
     int clickStep(){return work;}
+    /**
+     * Looks again, once the player has moved or a cell went in, at which cells would shut it in; true when that changed,
+     * and the pass is to be started again without them. When they are all that is left to fill, shut in is what the plan
+     * asks for, and they go in.
+     */
+    private boolean shuts(){
+        BlockPos feet=WorkAccess.feet();int key=java.util.Objects.hash(feet,placedObserved.size(),pending.size(),buildStep,liftedStep);
+        if(key==shutKey||!mc.thePlayer.onGround)return false;
+        shutKey=key;
+        if(boxLo==null){
+            boxLo=new int[]{Integer.MAX_VALUE,Integer.MAX_VALUE,Integer.MAX_VALUE};boxHi=new int[]{Integer.MIN_VALUE,Integer.MIN_VALUE,Integer.MIN_VALUE};
+            for(Cell c:plan.cells)if(!c.clear()){int[] v={c.pos().getX(),c.pos().getY(),c.pos().getZ()};for(int i=0;i<3;i++){boxLo[i]=Math.min(boxLo[i],v[i]-1);boxHi[i]=Math.max(boxHi[i],v[i]+1);}}
+        }
+        Set<BlockPos> fill=new HashSet<>();
+        if(!cleanupPhase&&liftedStep!=buildStep)for(Cell c:plan.cells){
+            BlockPos p=c.pos();
+            if(!c.clear()&&c.click()==null&&Boolean.FALSE.equals(correct.get(p))&&plan.steps.visible(p,buildStep)&&!held.held().contains(p)&&baritone.compat.LegacyPlacement.empty(world,p.getX(),p.getY(),p.getZ()))fill.add(p);
+        }
+        // A cell is open to a body when the game gives the block in it nothing to collide with.
+        Set<BlockPos> next=BuildSteps.shuts(fill,feet,p->world.getBlock(p.getX(),p.getY(),p.getZ()).getCollisionBoundingBoxFromPool(world,p.getX(),p.getY(),p.getZ())==null,boxLo,boxHi);
+        if(next.containsAll(fill))next=Set.of();
+        if(next.equals(shut))return false;
+        shut=next;return true;
+    }
     /** The click executor's turn: a click is under way, a cell is to be put back, or the step being worked is one of clicks or uses. */
     private boolean clicking(){return clicks.busy()||work<stepLeft.length&&plan.steps.kind(work)!=BuildSteps.CELLS;}
     /** A click cannot be made, or did not do what was asked: the job stops on its cell, to be resumed once that is seen to. */
@@ -489,7 +517,7 @@ final class ReferenceConstructionProcess extends BulkJob {
             if(staysStep!=buildStep){BlockPos feet=WorkAccess.feet();stays=BuildSteps.air(toFill,p->baritone.compat.LegacyPlacement.empty(world,p.getX(),p.getY(),p.getZ()),feet,new BlockPos(feet.getX(),feet.getY()+1,feet.getZ()));staysStep=buildStep;}
             held=BuildSteps.held(toFill,now,stays::contains);
         }
-        Map<BlockPos,IBlockState> frozen=new HashMap<>(shown);frozen.keySet().removeAll(held.held());
+        Map<BlockPos,IBlockState> frozen=new HashMap<>(shown);frozen.keySet().removeAll(held.held());frozen.keySet().removeAll(shut);
         ISchematic schematic=new ISchematic(){
             public int widthX(){return width;}public int heightY(){return height;}public int lengthZ(){return length;}
             public boolean inSchematic(int x,int y,int z,IBlockState current){return frozen.containsKey(new BlockPos(x+minX,y+minY,z+minZ));}
@@ -595,12 +623,13 @@ final class ReferenceConstructionProcess extends BulkJob {
             if(ticks%20==0)journal.save(status());
             return;
         }
-        if(passStep!=buildStep){engine.getPathingBehavior().forceCancel();startPass();if(done()||closing())return;}
-        else if(!held.held().isEmpty()){
+        if(passStep!=buildStep|shuts()){engine.getPathingBehavior().forceCancel();startPass();if(done()||closing())return;}
+        else if(!held.held().isEmpty()||!shut.isEmpty()){
             // A deeper cell is in: a new pass, with what that frees. Half a stall with none of them in: nothing waits any more
             // in this step, so a cell that cannot be made at all does not keep the rest of the plan back.
+            // The same half stall ends the wait of cells that would shut the player in: with no way to the rest, they are the work.
             boolean freed=held.first().stream().anyMatch(p->correct.getOrDefault(p,false));
-            if(!freed&&(stall.half()||!builder.isActive()))liftedStep=buildStep;
+            if(!freed&&(stall.half()||!builder.isActive())){liftedStep=buildStep;shut=Set.of();}
             if(freed||liftedStep==buildStep){engine.getPathingBehavior().forceCancel();startPass();if(done()||closing())return;}
         }
         if(!builder.isActive()){

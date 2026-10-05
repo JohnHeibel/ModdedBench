@@ -147,7 +147,14 @@ and within a job it only moves forward (a cell of an earlier step that breaks
 stays shown and is repaired). Cells that must be empty have no step, and
 removal is not delayed: the walk may still dig a wrong block out of a later
 cell, but the builder replaces it only in its step. Upstream's own layering
-(`buildInLayers` and its companions) is held off for the job. Preview lists
+(`buildInLayers` and its companions) is held off for the job. Within a step,
+a cell whose filling would close the player's last walk out of the plan's box
+(`BuildSteps.shuts`: level, down, or up one with headroom, through cells the
+game gives no collision box) is kept out of the pass while anything else is
+left to fill, so the builder leaves before it closes a box around itself;
+when such cells are all that is left, or after half a stall, they go in.
+Upstream `assemble` is edited in one place: a cell of flowing liquid whose
+block is carried gets a goal as a source does. Preview lists
 `steps` as `{stage, y, cells}`.
 
 Stops. A job that does not succeed ends with `stopped {reason, pos, step}`:
