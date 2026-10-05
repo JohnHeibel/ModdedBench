@@ -32,6 +32,41 @@ class MachineKernel:
 
 
 class MachineCollectionTests(unittest.TestCase):
+    def test_an_output_that_grew_before_the_press_is_looked_at_again_and_nothing_sent_is_repeated(self):
+        class GrowingKernel(MachineKernel):
+            def __init__(self, msg='stale_stack before native press; virtual results may have reordered', sent=0,
+                         becomes=None, grow=1, always=False, ordinary=True):
+                super().__init__()
+                self.msg, self.sent, self.becomes, self.grow, self.always, self.presses = msg, sent, becomes, grow, always, 0
+                self.slots[0]['ordinary'] = ordinary
+
+            def call(self, method, **params):
+                if method == 'gui.click_slot':
+                    self.presses += 1
+                    if self.presses == 1 or self.always:
+                        self.slots[0]['stack']['count'] += self.grow
+                        if self.becomes:
+                            self.slots[0]['stack']['id'] = self.becomes
+                        error = dict(code='gui_error', msg=self.msg, receipt=dict(transactions=dict(sent=self.sent)))
+                        raise inventory.BridgeError('gui_error', self.msg, method, dict(error=error))
+                return super().call(method, **params)
+
+        for msg in ('stale_stack before native press; virtual results may have reordered', 'stale_stack: observe again'):
+            k = GrowingKernel(msg)
+            result = inventory._machine(inventory.ContainerSession(k), [], 0)
+            self.assertEqual(result['collected'], [dict(id='example:output', meta=0, count=2)])
+            self.assertEqual(k.presses, 2)
+        # Another item, a stack that did not grow, a sent transaction, another refusal, a virtual slot: all stop at once.
+        # A slot that keeps growing stops after the third press.
+        for kwargs, presses in [(dict(becomes='example:other'), 1), (dict(grow=0), 1), (dict(sent=1), 1),
+                                (dict(msg='stale_cursor before native press'), 1), (dict(ordinary=False), 1),
+                                (dict(always=True), 3)]:
+            with self.subTest(kwargs=kwargs):
+                k = GrowingKernel(**kwargs)
+                with self.assertRaises(inventory.ProcedureStopped):
+                    inventory._machine(inventory.ContainerSession(k), [], 0)
+                self.assertEqual(k.presses, presses)
+
     def test_loading_distributes_one_transfer_across_native_input_capacities(self):
         class LoadingKernel:
             def __init__(self):

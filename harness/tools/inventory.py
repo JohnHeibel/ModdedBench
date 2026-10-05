@@ -131,13 +131,27 @@ class ContainerSession:
             raise ProcedureStopped("operation changed the screen or did not complete", self.receipts)
         return result
 
-    def click(self, slot, click_type="pickup", button=0, path=None):
+    def click(self, slot, click_type="pickup", button=0, path=None, growing=False):
+        """growing: a slot a machine is still filling. A press the stale-stack guard refused because the
+        same stack grew since the look is tried again on a fresh look, twice at most; nothing sent is repeated."""
         view = self.observe()
-        current = next(s for s in view["slots"] if s["i"] == slot)
-        params = dict(slot=slot, expected=current.get("stack"), type=click_type, button=button)
-        if path is not None:
-            params["path"] = path
-        return self._mutate("gui.click_slot", view, **params)
+        for again in (True, True, False):
+            current = next(s for s in view["slots"] if s["i"] == slot)
+            params = dict(slot=slot, expected=current.get("stack"), type=click_type, button=button)
+            if path is not None:
+                params["path"] = path
+            try:
+                return self._mutate("gui.click_slot", view, **params)
+            except ProcedureStopped:
+                error = self.receipts[-1].get("failed", {}).get("error") or {}
+                if not (growing and again and current.get("ordinary") and str(error.get("msg")).startswith("stale_stack")
+                        and ((error.get("receipt") or {}).get("transactions") or {}).get("sent") == 0):
+                    raise
+                was, cursor, view = current.get("stack"), view.get("cursor"), self.observe()
+                now = next(s for s in view["slots"] if s["i"] == slot).get("stack")
+                if (view.get("cursor") != cursor or not was or not now
+                        or {**was, "count": 0} != {**now, "count": 0} or now["count"] <= was["count"]):
+                    raise
 
     def transfer(self, source, destinations, count, destination_policy="passive"):
         view = self.observe()
@@ -335,7 +349,7 @@ def _machine(session, inputs, wait_s):
                 except BridgeError: continue  # a running machine emptied the slot between the two looks; the next pass sees it
             if output[key]:
                 before = _held(session.observe(), stack)
-                session.click(s["i"], "quick_move")
+                session.click(s["i"], "quick_move", growing=True)
                 gained = _held(session.observe(), stack) - before
                 if gained <= 0:
                     raise ProcedureStopped("the output did not reach your inventory; inspect the GUI and available space", session.receipts)
@@ -522,7 +536,7 @@ def mb_craft(pattern: list[list[dict | None]] | None = None, times: int = 1, at:
     work, and come back with mb_craft(at=...) alone, which only collects. Fluids, steam, power and
     circuits are yours to arrange; for recipes made in the world rather than in a GUI (dropping
     items, multiblocks fed by hatches) compose the primitives and save your own tool.
-    It never retries; on a stop, read the receipts and observe. Opening a station is refused while the
+    It never retries what it sent; on a stop, read the receipts and observe. Opening a station is refused while the
     clock lists a threat (procedureReceipts name the mobs); despite_threat=True opens it anyway.
     """
     if pattern is not None and inputs is not None:
