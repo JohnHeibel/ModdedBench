@@ -413,6 +413,9 @@ class FinishTests(TaskTestCase):
         self.k.clock.update(paused=True, reason="requested_pause")
         st = tasks.finish(self.k, dict(out), None)  # a pause, but not a guard's
         self.assertEqual((st["ended"], st["interrupted"]["pausedBy"]), ("cancelled", "requested_pause"))
+        for hold in ("operator_hold", "backup_hold"):  # a hold is nobody's guard, the backup's no more than the operator's
+            self.k.clock.update(paused=True, reason=hold)
+            self.assertEqual(tasks.finish(self.k, dict(out), None)["ended"], "cancelled")
         self.k.clock.update(paused=True, reason="health_dropped")
         st = tasks.finish(self.k, dict(out), None)
         self.assertEqual((st["ended"], st["interrupted"]["pausedBy"]), ("guard", "health_dropped"))
@@ -462,7 +465,8 @@ class TaskKernelTests(TaskTestCase):
         self.assertRaises(scripts.ScriptInterrupted, traced)  # nothing more after the pause
 
     def test_a_requested_pause_is_waited_out_and_the_call_sent_again(self):
-        clock = iter([{"paused": True, "reason": "requested_pause"}, {"paused": True, "held": True, "reason": "x"}, {"paused": False}])
+        clock = iter([{"paused": True, "reason": "requested_pause"}, {"paused": True, "held": True, "reason": "x"},
+                      {"paused": True, "reason": "backup_hold"}, {"paused": False}])  # a hold's pause is waited out by its name too, whoever holds
         sent = []
 
         def replies(m, p):

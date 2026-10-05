@@ -13,7 +13,9 @@ pauses the world and refuses `time.resume` until the file is removed. The
 file's one word says whose hold it is (`operator`, `backup`, `compaction`);
 the status carries it as `heldBy`, and the refusal says what to expect of that
 holder (`PauseCoordinator.heldRefusal`), so an agent that meets the half-hourly
-backup reads that it is a backup and short.
+backup reads that it is a backup and short. The pause a hold makes is named
+for the holder too (`operator_hold`, `backup_hold`), and any reason ending in
+`_hold` is waited out by a running job and resumed only by the hold's release.
 A hold that interrupts a step gives the step its remaining ticks back on release.
 
 ## Contract

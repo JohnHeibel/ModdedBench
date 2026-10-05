@@ -30,11 +30,15 @@ public final class SimulationClock {
     public String reason() { return reason; }
     public boolean pauseOnDisconnect() { return pauseOnDisconnect; }
     public boolean actionFailed() { return actionFailed; }
-    /** Pauses a running job waits out: a request, the operator, a lost connection or a clock fault. Any other reason is a guard's. */
-    public static final java.util.Set<String> WAITED_OUT=java.util.Set.of("requested_pause","operator_hold","client_disconnected",
+    /** Pauses a running job waits out: a request, a hold, a lost connection or a clock fault. Any other reason is a guard's. */
+    private static final java.util.Set<String> WAITED_OUT=java.util.Set.of("requested_pause","client_disconnected",
         "client_unresponsive","agent_disconnected","paused_packet_overflow","clock_protocol_error","step");
+    public static boolean waitedOut(String reason) { return WAITED_OUT.contains(reason) || held(reason); }
+    /** A hold's pause is named for its holder (operator_hold, backup_hold), so a routine backup never reads as a person stepping in. */
+    public static String holdReason(String by) { return by+"_hold"; }
+    public static boolean held(String reason) { return reason.endsWith("_hold"); }
     public void pause(String why) {
-        if(paused && !WAITED_OUT.contains(reason)) return; // a guard's reason is what the model is told: nothing overwrites it until the resume
+        if(paused && !waitedOut(reason)) return; // a guard's reason is what the model is told: nothing overwrites it until the resume
         boolean newEvent = !paused || !reason.equals(why);
         transition(true); reason=why;
         if (newEvent) {
