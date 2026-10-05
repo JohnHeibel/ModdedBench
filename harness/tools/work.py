@@ -628,6 +628,8 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
         relative to origin (the drawing's). uses may be the whole call, with no cells.
     In each stage the plain cells go first, then its click cells (the job orders them: what a click
     lands on stands first, and a block that would hide another's click goes after it), then its uses.
+    A block placed by an item that is not a block (a door, a bed) is clicked in after its stage's
+    plain cells; draw every cell it fills with its id.
     A job takes at most 256 clicks, and the click cells of one stage lie near each other (a plan
     that asks otherwise is refused as clicks_too_spread). A click is made from a place to
     stand with the face in plain view and in reach, and with allow_break the job may take out up to
