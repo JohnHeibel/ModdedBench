@@ -37,9 +37,10 @@ TASKS = Path(os.environ.get("MB_TASKS_DIR") or Path(__file__).resolve().parents[
 RUNNER = Path(mbtool.__file__).resolve().parent / "task.py"
 ENDED = ("done", "failed", "cancelled", "crashed", "interrupted", "paused_by_script")
 FAILED = ("failed", "crashed", "interrupted")
-# Pauses a running job waits out (ClientClock.WAITED_OUT): a task waits them out too instead of ending. Any other reason is a guard's.
-WAITED_OUT = {"requested_pause", "operator_hold", "client_disconnected", "client_unresponsive", "agent_disconnected",
+# Pauses a running job waits out (SimulationClock.waitedOut): a task waits them out too instead of ending. Any other reason is a guard's.
+WAITED_OUT = {"requested_pause", "client_disconnected", "client_unresponsive", "agent_disconnected",
               "paused_packet_overflow", "clock_protocol_error", "step"}
+def waited_out(reason) -> bool: return reason in WAITED_OUT or str(reason).endswith("_hold")  # a hold's pause is named for its holder: operator_hold, backup_hold
 KEEP = 20  # status files kept; older delivered ones are removed
 _write = threading.Lock()
 
@@ -182,7 +183,7 @@ def start(code: str, args: dict | None, name: str | None, on_fail: str | None, m
     out, k = {}, kernel()
     clock = k.call("time.status", timeout=5).get("state") or {}
     if clock.get("paused"):
-        if not clock.get("held") and clock.get("reason") not in WAITED_OUT:  # a guard's stop the model may not have seen yet
+        if not clock.get("held") and not waited_out(clock.get("reason")):  # a guard's stop the model may not have seen yet
             raise BridgeError("time_paused", f"a guard stopped the world ({clock.get('reason')}; threats: {json.dumps(clock.get('threats') or [])}). "
                               "A background task does not lift a guard's stop: look, make safe, then start it", "mb_run")
         record = {}; k._resume_for(record); out["resumedWorld"] = record  # as resume=True does; an operator hold refuses it
@@ -394,7 +395,7 @@ class TaskKernel(Kernel):
         while True:
             clock = Kernel.call(self, "time.status", timeout=5).get("state") or {}
             if not clock.get("paused"): return True
-            if _halt or not clock.get("held") and clock.get("reason") not in WAITED_OUT: return False
+            if _halt or not clock.get("held") and not waited_out(clock.get("reason")): return False
             time.sleep(0.5)
 
     def _clock(self, method, timeout, params):
@@ -492,7 +493,7 @@ def finish(k, out: dict, why: str | None) -> dict:
         except Exception: clock = {}
         if clock.get("paused"):
             TASK["interrupted"]["pausedBy"] = clock["reason"]
-            if clock["reason"] not in WAITED_OUT: TASK["ended"] = "guard"
+            if not waited_out(clock["reason"]): TASK["ended"] = "guard"
     if TASK.get("guards"):
         try:
             now = (k.call("time.status", timeout=5).get("state") or {}).get("conditions") or {}

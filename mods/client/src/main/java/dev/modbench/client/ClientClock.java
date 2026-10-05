@@ -64,19 +64,18 @@ public final class ClientClock implements ClockHooks.Driver {
     public void expectThreat(int entityId) { if(supported) send(Json.object("type","expect_threat","entityId",entityId)); }
     /** A fight job started (ticks>0, its mobs within radius) or ended (0): see SimulationClock.fight. */
     public void fight(int ticks, double radius) { if(supported) send(Json.object("type","fight","ticks",ticks,"radius",radius)); }
-    private static final java.util.Set<String> WAITED_OUT=SimulationClock.WAITED_OUT;
     /**
      * Paused by anything that wants the model's attention: a guard, a failed action, or one of its own interrupt watches
      * (interrupt:NAME). Any reason not listed as waited out counts, so a new guard ends work without being added here.
      */
-    boolean guardPause() { return paused && !WAITED_OUT.contains(pauseReason()); }
+    boolean guardPause() { return paused && !SimulationClock.waitedOut(pauseReason()); }
     /** Paused where no tick will finish running work: by a guard, or at the end of a step. */
     boolean endsWork() { return !resuming && (guardPause() || paused && "step".equals(pauseReason())); }
     /** Paused for the purpose of refusing actions: false once an action has asked to resume. */
     boolean refusesActions() { return paused && !resuming; }
     /** Why a paused world refuses an action, with the pause's reason: a guard's pause is one to look at, not to resume through. */
     String refusal(String what) { return refusal(pauseReason(),what); }
-    static String refusal(String reason,String what) { return "time_paused: "+(WAITED_OUT.contains(reason)?"paused by "+reason+"; resume before "+what
+    static String refusal(String reason,String what) { return "time_paused: "+(SimulationClock.waitedOut(reason)?"paused by "+reason+"; resume before "+what
         :"world paused by a guard ("+reason+"): read mb_time status, decide, resume"); }
     /**
      * Admits an action that carries _resume while the world is paused: true (resume) or N (step N ticks). The same
