@@ -64,7 +64,7 @@ cancelled and a superseded search cannot install its result into a newer job.
 | Swimming | Verified still vanilla water only. Modded fluids are excluded regardless of temperature. Flowing-water targets fail path calculation. |
 | Mining a block with liquid directly above | Rejected by the inherited `MovementHelper` safety rule (seen with water-capped obsidian). |
 | Snow of three or more layers | Treated as not walkable, as upstream does. |
-| Ordinary `ItemDoor` placement | Unsupported by builder placement; place doors with `act.use_block`. |
+| Ordinary `ItemDoor` placement | A plan cell whose item is not a block item (a door, a bed) is made a click cell by `ConstructionPlan` and clicked in by `ClickRun`; the item is the one the game picks for the block when the cell names none. |
 | Silent (packet-only) look | Not migrated. Desktop notifications go to the log and chat. |
 | Explore | Frontier selection and cache persistence exercised on natural terrain; the round trip failed to a mob. No survival handling inside the process. |
 
