@@ -38,10 +38,19 @@ def mb_quest_search(query: str = "", offset: int = 0, limit: int = 20) -> Any:
 
 
 @tool(lane="read", coverage=["progression"])
-def mb_quest_lines(query: str = "", offset: int = 0, limit: int = 10) -> Any:
-    """Read quest lines in book order with per-player state totals. A result of one line (a query only it
-    matches, or limit=1 at its offset) also lists every quest's id, title and state."""
-    k = kernel(); found = k.call("quest.lines", query=query, offset=offset, limit=limit)
+def mb_quest_lines(query: str = "", offset: int = 0, limit: int = 10, locked: bool = False) -> Any:
+    """Read the quest lines that have a quest unlocked or completed, in book order with per-player state totals.
+    lockedLinesNotListed counts the lines left out because every quest in them is locked; locked=True lists those too.
+    A query finds lines by name, locked or not, paged by offset and limit. A result of one line also lists every
+    quest's id, title and state."""
+    k = kernel()
+    if query: found = k.call("quest.lines", query=query, offset=offset, limit=limit)
+    else:  # the whole book on one page: a first page of ten was all tier lines, and the second was never asked for
+        lines, at = [], 0
+        while at is not None:
+            page = k.call("quest.lines", query="", offset=at, limit=100); at = page.get("nextOffset"); lines += page["lines"]
+        found = {"lines": lines, "total": len(lines)}
+        if not locked: found["lines"] = [line for line in lines if line["quests"] > line["locked"]]; found["lockedLinesNotListed"] = len(lines) - len(found["lines"])
     if len(found["lines"]) != 1:  # the entries of ten lines are a hundred thousand characters
         for line in found["lines"]: line.pop("entries", None)
         return found
