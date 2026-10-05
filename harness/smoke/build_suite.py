@@ -22,6 +22,9 @@ a scenario that passed before and fails now is a regression.
                 beside them, so they go in first
   lining_pocket the same room with a chest in a corner: the chest and the cell over it stay out of the lining, and the corner
                 under the ceiling over that closed-in cell still goes in before the two cells that would shut it off
+  water         two cells of flowing water in a channel, walked to from six blocks off: both end as the block asked for
+  oven          a 3 x 3 x 3 box with one empty cell in its middle, started on the middle of its floor: all 26 cells in, the
+                player not shut inside
   terrain       a hall on natural ground, whatever stands there dug out: 11 x 11 and 5 high with a door, 320 cells
   hall          only when named (--only hall): run 2's hall, 25 x 25 and 7 high, 1728 cells, resumed until done
 
@@ -201,6 +204,34 @@ class Suite(bs.Shells):
 
     def lining_pocket(self): return self.lining(chest=(1, 0, 5))
 
+    def water(self):
+        origin = self.arena(); self.stacks((DIRT, 64))
+        # A channel one wide between two stone banks, a source at its east end: the cells west of it hold flowing water.
+        for x in range(5):
+            for z in (2, 4): self.set_block([x, 0, z], STONE)
+        for x, z in ((-1, 3), (5, 3)): self.set_block([x, 0, z], STONE)
+        self.set_block([4, 0, 3], "minecraft:water"); self.wait(60)
+        before = self.region((0, 0, 3), (3, 0, 3))
+        self.stand([origin[0] + 2.5, bs.FLOOR, origin[2] - 5.5])
+        cells = [{"pos": [x, 0, 3], "id": DIRT} for x in (1, 2)]
+        r = call(work.mb_build, cells=cells, origin=origin, timeout_ticks=2000)
+        wrong = self.wrong(origin, cells); flowing = sorted(c["meta"] for c in before.values() if "water" in c["id"])
+        return {"passed": r.get("state") == "succeeded" and not wrong and len(flowing) == 4 and min(flowing) > 0, "receipt": r,
+                "why": f"state={r.get('state')} stopped={r.get('stopped')} wrong={len(wrong)} waterMetaBefore={flowing} ticks={r.get('ticks')}"}
+
+    def oven(self):
+        """The coke oven of 2026-10-05: 3 x 3 x 3 with one empty cell in the middle, started on the middle of its floor."""
+        origin = self.arena()
+        for x in range(3):
+            for z in range(3): self.set_block([x, 0, z], DIRT)   # the floor is in: that run's builder stood on it for the rest
+        self.stand([origin[0] + 1.5, bs.FLOOR + 1, origin[2] + 1.5])
+        cells = [{"pos": [x, y, z], "id": DIRT} for y in range(3) for x in range(3) for z in range(3) if (x, y, z) != (1, 1, 1)]
+        r = call(work.mb_build, cells=cells, origin=origin, timeout_ticks=3000)
+        wrong = self.wrong(origin, cells); feet = [int(v // 1) for v in self.c.call("obs.player")["pos"]]
+        inside = feet == self.at(origin, [1, 1, 1])
+        return {"passed": r.get("state") == "succeeded" and not wrong and not inside, "receipt": r,
+                "why": f"state={r.get('state')} stopped={(r.get('stopped') or {}).get('reason')} wrong={len(wrong)} endedInside={inside} ticks={r.get('ticks')}"}
+
     def terrain(self): return self.hall(SMALL, "terrainRuns", 80)
 
     def hall(self, size=HALL, counter="hallRuns", south=0):
@@ -236,7 +267,7 @@ class Suite(bs.Shells):
 
     def run(self):
         all_ = {**{n: (lambda n=n: self.shell_case(n)) for n in bs.CASES},
-                **{n: getattr(self, n) for n in ("staged", "unfinishable", "missing", "occupied", "timeout", "any_meta", "clear", "hidden", "buried", "lining", "lining_pocket", "terrain", "hall")}}
+                **{n: getattr(self, n) for n in ("staged", "unfinishable", "missing", "occupied", "timeout", "any_meta", "clear", "hidden", "buried", "lining", "lining_pocket", "water", "oven", "terrain", "hall")}}
         names = [n for n in (self.args.only or [n for n in all_ if n != "hall"]) if n not in (self.args.skip or [])]
         try: past = json.loads(OUT.read_text())
         except (OSError, ValueError): past = {}
