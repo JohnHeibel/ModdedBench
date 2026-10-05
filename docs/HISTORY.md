@@ -8,6 +8,9 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-05** A recipe summary gives its inputs as `pattern`, rows of cells in the recipe's own layout: the shape
+  `mb_craft` takes. The summary had listed them flat, so 67 of 74 full-detail calls in a 4 h run were made to learn
+  a crafting grid's shape.
 - **2026-10-05** A step never cuts a click, a selection or a held input short: the world steps on until the action
   answers. In a 4 h run all 13 clicks sent with `resume=1` were reported cancelled although they had landed. The
   suggested guard set no longer names an air threshold: it stopped dives the walker had planned breath for.

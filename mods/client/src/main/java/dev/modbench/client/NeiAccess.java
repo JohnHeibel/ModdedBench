@@ -299,7 +299,9 @@ final class NeiAccess {
         JsonObject source=value.getAsJsonObject();JsonArray examples=new JsonArray();
         JsonArray alternatives=source.getAsJsonArray("alternatives");
         for(int i=0;i<Math.min(2,alternatives.size());i++) examples.add(compactStack(alternatives.get(i)));
-        return Json.object("alternativeCount",source.get("alternativeCount"),"exampleOffset",source.get("alternativesOffset"),"examples",examples);
+        JsonObject out=Json.object("alternativeCount",source.get("alternativeCount"),"exampleOffset",source.get("alternativesOffset"),"examples",examples);
+        for(String key:List.of("x","y")) if(source.has(key)) out.add(key,source.get(key)); // the slot's place in the recipe's own layout: the shape of a shaped recipe
+        return out;
     }
     private void compactPositions(JsonObject object,String key) {
         JsonArray values=new JsonArray();for(JsonElement position:object.getAsJsonArray(key)) values.add(compactPosition(position));object.add(key,values);
