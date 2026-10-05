@@ -91,6 +91,7 @@ def mb_quest_detect(quest_id: str, task_ids: list[int] | None = None, wait_s: fl
     it; false is not a failure while time is paused, the server has not answered yet.
     A quest that is already complete is returned without sending an empty detect
     request. A quest that stays incomplete is missing something: read its tasks' config.
+    linesOpened, when present, names quest lines that had every quest locked and now have quests open, with how many.
     """
     k = kernel()
     state = k.call("quest.observe", questId=quest_id)
@@ -102,6 +103,7 @@ def mb_quest_detect(quest_id: str, task_ids: list[int] | None = None, wait_s: fl
     task_ids = task_ids or [task["id"] for task in state.get("tasks") or []]
     if not task_ids:
         return {"receipt": {"accepted": False, "reason": "no_tasks"}, "complete": False}
+    _opened(k, first=True)
     receipt = k.call("quest.detect", questId=quest_id, taskIds=task_ids)
     deadline, state, clamped = time.monotonic() + max(0.0, min(wait_s, 60.0)), None, _clamped(wait_s)
     while wait_s > 0:
@@ -110,7 +112,7 @@ def mb_quest_detect(quest_id: str, task_ids: list[int] | None = None, wait_s: fl
         time.sleep(0.5)
     if state is None: return receipt
     tasks = [{k: t.get(k) for k in ("id", "name", "complete")} for t in state.get("tasks") or []]
-    return {"receipt": receipt, "complete": bool(state.get("complete")), "canClaim": state.get("canClaim"), "tasks": tasks, **clamped}
+    return {"receipt": receipt, "complete": bool(state.get("complete")), "canClaim": state.get("canClaim"), "tasks": tasks, **(_opened(k) if state.get("complete") else {}), **clamped}
 
 
 @tool(rung=1, coverage=["progression"])
@@ -137,8 +139,9 @@ def mb_quest_claim(quest_id: str, reward_ids: list[int] | None = None,
     has not answered yet (always the case while time is paused). Observe again later;
     never blindly retry a claim. received lists what your inventory gained and lost
     across the claim, by name: that is the rewards arriving, no separate check needed.
+    linesOpened, when present, names quest lines that had every quest locked and now have quests open, with how many.
     """
-    k = kernel(); before = _held(k)
+    k = kernel(); before = _held(k); _opened(k, first=True)
     rewards = [reward["id"] for reward in k.call("quest.observe", questId=quest_id).get("rewards") or []]  # the bridge has them named; the game takes the quest
     receipt = k.call("quest.claim", questId=quest_id, rewardIds=rewards, choices=choices or {})
     deadline, state, clamped = time.monotonic() + max(0.0, min(wait_s, 60.0)), None, _clamped(wait_s)
@@ -152,12 +155,28 @@ def mb_quest_claim(quest_id: str, reward_ids: list[int] | None = None,
         if received: break
         time.sleep(0.5)
     if state is None: return {**receipt, "received": received} if isinstance(receipt, dict) else receipt
-    return {"receipt": receipt, "claimed": _claimed(state), "received": received, "quest": state, **clamped}
+    return {"receipt": receipt, "claimed": _claimed(state), "received": received, **(_opened(k) if _claimed(state) else {}), "quest": state, **clamped}
 
 
 def _clamped(wait_s: float) -> dict:
     """The quest watches wait at most 60 s: a longer ask is said back, not silently shortened."""
     return {"clamped": {"wait_s": {"asked": wait_s, "used": 60.0}}} if wait_s > 60 else {}
+
+
+def _opened(k, first: bool = False) -> dict:
+    """{"linesOpened": [{name, open}]} for the quest lines with a quest unlocked or completed now and none at the last look; {} when
+    there is none. The last look is the game's own totals as this process last read them here (first=True reads them only if it has
+    not yet), not the totals before this one call: a quest may have unlocked earlier, when a detect or the game itself completed the one before it."""
+    if first and "quest_open_lines" in state: return {}
+    try:
+        now, at = {}, 0
+        while at is not None:
+            page = k.call("quest.lines", query="", offset=at, limit=100); at = page.get("nextOffset")
+            now.update((line["id"], {"name": line["name"], "open": line["quests"] - line["locked"]}) for line in page["lines"] if line["quests"] > line["locked"])
+    except Exception: return {}
+    was = state.get("quest_open_lines"); state["quest_open_lines"] = set(now)
+    new = [] if was is None else [line for id, line in now.items() if id not in was]
+    return {"linesOpened": new} if new else {}
 
 
 def _held(k) -> dict:
