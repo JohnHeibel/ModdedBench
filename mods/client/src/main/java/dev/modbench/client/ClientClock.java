@@ -125,11 +125,12 @@ public final class ClientClock implements ClockHooks.Driver {
      */
     boolean extendStep() {
         String next=stepEnd(paused && !resuming && "step".equals(pauseReason()),"paused".equals(Json.string(state,"mode","")),
-            !extendRefused && supported && agent!=null && agent.connected);
+            !extendRefused && supported && agent!=null && agent.connected && armed!=null && !dropped(armed));
         if(next.equals("extend")) {
-            resuming=true;creditTick=false;creditRan=0;resumeTicks=1;extended++;
-            if(armed!=null && armed.resumed!=null && !armed.isDone()) armed.resumed.addProperty("extendedTicks",extended); // the step ran longer than asked, and says so
-            sendResume();
+            // The tick runs here first and the server's follows it, as for the action's own first tick: a one-tick step
+            // asked of the server alone is over before this client has run any of it.
+            resuming=creditTick=true;resumeSent=false;creditRan=0;resumeTicks=1;extended++;
+            if(armed.resumed!=null && !armed.isDone()) armed.resumed.addProperty("extendedTicks",extended); // the step ran longer than asked, and says so
         }
         return !next.equals("cancel");
     }
