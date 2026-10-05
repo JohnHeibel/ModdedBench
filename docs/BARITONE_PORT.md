@@ -64,7 +64,7 @@ cancelled and a superseded search cannot install its result into a newer job.
 | Swimming | Verified still vanilla water only. Modded fluids are excluded regardless of temperature. Flowing-water targets fail path calculation. |
 | Mining a block with liquid directly above | Rejected by the inherited `MovementHelper` safety rule (seen with water-capped obsidian). |
 | Snow of three or more layers | Treated as not walkable, as upstream does. |
-| Ordinary `ItemDoor` placement | Unsupported by builder placement; place doors with `act.use_block`. |
+| Ordinary `ItemDoor` placement | A plan cell whose item is not a block item (a door, a bed) is made a click cell by `ConstructionPlan` and clicked in by `ClickRun`; the item is the one the game picks for the block when the cell names none. |
 | Silent (packet-only) look | Not migrated. Desktop notifications go to the log and chat. |
 | Explore | Frontier selection and cache persistence exercised on natural terrain; the round trip failed to a mob. No survival handling inside the process. |
 
@@ -147,7 +147,18 @@ and within a job it only moves forward (a cell of an earlier step that breaks
 stays shown and is repaired). Cells that must be empty have no step, and
 removal is not delayed: the walk may still dig a wrong block out of a later
 cell, but the builder replaces it only in its step. Upstream's own layering
-(`buildInLayers` and its companions) is held off for the job. Preview lists
+(`buildInLayers` and its companions) is held off for the job. Within a step,
+a cell whose filling would close the player's last walk out of the plan's box
+(`BuildSteps.shuts`: level, down, or up one with headroom, through cells the
+game gives no collision box) is kept out of the pass while anything else is
+left to fill, so the builder leaves before it closes a box around itself;
+when such cells are all that is left in the step they go in: from inside when
+the finished plan leaves a body room there (`BuildSteps.room`: a hut), and
+otherwise (an oven, whose top goes where the builder stands) only after the
+player has walked out of the plan's box, from a standing spot that the cell
+does not shut (`BuildSteps.shut`). Half a stall ends the wait of the others.
+Upstream `assemble` is edited in one place: a cell of flowing liquid whose
+block is carried gets a goal as a source does. Preview lists
 `steps` as `{stage, y, cells}`.
 
 Stops. A job that does not succeed ends with `stopped {reason, pos, step}`:

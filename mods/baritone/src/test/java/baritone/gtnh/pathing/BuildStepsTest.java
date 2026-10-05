@@ -232,4 +232,55 @@ public class BuildStepsTest {
         assertTrue(air.contains(at(3,66,3)));assertFalse(air.contains(at(1,66,5)));
         assertTrue(BuildSteps.held(top,top,air::contains).first().contains(at(1,67,5)));
     }
+    /** The 3x3x3 oven on a floor at y63: solid cells are the floor below y64 and whatever of the oven is in `built`. */
+    private static Set<BlockPos> oven(){
+        Set<BlockPos> cells=new HashSet<>();
+        for(int x=0;x<3;x++)for(int z=0;z<3;z++)for(int y=64;y<=66;y++)if(x!=1||y!=65||z!=1)cells.add(at(x,y,z));
+        return cells;
+    }
+    private static Set<BlockPos> shuts(Set<BlockPos> plan,Set<BlockPos> built,BlockPos feet){
+        Set<BlockPos> fill=new HashSet<>(plan);fill.removeAll(built);
+        return BuildSteps.shuts(fill,feet,p->p.getY()>=64&&!built.contains(p),new int[]{-1,63,-1},new int[]{3,67,3});
+    }
+    @Test public void theBlockThatClosesThePlayersLastWayOutWaits(){
+        Set<BlockPos> plan=oven(),built=new HashSet<>();
+        for(BlockPos p:plan)if(p.getY()<66)built.add(p);
+        BlockPos inside=at(1,65,1);
+        // Floor and ring are in, the player stands in the middle: over the ring there are four ways out, so no top cell shuts it in.
+        assertEquals(Set.of(),shuts(plan,built,inside));
+        built.addAll(Set.of(at(0,66,0),at(2,66,0),at(0,66,2),at(2,66,2),at(1,66,0),at(2,66,1),at(1,66,2)));
+        // Three of the four are in: the fourth is the last way out. The cell over its own head is not one: it is work for outside.
+        assertEquals(Set.of(at(0,66,1)),shuts(plan,built,inside));
+        // From on top of the ring in that gap nothing shuts it in, and outside the box nothing is asked.
+        assertEquals(Set.of(),shuts(plan,built,at(0,66,1)));
+        assertEquals(Set.of(),shuts(plan,built,at(-2,64,1)));
+        // Shut in already: there is nothing left to keep open.
+        built.add(at(0,66,1));
+        assertEquals(Set.of(),shuts(plan,built,inside));
+    }
+    @Test public void anOvenLeavesItsBuilderNoRoomInsideAndAHutDoes(){
+        int[] lo={-1,63,-1},hi={3,67,3};
+        // The oven under a ceiling, floor and ring in but for one ring cell: shut in, the player stands where its top goes.
+        Set<BlockPos> plan=oven(),built=new HashSet<>();
+        for(BlockPos p:plan)if(p.getY()<66&&!p.equals(at(0,65,1)))built.add(p);
+        java.util.function.Predicate<BlockPos> open=p->p.getY()>=64&&p.getY()<67&&!built.contains(p);
+        assertEquals(Set.of(at(0,65,1)),BuildSteps.shuts(Set.of(at(0,65,1)),at(1,65,1),open,lo,hi));
+        assertFalse(BuildSteps.room(at(0,65,1),at(1,65,1),open,plan::contains,lo,hi));
+        // That cell is filled from a spot it does not shut: beside the oven, not the middle of it.
+        assertTrue(BuildSteps.shut(at(0,65,1),at(1,65,1),open,lo,hi));
+        assertFalse(BuildSteps.shut(at(0,65,1),at(-1,64,1),open,lo,hi));
+        // The same walls with nothing planned over the middle: a hut, and its builder may stay.
+        Set<BlockPos> hut=new HashSet<>(plan);hut.remove(at(1,66,1));
+        assertTrue(BuildSteps.room(at(0,65,1),at(1,65,1),open,hut::contains,lo,hi));
+    }
+    @Test public void aWallOneHighShutsNobodyInAndAHeadroomCellCanBeTheLastWayOut(){
+        // A ring one high round the player: it steps over, whichever cell is last.
+        Set<BlockPos> ring=new HashSet<>();
+        for(int x=0;x<3;x++)for(int z=0;z<3;z++)if(x!=1||z!=1)ring.add(at(x,64,z));
+        Set<BlockPos> built=new HashSet<>(ring);built.remove(at(0,64,1));
+        assertEquals(Set.of(),shuts(ring,built,at(1,64,1)));
+        // The ring whole, and one cell two over the player's feet: the step up onto the ring needs that cell empty.
+        Set<BlockPos> plan=new HashSet<>(ring);plan.add(at(1,66,1));
+        assertEquals(Set.of(at(1,66,1)),shuts(plan,ring,at(1,64,1)));
+    }
 }

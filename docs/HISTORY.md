@@ -8,6 +8,14 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-05** `mb_build` places doors: a cell whose block is placed by an item that is no block item is clicked
+  in like a click cell, after the plain cells of its stage, and what the plan replaces in such cells is out before the
+  first click; the item is asked of the game when the cell names none. Before, such a cell was refused without `item`
+  and stalled with it (the source builder only knows block items).
+- **2026-10-05** The builder no longer shuts itself in: the block that would close its last walk out waits while
+  other cells are left (a 3x3x3 oven had stopped `no_route` at 24 of 30, the builder inside it under its own last
+  cell). When it is the last of its step and the finished plan leaves no room inside, the builder walks out
+  and places it from outside. An `occupied` stop says what is in the cell (`present`). A plan cell of flowing liquid is walked to like any other; such a job had paused at once as `stalled`.
 - **2026-10-05** A recipe summary gives its inputs as `pattern`, rows of cells in the recipe's own layout: the shape
   `mb_craft` takes. The summary had listed them flat, so 67 of 74 full-detail calls in a 4 h run were made to learn
   a crafting grid's shape.
