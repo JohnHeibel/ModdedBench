@@ -118,7 +118,7 @@ the two sides are not atomic with each other.
 with `@tool(rung, coverage, name, effect, lane)`, and on each tool call
 re-imports the whole directory if any file changed. Import failures and tool
 name conflicts leave the previous registrations untouched. Live state that
-must outlive a reload (the kernel, the interrupt supervisor, note stores,
+must outlive a reload (the kernel, the interrupt supervisor, the note header cache,
 container sessions, the note-surfacing cache) lives in `mbtool.state`.
 
 `kernel.py` is the transport: one websocket, concurrent requests, bounded
@@ -157,14 +157,21 @@ reply cannot act. The refusal names each latched event's reason and prompt.
 ### World notes
 
 Notes are model-authored records attached to blocks, entities (server UUID),
-locations or regions, stored in SQLite under `.state/notes` per world, with
-revision-guarded writes and operation ids. They are surfaced as a side effect:
+locations, regions, item types or topics. Each is a plain file, `<id>.md`, in
+`.state/notes/<world id>/`: a few header lines (title, tags, status, created,
+one `anchor:` line of JSON per thing it is about), a blank line, the text;
+`<id>.json` beside it holds its data (a build drawing). The model reads,
+searches and edits the files with its shell. The harness reads only the
+headers, to answer where notes are, and writes only to create a note, add a
+dated entry, journal a work outcome or keep the goal stack; those writes take
+a per-world lock and commit the folder to git when git is there, which is the
+history. Notes are surfaced as a side effect:
 tools that arrive somewhere, observe a block or entity, enter a noted region,
 or start a session attach up to five relevant notes under a `notes` key, with
 a per-session cache so the same note is not repeated while nothing changed.
 A few automatic notes are written for important outcomes (a build completing,
-a job failing at a location), tagged `auto`; a search returns them only when asked. Search is plain text,
-newest-changed first, a capped page at a time; nothing is ranked.
+a job failing at a location) into the `auto/` subfolder, out of the way of a search of the model's own.
+A world whose notes were a SQLite database is exported to files the first time it is looked at; the database stays.
 
 ## Provenance
 

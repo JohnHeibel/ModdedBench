@@ -248,7 +248,7 @@ Key facts about the runtime:
   "keep 2 stacks of these in the workshop chest") surfaces whenever that item
   appears in your inventory, an item lookup or a recipe; a **topic**
   (`{kind:topic,topic:"machine:boiler"}`, `"mod:thaumcraft"`, `"quest:<title>"`,
-  `"lesson:..."`) is found by `mb_notes` search with `subject`. Your context is
+  `"lesson:..."`) is found by `mb_notes` find with `subject`. Your context is
   short and this run is long: **notes are your real memory.** Write down what
   future-you will need: what the base makes by itself and where (as a note on
   the item it makes: "charcoal: made by the line at the east wall, output chest
@@ -930,8 +930,7 @@ yours; nothing here is advice about what to build):
    the exact layers of the spot you like.
 2. Claim it before building on it. The whole site first: a region note per
    district that says what it is for. Then the piece you are about to build:
-   `mb_notes` capture on the region, then
-   `mb_note_write` with a title that says what it is for and why there,
+   `mb_note_new` anchored to the region, with a title that says what it is for and why there,
    `text` with what should be able to grow into it later, and `data.drawing`:
    the layers you intend, edited from the view you just took.
 3. Look again. The unbuilt part now shows as `+`; if it does not fit what is
@@ -940,7 +939,7 @@ yours; nothing here is advice about what to build):
 4. Build from it: `mb_build(drawing=...)`, with `click` on what faces or
    connects and `uses` for clicks on blocks that already stand. Then look and
    compare.
-5. When the plan changes, rewrite the note (a new revision keeps the old one).
+5. When the plan changes, rewrite the note.
    A note that no longer matches the ground is worse than none.
 
 **You are working for the future, and most of it happens here.** Of all the
@@ -1153,7 +1152,7 @@ shipped: once you start editing tools, `mb_tools_status` (what is loaded) and
 | Wait for something | `mb_interrupt` (add a watch with a deadline) | `mb_wait`; `mb_interrupt_events` to replay what you missed |
 | Deal with a hostile mob | the clock's `threats`, `mb_obs` entities | `mb_fight` (one named mob, `hold=True` at a chokepoint, `swarm=True` for many small ones); `mb_process` goal `run_away` to leave |
 | Stop something now | `mb_stop`, `mb_build_pause`, `mb_task(cancel=True)` for a background task | `mb_time` pause when you need to think |
-| Remember something | `mb_note_write` (after `mb_notes` capture) | `mb_goal` for where you are; `mb_memory` for waypoints, routes, protected regions |
+| Remember something | `mb_note_new`; from then on the note is a file you edit | `mb_goal` for where you are; `mb_memory` for waypoints, routes, protected regions |
 | Learn how the pack works | `mb_wiki_search` | `mb_wiki_read`, then a topic note |
 | Do something no tool does | `mb_methods`, `mb_call` | write the tool (section 3) |
 
@@ -1184,7 +1183,7 @@ and list what is loaded, with load errors.
 | Tool | What it does |
 | --- | --- |
 | `mb_methods` | List the bridge's raw methods with one line each, or with name the matching ones whole; also caches their effects for lane routing of mb_call |
-| `mb_status` | Bridge status, the clock (paused, why, a hold and whose), your goal stack (mb_goal) with its stall signal, world notes near you, how long the run has been going, and you… |
+| `mb_status` | Bridge status, the clock (paused, why, a hold and whose), your goal stack (mb_goal) with its stall signal, the folder of your world notes (notesFolder) and the notes nea… |
 | `mb_cost` | What your own tool calls cost over the last `hours`: calls, failures and minutes per tool, and the time between calls |
 | `mb_call` | Call any advertised bridge method with JSON parameters |
 | `mb_obs` | Call an obs.* capability by short or full method name |
@@ -1217,13 +1216,13 @@ and list what is loaded, with load errors.
 | `mb_hold` | Select an item or an observed empty hand in ONE call, swapping inventory slots when necessary |
 | `mb_craft` | Make something in ONE call, at any station with a GUI: it opens the station, moves the items, takes the result and closes |
 
-**`harness/tools/notes.py`**: Durable world notes (SQLite, one file per server world) and their surfacing as a side effect of play.
+**`harness/tools/notes.py`**: Durable world notes (plain files, one folder per server world) and their surfacing as a side effect of play.
 
 | Tool | What it does |
 | --- | --- |
-| `mb_notes` | Durable world notes: context, status, capture, search, get, history, resolve |
-| `mb_note_write` | Create/update a durable note with history and a retry-safe receipt |
-| `mb_note_append` | Add a dated entry to the end of an existing note without reading or resending its text |
+| `mb_notes` | World notes are files, one <id>.md each, in the folder mb_status names (notesFolder): read, search and edit them with your shell |
+| `mb_note_new` | Create a note: writes <id>.md with its header and text, and returns the file |
+| `mb_note_append` | Add a dated entry to the end of a note: a new last line, "[2026-10-04T12:00] " (now, UTC) and then your text |
 | `mb_goal` | Read or update your goal stack: chapter > current quest > working sub-goal |
 
 **`harness/tools/plan.py`**: The drawing: one format to look at a place, to plan in it and to build from.

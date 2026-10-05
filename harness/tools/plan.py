@@ -66,9 +66,9 @@ def _stages(stages: Any, legend: dict) -> dict:
 
 def labels_at(k, lo: list[int], hi: list[int]) -> list[dict]:
     """Your own region notes that overlap a box: what a receipt echoes back."""
-    try: found = notes.read_notes(k, "search", {"region": {"min": lo, "max": hi}, "kind": "region", "limit": 8})["notes"]
+    try: found = notes.lookup(k, region={"min": lo, "max": hi}, kind="region")[:8]
     except Exception: return []
-    return [{"id": n["id"], "title": n["title"]} for n in found if "auto" not in n.get("tags", [])]
+    return [{"id": n["id"], "title": n["title"]} for n in found]
 
 
 @tool(lane="read", coverage=["building", "memory"])
@@ -92,9 +92,8 @@ def mb_view(bounds: dict | None = None, radius: int = 10, below: int = 2, above:
     look_down=True draws one layer instead: the highest block of each column in the box, as on
     a map, for surveying ground rather than rooms; its default box reaches 24 below and 24 above.
     The result is a drawing: edit its layers and hand it to mb_build(drawing=...) or
-    mb_build_preview (they build by id and meta; name and tile are for you), or keep it as a plan by writing it to a region note's data.drawing
-    (mb_note_write); the view then shows the unbuilt part of that plan as '+'.
-    A note's data holds 16 KB: a large plan is several region notes, one per part.
+    mb_build_preview (they build by id and meta; name and tile are for you), or keep it as a plan by writing it to a region note's data as {"drawing": ...}
+    (mb_note_new, or the note's <id>.json); the view then shows the unbuilt part of that plan as '+'.
     """
     k = kernel(); me = [int(v // 1) for v in k.call("obs.player")["pos"]]
     if bounds is None:
@@ -136,14 +135,15 @@ def mb_view(bounds: dict | None = None, radius: int = 10, below: int = 2, above:
         except Exception: continue
         name = (seen.get("pickedItem") or {}).get("name") or seen.get("name")
         if name: things.append({"what": "block", "name": name, "pos": world, "char": char[block], **({"tile": True} if seen.get("tileEntity") or seen.get("tile") else {})})
-    try: recorded = notes.read_notes(k, "search", {"region": {"min": lo, "max": hi}, "limit": 40, "detail": "full"})["notes"]
+    try: recorded = notes.lookup(k, region={"min": lo, "max": hi})[:40]
     except Exception as error: recorded = []; things.append({"what": "notes unavailable", "why": str(error)[:120]})
     for note in recorded:
-        a = next((a for a in note["attachments"] if a["kind"] in ("region", "block", "location")), None)
+        a = next((a for a in note["anchors"] if a["kind"] in ("region", "block", "location")), None)
         if a is None: continue
         entry = {"what": a["kind"] + " note", "id": note["id"], "title": note["title"], **({"tags": note["tags"]} if note.get("tags") else {}),
                  **({"box": {"min": a["min"], "max": a["max"]}} if a["kind"] == "region" else {"pos": a.get("pos")})}
-        plan = (note.get("data") or {}).get("drawing") if isinstance(note.get("data"), dict) else None
+        try: plan = notes.data(note).get("drawing")
+        except ValueError as error: plan = None; entry["plan"] = {"unreadable": str(error)[:200]}
         if plan and not look_down:
             unbuilt = 0
             for c in from_drawing(plan)[0]:

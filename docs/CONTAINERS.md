@@ -191,8 +191,8 @@ copies of these files, but not the mounted brief.
 `harness/launcher/backup.py` is for the operator only. Each snapshot holds the
 world (the hold file, as `backup`: no ticks, so nothing is being saved), streams the
 server's data folder without the pack's own files to
-`.runtime/snapshots/<time>/world.tar.gz`, copies the agent's notes databases
-through SQLite's backup API to `notes.tar.gz` beside it so the two always
+`.runtime/snapshots/<time>/world.tar.gz`, archives the agent's notes folder
+(the note files and their git history) to `notes.tar.gz` beside it so the two always
 match, and releases the hold unless one was already in force. The world on
 disk is the last autosave, at most 45 seconds of game time old. With the world
 running again it saves what else exists only in the agent's volume:

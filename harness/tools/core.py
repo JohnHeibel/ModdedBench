@@ -74,7 +74,7 @@ def mb_methods(name: str = "") -> Any:
 
 @tool(lane="read", coverage=["meta"])
 def mb_status() -> Any:
-    """Bridge status, the clock (paused, why, a hold and whose), your goal stack (mb_goal) with its stall signal, world notes near you, how long the run has been going, and your last two hours' cost (mb_cost).
+    """Bridge status, the clock (paused, why, a hold and whose), your goal stack (mb_goal) with its stall signal, the folder of your world notes (notesFolder) and the notes near you, how long the run has been going, and your last two hours' cost (mb_cost).
 
     Call it at the start of every session and after every compaction: it is the heartbeat.
     Also, when there are any: body (your running background task), finished (tasks whose result
@@ -89,6 +89,7 @@ def mb_status() -> Any:
         clock = k.call("time.status", timeout=5).get("state", {})
         out["clock"] = {key: clock.get(key) for key in ("mode", "paused", "reason", "held", "heldBy", "simulationTicks", "threats") if key in clock}
         out["goal"] = notes.goal(k)
+        out.update(notes.where(k))
         free = k.call("obs.inventory", detail="counts", timeout=5).get("emptySlots")
         out["inventory"] = f"{free} of 36 slots free" + ("" if free is None or free > 6 else ": store or discard (mb_move_items) before you gather, craft in bulk or claim rewards")
     except Exception as e:  # not in a world yet, or the clock is unreachable: status must still answer
@@ -113,7 +114,7 @@ def mb_status() -> Any:
 def mb_cost(hours: float = 2.0, top: int = 15) -> Any:
     """What your own tool calls cost over the last `hours`: calls, failures and minutes per tool, and the time between calls.
 
-    Dispatchers are split by method (mb_notes(get)); time between calls is your thinking and compaction. The
+    Dispatchers are split by method (mb_notes(find)); time between calls is your thinking and compaction. The
     busiest tools come first. A tool you call over and over is work you are doing by hand; see section 4 of
     your brief on costs that never fail. resultChars is the text your results put into your context, and
     topChars the tools that put most of it there, each with its largest single result. With background tasks in the window: bodyBusyShare (of the window,
