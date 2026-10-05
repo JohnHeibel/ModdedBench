@@ -8,6 +8,10 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-05** Four defaults that filled the context: `mb_quest_lines` lists lines and gives entries for one,
+  a settings set answers with what it named, `nav.status` sends the movement trace only when asked, and `mb_wait`
+  goes on from its last cursor. In a 4 h run they were 1.0M of 5.5M result characters. The call log records each
+  result's size and `mb_cost` shows the heaviest tools.
 - **2026-10-05** A hold names its holder to the agent: `heldBy` in the clock status, and a refused resume says a
   backup is routine and short. In a 4 h run three calls met the half-hourly backup and read "the operator is holding".
 - **2026-10-05** Drawings accept `clear: true` legend entries, including entries without a block id, so a saved
