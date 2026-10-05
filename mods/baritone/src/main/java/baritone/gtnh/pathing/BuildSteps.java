@@ -130,13 +130,29 @@ public final class BuildSteps {
      */
     public static Set<BlockPos> shuts(Set<BlockPos> fill,BlockPos feet,Predicate<BlockPos> open,int[] lo,int[] hi) {
         Set<BlockPos> needs=new HashSet<>();
-        if(fill.isEmpty()||!walksOut(feet,open,lo,hi,needs))return Set.of();
+        if(fill.isEmpty()||!walksOut(feet,open,lo,hi,needs,null))return Set.of();
         Set<BlockPos> shuts=new HashSet<>();
-        for(BlockPos c:needs)if(fill.contains(c)&&!c.equals(feet)&&!c.equals(beside(feet,SIDES[2]))&&!walksOut(feet,p->!p.equals(c)&&open.test(p),lo,hi,null))shuts.add(c);
+        for(BlockPos c:needs)if(fill.contains(c)&&!c.equals(feet)&&!c.equals(beside(feet,SIDES[2]))&&!walksOut(feet,p->!p.equals(c)&&open.test(p),lo,hi,null,null))shuts.add(c);
         return shuts;
     }
-    /** Whether a walk from `feet` leaves the box; needs (when given) receives the cells that walk passes its body through. */
-    private static boolean walksOut(BlockPos feet,Predicate<BlockPos> open,int[] lo,int[] hi,Set<BlockPos> needs) {
+    /**
+     * Whether the finished plan leaves a body room where filling `cell` shuts the player in: a place to stand there with
+     * neither of its two cells `planned` to be filled. Without one the player cannot be inside when the plan is done.
+     */
+    public static boolean room(BlockPos cell,BlockPos feet,Predicate<BlockPos> open,Predicate<BlockPos> planned,int[] lo,int[] hi) {
+        Set<BlockPos> stood=new HashSet<>();
+        walksOut(feet,p->!p.equals(cell)&&open.test(p),lo,hi,null,stood);
+        return stood.stream().anyMatch(p->!planned.test(p)&&!planned.test(beside(p,SIDES[2])));
+    }
+    /** Whether a body at `feet` is shut in once `cell` is filled: no walk from there leaves the box (or it does not fit there). */
+    public static boolean shut(BlockPos cell,BlockPos feet,Predicate<BlockPos> open,int[] lo,int[] hi) {
+        return !walksOut(feet,p->!p.equals(cell)&&open.test(p),lo,hi,null,null);
+    }
+    /**
+     * Whether a walk from `feet` leaves the box; needs (when given) receives the cells that walk passes its body through,
+     * stood (when given) every place the walk can stand.
+     */
+    private static boolean walksOut(BlockPos feet,Predicate<BlockPos> open,int[] lo,int[] hi,Set<BlockPos> needs,Set<BlockPos> stood) {
         Map<BlockPos,BlockPos> from=new HashMap<>();ArrayDeque<BlockPos> queue=new ArrayDeque<>();
         Predicate<BlockPos> fits=p->open.test(p)&&open.test(beside(p,SIDES[2]));
         if(!fits.test(feet))return false;
@@ -154,6 +170,7 @@ public final class BuildSteps {
             }
             BlockPos below=beside(p,SIDES[3]);
             if(open.test(below)){if(from.putIfAbsent(below,p)==null)queue.add(below);continue;}   // nothing under it: it falls
+            if(stood!=null)stood.add(p);
             for(int[] side:SIDES)if(side[1]==0){
                 BlockPos n=beside(p,side),up=beside(n,SIDES[2]);
                 BlockPos to=fits.test(n)?n:!open.test(n)&&fits.test(up)&&open.test(new BlockPos(p.getX(),p.getY()+2,p.getZ()))?up:null;

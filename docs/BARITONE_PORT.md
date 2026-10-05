@@ -152,7 +152,11 @@ a cell whose filling would close the player's last walk out of the plan's box
 (`BuildSteps.shuts`: level, down, or up one with headroom, through cells the
 game gives no collision box) is kept out of the pass while anything else is
 left to fill, so the builder leaves before it closes a box around itself;
-when such cells are all that is left, or after half a stall, they go in.
+when such cells are all that is left in the step they go in: from inside when
+the finished plan leaves a body room there (`BuildSteps.room`: a hut), and
+otherwise (an oven, whose top goes where the builder stands) only after the
+player has walked out of the plan's box, from a standing spot that the cell
+does not shut (`BuildSteps.shut`). Half a stall ends the wait of the others.
 Upstream `assemble` is edited in one place: a cell of flowing liquid whose
 block is carried gets a goal as a source does. Preview lists
 `steps` as `{stage, y, cells}`.
