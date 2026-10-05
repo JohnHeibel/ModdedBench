@@ -8,6 +8,11 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-05** Machine collection (`mb_craft`) looks again when the stale-stack guard refused its click before
+  the press because the output grew since the look (a furnace finishing an item in between): twice at most, only on an
+  ordinary slot holding the same stack with a larger count, the cursor unchanged and no transaction sent. Before, a
+  running machine's output could stop the collection. From the agent's own fix in a 2 h run, where it met the refusal
+  on a furnace; unit-tested on a fake kernel, our version not yet in the game.
 - **2026-10-05** `mb_quest_lines` lists the lines that have a quest unlocked or completed, all on one page, and counts
   the fully locked ones it leaves out (`lockedLinesNotListed`); `locked=True` lists every line, a query finds any. In
   8 h the model listed the book four times, read `total 46, nextOffset 10` each time and never asked for page two:
