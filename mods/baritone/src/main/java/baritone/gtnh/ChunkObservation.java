@@ -31,12 +31,14 @@ final class ChunkObservation extends BlockOptionalMetaLookup {
             fresh.sort(Comparator.comparingLong(c->{long dx=c.xPosition-(feet.getX()>>4),dz=c.zPosition-(feet.getZ()>>4);return dx*dx+dz*dz;}));
             pending.addAll(fresh);had=!fresh.isEmpty();
         }
-        // The first pass is what the job waits for. Later chunks are read on ticks that also path and walk.
-        long until=System.nanoTime()+(passes==0?2_000_000L:250_000L);int before=found.size();
+        // The job waits for the first match or the end of the first pass. The rest is read on ticks that also path and walk.
+        long until=System.nanoTime()+(waiting()?2_000_000L:250_000L);int before=found.size();
         while(!pending.isEmpty()&&System.nanoTime()<until)scan(pending.poll(),feet.getY(),PER_CHUNK,found);
         if(found.size()>before)near=MiningObservation.nearest(found,feet,OFFERED);
         if(pending.isEmpty()&&(had||passes==0))passes++;
     }
+    /** Nothing to walk to yet, and loaded chunks still unread. */
+    boolean waiting(){return passes==0&&near.isEmpty();}
     /** At most max matches of one chunk, the sections nearest the feet first. */
     void scan(Chunk chunk,int feetY,int max,List<BlockPos> out){
         var sections=chunk.getBlockStorageArray();int f=Math.max(0,Math.min(sections.length-1,feetY>>4)),base=out.size();
