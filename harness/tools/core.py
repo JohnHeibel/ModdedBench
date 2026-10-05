@@ -115,7 +115,8 @@ def mb_cost(hours: float = 2.0, top: int = 15) -> Any:
 
     Dispatchers are split by method (mb_notes(get)); time between calls is your thinking and compaction. The
     busiest tools come first. A tool you call over and over is work you are doing by hand; see section 4 of
-    your brief on costs that never fail. With background tasks in the window: bodyBusyShare (of the window,
+    your brief on costs that never fail. resultChars is the text your results put into your context, and
+    topChars the tools that put most of it there, each with its largest single result. With background tasks in the window: bodyBusyShare (of the window,
     the body working in a task), bodyWhileThinkingShare (the body working while you were not in a tool call)
     and unseenFailureSeconds (for each failed task, how long until your next call saw it; a crashed one from its
     last sign of life).
@@ -140,15 +141,20 @@ def mb_cost(hours: float = 2.0, top: int = 15) -> Any:
             calls.append(c)
     by: dict[str, list] = {}
     for c in calls:
-        row = by.setdefault(f"{c['tool']}({c['method']})" if c.get("method") else c["tool"], [0, 0, 0.0])
+        row = by.setdefault(f"{c['tool']}({c['method']})" if c.get("method") else c["tool"], [0, 0, 0.0, 0, 0])
         row[0] += 1; row[1] += c.get("error") is not None; row[2] += c.get("s", 0)
+        row[3] += c.get("chars", 0); row[4] = max(row[4], c.get("chars", 0))
     spans = _union((c["t"], c["t"] + c.get("s", 0)) for c in calls)  # parallel calls count once
     busy = sum(e - s for s, e in spans)
     window = now - (calls[0]["t"] if calls else now)
     rows = sorted(by.items(), key=lambda kv: (-kv[1][0], -kv[1][2]))[:max(0, top)]
     out = {"hours": hours, "calls": len(calls), "failed": sum(r[1] for r in by.values()),
            "toolMinutes": round(busy / 60, 1), "betweenCallsMinutes": round(max(0.0, window - busy) / 60, 1),
-           "top": {k: f"{n} calls, {f} failed, {s / 60:.1f} min" for k, (n, f, s) in rows}}
+           "top": {k: f"{n} calls, {f} failed, {s / 60:.1f} min" for k, (n, f, s, _, _) in rows}}
+    if any(r[3] for r in by.values()):
+        heavy = sorted(by.items(), key=lambda kv: -kv[1][3])[:5]
+        out.update(resultChars=sum(r[3] for r in by.values()),
+                   topChars={k: f"{r[3]} chars in {r[0]} calls, largest {r[4]}" for k, r in heavy if r[3]})
     from mbtools_gtnh.tasks import every
     known = every()  # a running task, and crashed ones (they never wrote their line): from their last sign of life
     crashed = [t for t in known if t["state"] == "crashed" and t.get("lastSeen", 0) >= since]

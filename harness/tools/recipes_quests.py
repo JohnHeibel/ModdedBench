@@ -39,8 +39,12 @@ def mb_quest_search(query: str = "", offset: int = 0, limit: int = 20) -> Any:
 
 @tool(lane="read", coverage=["progression"])
 def mb_quest_lines(query: str = "", offset: int = 0, limit: int = 10) -> Any:
-    """Read quest lines in book order: per-player state totals and every quest's id, title and state."""
+    """Read quest lines in book order with per-player state totals. A result of one line (a query only it
+    matches, or limit=1 at its offset) also lists every quest's id, title and state."""
     k = kernel(); found = k.call("quest.lines", query=query, offset=offset, limit=limit)
+    if len(found["lines"]) != 1:  # the entries of ten lines are a hundred thousand characters
+        for line in found["lines"]: line.pop("entries", None)
+        return found
     titles = state.setdefault("quest_titles", {})  # the bridge's entries are an id and pixel layout: the book's titles are read once, 100 a call
     at = None if all(e["questId"] in titles for line in found["lines"] for e in line["entries"]) else 0
     while at is not None:

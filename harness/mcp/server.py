@@ -240,7 +240,7 @@ class Server(FastMCP):
         token = reply_trace.set(trace)
         scope = CancellationScope()
         scope_token = cancel_scope.set(scope)
-        started, error_code = time.time(), "cancelled"
+        started, error_code, sent = time.time(), "cancelled", []
         try:
             tool = self._tool_manager._tools.get(name)  # noqa: SLF001
             known = list((tool.parameters or {}).get("properties", {})) if tool else None
@@ -250,7 +250,8 @@ class Server(FastMCP):
             result = await super().call_tool(name, arguments)
             error_code = "tool_error" if getattr(result, "isError", False) else None
             if isinstance(result, CallToolResult):
-                return result.model_copy(update={"content": _compact(result.content), "meta": {**(result.meta or {}), "bridge": trace}})
+                sent = _compact(result.content)
+                return result.model_copy(update={"content": sent, "meta": {**(result.meta or {}), "bridge": trace}})
             if isinstance(result, tuple):
                 content, structured = result
             elif isinstance(result, dict):
@@ -258,7 +259,8 @@ class Server(FastMCP):
                 content = [TextContent(type="text", text=_dumps(result))]
             else:
                 content, structured = list(result), None
-            return CallToolResult(content=_compact(content), structuredContent=structured, isError=False, _meta={"bridge": trace})
+            sent = _compact(content)
+            return CallToolResult(content=sent, structuredContent=structured, isError=False, _meta={"bridge": trace})
         except asyncio.CancelledError:
             await asyncio.shield(asyncio.to_thread(scope.cancel))
             raise
@@ -288,17 +290,18 @@ class Server(FastMCP):
             if getattr(outer, "resumed_world", None):
                 error["resumedWorld"] = outer.resumed_world  # the world runs now, although the call failed
             payload = {"ok": False, "error": error}
-            return CallToolResult(isError=True, content=[TextContent(type="text", text=_dumps(payload))],
+            sent = [TextContent(type="text", text=_dumps(payload))]
+            return CallToolResult(isError=True, content=sent,
                                   structuredContent=payload, _meta={"bridge": trace})
         finally:
             reply_trace.reset(token)
             cancel_scope.reset(scope_token)
-            self._log_call(name, arguments, started, error_code)
+            self._log_call(name, arguments, started, error_code, sum(len(c.text) for c in sent if isinstance(c, TextContent)))
 
-    def _log_call(self, name: str, arguments: dict[str, Any], started: float, error: str | None) -> None:
+    def _log_call(self, name: str, arguments: dict[str, Any], started: float, error: str | None, chars: int = 0) -> None:
         method = (arguments or {}).get("method")
         entry = {"t": round(started, 2), "s": round(time.time() - started, 2), "tool": name,
-                 "method": method if isinstance(method, str) else None, "error": error}
+                 "method": method if isinstance(method, str) else None, "error": error, "chars": chars}  # chars: the result's text, which is what the caller's context pays
         if not mbtool.CALL_LOG: return
         try:
             os.makedirs(os.path.dirname(mbtool.CALL_LOG), exist_ok=True)

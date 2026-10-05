@@ -33,6 +33,15 @@ class CostTests(unittest.TestCase):
         self.assertEqual(list(out['top'])[0], 'mb_notes(get)')
         self.assertEqual(out['top']['mb_notes(get)'], '2 calls, 1 failed, 0.0 min')
         self.assertIn('mb_obs(player)', out['top'])
+        self.assertNotIn('resultChars', out)  # a log written before result sizes were recorded
+
+    def test_result_text_is_summed_and_the_heaviest_tools_named_with_their_largest_result(self):
+        entries = [dict(t=7000, s=1, tool='mb_quest_lines', method=None, error=None, chars=90000),
+                   dict(t=7010, s=1, tool='mb_quest_lines', method=None, error=None, chars=10000),
+                   dict(t=7020, s=1, tool='mb_obs', method='player', error=None, chars=500)]
+        out = self.cost(entries, now=7200, hours=1)
+        self.assertEqual(out['resultChars'], 100500)
+        self.assertEqual(list(out['topChars'].items())[0], ('mb_quest_lines', '100000 chars in 2 calls, largest 90000'))
 
     def test_no_log_yet(self):
         with mock.patch.object(mbtool, 'CALL_LOG', str(Path(tempfile.gettempdir()) / 'mb-no-such-log.jsonl')):
