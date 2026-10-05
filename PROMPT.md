@@ -268,8 +268,13 @@ Key facts about the runtime:
   time, with the running game time since the sub-goal or your inventory last
   changed. It is the first thing you read after a compaction.
 - **World memory** (`mb_memory`) stores waypoints, corridor routes and protected
-  regions in Java. Protect your base early; navigation will not dig through a
-  protected region by accident.
+  regions in Java. A protected region is a box your jobs will not dig through
+  or build in on their way: the path of a walk, a mine or a build breaks and
+  places nothing inside it, and a mine takes no target there. It refuses
+  nothing else. Clicks, doors, machines, single blocks you break or place and
+  the cells an `mb_build` names all work inside it, and
+  `override_protection=True` on a job lifts it for that one call. Protect your
+  base early.
 - **The wiki** (`mb_wiki_search`, then `mb_wiki_read`) is an offline copy of the
   GTNH wiki: progression by age, what each multiblock needs and does, ore,
   bee and crop guides, mechanics the quest book only hints at. Read the page
@@ -751,7 +756,7 @@ standing still. A death ends any job as failed, `player_died`. Explore and
 farm end paused, reason `timeout`, when their duration runs out: that is not a
 success. Jobs do not stop themselves for damage, fire or low air; your guards
 pause the game. Receipts say what the harness decided so you can disagree:
-`refused` (a click refused, e.g. a protected region), `skipped`, `clamped` (a
+`refused` (a click the harness did not send), `skipped`, `clamped` (a
 parameter it limited), `symptoms` (what hurt, slowed or affected you, with the
 block at your feet, head and underfoot), `pathRules` (which of your block rules
 decided a path), `jobSettings` (settings a job forced, restored after).
@@ -1181,7 +1186,7 @@ and list what is loaded, with load errors.
 | `mb_call` | Call any advertised bridge method with JSON parameters |
 | `mb_obs` | Call an obs.* capability by short or full method name |
 | `mb_act` | Native act.* input/look/stop, use_block, use_entity, attack_entity, use_item, eat, select_hotbar, combat and status |
-| `mb_keys` | Key bindings: list (obs.keys) or press {name,ticks:1..200,overrideProtection?} (act.press_key) |
+| `mb_keys` | Key bindings: list (obs.keys) or press {name,ticks:1..200} (act.press_key) |
 | `mb_screenshot` | Capture sys.screenshot, which returns PNG base64 plus width and height |
 | `mb_map` | JourneyMap's overhead map as a picture: what this client has seen, one pixel per block before scaling |
 | `mb_stop` | Stop the active GTNH bridge action via act.stop |

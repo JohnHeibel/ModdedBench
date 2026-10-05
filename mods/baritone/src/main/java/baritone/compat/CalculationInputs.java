@@ -17,9 +17,14 @@ public record CalculationInputs(World world,BlockStateInterface blocks,ToolSet t
         boolean throwaway,boolean waterPlacement,boolean sprint,int frostWalker,int depthStrider,
         WorldMemory.Snapshot protection,boolean overrideProtection,Predicate<BlockPos> positionAllowed,
         Predicate<IBlockState> explicitMiningTargets,baritone.gtnh.pathing.Snags snags,int air,Predicate<BlockPos> editAllowed,
-        baritone.gtnh.pathing.Move[] moves) {
+        baritone.gtnh.pathing.Move[] moves,Predicate<BlockPos> named) {
     /** A player's full air supply in ticks (EntityPlayer#getAir with the head out of water). */
     public static final int FULL_AIR=300;
+    public CalculationInputs(World world,BlockStateInterface blocks,ToolSet tools,boolean throwaway,boolean waterPlacement,
+            boolean sprint,int frostWalker,int depthStrider,WorldMemory.Snapshot protection,boolean overrideProtection,Predicate<BlockPos> positionAllowed,
+            Predicate<IBlockState> explicitMiningTargets,baritone.gtnh.pathing.Snags snags,int air,Predicate<BlockPos> editAllowed,baritone.gtnh.pathing.Move[] moves){
+        this(world,blocks,tools,throwaway,waterPlacement,sprint,frostWalker,depthStrider,protection,overrideProtection,positionAllowed,explicitMiningTargets,snags,air,editAllowed,moves,p->false);
+    }
     public CalculationInputs(World world,BlockStateInterface blocks,ToolSet tools,boolean throwaway,boolean waterPlacement,
             boolean sprint,int frostWalker,int depthStrider,WorldMemory.Snapshot protection,boolean overrideProtection,Predicate<BlockPos> positionAllowed,
             Predicate<IBlockState> explicitMiningTargets,baritone.gtnh.pathing.Snags snags,int air,Predicate<BlockPos> editAllowed){
@@ -45,7 +50,7 @@ public record CalculationInputs(World world,BlockStateInterface blocks,ToolSet t
         this(world,blocks,tools,throwaway,waterPlacement,sprint,frostWalker,depthStrider,protection,overrideProtection,positionAllowed,explicitMiningTargets,new baritone.gtnh.pathing.Snags());
     }
     public CalculationInputs {
-        Objects.requireNonNull(blocks);Objects.requireNonNull(tools);Objects.requireNonNull(protection);Objects.requireNonNull(positionAllowed);Objects.requireNonNull(snags);Objects.requireNonNull(editAllowed);Objects.requireNonNull(moves);
+        Objects.requireNonNull(blocks);Objects.requireNonNull(tools);Objects.requireNonNull(protection);Objects.requireNonNull(positionAllowed);Objects.requireNonNull(snags);Objects.requireNonNull(editAllowed);Objects.requireNonNull(moves);Objects.requireNonNull(named);
     }
     public static CalculationInputs capture(IBaritone owner,boolean threaded){
         var engine=(Baritone)owner;var ctx=owner.getPlayerContext();var player=ctx.player();var world=ctx.world();
@@ -57,10 +62,10 @@ public record CalculationInputs(World world,BlockStateInterface blocks,ToolSet t
             player.getFoodStats().getFoodLevel()>6,0,0,ControlRegistry.memory().memory().snapshot(),engine.overrideProtection,engine.positionAllowed,engine.explicitMiningTargets.get(),engine.snags,
             player.getAir(), // the air bar the player sees
             engine.editAllowed,
-            baritone.gtnh.pathing.MoveRegistry.capture(ctx));
+            baritone.gtnh.pathing.MoveRegistry.capture(ctx),engine.named);
     }
     /** These inputs with other moves: a search that may take an added move, or may not take one of the walker's own. */
     public CalculationInputs withMoves(baritone.gtnh.pathing.Move... moves){
-        return new CalculationInputs(world,blocks,tools,throwaway,waterPlacement,sprint,frostWalker,depthStrider,protection,overrideProtection,positionAllowed,explicitMiningTargets,snags,air,editAllowed,moves);
+        return new CalculationInputs(world,blocks,tools,throwaway,waterPlacement,sprint,frostWalker,depthStrider,protection,overrideProtection,positionAllowed,explicitMiningTargets,snags,air,editAllowed,moves,named);
     }
 }

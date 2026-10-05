@@ -21,7 +21,6 @@ import net.minecraft.world.World;
 final class PlacingJob implements Navigation.Job {
     private final Minecraft mc=Minecraft.getMinecraft();
     private final BlockPos target,footing;
-    private final boolean overrideProtection;
     private final List<Map<String,Object>> items;
     private final int initialCount;
     private Map<String,Object> placed;
@@ -34,8 +33,8 @@ final class PlacingJob implements Navigation.Job {
     private int ticks,remaining,settling;
     private boolean selectedReady,used;
     private record Face(BlockPos block,int side,Vec3 point) {}
-    PlacingJob(BlockPos target,int timeoutTicks,boolean overrideProtection,List<Map<String,Object>> items) {
-        this.target=target;remaining=timeoutTicks;this.overrideProtection=overrideProtection;this.items=items;
+    PlacingJob(BlockPos target,int timeoutTicks,List<Map<String,Object>> items) {
+        this.target=target;remaining=timeoutTicks;this.items=items;
         if(world==null || mc.thePlayer==null || mc.currentScreen!=null) throw new IllegalArgumentException("placement requires player with GUI closed");
         if(timeoutTicks<1 || timeoutTicks>6000) throw new IllegalArgumentException("timeoutTicks must be 1..6000");
         int x=(int)Math.floor(mc.thePlayer.posX),y=(int)Math.floor(mc.thePlayer.boundingBox.minY+.001),z=(int)Math.floor(mc.thePlayer.posZ);
@@ -46,7 +45,7 @@ final class PlacingJob implements Navigation.Job {
         int slot=PlacementItems.slot(items);if(slot<0) throw new IllegalArgumentException("no_placement_material: nothing in the inventory matches "+PlacementItems.rule(items));
         selection=new InventorySelection(slot);selected=selection.status();initialCount=selection.expected.stackSize;
         String unsafe=unsafe();if(unsafe!=null) throw new IllegalArgumentException(unsafe);
-        lease=ControlRegistry.controls().arbiter().acquire("baritone_placing",this::cancel,overrideProtection,false);
+        lease=ControlRegistry.controls().arbiter().acquire("baritone_placing",this::cancel);
         if(!lease.isActive()) finish("cancelled","input_unavailable");
     }
     void tick() {
@@ -91,8 +90,6 @@ final class PlacingJob implements Navigation.Job {
         lease.setKeys(keys);
     }
     private String unsafe() {
-        String protectedRegion=dev.modbench.api.ControlRegistry.memory().editProblem(target.getX(),target.getY(),target.getZ(),overrideProtection,false);
-        if(protectedRegion!=null) return protectedRegion;
         if(!mc.thePlayer.onGround || Math.abs(mc.thePlayer.boundingBox.minY-(footing.getY()+1))>.01) return "footing_changed";
         if(ForgeSnapshot.classify(world,footing.getX(),footing.getY(),footing.getZ())!=TerrainGrid.SUPPORT
             || Math.abs(mc.thePlayer.posX-(footing.getX()+.5))>.76 || Math.abs(mc.thePlayer.posZ-(footing.getZ()+.5))>.76) return "footing_drifted";
@@ -129,7 +126,7 @@ final class PlacingJob implements Navigation.Job {
     @Override public boolean succeeded() {return state.equals("succeeded");}
     @Override public Map<String,Object> status() {
         Map<String,Object> out=new LinkedHashMap<>();out.put("available",true);out.put("action","place_block");out.put("state",state);out.put("reason",reason);
-        out.put("overrideProtection",overrideProtection);out.put("target",List.of(target.getX(),target.getY(),target.getZ()));out.put("ticks",ticks);out.put("material",selected);out.put("materialRule",PlacementItems.rule(items));out.put("placed",placed);out.put("controlOwned",lease!=null&&lease.isActive());
+        out.put("target",List.of(target.getX(),target.getY(),target.getZ()));out.put("ticks",ticks);out.put("material",selected);out.put("materialRule",PlacementItems.rule(items));out.put("placed",placed);out.put("controlOwned",lease!=null&&lease.isActive());
         out.put("serverAcknowledged",false);out.put("completionMeaning","the target stopped being air after normal placement and stayed so for 10 ticks; placed is what is there");return out;
     }
 }

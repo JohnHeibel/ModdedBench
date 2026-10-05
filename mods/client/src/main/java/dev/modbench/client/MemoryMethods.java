@@ -19,8 +19,8 @@ final class MemoryMethods {
             case "get" -> "Read exact saved {kind:waypoint|route|region,name}, including all route points";
             case "waypoint" -> "Save {name,pos:[x,y,z],replace:false}; omitted pos uses current player feet";
             case "route" -> "Save {name,points:[[x,y,z]|waypointName,...],radius:2,replace:false}; 2..4096 ordered anchors, corridor radius 1..16";
-            case "protect" -> "Protect inclusive cuboid {name,min:[x,y,z],max:[x,y,z],mode:automation|all_edits}; default automation prevents navigation/bulk edits while targeted work stays normal; changing existing region requires overrideProtection:true; cancels active controls";
-            case "remove" -> "Delete {kind:waypoint|route|region,name}; region removal requires overrideProtection:true and cancels active controls";
+            case "protect" -> "Protect inclusive cuboid {name,min:[x,y,z],max:[x,y,z],replace:false}: a job's path will not break or place a block inside it, so a walk, a mine or a build cannot dig through it or scaffold in it on the way, and a mine takes no target inside it. Nothing else is refused: clicks, doors, machines, single-block breaks and places and the cells a build names all work there. overrideProtection:true on a job lifts it for that one job. Stops the running job";
+            case "remove" -> "Delete {kind:waypoint|route|region,name}; removing a region stops the running job";
             case "record" -> "Record walked route {action:start|stop|cancel|status,name,radius:2,replace:false}; stop persists turns; world changes invalidate recording";
             default -> throw new IllegalArgumentException("unknown memory method");
         };
@@ -56,8 +56,8 @@ final class MemoryMethods {
                 }
                 memory.route(new Route(name,points,Json.number(params,"radius",2,1,16)),Json.bool(params,"replace",false));break;
             }
-            case "protect": memory.protect(new Region(name,pos(params.get("min")),pos(params.get("max")),Json.string(params,"mode","automation")),Json.bool(params,"overrideProtection",false));break;
-            case "remove": memory.remove(Json.string(params,"kind",""),name,Json.bool(params,"overrideProtection",false));break;
+            case "protect": memory.protect(new Region(name,pos(params.get("min")),pos(params.get("max"))),Json.bool(params,"replace",false));break;
+            case "remove": memory.remove(Json.string(params,"kind",""),name);break;
             default: throw new IllegalArgumentException("unknown memory method");
         }
         return Json.object("saved",true,"name",name,"revision",memory.snapshot().revision(),"scope",memory.scope());

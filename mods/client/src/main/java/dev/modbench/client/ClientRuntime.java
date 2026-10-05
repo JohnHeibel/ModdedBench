@@ -124,8 +124,8 @@ public final class ClientRuntime extends BridgeRuntime {
         register("obs.container", "Screen/container epoch, slots, geometry and widgets {detail:summary|full|compact,probeSlot?:observed source index}; probe reports native slot acceptance/capacity without picking up items", "read", r -> {ui.view.require(r.params);return ui.view.container(Json.string(r.params,"detail","summary"),r.params.has("probeSlot")?Json.integer(r.params,"probeSlot",0,0,4095):-1);});
         register("obs.gui", "Current screen class and dimensions", "read", r -> gui());
         register("obs.keys", "Registered key bindings", "read", r -> bindings());
-        register("act.press_key", "Press registered binding {name,ticks:1..200,overrideProtection:false}", "interaction", r -> press(r));
-        register("act.input", "Hold vanilla controls {keys:[forward,back,left,right,jump,sneak,sprint,attack,use],ticks:1..200,overrideProtection:false,allowRetarget:false,attackTarget?:[x,y,z]}; sneak+attack/use adds two pose ticks before the requested hold; attack locks the initial block and ends on change; attackTarget refuses, sending nothing, unless that lock is on it", "interaction", r -> input(r));
+        register("act.press_key", "Press registered binding {name,ticks:1..200}", "interaction", r -> press(r));
+        register("act.input", "Hold vanilla controls {keys:[forward,back,left,right,jump,sneak,sprint,attack,use],ticks:1..200,allowRetarget:false,attackTarget?:[x,y,z]}; sneak+attack/use adds two pose ticks before the requested hold; attack locks the initial block and ends on change; attackTarget refuses, sending nothing, unless that lock is on it", "interaction", r -> input(r));
         register("act.look", "Set player view {yaw,pitch}", "interaction", r -> look(r));
         register("act.stop", "Release controls and cancel active or pending navigation, including Java API processes", "interaction", r -> {
             controlsChanged("cancelled");cancelNavigation("cancelled");return Json.object("stopped", true);
@@ -167,23 +167,23 @@ public final class ClientRuntime extends BridgeRuntime {
             if(!r.params.has("x")||!r.params.has("y")||!r.params.has("z")) throw new IllegalArgumentException("x,y,z required");
             return provider.inspectTools(Json.integer(r.params,"x",0,-30000000,30000000),Json.integer(r.params,"y",0,1,254),Json.integer(r.params,"z",0,-30000000,30000000));
         });
-        register("nav.place_block", "Place one block at loaded air {x,y,z,timeoutTicks:1..6000,items:[{id,meta,nbt,ore}]} with normal right-click input; items names what may be spent (any item: the game decides whether it places), default the acceptableThrowawayItems setting. Succeeds when the target is no longer air; the receipt's placed is {id,meta} of what is there and materialRule the rule used. overrideProtection:false by default", "interaction", r -> {
+        register("nav.place_block", "Place one block at loaded air {x,y,z,timeoutTicks:1..6000,items:[{id,meta,nbt,ore}]} with normal right-click input; items names what may be spent (any item: the game decides whether it places), default the acceptableThrowawayItems setting. Succeeds when the target is no longer air; the receipt's placed is {id,meta} of what is there and materialRule the rule used", "interaction", r -> {
             requirePlayer();Navigation provider=NavigationRegistry.get();
             if(provider==null) throw new IllegalArgumentException("Baritone mod is not installed");
             if(!r.params.has("x")||!r.params.has("y")||!r.params.has("z")) throw new IllegalArgumentException("x,y,z required");
             controlsChanged("superseded");
             ControlRegistry.controls().focusForInput();
-            navigationJob=provider.placeBlock(Json.integer(r.params,"x",0,-30000000,30000000),Json.integer(r.params,"y",0,1,254),Json.integer(r.params,"z",0,-30000000,30000000),Json.integer(r.params,"timeoutTicks",1200,1,6000),Json.bool(r.params,"overrideProtection",false),r.params.has("items")?Json.GSON.fromJson(r.params.get("items"),List.class):null);
+            navigationJob=provider.placeBlock(Json.integer(r.params,"x",0,-30000000,30000000),Json.integer(r.params,"y",0,1,254),Json.integer(r.params,"z",0,-30000000,30000000),Json.integer(r.params,"timeoutTicks",1200,1,6000),r.params.has("items")?Json.GSON.fromJson(r.params.get("items"),List.class):null);
             navigationRequest=r;return null;
         });
-        register("nav.mine_block", "Mine one reachable block {x,y,z,autoTool:true,timeoutTicks:1..6000}; protected regions refuse unless overrideProtection:true", "interaction", r -> {
+        register("nav.mine_block", "Mine one reachable block {x,y,z,autoTool:true,timeoutTicks:1..6000}", "interaction", r -> {
             requirePlayer();
             Navigation provider=NavigationRegistry.get();
             if(provider==null) throw new IllegalArgumentException("Baritone mod is not installed");
             if(!r.params.has("x")||!r.params.has("y")||!r.params.has("z")) throw new IllegalArgumentException("x,y,z required");
             controlsChanged("superseded");
             ControlRegistry.controls().focusForInput();
-            navigationJob=provider.mineBlock(Json.integer(r.params,"x",0,-30000000,30000000),Json.integer(r.params,"y",0,1,254),Json.integer(r.params,"z",0,-30000000,30000000),Json.integer(r.params,"timeoutTicks",1200,1,6000),Json.bool(r.params,"autoTool",true),Json.bool(r.params,"overrideProtection",false));
+            navigationJob=provider.mineBlock(Json.integer(r.params,"x",0,-30000000,30000000),Json.integer(r.params,"y",0,1,254),Json.integer(r.params,"z",0,-30000000,30000000),Json.integer(r.params,"timeoutTicks",1200,1,6000),Json.bool(r.params,"autoTool",true));
             navigationRequest=r;
             return null;
         });
@@ -218,7 +218,7 @@ public final class ClientRuntime extends BridgeRuntime {
             if(clock.refusesActions()) throw new IllegalArgumentException(clock.refusal("executing native GUI actions"));
             controlsChanged("superseded");return ui.start(r);
         });
-        for(String method:List.of("mine","build","resume")) register("nav."+method,"Owned, checkpointed "+method+" process; timeoutTicks<=72000. Mine: blocks/items selectors, quantity, bounds/radius, toolSlot (forces the tool in that slot). Build: cells (at most 4096) or selection, a cell may carry click {face,hit,look,sneak} and expect; uses (right clicks on standing blocks); origin, replaceExisting, allowBreak/allowPlace. Resume: jobId. Explicit overrideProtection required each attempt.","interaction",r->{
+        for(String method:List.of("mine","build","resume")) register("nav."+method,"Owned, checkpointed "+method+" process; timeoutTicks<=72000. Mine: blocks/items selectors, quantity, bounds/radius, toolSlot (forces the tool in that slot). Build: cells (at most 4096) or selection, a cell may carry click {face,hit,look,sneak} and expect; uses (right clicks on standing blocks); origin, replaceExisting, allowBreak/allowPlace. Resume: jobId. A protected region refuses the job's path edits and a mine's targets inside it, never the cells a build names; overrideProtection:true lifts it for this attempt.","interaction",r->{
             requirePlayer();Navigation provider=navigation();Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");
             if(method.equals("resume")&&suspendedId!=null&&suspendedId.equals(Json.string(r.params,"jobId",""))) { // wait on the held job again, as it is
                 if(suspendedEnd!=null){Map<String,Object> end=suspendedEnd;suspendedId=null;suspendedEnd=null;return end;}
@@ -494,7 +494,7 @@ public final class ClientRuntime extends BridgeRuntime {
                     r.reply(Json.object("completed", true, "outcome", "gui_open", "serverAcknowledged", false));
                 else r.fail("cancelled", "input released: "+reason);
             }
-        },Json.bool(r.params,"overrideProtection",false));
+        });
         if(codes.contains(mc.gameSettings.keyBindAttack.getKeyCode())&&!Json.bool(r.params,"allowRetarget",false)) {
             // attackTarget is checked against the lock itself, this tick, before any key is down: a mismatch sends nothing.
             JsonObject refused=AttackTarget.refusal(target,ControlRegistry.controls().guardBlockAttack(inputLease));

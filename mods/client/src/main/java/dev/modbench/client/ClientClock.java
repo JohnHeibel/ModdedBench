@@ -260,7 +260,6 @@ public final class ClientClock implements ClockHooks.Driver {
         if(!runningTick) return;
         runtime.endTick();
         view.ticked();
-        dev.modbench.api.ControlRegistry.memory().endTick();
         runningTick=false;
         if(resuming && !creditTick && !resumeSent) sendResume(); // after the tick's own packets, on the same connection
     }

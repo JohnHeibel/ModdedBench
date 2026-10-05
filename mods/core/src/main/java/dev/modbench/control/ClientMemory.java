@@ -13,12 +13,11 @@ import java.util.*;
 import net.minecraft.client.Minecraft;
 import net.minecraft.util.MovingObjectPosition;
 
-/** Shared memory and protection policy for every ModdedBench input owner. Game-thread only. */
+/** Shared world memory, and the record of clicks the attack lock refused. Game-thread only. */
 public final class ClientMemory implements MemoryAccess {
     static final ClientMemory INSTANCE=new ClientMemory();
     private static final Minecraft MC=Minecraft.getMinecraft();
-    private static String worldId,scope,lastAudit;
-    private static boolean blockedThisTick;
+    private static String worldId,scope;
     private static long refusals;
     private static final ArrayDeque<Map<String,Object>> refused=new ArrayDeque<>();
     private static WorldMemory memory;
@@ -33,7 +32,7 @@ public final class ClientMemory implements MemoryAccess {
         if(!Objects.equals(worldId,valid)) {worldId=valid;memory=null;scope=null;}
     }
     public void disconnected() {
-        ClientControls.requireGameThread();worldId=null;memory=null;scope=null;lastAudit=null;
+        ClientControls.requireGameThread();worldId=null;memory=null;scope=null;
         if(recordingName!=null) recordingError="connection_changed";
     }
     public WorldMemory memory() {
@@ -92,14 +91,13 @@ public final class ClientMemory implements MemoryAccess {
     private static Map<String,Object> recordingStatus() {
         Map<String,Object> out=new LinkedHashMap<>();out.put("active",recordingName!=null);out.put("name",recordingName);out.put("samples",recording.size());out.put("error",recordingError);return out;
     }
-    /** Null means permitted. No global override is stored; callers must carry their operation's flag. */
-    public String editProblem(int x,int y,int z,boolean override,boolean automated) {
+    /** Null means none. No global override is stored; callers must carry their operation's flag. */
+    public String editProblem(int x,int y,int z,boolean override) {
         try {
-            List<String> regions=memory().snapshot().protectedAt(new Pos(x,y,z),automated);
+            List<String> regions=memory().snapshot().protectedAt(new Pos(x,y,z));
             return !override&&!regions.isEmpty()?"protected_region:"+String.join(",",regions):null;
         } catch(RuntimeException error) {return "protection_unavailable:"+error.getMessage();}
     }
-    public void endTick() {blockedThisTick=false;}
     public long refusals() {return refusals;}
     public Map<String,Object> refusedSince(long mark) {
         if(refusals<=mark) return Map.of();
@@ -116,43 +114,12 @@ public final class ClientMemory implements MemoryAccess {
         Map<String,Object> row=new LinkedHashMap<>();row.put("what",what);row.put("pos",pos);row.put("why",why);row.put("times",1);row.put("last",refusals);refused.addLast(row);
         return false;
     }
-    /** Called immediately before vanilla block editing; includes raw synthetic attack/use input. */
+    /**
+     * Called immediately before vanilla block editing; includes raw synthetic attack/use input. Only the attack lock
+     * answers here. Protected regions do not: they bind what a job's path search may plan, never a click.
+     */
     public boolean blockAction(int action,int x,int y,int z,int side) {
-        if(action==0&&!ClientControls.allowBlockAttack(x,y,z))return refuse(action,x,y,z,"attack_held_for_another_block"); // a held attack is locked to the block it started on
-        if(blockedThisTick) return refuse(action,x,y,z,"refused_earlier_this_tick"); // Vanilla may fall back from right-click to sendUseItem in this same tick.
-        var owner=ClientControls.INSTANCE.arbiter().current();if(!owner.active()) return true;
-        try {
-            List<Pos> affected=new ArrayList<>();boolean inPlace=false;
-            if(action==2) {
-                // Arbitrary mod items may use either ray, including in-place
-                // NBT containers. Item class/use animation cannot prove no edits.
-                double reach=MC.playerController.getBlockReachDistance();
-                addRay(affected,MC.thePlayer.rayTrace(reach,1));
-                var eye=MC.thePlayer.getPosition(1);var look=MC.thePlayer.getLook(1);
-                addRay(affected,MC.theWorld.rayTraceBlocks(eye,eye.addVector(look.xCoord*reach,look.yCoord*reach,look.zCoord*reach),true));
-                if(inPlace=affected.isEmpty())affected.add(feet());
-            } else addAffected(affected,x,y,z,action==0?-1:side);
-            TreeSet<String> regions=new TreeSet<>();for(Pos pos:affected) regions.addAll(memory().snapshot().protectedAt(pos,owner.automatedEdits()));
-            if(regions.isEmpty()) return true;
-            // A lease permitted in-place item use (a fight's raised sword) passes only when neither ray reached a block.
-            if(!owner.overrideProtection()&&!(inPlace&&owner.inPlaceItemUse())) {blockedThisTick=true;refuse(action,x,y,z,"protected_region:"+String.join(",",regions));ClientControls.revoke("protected_region:"+String.join(",",regions));MC.playerController.resetBlockRemoving();return false;}
-            String key=owner.operationId()+"|"+owner.label()+"|"+action+"|"+affected+"|"+regions;
-            if(!key.equals(lastAudit)) {
-                Map<String,Object> receipt=Map.of("timeMs",System.currentTimeMillis(),"owner",owner.label(),"operationId",owner.operationId(),"action",action,"positions",affected,"regions",regions,"overrideProtection",owner.overrideProtection()?true:"in_place_item_use");
-                Files.writeString(file.resolveSibling(file.getFileName()+".overrides.jsonl"),new Gson().toJson(receipt)+"\n",StandardCharsets.UTF_8,StandardOpenOption.CREATE,StandardOpenOption.APPEND);
-                lastAudit=key;
-            }
-            return true;
-        } catch(Exception error) {blockedThisTick=true;refuse(action,x,y,z,"protection_unavailable:"+error.getMessage());ClientControls.revoke("protection_unavailable:"+error.getMessage());return false;}
-    }
-    private static void addRay(List<Pos> affected,MovingObjectPosition hit) {
-        if(hit!=null&&hit.typeOfHit==MovingObjectPosition.MovingObjectType.BLOCK) addAffected(affected,hit.blockX,hit.blockY,hit.blockZ,hit.sideHit);
-    }
-    private static void addAffected(List<Pos> affected,int x,int y,int z,int side) {
-        if(y>=0&&y<=255)affected.add(new Pos(x,y,z));
-        if(side>=0&&side<6) {
-            int[][] directions={{0,-1,0},{0,1,0},{0,0,-1},{0,0,1},{-1,0,0},{1,0,0}};
-            int[] d=directions[side];if(y+d[1]>=0&&y+d[1]<=255)affected.add(new Pos(x+d[0],y+d[1],z+d[2]));
-        }
+        // a held attack is locked to the block it started on
+        return action!=0||ClientControls.allowBlockAttack(x,y,z)||refuse(action,x,y,z,"attack_held_for_another_block");
     }
 }

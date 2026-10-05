@@ -8,6 +8,9 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-05** Protected regions bind the planner only: no click is refused for one. The click-time guard, region
+  modes and per-lease override flags are gone; a build's own cells are exempt, `override_protection` lifts the rest
+  for one job, and a job that loses its controls says why.
 - **2026-10-04** Movement registry: a kind of movement is one class and one line (`MoveRegistry`), with gliding on
   worn wings as the worked example; `docs/MOVEMENTS.md` says how to add one and what hovering would still need.
 - **2026-10-03** Background body tasks: `mb_run(background=True)` runs a script in its own

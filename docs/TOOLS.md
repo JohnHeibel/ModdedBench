@@ -61,7 +61,7 @@ Actions (`mb_act`) need running time, so resume first:
   requires `attack` and disallows `allowRetarget`; observe the block again after digging.
 - Receipts carry `nativeReturn` (not a success flag) and `serverAcknowledged`
   (only eating has one). An item may change NBT, metadata or slot, or drop an
-  entity, so check the whole inventory. `overrideProtection` is per operation.
+  entity, so check the whole inventory.
 
 Tile reads (`mb_obs` with `tile`, `nbt`, `waila`) come from the server:
 
@@ -177,21 +177,25 @@ resumable with `mb_work_resume`.
 `mb_task` says a task's `args` back whole only when they are small; a large
 plan comes back as `{omitted, bytes, sha256, keys}`.
 
-`mb_fight(override_protection=True)` lets one fight block with a sword (or draw
-a bow) inside a protected region: item use whose rays reach no block, which
-otherwise counts as an edit at your feet. A right-click on a protected block
-under the crosshair (a door, a lever, a machine) is still refused, which ends
-the fight as any protection refusal does; breaking and placing still need their
-own opt-ins. The receipt's settings show
-`overrideProtection: "in_place_item_use"`; the override ends with the job.
-
 `mb_memory` (defined in `core.py`):
 
-- `protect {name, min, max, mode?}`: `automation` (default) keeps navigation
-  and automatic excavation out but allows deliberate work and machine use;
-  `all_edits` also rejects deliberate edits. Changing a region needs
-  `overrideProtection: true`. It guards against accidents, not explosions,
-  other players or mod area effects.
+- `protect {name, min, max, replace?}`: a box that jobs will not dig through
+  or build in on their way. It is a rule for the path search and for a mine's
+  choice of targets, and for nothing else: no click is ever refused for it.
+  What it binds: blocks a walk, a mine or a build would break to get through
+  or place to climb and bridge, a mine's targets inside the box, and blocks a
+  build would take out of a click's way. What it does not: walking, doors,
+  machines, `mb_act` clicks, single-block breaks and places, a fight, and the
+  cells and uses a build names. To edit inside with a job, pass
+  `override_protection=True` on that call (walks, mines, builds, follows,
+  routes); it is per call and never saved. `replace: true` changes a region,
+  `remove {kind: region, name}` deletes it, and either stops the running job.
+  A walk the region refused fails as
+  `<how the search ended>; the search was refused edits in protected_region:<names>`;
+  a mine lists what it left under `skipped` as `protected_region:<names>`, and
+  stops if its tool breaks a protected block beside the target. It guards
+  against a job's own accidents, not explosions, fluids, other players or mod
+  area effects.
 - `waypoint`, `route {name, points, radius}` (2 to 4,096 anchors, radius 1 to
   16, coordinates copied at save time), `record`; `replace: true` overwrites.
   Put anchors at turns and height changes. Per world: 1,024 waypoints, 128

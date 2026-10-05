@@ -20,14 +20,22 @@ public class WorldMemoryTest {
         assertEquals(List.of("base"),restored.snapshot().protectedAt(p(-10,90,10)));
         assertTrue(restored.snapshot().protectedAt(p(-11,90,10)).isEmpty());
     }
-    @Test public void weakeningOrRemovingProtectionRequiresExplicitOverride() throws Exception {
+    @Test public void aRegionIsReplacedOnlyWhenAskedAndRemovedByName() throws Exception {
         Path path=temp.getRoot().toPath().resolve("world.json");WorldMemory m=new WorldMemory(path,"world:0");
         m.protect(new WorldMemory.Region("base",p(0,0,0),p(9,100,9)),false);
         byte[] before=Files.readAllBytes(path);
         assertThrows(IllegalArgumentException.class,()->m.protect(new WorldMemory.Region("base",p(0,0,0),p(1,1,1)),false));
-        assertThrows(IllegalArgumentException.class,()->m.remove("region","base",false));
         assertArrayEquals(before,Files.readAllBytes(path));
-        m.remove("region","base",true);assertTrue(new WorldMemory(path,"world:0").snapshot().regions().isEmpty());
+        m.protect(new WorldMemory.Region("base",p(0,0,0),p(1,1,1)),true);
+        assertTrue(new WorldMemory(path,"world:0").snapshot().protectedAt(p(5,5,5)).isEmpty());
+        m.remove("region","base");assertTrue(new WorldMemory(path,"world:0").snapshot().regions().isEmpty());
+    }
+    @Test public void aRegionSavedWithAModeStillLoads() throws Exception {
+        Path path=temp.getRoot().toPath().resolve("world.json");WorldMemory m=new WorldMemory(path,"world:0");
+        m.protect(new WorldMemory.Region("base",p(0,0,0),p(9,100,9)),false);
+        Files.writeString(path,Files.readString(path).replaceFirst("\"min\"","\"mode\":\"all_edits\",\"min\""));
+        assertTrue("the test wrote a mode",Files.readString(path).contains("all_edits"));
+        assertEquals(List.of("base"),new WorldMemory(path,"world:0").snapshot().protectedAt(p(1,1,1)));
     }
     @Test public void namedRoutesAndWaypointsSurviveRestart() throws Exception {
         Path path=temp.getRoot().toPath().resolve("world.json");WorldMemory m=new WorldMemory(path,"world:0");
@@ -59,23 +67,5 @@ public class WorldMemoryTest {
         m.protect(new WorldMemory.Region("base",p(0,0,0),p(9,100,9)),false);
         assertTrue(old.protectedAt(p(1,1,1)).isEmpty());assertFalse(m.snapshot().protectedAt(p(1,1,1)).isEmpty());
         assertThrows(UnsupportedOperationException.class,()->m.snapshot().regions().clear());
-    }
-    @Test public void explicitOverrideDoesNotSurviveControlTakeover() {
-        InputArbiter arbiter=new InputArbiter(new InputArbiter.Sink() {
-            public void applyKeys(Set<Integer> keys) {} public void applyLook(float yaw,float pitch) {}
-        });
-        var first=arbiter.acquire("approved mining",reason->{},true);assertTrue(first.overrideProtection());assertTrue(arbiter.current().overrideProtection());
-        var next=arbiter.acquire("navigation",reason->{});assertFalse(first.overrideProtection());assertFalse(next.overrideProtection());assertFalse(arbiter.current().overrideProtection());
-    }
-    @Test public void defaultProtectionAllowsDeliberateWorkWhileStrictRegionsStillLockEdits() throws Exception {
-        Path path=temp.getRoot().toPath().resolve("world.json");WorldMemory m=new WorldMemory(path,"world:0");
-        m.protect(new WorldMemory.Region("base",p(0,0,0),p(10,100,10)),false);
-        m.protect(new WorldMemory.Region("critical floor",p(0,60,0),p(10,60,10),"all_edits"),false);
-        var restored=new WorldMemory(path,"world:0").snapshot();
-        assertEquals(List.of("base"),restored.protectedAt(p(5,65,5),true));
-        assertEquals(List.of(),restored.protectedAt(p(5,65,5),false));
-        assertEquals(List.of("critical floor"),restored.protectedAt(p(5,60,5),false));
-        assertEquals(List.of("base","critical floor"),restored.protectedAt(p(5,60,5),true));
-        assertThrows(IllegalArgumentException.class,()->m.protect(new WorldMemory.Region("critical floor",p(0,60,0),p(10,60,10)),false));
     }
 }

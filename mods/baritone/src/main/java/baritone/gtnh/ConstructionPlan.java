@@ -110,7 +110,7 @@ final class ConstructionPlan {
      */
     Map<String,Object> preview(boolean override) {
         Map<Map<String,Object>,Integer> required=new LinkedHashMap<>();List<Map<String,Object>> differences=new ArrayList<>();
-        int correct=0,unloaded=0,conflicts=0,protectedCount=0,unsupported=0;boolean replace=replace();
+        int correct=0,unloaded=0,conflicts=0,unsupported=0;boolean replace=replace();
         for(Cell c:cells) {
             String reason="different";if(correct(c)){correct++;continue;}
             BlockPos p=c.pos();
@@ -118,7 +118,6 @@ final class ConstructionPlan {
             else {
                 // A cell to be emptied is never a conflict: clearing it is what was asked.
                 if(!replace&&!c.clear()&&occupied(p)){conflicts++;reason="occupied";}
-                String protection=WorkAccess.protection(p,override);if(protection!=null){protectedCount++;reason=protection;}
             }
             if(!c.clear())try{required.merge(material(c),1,Integer::sum);}catch(IllegalArgumentException e){unsupported++;reason=e.getMessage();}
             if(differences.size()<FIRST) {
@@ -135,7 +134,7 @@ final class ConstructionPlan {
         var rows=materials(required);var all=steps.list();
         Map<String,Object> out=new LinkedHashMap<>();
         out.put("total",cells.size());out.put("correct",correct);out.put("mismatched",cells.size()-correct);out.put("matches",correct==cells.size());
-        out.put("unloaded",unloaded);out.put("conflicts",conflicts);out.put("protected",protectedCount);out.put("unsupported",unsupported);
+        out.put("unloaded",unloaded);out.put("conflicts",conflicts);out.put("unsupported",unsupported);
         out.put("missingItems",rows.stream().mapToInt(r->(Integer)r.get("missing")).sum());
         out.put("materialCount",rows.size());out.put("materials",rows.subList(0,Math.min(4*FIRST,rows.size())));
         out.put("differences",differences);out.put("differencesTruncated",cells.size()-correct>differences.size());

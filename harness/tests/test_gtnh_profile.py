@@ -124,10 +124,10 @@ class GTNHProfileTests(unittest.TestCase):
     def test_modified_input_primes_pose_and_preserves_click_parameters(self):
         core = module_with(self.loaded(), "mb_act")
         fake = self.use(FakeKernel(lambda method, params: {"completed": True}))
-        params = {"keys": ["sneak", "attack", "forward"], "ticks": 1, "overrideProtection": True}
+        params = {"keys": ["sneak", "attack", "forward"], "ticks": 1, "allowRetarget": True}
         out = core.mb_act("input", params)
         self.assertEqual(fake.calls, [
-            ("act.input", {"timeout": 60.0, "keys": ["sneak"], "ticks": 15, "overrideProtection": True}),
+            ("act.input", {"timeout": 60.0, "keys": ["sneak"], "ticks": 15}),
             ("act.input", {"timeout": 60.0, **params}),
         ])
         self.assertTrue(out["posePrelude"]["completed"])
@@ -478,11 +478,11 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual(fake.last("nav.fight"), ("nav.fight", {"timeout":20, "hold":False, "leash":16, "bailHealth":8,
             "maxAttackers":2, "maxHealthLoss":10, "maxGrowth":3, "durationTicks":600, "crit":True, "block":True, "entityId":7, "weaponSlot":0}))
         with self.assertRaises(ValueError): tools.mb_fight()
-        tools.mb_fight(7, override_protection=True, timeout_s=20)
         sent = fake.last("nav.fight")[1]
-        self.assertTrue(sent["overrideProtection"])
         self.assertNotIn("allowBreak", sent)
         self.assertNotIn("allowPlace", sent)
+        # Nothing a fight does is refused by a protected region: only its path's digging and placing, which stay opt-in.
+        self.assertNotIn("override_protection", inspect.signature(tools.mb_fight).parameters)
         tools.mb_fight(swarm=True, timeout_s=20)  # swarm: stands, takes no target, swings at the full rate unless asked otherwise
         sent = fake.last("nav.fight")[1]
         self.assertEqual((sent["swarm"], sent["crit"], sent["block"], "entityId" in sent), (True, False, False, False))
@@ -499,7 +499,7 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual([layer["rows"] for layer in seen["layers"]], [["###", "###", "###"], ["...", ".@.", "..."]])  # the player stands where the chest is drawn
         self.assertEqual(seen["legend"]["#"], {"id": "minecraft:stone", "meta": 0, "count": 9})
         self.assertIn({"what": "waypoint", "name": "home", "pos": [10, 64, 20]}, seen["things"])
-        self.assertIn({"what": "protected region", "name": "home", "box": {"min": [9, 63, 19], "max": [11, 65, 21]}, "mode": "automation"}, seen["things"])
+        self.assertIn({"what": "protected region", "name": "home", "box": {"min": [9, 63, 19], "max": [11, 65, 21]}}, seen["things"])
         self.assertFalse(any(t.get("name") == "outside" for t in seen["things"]))
         built, origin = plan.from_drawing({"origin": [9, 63, 19], "layers": [["#.", "+ "], {"y": 64, "rows": ["c."]}], "legend": {"#": "minecraft:stone", "c": {"id": "minecraft:chest", "meta": 2}}})
         self.assertEqual((built, origin), ([{"pos": [0, 0, 0], "id": "minecraft:stone"}, {"pos": [0, 1, 0], "id": "minecraft:chest", "meta": 2}], [9, 63, 19]))

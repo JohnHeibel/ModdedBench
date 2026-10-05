@@ -17,18 +17,13 @@ public interface Navigation {
     }
     default Job placeBlock(int x,int y,int z,int timeoutTicks) {throw new UnsupportedOperationException("placement unavailable");}
     default Map<String,Object> inspectTools(int x,int y,int z) {throw new UnsupportedOperationException("tool inspection unavailable");}
+    /** overrideProtection: this job's path may break and place inside protected regions. */
     default Job goTo(int x,int y,int z,int ticks,boolean allowBreak,boolean allowPlace,boolean overrideProtection) {
         if(overrideProtection) throw new UnsupportedOperationException("protection override unavailable");return goTo(x,y,z,ticks,allowBreak,allowPlace);
     }
-    default Job mineBlock(int x,int y,int z,int ticks,boolean autoTool,boolean overrideProtection) {
-        if(overrideProtection) throw new UnsupportedOperationException("protection override unavailable");return mineBlock(x,y,z,ticks,autoTool);
-    }
-    default Job placeBlock(int x,int y,int z,int ticks,boolean overrideProtection) {
-        if(overrideProtection) throw new UnsupportedOperationException("protection override unavailable");return placeBlock(x,y,z,ticks);
-    }
     /** items: item selectors {id,meta,nbt,ore} naming what may be spent; null is the provider's default. */
-    default Job placeBlock(int x,int y,int z,int ticks,boolean overrideProtection,java.util.List<Map<String,Object>> items) {
-        if(items!=null) throw new UnsupportedOperationException("placement items unavailable");return placeBlock(x,y,z,ticks,overrideProtection);
+    default Job placeBlock(int x,int y,int z,int ticks,java.util.List<Map<String,Object>> items) {
+        if(items!=null) throw new UnsupportedOperationException("placement items unavailable");return placeBlock(x,y,z,ticks);
     }
     default Job route(String name,boolean reverse,int startIndex,int timeoutTicks,boolean allowBreak,boolean allowPlace,boolean overrideProtection) {throw new UnsupportedOperationException("saved routes unavailable");}
     default Job mine(Map<String,Object> params){throw new UnsupportedOperationException("quantity mining unavailable");}

@@ -384,6 +384,19 @@ public class ReferencePathingTest {
         assertTrue(MovementTraverse.cost(open,0,64,0,1,0)<ActionCosts.COST_INF);
         assertTrue("walking through a region asks it for nothing",open.protectedMet.isEmpty());
     }
+    @Test public void theCellsAJobWasSentToEditAreNotProtectedFromItAndItsWayThereStillIs(){
+        Terrain t=new Terrain();t.set(1,64,0,Blocks.STONE,0);
+        var region=new WorldMemory.Region("base",new WorldMemory.Pos(0,63,0),new WorldMemory.Pos(2,66,0));
+        ItemStack[] hotbar=new ItemStack[9];hotbar[0]=new ItemStack(net.minecraft.init.Items.iron_pickaxe);
+        java.util.function.Supplier<CalculationContext> named=()->new CalculationContext(PLANNING_ONLY,true,new CalculationInputs(null,new BlockStateInterface(t,(x,z)->Math.abs(x)<64&&Math.abs(z)<64),new ToolSet(hotbar,0,1,VANILLA),false,false,false,0,0,
+                capturedProtection(region),false,p->true,s->false,new baritone.gtnh.pathing.Snags(),CalculationInputs.FULL_AIR,p->true,baritone.gtnh.pathing.MoveRegistry.own(),p->p.equals(new BlockPos(1,64,0))));
+        var c=named.get();
+        assertFalse("a named cell",c.isPossiblyProtected(1,64,0));assertTrue("its neighbour was not named",c.isPossiblyProtected(1,65,0));
+        assertTrue("the job digs the cell it was sent to",MovementTraverse.cost(c,0,64,0,1,0)<ActionCosts.COST_INF);
+        t.set(1,65,0,Blocks.STONE,0);c=named.get();
+        assertTrue("and nothing else in the region",MovementTraverse.cost(c,0,64,0,1,0)>=ActionCosts.COST_INF);
+        assertEquals(java.util.Set.of("base"),c.protectedMet);
+    }
     private static WorldMemory.Snapshot capturedProtection(WorldMemory.Region region){return new WorldMemory.Snapshot(1,Map.of(),Map.of(),Map.of(region.name(),region));}
     @Test public void unverifiedForgeFluidsAreNotAirAndCannotBeExcavatedThrough(){
         Terrain t=new Terrain();var definition=new net.minecraftforge.fluids.Fluid("reference-test-fluid");
