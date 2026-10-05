@@ -8,6 +8,8 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-05** Drawings accept `clear: true` legend entries, including entries without a block id, so a saved
+  excavation plan reaches the same clearing as explicit cells, and `mb_view` counts what of it is still to dig.
 - **2026-10-05** A stack's NBT text and hash are printed with compound keys sorted (`Stacks.canonical`): the game can
   reorder a tag when it copies a stack, which changed the hash and made a crafted tool look missing. From the agent.
 - **2026-10-05** Protected regions bind the planner only: no click is refused for one. The click-time guard, region

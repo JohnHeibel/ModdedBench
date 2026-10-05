@@ -18,7 +18,7 @@ AIR, PLAYER, PLANNED, SKIP = ".", "@", "+", " "
 CHARS = "#=%*&$~^ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 MAX_CELLS, RARE, LOOKUPS = 9000, 6, 32
 # What a legend entry says of a block to build, and what mb_view writes there besides (read, and not built).
-BUILT, VIEWED = ("id", "meta", "item", "verify", "replace", "click", "expect"), ("count", "name", "tile")
+BUILT, VIEWED = ("id", "meta", "item", "verify", "clear", "replace", "click", "expect"), ("count", "name", "tile")
 
 
 def cells(drawing: dict) -> list[dict]:
@@ -42,7 +42,7 @@ def cells(drawing: dict) -> list[dict]:
         for dz, row in enumerate(layer):
             for dx, c in enumerate(row):
                 if c in (AIR, SKIP, PLANNED, PLAYER): continue
-                if c not in legend or not legend[c].get("id"): raise ValueError(f"drawing uses {c!r} at layer {dy} row {dz} column {dx}, which its legend does not define")
+                if c not in legend or not (legend[c].get("id") or legend[c].get("clear") is True): raise ValueError(f"drawing uses {c!r} at layer {dy} row {dz} column {dx}, which its legend does not define")
                 out.append({"pos": [dx, dy, dz], **{k: v for k, v in legend[c].items() if k in BUILT},
                             **({"stage": stage[c]} if stage.get(c) else {})})
     if not out: raise ValueError("the drawing has no blocks: every character is '.', ' ' or '+'")
@@ -148,7 +148,8 @@ def mb_view(bounds: dict | None = None, radius: int = 10, below: int = 2, above:
             unbuilt = 0
             for c in from_drawing(plan)[0]:
                 p = tuple(plan["origin"][i] + c["pos"][i] - lo[i] for i in range(3))
-                if all(0 <= p[i] < size[i] for i in range(3)) and grid.get(p, (None,))[0] != c["id"]:
+                mismatch = p in grid if c.get("clear") else grid.get(p, ("minecraft:air",))[0] != c["id"]
+                if all(0 <= p[i] < size[i] for i in range(3)) and mismatch:
                     unbuilt += 1
                     if p not in grid: layers[p[1]][p[2]][p[0]] = PLANNED
             entry["plan"] = {"unbuiltInView": unbuilt}

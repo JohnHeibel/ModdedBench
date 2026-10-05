@@ -623,6 +623,24 @@ class GTNHProfileTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             plan.from_drawing({**drawing, "layers": [{"y": 65, "rows": ["s"]}] * 2})
 
+    def test_drawing_clear_cells_reach_native_build_and_preview(self):
+        import mbtools_gtnh.work as work
+        import mbtools_gtnh.plan as plan
+        fake = self.use(FakeKernel(lambda method, params: {}))
+        drawing = {"origin": [10, 64, 20], "layers": [["a.a"]], "legend": {"a": {"clear": True}}}
+        for call, method in ((work.mb_build, "nav.build"), (work.mb_build_preview, "nav.build_preview")):
+            call(drawing=drawing)
+            self.assertEqual(fake.last(method)[1]["cells"], [{"pos": [0, 0, 0], "clear": True}, {"pos": [2, 0, 0], "clear": True}])
+        with self.assertRaises(ValueError):
+            plan.from_drawing({**drawing, "legend": {"a": {"clear": False}}})
+        self.use(FakeKernel(lambda method, params: {"obs.player": {"pos": [11.5, 64, 20.5]},
+            "nav.copy": {"plan": {"cells": [{"pos": [2, 0, 0], "id": "minecraft:dirt"}]}}}.get(method, {})))
+        note = {"id": "excavation", "title": "Excavation", "attachments": [{"kind": "region", "min": [10, 64, 20], "max": [12, 64, 20]}], "data": {"drawing": drawing}}
+        with patch.object(plan.notes, "read_notes", return_value={"notes": [note]}):
+            viewed = plan.mb_view(bounds={"min": [10, 64, 20], "max": [12, 64, 20]}, lookups=0)
+        self.assertEqual(viewed["layers"][0]["rows"], [".@#"])
+        self.assertEqual(next(t["plan"] for t in viewed["things"] if t.get("id") == "excavation"), {"unbuiltInView": 1})
+
     def test_drawing_stages_give_each_block_the_stage_of_its_character(self):
         import mbtools_gtnh.work as work
         import mbtools_gtnh.plan as plan
