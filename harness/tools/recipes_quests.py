@@ -214,10 +214,13 @@ def mb_recipes(id: str = "", meta: int | None = None, nbt: str | None = None, mo
     Default limit=0 returns a category overview with counts and known GT base EU/t
     ranges, without choosing a recipe. NEI order is NOT a progression recommendation.
     Pick an exact handlerKey as handler, then limit=5 (or up to 20) for compact
-    comparable options. Follow nextOffset to see all variants. Use detail='full',
-    handler=that exact key, index=the option's native index, limit=1 for complete
-    ingredients/NBT/alternatives. Summary examples omit NBT and are not actionable
-    item identities. Compare machines, power, ingredients and research against
+    comparable options. Follow nextOffset to see all variants. A summary recipe gives its
+    inputs as "pattern": rows of cells in the recipe's own layout, null for an empty slot,
+    which is the shape of a shaped recipe and what mb_craft takes as pattern (a recipe
+    whose view is not a slot grid lists "inputs" instead). A cell with several possible
+    items shows two examples and alternativeCount. Use detail='full', handler=that exact
+    key, index=the option's native index for what a summary leaves out: every
+    alternative, ore names, NBT (nbtPresent marks a summary item that has some). Compare machines, power, ingredients and research against
     observations; no route is selected or declared craftable automatically.
 
     Pass exact id AND meta (meta is required with id: 0 for plain items, the variant
@@ -275,8 +278,10 @@ def mb_recipes(id: str = "", meta: int | None = None, nbt: str | None = None, mo
         for recipe in recipes:
             names = [e["name"] for c in recipe.pop("catalysts", None) or [] for e in c.get("examples", [])[:1]]
             named.setdefault(recipe.get("handlerKey"), names[:6] + ([f"+{len(names) - 6} more (detail='full', stations='all' lists them)"] if len(names) > 6 else []))
+            grid = _grid(recipe.get("inputs") or [])
             for part in ("inputs", "other"): recipe[part] = [_only(position) for position in recipe.get(part) or []]
             if "result" in recipe: recipe["result"] = _only(recipe["result"])
+            if grid: recipe["pattern"] = [[cell and _only(cell) for cell in row] for row in grid]; del recipe["inputs"]
         # So does what the handler and the summary form fix (its key, coverage, the preview note): once for the page, where the page agrees.
         shared = {key: recipes[0][key] for key in SHARED if recipes and key in recipes[0] and all(r.get(key) == recipes[0][key] for r in recipes)}
         if shared: result.update(shared=shared, recipes=[{key: value for key, value in r.items() if key not in shared} for r in recipes])
@@ -296,9 +301,23 @@ SHARED = ("handlerKey", "handler", "name", "nativeRecipesPerPage", "structuredCo
 
 
 def _only(position):
-    """A summary position with a single possible item is that item, not a list of one alternative."""
+    """A summary position with a single possible item is that item, not a list of one alternative; its place is said by the pattern."""
+    if isinstance(position, dict): position = {key: value for key, value in position.items() if key not in ("x", "y")}
     examples = position.get("examples") if isinstance(position, dict) else None
     return examples[0] if examples and position.get("alternativeCount") == 1 else position
+
+
+SLOT = 18  # pixels from one slot to the next in a recipe view
+
+
+def _grid(inputs):
+    """The inputs as rows of cells, None where the recipe leaves a slot empty, when the recipe view lays them on its slot
+    lattice: the shape a shaped recipe has, and the pattern mb_craft takes. None when the view places them otherwise."""
+    if not inputs or not all(isinstance(p, dict) and type(p.get("x")) is int and type(p.get("y")) is int for p in inputs): return None
+    x0, y0 = min(p["x"] for p in inputs), min(p["y"] for p in inputs)
+    cells = {((p["y"] - y0) // SLOT, (p["x"] - x0) // SLOT): p for p in inputs if not (p["x"] - x0) % SLOT and not (p["y"] - y0) % SLOT}
+    if len(cells) != len(inputs): return None
+    return [[cells.get((row, col)) for col in range(max(c for _, c in cells) + 1)] for row in range(max(r for r, _ in cells) + 1)]
 
 
 def _station(position):
