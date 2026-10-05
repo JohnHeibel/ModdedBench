@@ -95,7 +95,7 @@ final class ReferenceProcessJob implements Navigation.Job,PlansWhilePaused {
         }
         if(loaded!=null){
             loaded.tick(()->baritone.compat.LoadedChunkIndex.capture((net.minecraft.client.multiplayer.ChunkProviderClient)mc.theWorld.getChunkProvider()),engine.getPlayerContext().playerFeet());
-            if(loaded.passes==0)return;
+            if(loaded.waiting())return;
             if(!started){engine.getGetToBlockProcess().getToBlock(loaded);started=true;}
         }
         // A farm's work shows in the inventory (harvest in, seeds out); everything else only in new ground.
