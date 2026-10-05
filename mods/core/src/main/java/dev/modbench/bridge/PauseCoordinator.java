@@ -138,13 +138,15 @@ public final class PauseCoordinator {
     public void hold(boolean value) { hold(value?"operator":null); }
     /** A hold, set from outside every agent-reachable path: the world pauses and resume is refused until release. by is whose it is, null for none. */
     public void hold(String by) {
-        boolean value=by!=null;heldBy=by; // a hold taken over while held (the operator's Pause during a backup) changes hands here
+        boolean value=by!=null,taken=value && held && !by.equals(heldBy);
+        heldBy=by; // a hold taken over while held (the operator's Pause during a backup) changes hands here, and so does the pause it made
+        if(taken && clock.paused() && SimulationClock.held(clock.reason())) { clock.pause(SimulationClock.holdReason(by));broadcast(true); }
         if(value==held) return;
         held=value;
         // A release resumes only the pause the hold made: a world already paused (an agent thinking, a guard,
         // a disconnect) or paused again during the hold stays paused, so a backup's hold never sets it running.
-        if(!value) { if(clock.paused() && clock.reason().equals("operator_hold")) command("time.resume",Json.object("ticks",heldStep),result->{ if(result.has("error")) held=true; }); }
-        else if(!clock.paused()) { heldStep=stepTicks;command("time.pause",Json.object("reason","operator_hold"),result->{}); }
+        if(!value) { if(clock.paused() && SimulationClock.held(clock.reason())) command("time.resume",Json.object("ticks",heldStep),result->{ if(result.has("error")) held=true; }); }
+        else if(!clock.paused()) { heldStep=stepTicks;command("time.pause",Json.object("reason",SimulationClock.holdReason(by)),result->{}); }
     }
     private void interrupt(String reason) {
         if(completion!=null) { Consumer<JsonObject> previous=completion;completion=null;owner=null;
