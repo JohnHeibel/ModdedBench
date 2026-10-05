@@ -89,6 +89,18 @@ class RecipeSummaryTests(unittest.TestCase):
         with patch.object(recipes_quests, "kernel", lambda: self.k), patch.object(recipes_quests.notes, "with_item_notes", lambda result: result):
             return recipes_quests.mb_recipes("gt:tool", 16, **kw)
 
+    def test_a_summary_gives_a_recipe_on_the_slot_grid_as_the_pattern_a_craft_takes(self):
+        recipes = summaries(SHAPED, ["Red"])
+        plate, hammers, ingot = recipes[0]["inputs"]
+        for position, (x, y) in zip((plate, hammers, ingot), ((25, 6), (61, 6), (43, 24))): position.update(x=x, y=y)   # plate . hammer / . ingot .
+        got = self.run_tool(recipes, handler="crafting", limit=20)["recipes"][0]
+        self.assertNotIn("inputs", got)
+        self.assertEqual(got["pattern"], [[{"id": "gt:plate", "meta": 0, "name": "Red Plate", "count": 1}, None, {k: v for k, v in hammers.items() if k not in "xy"}],
+                                          [None, {"id": "gt:ingot", "meta": 0, "name": "Red Ingot", "count": 1}, None]])
+        ingot.update(x=50)   # a view that is not a slot grid keeps its list
+        got = self.run_tool(recipes, handler="crafting", limit=20)["recipes"][0]
+        self.assertEqual(([c.get("name") for c in got["inputs"]], "pattern" in got, "x" in got["inputs"][2]), (["Red Plate", None, "Red Ingot"], False, False))
+
     def test_a_page_says_once_what_its_recipes_share_and_one_item_is_that_item(self):
         recipes = summaries(SHAPED, self.MATERIALS)
         page = self.run_tool(recipes, handler="crafting", limit=20)
