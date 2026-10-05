@@ -33,6 +33,8 @@ final class ReferenceProcessJob implements Navigation.Job,PlansWhilePaused {
     private final Set<String> movements=new LinkedHashSet<>();
     // A get_to_block target named by picked identity (item or ore) is found by this scan on the game thread, as mining's are.
     private final MiningObservation scan;
+    // One named by registry id is found in the loaded chunks a slice a tick, unless the engine's cache keeps its kind.
+    private final ChunkObservation loaded;
     // A farm's crops, soils, seeds, fertilizers and pickups: the caller's selectors or the defaults, all in the receipt.
     private final FarmPlan farm;
     // Only the goal process plans in a paused world: the others choose their goals in a tick that may also act.
@@ -49,6 +51,7 @@ final class ReferenceProcessJob implements Navigation.Job,PlansWhilePaused {
         if(picked)WorkAccess.validateBlockSelector(blockSpec);
         BlockOptionalMeta block=kind.equals("get_to_block")&&!picked?new BlockOptionalMeta(String.valueOf(blockSpec.get("id"))+(blockSpec.containsKey("meta")?":"+integer(blockSpec,"meta",0,0,15):"")):null;
         scan=picked?new MiningObservation(mc.theWorld,bounds(Map.of("min",List.of(center.getX()-radius,Math.max(1,center.getY()-16),center.getZ()-radius),"max",List.of(center.getX()+radius,Math.min(254,center.getY()+16),center.getZ()+radius))),List.of(blockSpec),List.of()):null;
+        loaded=block!=null&&!(engine.getPlayerContext().worldData()!=null&&baritone.cache.CachedChunk.trackedBlocks().contains(block.getBlock()))?new ChunkObservation(block):null;
         farm=kind.equals("farm")?new FarmPlan(mc.theWorld,center,radius,params):null;
         process=switch(kind){case "goal"->engine.getCustomGoalProcess();case "explore"->engine.getExploreProcess();case "get_to_block"->engine.getGetToBlockProcess();case "farm"->engine.getFarmProcess();default->throw new IllegalArgumentException("process must be goal, explore, get_to_block or farm");};
         if(kind.equals("explore")&&engine.getWorldProvider().getCurrentWorld()==null)throw new IllegalArgumentException("exploration requires the server world identity and cache");
@@ -68,7 +71,7 @@ final class ReferenceProcessJob implements Navigation.Job,PlansWhilePaused {
                     if(refused==null)engine.getCustomGoalProcess().setGoalAndPath(goal);else{failure.putAll(refused);finish("failed","goal_not_standable");}
                 }
                 case "explore"->engine.getExploreProcess().explore(center.getX(),center.getZ());
-                case "get_to_block"->{if(scan==null)engine.getGetToBlockProcess().getToBlock(block);}
+                case "get_to_block"->{if(scan==null&&loaded==null)engine.getGetToBlockProcess().getToBlock(block);}
                 case "farm"->engine.getFarmProcess().farm(radius,center,farm);
             }
         }catch(RuntimeException failure){finish("failed","start_failed");throw failure;}
@@ -89,6 +92,11 @@ final class ReferenceProcessJob implements Navigation.Job,PlansWhilePaused {
             scan.tick();
             if(scan.passes==0)return;
             if(!started){engine.getGetToBlockProcess().getToBlock(scan);started=true;}
+        }
+        if(loaded!=null){
+            loaded.tick(()->baritone.compat.LoadedChunkIndex.capture((net.minecraft.client.multiplayer.ChunkProviderClient)mc.theWorld.getChunkProvider()),engine.getPlayerContext().playerFeet());
+            if(loaded.passes==0)return;
+            if(!started){engine.getGetToBlockProcess().getToBlock(loaded);started=true;}
         }
         // A farm's work shows in the inventory (harvest in, seeds out); everything else only in new ground.
         var feet=engine.getPlayerContext().playerFeet();
@@ -118,6 +126,7 @@ final class ReferenceProcessJob implements Navigation.Job,PlansWhilePaused {
         out.put("goal",String.valueOf(engine.getPathingBehavior().getGoal()));first.status(out);
         if(farm!=null){out.put("farmRules",farm.rules());out.put("farmSeen",farm.seen);}
         if(scan!=null){out.put("scanPasses",scan.passes);out.put("scanMatches",scan.observedLocations().size());}
+        if(loaded!=null){out.put("scanPasses",loaded.passes);out.put("scanMatches",loaded.observedLocations().size());}
         return out;
     }
 }
