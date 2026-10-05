@@ -7,7 +7,7 @@ import java.util.*;
 /**
  * A diagnostic ring of the last ticks of movement: what the running movement asked for (inputs, aim) and what the
  * player did (position, ground, collision, crosshair), plus executor events (snags, back-ups, timeouts). Off unless the
- * movementTrace setting is on; nav.status returns it then. Game thread writes, the bridge thread copies.
+ * movementTrace setting is on; nav.status returns it then, when asked with trace:true. Game thread writes, the bridge thread copies.
  */
 public final class MovementTrace {
     private static final int SIZE=600;

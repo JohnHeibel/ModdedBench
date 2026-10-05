@@ -469,6 +469,11 @@ class GTNHProfileTests(unittest.TestCase):
         fake = self.use(FakeKernel(lambda method, params: {"method": method, **params}))
         tools.mb_settings("set", values={"allowInventory":True}, save=True)
         self.assertEqual(fake.calls[-1], ("nav.settings", {"operation":"set", "query":"", "save":True, "values":{"allowInventory":True}}))
+        every = [{"name":"allowBreak", "value":"true"}, {"name":"allowInventory", "value":"true"}]
+        self.use(FakeKernel(lambda method, params: {"settings":list(every), "engine":"x"}))
+        self.assertEqual(tools.mb_settings("set", values={"allowinventory":True})["settings"], every[1:])  # a set answers with what it named
+        self.assertEqual(tools.mb_settings()["settings"], every)
+        fake = self.use(FakeKernel(lambda method, params: {"method": method, **params}))
         tools.mb_follow({"entityId":7,"type":"Item"}, duration_ticks=40, radius=3, offset_distance=2.5,
                         offset_direction=90, timeout_s=12)
         self.assertEqual(fake.last("nav.follow"), ("nav.follow", {"timeout":12, "target":{"entityId":7,"type":"Item"},

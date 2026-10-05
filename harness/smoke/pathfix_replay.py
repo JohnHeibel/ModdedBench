@@ -227,7 +227,7 @@ class Replay(Course):
         info = self.place(spec)
         self.settings_for(spec)
         before = self.s.call("dev.replay.status")
-        seen = max([r.get("n", 0) for r in (self.c.call("nav.status").get("trace") or [])] or [0]) if self.args.trace else 0
+        seen = max([r.get("n", 0) for r in (self.c.call("nav.status", trace=True).get("trace") or [])] or [0]) if self.args.trace else 0
         offset = log_offset()
         sampler = Sampler(); sampler.start()
         kind, receipt, wall = self.call(spec, paused)
@@ -237,7 +237,7 @@ class Replay(Course):
         except BridgeError: pass
         after = self.s.call("dev.replay.status")
         clock = self.c.call("time.status")
-        trace = [r for r in (self.c.call("nav.status").get("trace") or []) if r.get("n", 0) > seen] if self.args.trace else []
+        trace = [r for r in (self.c.call("nav.status", trace=True).get("trace") or []) if r.get("n", 0) > seen] if self.args.trace else []
         failure = receipt.get("failure") or {}
         last = failure.get("lastCalculation") or {}
         search = last.get("search") or {}

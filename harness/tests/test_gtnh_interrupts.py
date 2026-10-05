@@ -277,6 +277,8 @@ class InterruptTests(unittest.TestCase):
             self.assertTrue(woke["woke"]); self.assertLess(time.monotonic()-start,30)
             self.assertEqual(["triggered"],[e["kind"] for e in woke["events"]]); self.assertEqual("look",woke["events"][0]["data"]["payload"]["modelPrompt"])
             self.assertEqual(got["cursor"]+2,woke["cursor"])
+            self.assertEqual((False,[]),(lambda again: (again["woke"],again["events"]))(mb_wait(timeout_s=1)))  # no cursor: from the last wait's, not the whole history again
+            self.assertEqual(["triggered"],[e["kind"] for e in mb_wait(0,1)["events"]])
         finally:
             close_supervisor(); mbtool.state.pop("kernel",None)
         self.s=InterruptSupervisor(self.k,self.tmp.name,retained=3,poll_s=10)

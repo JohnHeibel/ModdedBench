@@ -432,20 +432,23 @@ def mb_interrupt_events(after: int = 0, limit: int = 100, wait_s: float = 0) -> 
 
 
 @tool(lane="read", coverage=["meta"])
-def mb_wait(after: int = 0, timeout_s: float = 600) -> Any:
+def mb_wait(after: int | None = None, timeout_s: float = 600) -> Any:
     """Block until an interrupt needs you (trigger, fault, stall, failed delivery, context change)
     or timeout_s (1..900) passes. Call this instead of ending your turn
     whenever you are only waiting for machines or jobs: a finished turn cannot be woken.
-    Returns {woke, cursor, events, gap}; pass cursor back as after (0 replays retained history). On wake read
+    Returns {woke, cursor, events, gap}. Without after it goes on from the cursor your last wait returned;
+    0 replays retained history. On wake read
     events[].data.payload.modelPrompt, observe, then mb_interrupt('ack', event_id=data.eventId)
     if the receipt says latched. gap=true means older events were dropped: check mb_interrupt status.
     Nothing you wait for happens in a paused world, so a wait never sits in one: paused when you call
     or paused while you wait (a guard), it returns at once with woke false and paused: the reason.
     """
+    supervisor = get_supervisor()
+    if after is None: after = getattr(supervisor, "waited", 0)  # kept on the journal's own supervisor: a cursor means nothing in another journal
     if after < 0 or not 1 <= timeout_s <= 900: raise ValueError("after>=0, timeout_s 1..900 required")
-    supervisor = get_supervisor(); end = time.monotonic() + timeout_s; wait = 0  # the first look does not wait: the world may be paused already
+    end = time.monotonic() + timeout_s; wait = 0  # the first look does not wait: the world may be paused already
     while True:
-        e = supervisor.events(after, 1000, wait); after = e["cursor"]
+        e = supervisor.events(after, 1000, wait); after = supervisor.waited = e["cursor"]
         woke = [x for x in e["events"] if _wakes_runner(x)]
         out = {"woke": bool(woke or e["gap"]), "cursor": after, "events": woke, "gap": e["gap"]}
         if woke or e["gap"] or time.monotonic() >= end: return out
