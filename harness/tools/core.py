@@ -338,8 +338,10 @@ def mb_time(method: str = "status", params: dict | None = None, timeout_s: float
     available during pause.
     step {ticks:N} (1..72000) runs exactly N server ticks and pauses again with reason
     step; the reply comes once that pause has settled and its lastStep says how many ticks
-    ran and what ended the step (a guard can end it early). Work in progress (a held input,
-    a click, a job) stops at the step's end and reports it; step or resume to go on.
+    ran and what ended the step (a guard can end it early). A job still running at the step's
+    end is suspended and reports it; step or resume to go on. A single action (a click, a
+    selection, a held input) is never cut short by a step: the world steps on until it answers,
+    and resumedWorld.extendedTicks says by how much.
     Any acting tool takes resume=N to step N ticks with its action starting on the first,
     and resume=True to resume with it: one call, no tick lost between resume and action.
     The resume belongs to the call's first action only: a pause later in the same call (a
