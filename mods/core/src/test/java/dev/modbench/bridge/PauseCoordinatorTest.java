@@ -86,15 +86,27 @@ public class PauseCoordinatorTest {
         f.coordinator.hold("backup");
         assertFalse(f.coordinator.before());
         assertEquals("backup",f.coordinator.status().get("heldBy").getAsString());
+        assertEquals("a backup's pause does not read as the operator's","backup_hold",f.coordinator.status().get("reason").getAsString());
         f.command("time.resume");
         assertTrue(f.replies.get(0).get("error").getAsString().contains("routine backup"));
         f.coordinator.hold("operator"); // the operator's Pause takes a backup's hold over
         assertEquals("operator",f.coordinator.status().get("heldBy").getAsString());
+        assertEquals("operator_hold",f.coordinator.status().get("reason").getAsString());
         f.command("time.resume");
         assertTrue(f.replies.get(1).get("error").getAsString().contains("operator"));
         f.coordinator.hold((String)null);
         assertTrue(f.coordinator.before());
         assertFalse(f.coordinator.status().has("heldBy"));
+    }
+
+    @Test
+    public void aBackupsReleaseResumesItsOwnPauseAndItsReasonIsWaitedOut() {
+        Fixture f=new Fixture();
+        f.coordinator.hold("backup");assertFalse(f.coordinator.before());
+        assertTrue(SimulationClock.waitedOut(f.coordinator.status().get("reason").getAsString()));
+        assertFalse(SimulationClock.waitedOut("health_dropped"));
+        f.coordinator.hold((String)null);
+        assertTrue(f.coordinator.before());
     }
 
     @Test

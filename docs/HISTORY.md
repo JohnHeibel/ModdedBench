@@ -20,6 +20,8 @@ contract notes. What was still true is now in the current docs.
   result's size and `mb_cost` shows the heaviest tools.
 - **2026-10-05** A hold names its holder to the agent: `heldBy` in the clock status, and a refused resume says a
   backup is routine and short. In a 4 h run three calls met the half-hourly backup and read "the operator is holding".
+- **2026-10-05** A hold's pause reason names its holder (`backup_hold`, not `operator_hold` for all). In a live run the
+  model read a one-minute backup as "the world is now on operator hold".
 - **2026-10-05** Drawings accept `clear: true` legend entries, including entries without a block id, so a saved
   excavation plan reaches the same clearing as explicit cells, and `mb_view` counts what of it is still to dig.
 - **2026-10-05** A stack's NBT text and hash are printed with compound keys sorted (`Stacks.canonical`): the game can
