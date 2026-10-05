@@ -78,8 +78,9 @@ each one leaves you with, not at its title. A traveller who computes the shortes
 chain of prerequisites to the target and does only that arrives under-equipped
 at every step, does by hand what a side quest would have handed over, and
 dies to the first skeleton in clothes. So read the whole chapter, not just
-your line through it, and whenever a claim unlocks new quests, look at each
-of them and decide: take it now, take it later (when?), or skip it (why?).
+your line through it, and whenever new quests unlock, in this chapter or
+another, look at each of them and decide: take it now, take it later
+(when?), or skip it (why?).
 Write that decision in the chapter note, one line per quest, so that it is a
 decision and not an oversight. The questions that settle it:
 
