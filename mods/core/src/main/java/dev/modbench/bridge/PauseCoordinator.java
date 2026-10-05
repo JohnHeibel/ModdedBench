@@ -54,6 +54,8 @@ public final class PauseCoordinator {
     private String stepReason="step";
     private JsonObject lastStep;
     private boolean held;
+    /** Whose hold it is, in the hold file's own word (operator, backup, compaction); null when the world is not held. */
+    private String heldBy;
     /** Ticks a step still had when the operator's hold paused it: the release steps those, instead of running freely. */
     private int heldStep;
 
@@ -78,6 +80,7 @@ public final class PauseCoordinator {
         if(stepping) out.add("step",Json.object("id",stepId,"ticks",stepTotal,"remaining",stepTicks));
         if(lastStep!=null) out.add("lastStep",lastStep);
         out.addProperty("held",held);
+        if(held) out.addProperty("heldBy",heldBy);
         out.addProperty("clientConnected",host.clientConnected());
         out.addProperty("clientPaused",clientPaused);
         out.addProperty("deferredPackets",deferred.size());
@@ -107,7 +110,7 @@ public final class PauseCoordinator {
                 case "time.resume", "time.step" -> {
                     int ticks=Json.integer(params,"ticks",0,0,72000);
                     if(method.equals("time.step") && ticks<1) throw new IllegalArgumentException("time.step needs ticks 1..72000");
-                    if(held) throw new IllegalArgumentException("the operator is holding the world paused; wait for the release");
+                    if(held) throw new IllegalArgumentException(heldRefusal(heldBy));
                     if(clock.paused()) {
                         syncBoundary();
                         if(!settled()) throw new IllegalArgumentException("pause has not settled; inspect time.status before resuming");
@@ -126,8 +129,16 @@ public final class PauseCoordinator {
             syncBoundary();broadcast(true);reply.accept(status());
         } catch(IllegalArgumentException error) { reply.accept(Json.object("error",error.getMessage())); }
     }
-    /** Operator hold, set from outside every agent-reachable path: the world pauses and resume is refused until release. */
-    public void hold(boolean value) {
+    /** What a refused resume says: whose hold it is and what to expect of it. */
+    public static String heldRefusal(String by) {
+        if("backup".equals(by)) return "the world is held for a routine backup, which is over in under a minute: wait, then call again";
+        if("compaction".equals(by)) return "the world was held while you were silent and is released within seconds: call again";
+        return "the operator is holding the world paused; wait for the release";
+    }
+    public void hold(boolean value) { hold(value?"operator":null); }
+    /** A hold, set from outside every agent-reachable path: the world pauses and resume is refused until release. by is whose it is, null for none. */
+    public void hold(String by) {
+        boolean value=by!=null;heldBy=by; // a hold taken over while held (the operator's Pause during a backup) changes hands here
         if(value==held) return;
         held=value;
         // A release resumes only the pause the hold made: a world already paused (an agent thinking, a guard,

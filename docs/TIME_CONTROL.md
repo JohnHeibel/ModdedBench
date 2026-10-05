@@ -8,8 +8,12 @@ tool is `mb_time` (`status`, `pause`, `resume`, `step`, `configure`,
 
 Two rules sit above the agent. Time control belongs to the bridge session that
 last used it, and losing that session pauses the world (`agent_disconnected`).
-An operator hold (the file `modbench-hold` in the server directory, status
-`held`) pauses the world and refuses `time.resume` until the file is removed.
+A hold (the file `modbench-hold` in the server directory, status `held`)
+pauses the world and refuses `time.resume` until the file is removed. The
+file's one word says whose hold it is (`operator`, `backup`, `compaction`);
+the status carries it as `heldBy`, and the refusal says what to expect of that
+holder (`PauseCoordinator.heldRefusal`), so an agent that meets the half-hourly
+backup reads that it is a backup and short.
 A hold that interrupts a step gives the step its remaining ticks back on release.
 
 ## Contract

@@ -26,8 +26,14 @@ public final class ServerClock implements ClockHooks.Driver, PauseCoordinator.Ho
     private final PauseCoordinator coordinator=new PauseCoordinator(new SimulationClock(),AsyncPause.GREGTECH,ComputerPause.BARRIER,this);
     private final SimulationClock clock=coordinator.clock;
     private final ConcurrentLinkedQueue<Incoming> messages=new ConcurrentLinkedQueue<>();
-    /** The operator console creates this file in the server directory, which no agent can reach. */
+    /** The operator console and the backup create this file in the server directory, which no agent can reach. */
     private static final java.io.File HOLD=new java.io.File("modbench-hold");
+    /** Whose hold it is: the file's one word (harness runtime.hold_cmd). A file that cannot be read yet is still a hold. */
+    private static String holder() {
+        if(!HOLD.exists()) return null;
+        try { String by=new String(java.nio.file.Files.readAllBytes(HOLD.toPath()),StandardCharsets.UTF_8).trim();return by.matches("[a-z_]{1,24}")?by:"operator"; }
+        catch(java.io.IOException unread) { return "operator"; }
+    }
     private NetHandlerPlayServer client;
     private long lastHeartbeat;
 
@@ -158,7 +164,7 @@ public final class ServerClock implements ClockHooks.Driver, PauseCoordinator.Ho
             else if(System.nanoTime()-lastHeartbeat>15_000_000_000L) clock.pause("client_unresponsive");
         }
         // Pack mods (AmunRa) build world data on their first server tick and fail every join without it: a held server still warms up.
-        coordinator.hold(clock.ticks()>=20 && HOLD.exists());
+        coordinator.hold(clock.ticks()>=20?holder():null);
         if(!coordinator.before()) return false;
         runtime.simulationTick();return true;
     }
