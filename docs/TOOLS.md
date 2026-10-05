@@ -216,7 +216,7 @@ plan comes back as `{omitted, bytes, sha256, keys}`.
 | `mb_recipe_inspect` | action | Tooltip text at GUI coordinates on the open recipe page. |
 | `mb_quest_status` | read | Better Questing availability and counts. |
 | `mb_quest_sync` | read | Requests a full quest and chapter sync from the server. |
-| `mb_quest_lines` | read | Chapters in book order with layout and per-player totals. |
+| `mb_quest_lines` | read | Chapters with a quest unlocked, in book order with per-player totals; `locked=True` lists all, a query finds any. |
 | `mb_quest_search` | read | Quest ids, titles and descriptions. |
 | `mb_quest_observe` | read | One quest: prerequisites, tasks with progress, rewards and choices. |
 | `mb_quest_detect` | action | Asks the server to detect task completion. |
