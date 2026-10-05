@@ -210,7 +210,7 @@ class Suite(bs.Shells):
         for x in range(5):
             for z in (2, 4): self.set_block([x, 0, z], STONE)
         for x, z in ((-1, 3), (5, 3)): self.set_block([x, 0, z], STONE)
-        self.set_block([4, 0, 3], "minecraft:water"); self.wait(60)
+        self.set_block([4, 0, 3], "minecraft:flowing_water"); self.wait(80)   # the flowing id: it is the one that spreads
         before = self.region((0, 0, 3), (3, 0, 3))
         self.stand([origin[0] + 2.5, bs.FLOOR, origin[2] - 5.5])
         cells = [{"pos": [x, 0, 3], "id": DIRT} for x in (1, 2)]
