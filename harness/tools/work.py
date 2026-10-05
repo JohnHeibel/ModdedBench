@@ -560,10 +560,11 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
         cylinder|hcylinder (with axis), block {id, meta?} and an optional replace selector.
       drawing: {origin: [x,y,z], layers, legend, stages?} in the format mb_view returns: layers
         bottom first, rows north to south, one character per block west to east, legend
-        {char: {id, meta?, item?, verify?, replace?, click?, expect?}}; '.', ' ' and '+' are left alone. Dictionary
+        {char: {id?, clear?, meta?, item?, verify?, replace?, click?, expect?}}; clear:true empties cells without an id.
+        '.', ' ' and '+' are left alone. Dictionary
         layers with y use that absolute height, including subsets or gaps; plain row lists use
         consecutive heights from origin.
-    Registry ids are required. A cell, legend entry or selection block without meta accepts any
+    Registry ids are required except for clear cells. A cell, legend entry or selection block without meta accepts any
     variant of the block, which is what you want for blocks that face the way they are placed
     (furnace, chest, machines); give meta to demand one. The receipt's anyMeta lists the ids read
     that way. Tile NBT is refused, not ignored: the job places blocks and makes the clicks you
