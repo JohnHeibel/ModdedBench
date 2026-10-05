@@ -84,6 +84,13 @@ public final class GetToBlockProcess extends BaritoneProcessHelper implements IG
         if (knownLocations == null) {
             rescan(new ArrayList<>(), new GetToBlockCalculationContext(false));
         }
+        // ModdedBench: rescanned before the empty case, as MineProcess does: below it, exploring never saw a target that loaded later.
+        int mineGoalUpdateInterval = Baritone.settings().mineGoalUpdateInterval.value;
+        if (mineGoalUpdateInterval != 0 && tickCount++ % mineGoalUpdateInterval == 0) { // big brain
+            List<BlockPos> current = new ArrayList<>(knownLocations);
+            CalculationContext context = new GetToBlockCalculationContext(true);
+            rescan(current, context); // native scanner/selector callbacks stay on the client thread
+        }
         if (knownLocations.isEmpty()) {
             if (Baritone.settings().exploreForBlocks.value && !calcFailed) {
                 return new PathingCommand(new GoalRunAway(1, start) {
@@ -119,12 +126,6 @@ public final class GetToBlockProcess extends BaritoneProcessHelper implements IG
                 }
                 return new PathingCommand(goal, PathingCommandType.CANCEL_AND_SET_GOAL);
             }
-        }
-        int mineGoalUpdateInterval = Baritone.settings().mineGoalUpdateInterval.value;
-        if (mineGoalUpdateInterval != 0 && tickCount++ % mineGoalUpdateInterval == 0) { // big brain
-            List<BlockPos> current = new ArrayList<>(knownLocations);
-            CalculationContext context = new GetToBlockCalculationContext(true);
-            rescan(current, context); // native scanner/selector callbacks stay on the client thread
         }
         if (goal.isInGoal(ctx.playerFeet()) && goal.isInGoal(baritone.getPathingBehavior().pathStart()) && isSafeToCancel) {
             // we're there
