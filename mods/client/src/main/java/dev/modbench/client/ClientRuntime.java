@@ -130,8 +130,12 @@ public final class ClientRuntime extends BridgeRuntime {
         register("act.stop", "Release controls and cancel active or pending navigation, including Java API processes", "interaction", r -> {
             controlsChanged("cancelled");cancelNavigation("cancelled");return Json.object("stopped", true);
         });
-        register("nav.status", "Standalone Baritone navigation state and supported movement", "read", r ->
-            NavigationRegistry.get() == null ? java.util.Map.of("available",false) : NavigationRegistry.get().status());
+        register("nav.status", "Standalone Baritone navigation state and supported movement {trace:false}; trace:true adds the movementTrace rows when that setting is on", "read", r -> {
+            if(NavigationRegistry.get()==null) return java.util.Map.of("available",false);
+            var status=new java.util.LinkedHashMap<String,Object>(NavigationRegistry.get().status());
+            if(!Json.bool(r.params,"trace",false)&&status.remove("trace")!=null) status.put("trace","recorded: pass trace:true to read it"); // 600 rows are a hundred thousand characters
+            return status;
+        });
         register("obs.light","Where mobs can spawn near you, from the light values F3 shows: {radius:8 (<=16),height:4,limit:32}. A spot is a solid top with two free cells above it and block light 7 or less; sky is its sky light (15 = open sky: dark only at night). Nearest first, plus the count of all of them; a torch gives 14 and loses 1 per block.","read",r->{
             requirePlayer();var world=mc.theWorld;var me=mc.thePlayer;
             int radius=Json.integer(r.params,"radius",8,1,16),height=Json.integer(r.params,"height",4,1,8),limit=Json.integer(r.params,"limit",32,1,256);

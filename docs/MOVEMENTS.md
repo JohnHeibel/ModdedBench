@@ -88,7 +88,7 @@ the body's side is proved on a real obstacle: wear the item, send a goal job acr
 help with that:
 
 - the `movementTrace` setting (`nav.settings`) keeps the last ticks of what the movement asked for and what the body
-  did, and `nav.status` returns them;
+  did, and `nav.status` with `trace: true` returns them;
 - physics is measured by stepping the world a tick at a time and reading `obs.player` after each, which is what
   `glide_course.py --measure` does and where `ElytraGlideTest`'s numbers came from.
 

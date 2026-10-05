@@ -169,6 +169,17 @@ class QuestTests(unittest.TestCase):
             self.book["q250"] = "A quest synced later"; self.entries.append(("q250", "LOCKED"))
             self.assertEqual(self.quests.mb_quest_lines()["lines"][0]["entries"][2]["name"], "A quest synced later")
 
+    def test_several_lines_are_listed_with_totals_and_without_their_entries(self):
+        self.entries = [("q007", "UNLOCKED")]
+        def two(method, p):
+            found = self.reply(method, p)
+            return {**found, "lines": found["lines"] * 2} if method == "quest.lines" else found
+        k = FakeKernel(two)
+        with patch.object(self.quests, "kernel", lambda: k):
+            lines = self.quests.mb_quest_lines()["lines"]
+            self.assertEqual([(line["name"], line["quests"], "entries" in line) for line in lines], [("Tier 1", 2, False)] * 2)
+            self.assertEqual([c[0] for c in k.calls], ["quest.lines"])  # no titles are read for a list of lines
+
     def test_observe_drops_raw_config_only_where_the_structured_form_says_as_much(self):
         with patch.object(self.quests, "kernel", lambda: FakeKernel(self.reply)): quest = self.quests.mb_quest_observe("q001")
         self.assertEqual(["config" in r for r in quest["rewards"]], [True, False])  # an item reward has no other description; a choice's options are its config

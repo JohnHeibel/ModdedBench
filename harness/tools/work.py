@@ -310,7 +310,8 @@ def mb_settings(operation: str = "get", query: str = "", values: dict | None = N
     converted to the source parser syntax; reset resets only named values. A failed
     later value leaves every runtime setting unchanged. save writes atomically before
     applying the candidate; a disk failure leaves runtime settings and the existing
-    settings path unchanged. The response uses source-string value/default fields.
+    settings path unchanged. The response uses source-string value/default fields;
+    set and reset answer with the settings they named, get with those matching query.
     A declared setting can still be rejected when its native runtime support is absent.
     Block rules are yours, as lists of "modid:name" (every meta) or "modid:name:meta": hazards
     (never walked into or stood on; defaults fire, cactus, web, tripwire, end portal, any of which
@@ -329,7 +330,11 @@ def mb_settings(operation: str = "get", query: str = "", values: dict | None = N
     params: dict[str, Any] = {"operation": operation, "query": query, "save": save}
     if values is not None:
         params["values"] = values
-    return kernel().call("nav.settings", **params)
+    out = kernel().call("nav.settings", **params)
+    if values is not None and isinstance(out.get("settings"), list):  # the bridge answers a set with every setting there is
+        named = {str(key).lower() for key in values}
+        out["settings"] = [row for row in out["settings"] if str(row.get("name")).lower() in named]
+    return out
 
 
 @tool(rung=1, lane=lambda kw: "read" if kw.get("operation", "status") in ("status", "block", "locations", "result") else "act", coverage=["machine"])
