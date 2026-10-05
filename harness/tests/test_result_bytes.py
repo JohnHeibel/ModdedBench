@@ -155,7 +155,8 @@ class RecipeSummaryTests(unittest.TestCase):
 class QuestTests(unittest.TestCase):
     def setUp(self):
         from mbtools_gtnh import recipes_quests
-        self.quests = recipes_quests; mbtool.state.pop("quest_titles", None); self.addCleanup(mbtool.state.pop, "quest_titles", None)
+        self.quests = recipes_quests
+        for key in ("quest_titles", "quest_open_lines"): mbtool.state.pop(key, None); self.addCleanup(mbtool.state.pop, key, None)
         self.book = {f"q{n:03d}": f"Quest {n}" for n in range(250)}
 
     def reply(self, method, p):
@@ -228,6 +229,53 @@ class QuestTests(unittest.TestCase):
         with patch.object(self.quests, "kernel", lambda: FakeKernel(self.reply)): quest = self.quests.mb_quest_observe("q001")
         self.assertEqual(["config" in r for r in quest["rewards"]], [True, False])  # an item reward has no other description; a choice's options are its config
         self.assertIn("consume:1b", quest["tasks"][0]["config"])  # items name the stacks; their id, meta and the consume rule are only here
+
+    def opening(self, locked, unlocks, settles=True):
+        """A book of three lines of four quests, `locked` of them locked in each; the claim or the detect, once the server
+        answers it, unlocks `unlocks` = {line number: quests}. Every line carries its entries, as the bridge sends them."""
+        sent = []
+        def reply(method, p):
+            if method in ("quest.claim", "quest.detect"): sent.append(method); return {"accepted": True}
+            if method == "obs.inventory": return {"totals": []}
+            if method == "quest.observe": return {"claimed": "quest.claim" in sent and settles, "complete": bool(sent) and settles, "rewards": [{"id": 0}], "tasks": [{"id": 0, "name": "Have it", "complete": False}]}
+            now = [n - unlocks.get(i, 0) if sent and settles else n for i, n in enumerate(locked)]
+            return {"lines": [{"id": f"l{i}", "name": f"Chapter {i}", "quests": 4, "locked": n, "entries": [{"questId": "q007", "state": "LOCKED"}] * 4} for i, n in enumerate(now)], "nextOffset": None}
+        return FakeKernel(reply)
+
+    def test_a_claim_or_a_detect_says_which_lines_it_opened_and_nothing_when_none_did(self):
+        lines = lambda k: [c[0] for c in k.calls].count("quest.lines")
+        for act in (self.quests.mb_quest_claim, self.quests.mb_quest_detect):
+            mbtool.state.pop("quest_open_lines", None)
+            k = self.opening([1, 4, 4], {1: 2, 0: 1})  # a line with every quest locked gains two; one that had quests open gains another
+            with patch.object(self.quests, "kernel", lambda: k), patch.object(self.quests.time, "sleep", lambda s: None):
+                got = act("q")
+                self.assertEqual(got["linesOpened"], [{"name": "Chapter 1", "open": 2}], act.__name__)
+                self.assertNotIn("entries", json.dumps(got)); self.assertEqual(lines(k), 2)  # the totals before, read once a process, and after
+                self.assertNotIn("linesOpened", self.quests.mb_quest_claim("q"))            # said once: the line is open now
+                self.assertEqual(lines(k), 3)
+            k = self.opening([1, 4, 4], {0: 1})          # nothing opens: no field
+            with patch.object(self.quests, "kernel", lambda: k), patch.object(self.quests.time, "sleep", lambda s: None):
+                self.assertNotIn("linesOpened", act("q"))
+
+    def test_a_line_opened_between_calls_is_said_by_the_next_one_that_settles(self):
+        k = self.opening([1, 4, 4], {2: 3}, settles=False)  # the server has not answered (time paused): claimed false, and nothing is read after
+        with patch.object(self.quests, "kernel", lambda: k), patch.object(self.quests.time, "sleep", lambda s: None), patch.object(self.quests.time, "monotonic", iter(range(0, 9000, 20)).__next__):
+            got = self.quests.mb_quest_claim("q")
+            self.assertEqual((got["claimed"], "linesOpened" in got, [c[0] for c in k.calls].count("quest.lines")), (False, False, 1))
+            self.assertEqual(self.quests.mb_quest_claim("q", wait_s=0), {"accepted": True, "received": {}})  # no wait: the receipt, as before
+        k = self.opening([1, 1, 4], {})  # by now the game has opened the last line by itself; the next claim that settles says so
+        k.call("quest.claim")
+        with patch.object(self.quests, "kernel", lambda: k), patch.object(self.quests.time, "sleep", lambda s: None):
+            self.assertEqual(self.quests.mb_quest_claim("q")["linesOpened"], [{"name": "Chapter 1", "open": 3}])
+
+    def test_a_bridge_that_cannot_list_the_lines_leaves_the_claim_as_it_was(self):
+        def reply(method, p):
+            if method == "quest.lines": raise RuntimeError("quest book unavailable")
+            return {"claimed": True, "rewards": []} if method == "quest.observe" else {"totals": []} if method == "obs.inventory" else {"accepted": True}
+        k = FakeKernel(reply)
+        with patch.object(self.quests, "kernel", lambda: k), patch.object(self.quests.time, "sleep", lambda s: None):
+            got = self.quests.mb_quest_claim("q")
+            self.assertEqual((got["claimed"], sorted(got)), (True, ["claimed", "quest", "receipt", "received"]))
 
 
 class InventoryDefaultTests(unittest.TestCase):
