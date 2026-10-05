@@ -32,6 +32,9 @@ public final class ClientClock implements ClockHooks.Driver {
      */
     private boolean resuming, creditTick, resumeSent;
     private int resumeTicks, creditRan;
+    /** Ticks added to the last step because it ended inside a single action, and whether the server refused one. */
+    private int extended;
+    private boolean extendRefused;
     private Session agent;
     /** The action whose _resume armed the credit tick, and the thread that admitted it. */
     private Request armed;
@@ -85,7 +88,7 @@ public final class ClientClock implements ClockHooks.Driver {
         if(agent!=null && agent.connected && agent!=r.session) throw new IllegalArgumentException("time control belongs to another connected agent session");
         if(Json.bool(state,"held",false)) throw new IllegalArgumentException(PauseCoordinator.heldRefusal(Json.string(state,"heldBy","operator")));
         if(!"paused".equals(Json.string(state,"mode",""))) throw new IllegalArgumentException("pause has not settled; inspect time.status before resuming");
-        agent=r.session;armed=r;armedThread=Thread.currentThread();resuming=creditTick=true;resumeSent=false;resumeTicks=ticks;
+        agent=r.session;armed=r;armedThread=Thread.currentThread();resuming=creditTick=true;resumeSent=false;resumeTicks=ticks;extended=0;
         JsonObject record=Json.object("pausedBy",pauseReason(),"threats",state.has("threats")?state.get("threats"):new com.google.gson.JsonArray());
         if(ticks>0) record.addProperty("ticks",ticks);
         r.resumed=record;
@@ -107,13 +110,32 @@ public final class ClientClock implements ClockHooks.Driver {
         Request resume=new Request(new com.google.gson.JsonPrimitive("resume-for-action-"+requestId),"time.resume",
             Json.object("ticks",resumeTicks,"_timeout_ms",10000),agent,runtime,envelope->{
                 if(envelope.get("ok").getAsBoolean()) return;
-                resuming=false;creditRan=0;  // the world stays paused: the action that asked for it ends now, with why
+                resuming=false;creditRan=0;extendRefused=true;  // the world stays paused: the action that asked for it ends now, with why
                 runtime.resumeRefused(envelope.getAsJsonObject("error").get("msg").getAsString());
             });
         String id=Long.toString(++requestId);pending.put(id,resume);
         send(Json.object("type","command","id",id,"method","time.resume","params",resume.params));
     }
 
+    /**
+     * A step never cuts a single action short (a click, a selection, a held input): when the step's pause finds one in
+     * progress, the world steps one more tick, and again until the action answers. Only a step's own pause is extended:
+     * a guard's, a hold's or a requested pause stands, and jobs are suspended at the step's end as before. The action's
+     * own tick budget is what bounds it. True while the action is to be left running.
+     */
+    boolean extendStep() {
+        String next=stepEnd(paused && !resuming && "step".equals(pauseReason()),"paused".equals(Json.string(state,"mode","")),
+            !extendRefused && supported && agent!=null && agent.connected && armed!=null && !dropped(armed));
+        if(next.equals("extend")) {
+            // The tick runs here first and the server's follows it, as for the action's own first tick: a one-tick step
+            // asked of the server alone is over before this client has run any of it.
+            resuming=creditTick=true;resumeSent=false;creditRan=0;resumeTicks=1;extended++;
+            if(armed.resumed!=null && !armed.isDone()) armed.resumed.addProperty("extendedTicks",extended); // the step ran longer than asked, and says so
+        }
+        return !next.equals("cancel");
+    }
+    /** What a busy single action does at a pause: cancel (not a step's pause, or nobody to step for), wait (the pause has not settled), extend. */
+    static String stepEnd(boolean stepPause,boolean settled,boolean canStep) { return !stepPause || !canStep?"cancel":settled?"extend":"wait"; }
     String endedWhy() { return guardPause()?"world paused by a guard ("+pauseReason()+"): read mb_time status, decide, resume"
         :"the step ended and the world paused: step or resume to continue"; }
     void interruptPause(Request original,JsonObject receipt,String reason) {
@@ -181,7 +203,7 @@ public final class ClientClock implements ClockHooks.Driver {
                     if(state.has("worldId")) dev.modbench.api.ControlRegistry.memory().bind(state.get("worldId").getAsString());
                     paused=state.get("paused").getAsBoolean();
                     int credit=0;
-                    if(!paused) { if(resuming) credit=creditRan;resuming=creditTick=false;creditRan=0;planHold.reset(); }
+                    if(!paused) { if(resuming) credit=creditRan;resuming=creditTick=false;creditRan=0;extendRefused=false;planHold.reset(); }
                     JsonObject step=state.has("step")?state.getAsJsonObject("step"):null;
                     if(step==null) stepBudget=-1;
                     else if(step.get("id").getAsLong()!=stepId) { // the credit tick was this step's first

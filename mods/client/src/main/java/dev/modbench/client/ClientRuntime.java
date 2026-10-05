@@ -529,7 +529,8 @@ public final class ClientRuntime extends BridgeRuntime {
             navigationRequest.fail("cancelled",clock.endedWhy(),refused(navigationJob.status()));
             navigationRequest=null; navigationJob=null;
         }
-        if (clock.endsWork()) { // the same for a click in progress and a held input: no tick will finish them either
+        boolean stepsOn=clock.endsWork() && (interactions.running() || ui.running() || control != null) && clock.extendStep(); // a step does not end inside a click or a held input
+        if (!stepsOn && clock.endsWork()) { // a guard's pause: no tick will finish a click in progress or a held input either
             String why=clock.endedWhy();
             interactions.cancel(why);
             if (ui.running()) ui.cancel(why+"; a click already sent but not acknowledged may still apply when the world resumes: observe before retrying");

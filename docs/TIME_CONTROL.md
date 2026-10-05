@@ -38,9 +38,17 @@ steps that end with `fixture_checkpoint`.
 
 The client is not in lockstep. It receives the step with the state broadcast and
 runs at most `remaining` ticks of its own, then waits for the pause
-(`clientTicks` in `lastStep` is what it ran). A held input, a click in progress
-or a navigation job ends at the step's pause and reports why, as it does at a
-guard pause; a pause the agent asked for leaves them waiting instead.
+(`clientTicks` in `lastStep` is what it ran). A navigation job is suspended at
+the step's pause (below). A single action (a click, a selection, a held input)
+is never cut short by a step: a click is sent on its first tick and answers a
+few ticks later, so a short step used to report a click that had landed as
+cancelled. At the step's settled pause the client runs one more tick and asks
+the server for the same, as for the first tick of a resume-and-act, and again
+until the action answers (`ClientClock.extendStep`; `harness/smoke/step_course.py`
+is its test in the game); the action's own
+tick budget bounds it, and `resumedWorld.extendedTicks` says how many were
+added. Only a step's own pause is extended. A guard pause ends all of them and
+reports why; a pause the agent asked for leaves them waiting instead.
 
 ## Resume and act in one request
 

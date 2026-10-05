@@ -21,6 +21,12 @@ public class ClientClockTest {
         session.disconnect();  // before the credit tick: there is nobody to resume for, and no session to send the resume as
         assertTrue(ClientClock.dropped(r));
     }
+    @Test public void aStepIsExtendedOnlyAtItsOwnSettledPauseAndOnlyWhenThereIsSomeoneToStepFor() {
+        assertEquals("extend",ClientClock.stepEnd(true,true,true));
+        assertEquals("wait",ClientClock.stepEnd(true,false,true));    // the step's pause is still settling
+        assertEquals("cancel",ClientClock.stepEnd(false,true,true));  // a guard, a hold or a requested pause stands
+        assertEquals("cancel",ClientClock.stepEnd(true,true,false));  // the agent is gone, or the server refused the last one
+    }
     @Test public void pausedRefusalCarriesTheReasonAndAGuardIsNotOneToResumeThrough() {
         assertEquals("time_paused: paused by requested_pause; resume before starting simulation actions",ClientClock.refusal("requested_pause","starting simulation actions"));
         assertEquals("time_paused: paused by step; resume before executing native GUI actions",ClientClock.refusal("step","executing native GUI actions"));

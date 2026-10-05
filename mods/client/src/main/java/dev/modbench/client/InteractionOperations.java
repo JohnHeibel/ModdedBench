@@ -64,6 +64,7 @@ final class InteractionOperations {
     }
     void tick() {Job job=active;if(job!=null) try {job.tick();}catch(Exception|LinkageError e) {job.finish("failed",e.toString());}}
     void cancel(String reason) {if(active!=null)active.finish("cancelled",reason);}
+    boolean running() {return active!=null;}
     void itemUseFinished() {
         Job job=active;
         if(job==null||!job.delivered||!job.ownUse)return;
