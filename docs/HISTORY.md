@@ -8,6 +8,9 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-05** A step never cuts a click, a selection or a held input short: the world steps on until the action
+  answers. In a 4 h run all 13 clicks sent with `resume=1` were reported cancelled although they had landed. The
+  suggested guard set no longer names an air threshold: it stopped dives the walker had planned breath for.
 - **2026-10-05** Four defaults that filled the context: `mb_quest_lines` lists lines and gives entries for one,
   a settings set answers with what it named, `nav.status` sends the movement trace only when asked, and `mb_wait`
   goes on from its last cursor. In a 4 h run they were 1.0M of 5.5M result characters. The call log records each
