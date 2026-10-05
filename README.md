@@ -32,7 +32,7 @@ mb_quest_status()                         what the quest book wants next
 mb_recipes(id="minecraft:furnace", meta=0)  how to make it, per NEI handler
 mb_mine(blocks=[{"id":"minecraft:log"}], items=[{"id":"minecraft:log"}], quantity=8, radius=48)
 mb_build(cells=[{"pos":[0,0,0],"id":"minecraft:cobblestone"}], origin=[100,64,100])
-mb_notes("search", {"query": "furnace"})  what past sessions left behind
+mb_notes("find", {"near": "player"})      what past sessions noted here (the notes are files)
 ```
 
 4. For an autonomous run, give the model [PROMPT.md](PROMPT.md) with a target

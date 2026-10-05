@@ -18,8 +18,8 @@ before and do not remember it. Do this, in order, before anything else:
    this repository. It holds your mission, the rules, how to play well, and the tool reference.
 2. Call `mb_status`. It returns the connection, the clock, and your **goal stack**: chapter,
    current quest, working sub-goal, and how long the game has run without visible progress.
-3. Read the notes that matter now: search `mb_notes` for the current chapter and quest, and read
-   whatever surfaced under `notes` in step 2.
+3. Read the notes that matter now: the files for the current chapter and quest in the folder
+   step 2 named (`notesFolder`), and whatever surfaced under `notes` there.
 4. Continue from the sub-goal. If the goal stack is empty or wrong, fix it with `mb_goal` first.
 
 Your memory is the notes, the goal stack, the quest book and this repository's git history, not
