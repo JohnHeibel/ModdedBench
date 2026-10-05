@@ -299,6 +299,7 @@ class Server(FastMCP):
         method = (arguments or {}).get("method")
         entry = {"t": round(started, 2), "s": round(time.time() - started, 2), "tool": name,
                  "method": method if isinstance(method, str) else None, "error": error}
+        if not mbtool.CALL_LOG: return
         try:
             os.makedirs(os.path.dirname(mbtool.CALL_LOG), exist_ok=True)
             with open(mbtool.CALL_LOG, "a", encoding="utf-8") as f:
@@ -377,6 +378,7 @@ def main() -> int:
         if srv.error:
             print(f"ERROR\n{srv.error}")
         return 1 if srv.error else 0
+    mbtool.CALL_LOG = os.environ.setdefault("MB_CALL_LOG", mbtool.RUN_CALL_LOG)  # this is the run: its calls are logged
     tasks = sys.modules.get(mbtool.PACKAGE + ".tasks")
     if tasks:  # a background task's time commands go out on this server's session, the one that owns time
         threading.Thread(target=tasks.relay, name="mb-task-clock", daemon=True).start()

@@ -123,7 +123,7 @@ def mb_cost(hours: float = 2.0, top: int = 15) -> Any:
     now = time.time()
     since, calls = now - hours * 3600, []
     try:
-        with open(mbtool.CALL_LOG, "rb") as f:
+        with open(mbtool.CALL_LOG or os.devnull, "rb") as f:
             f.seek(max(0, f.seek(0, 2) - (8 << 20)))  # the tail is enough for any window a run needs
             lines = f.read().decode("utf-8", "replace").splitlines()
     except OSError:

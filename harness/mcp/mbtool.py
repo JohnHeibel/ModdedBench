@@ -42,7 +42,10 @@ from typing import Any, Callable
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 TOOLS_DIR = os.path.join(os.path.dirname(_HERE), "tools")
-CALL_LOG = os.environ.get("MB_CALL_LOG") or os.path.join(os.path.dirname(os.path.dirname(_HERE)), ".state", "calls.jsonl")  # server appends every tool call
+# Every tool call of a run, one line each. Only a served server has one (main() names it, and its background tasks inherit
+# the name): a test or a script that calls tools is not the run and writes nothing.
+CALL_LOG = os.environ.get("MB_CALL_LOG")
+RUN_CALL_LOG = os.path.join(os.path.dirname(os.path.dirname(_HERE)), ".state", "calls.jsonl")
 PACKAGE = "mbtools_gtnh"
 LANES = ("read", "act", "control")
 if _HERE not in sys.path:
