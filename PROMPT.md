@@ -189,8 +189,8 @@ Key facts about the runtime:
   returns `suspended` with a `suspendedJobId`, the job is held where it stopped
   and runs on whenever the world runs, and `mb_work_resume(job_id=...,
   resume=N)` waits on it again. A guard pause or any new action ends it. A guard
-  that fires during the action pauses the world again, as it should. An
-  operator hold is never lifted.
+  that fires during the action pauses the world again, as it should. A hold
+  (`held` in the status) is never lifted.
 - **When to pause.** Pause when ticks matter: a fight, a threat, an edge or a
   liquid, a precise or timed action, a machine step that can go wrong (water
   into a boiler that may be dry and hot). When you are safe inside your walled
@@ -485,8 +485,11 @@ repository copy stays true. Constraints that keep the harness healthy:
   with the pinned core on the server. Every deploy is archived with its source
   patch for review. The world pauses while the client is away
   (`client_disconnected`): resume it after a deploy. A pause whose status says
-  `held` is the operator's; resume is refused until they release it, so wait
-  with `mb_wait` and do not work around it.
+  `held` is not yours to lift, and `heldBy` says whose it is. `backup` is the
+  routine backup of the world: it comes round regularly, is over in under a
+  minute, and means nothing about what you were doing. `operator` is a person
+  and lasts until they release it. Resume is refused meanwhile, so wait with
+  `mb_wait` and do not work around it.
 
 ## 4. How to work
 
@@ -1181,7 +1184,7 @@ and list what is loaded, with load errors.
 | Tool | What it does |
 | --- | --- |
 | `mb_methods` | List the bridge's raw methods with one line each, or with name the matching ones whole; also caches their effects for lane routing of mb_call |
-| `mb_status` | Bridge status, the clock (paused, why, operator hold), your goal stack (mb_goal) with its stall signal, world notes near you, how long the run has been going, and your l… |
+| `mb_status` | Bridge status, the clock (paused, why, a hold and whose), your goal stack (mb_goal) with its stall signal, world notes near you, how long the run has been going, and you… |
 | `mb_cost` | What your own tool calls cost over the last `hours`: calls, failures and minutes per tool, and the time between calls |
 | `mb_call` | Call any advertised bridge method with JSON parameters |
 | `mb_obs` | Call an obs.* capability by short or full method name |

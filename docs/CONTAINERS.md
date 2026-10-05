@@ -114,8 +114,8 @@ Pause is an operator hold, not a bridge call: the console writes
 `modbench-hold` in the server's directory, the server pauses within a tick and
 refuses every `time.resume` until the file is gone. The agent has no path to
 that directory, so it can neither block the hold nor undo it. The file names
-its holder (`operator`, `backup`, `compaction`; the server only looks for the
-file), and each holder removes only its own: Resume ends the operator's hold,
+its holder (`operator`, `backup`, `compaction`; the server reads the word and
+tells the agent whose hold it met), and each holder removes only its own: Resume ends the operator's hold,
 and says so when a snapshot or the compaction guard still holds the world.
 Pause takes any hold over, so Pause then Resume ends one that nobody is
 ending. A release resumes only the pause the hold itself made: a pause that
