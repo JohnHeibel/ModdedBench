@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
 """What a late viewer needs to see the host's world, kept bounded, and the live stream rewritten for viewers.
 

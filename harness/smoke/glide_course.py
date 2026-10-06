@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 ModdedBench contributors
 """The glide in the game (docs/MOVEMENTS.md): a body with wings on crosses a drop by gliding and arrives unhurt; without
 them, or with something in the flight's way, it stays where it is.
 

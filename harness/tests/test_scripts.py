@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 ModdedBench contributors
 import sys
 import unittest
 from pathlib import Path

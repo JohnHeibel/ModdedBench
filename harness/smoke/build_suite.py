@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
 """The build regression suite: every in-game build scenario in one run, one PASS/FAIL row each, judged by the world.
 

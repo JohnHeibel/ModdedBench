@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 ModdedBench contributors
 """Bridging a gap from a block lower than a whole one, in the game: a chest's top is 0.875, so a body leaning over its
 edge is in the cell it wants to fill and no block goes in there. The walker has to keep back out of that cell.
 

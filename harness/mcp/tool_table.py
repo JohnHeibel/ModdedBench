@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 """Write the tool table in PROMPT.md from the @tool docstrings, so the brief cannot drift from the code.
 
 python harness/mcp/tool_table.py           rewrite the block between the tools:begin/end markers

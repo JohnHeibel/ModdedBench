@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 """Operator-only snapshots of a contained run: the world and the agent's notes, taken together, and the agent's work, kept on the host.
 
 python harness/launcher/backup.py once              one snapshot now

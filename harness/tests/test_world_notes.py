@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
 """World notes as files: what the harness writes, what it reads back from headers, and what it survives."""
 from concurrent.futures import ThreadPoolExecutor
