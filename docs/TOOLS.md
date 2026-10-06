@@ -1,46 +1,63 @@
 # Tools
 
-The tools an MCP client sees, grouped by the file in `harness/tools/` that
-defines them. Every file there is re-imported when it changes, so this table
-is a snapshot: `python harness/mcp/server.py --check` prints the live list, and
-`mb_tools_status` shows it from inside a session with lanes, rungs and the last
-reload error. `mb_methods` lists the raw Java RPC methods the tools compose,
-with the effect (`read`, `interaction`, `control`) each one declares.
+How the `mb_*` tools work, the contracts that are easy to get wrong, and how
+to add a tool or a bridge method. This file does not list the tools, because a
+hand-kept list goes stale. The list comes from the code:
 
-Conventions that hold across all tools:
+| Where | What it gives |
+| --- | --- |
+| [PROMPT.md](../PROMPT.md), section 8 | One line per tool, written from the `@tool` docstrings by `python harness/mcp/tool_table.py` |
+| `python harness/mcp/server.py --check` | The tools as loaded now, without a game |
+| `mb_tools_status` (in a session) | Modules, tools, lanes, live state keys and the last reload error |
+| `mb_methods` (in a session) | The raw Java bridge methods the tools compose, each with its description, effect and thread |
 
-- **Effect and lane.** `read` tools run on their own thread pool and are never
-  starved by long actions; `control` tools (stop, pause, interrupts, time) have
-  a small dedicated pool so they get through while actions are blocked;
-  everything else is an action. Dispatchers such as `mb_call` and `mb_obs` pick
-  the lane per call from the raw method's declared effect.
+## Where tools live
+
+Every `.py` file under `harness/tools/` (files and folders starting with `_`
+are skipped) is a tool module, re-imported when any file there changes.
+
+| File | Domain |
+| --- | --- |
+| `core.py` | Status, raw method calls, observations, actions, keys, time, world memory, screenshots, the map |
+| `inventory.py` | Containers, slots, item moves, crafting; `ContainerSession`, the helper for model-written procedures |
+| `work.py` | Navigation, mining, building, fighting, schematics and copy, scans, engine settings |
+| `recipes_quests.py` | NEI recipes and Better Questing |
+| `interrupts.py` | Watches that wake the model, `mb_wait` |
+| `notes.py` | World notes and the goal stack |
+| `plan.py` | `mb_view`: the drawing, one format to look at a place, plan in it and build from |
+| `scripts.py` | `mb_run`: a model-written script that chains tool calls as one call |
+| `tasks.py` | `mb_task`: background tasks started with `mb_run(background=True)` |
+| `wiki.py` | Search and read of the offline GTNH wiki snapshot (`harness/wiki/fetch.py`) |
+
+`mb_reload_tools` and `mb_tools_status` are defined in `harness/mcp/server.py`.
+
+## Conventions
+
+- **Effect.** Every Java bridge method declares an effect: `read`,
+  `interaction` or `privileged`. A read never changes the game. A Python tool
+  has an effect too (`read` when its lane is `read`, else `interaction`,
+  unless the decorator names one).
+- **Lane.** A tool's lane is its thread pool in the MCP server: `read` (never
+  starved by long actions), `act` (the default) or `control` (stop, pause,
+  interrupts, tasks; a small dedicated pool, so they get through while actions
+  are blocked). Dispatchers that take a `method` argument, such as `mb_call`,
+  `mb_act` and `mb_memory`, pick the lane per call from the raw method's
+  declared effect.
 - **Receipts, not acknowledgements.** Actions return what was sent and what
   was observed immediately afterwards. Verify by observing again.
 - **Notes ride along.** A `notes` key appears on results when a note is
-  relevant to the transition (see the notes section).
+  relevant to the transition (see World notes).
 - **Long calls.** Mining, building, routing and following stay open until a
   terminal receipt. Their one timeout is `timeout_ticks`, in game ticks; the
   wall-clock wait is derived from it. Every way a job ends, a lost wait
   included, answers with its receipt: keep the returned `jobId`.
+- **Resume in the call.** An acting tool takes `resume=True` or `resume=N` to
+  resume a paused world, or step it N ticks, with the action starting on the
+  first tick ([TIME_CONTROL.md](TIME_CONTROL.md)).
 
-## core.py: status, raw access, observation, action, time, memory
+## Actions (`mb_act`)
 
-| Tool | Effect | What it does |
-| --- | --- | --- |
-| `mb_status` | read | Bridge capabilities and connection state; names the notes folder and surfaces notes near the player (session start). |
-| `mb_methods` | read | Lists the raw bridge methods, one line each; `name="gui."` (any part of a method name) returns the matches whole: full description with the parameter schema, effect, thread. |
-| `mb_call` | any | Calls any raw method with JSON params; the escape hatch when no wrapper fits. |
-| `mb_obs` | read | Observations: `player`, `players`, `world`, `block`, `entities`, `entity`, `inventory`, `container`, `gui`, `tooltip`, `find`, `keys`, `tile`, `nbt`, `waila`, `batch`, and the engine's world reads `scan`, `terrain`, `fluid`, `tools`. Block, tile and entity reads surface attached notes. |
-| `mb_act` | action | Native actions: raw `input`, `look`, `use_block`, `use_entity`, `attack_entity`, `use_item`, `eat`, `select_hotbar`, bounded `combat`, `status`, `stop`. |
-| `mb_keys` | read/action | `list` reads the key bindings (`obs.keys`); `press` holds one for a number of ticks (`act.press_key`). |
-| `mb_stop` | control | Stops the active action and releases input. |
-| `mb_time` | control | Server clock: `status`, `pause`, `resume`, `configure` guards, `report_failure`. |
-| `mb_memory` | action | Waypoints, corridor routes, protected regions, recording; `status`/`get` are reads. |
-| `mb_screenshot` | read | PNG of the client view, works while paused. |
-| `mb_wiki_search`, `mb_wiki_read` | read | Offline snapshot of the GTNH wiki (`harness/wiki/fetch.py`): ranked full-text search, then pages or single sections as wikitext with source URL and revision. |
-| `mb_map` | read | JourneyMap overhead picture of explored terrain: labelled x/z grid, player, death points, `mb_memory` waypoints, the ore veins this player has prospected (VisualProspecting's client log, also under `veins`); day, night, topo and cave layers. |
-
-Actions (`mb_act`) need running time, so resume first:
+Actions need running time, so resume first or pass `resume`.
 
 - `use_block {x,y,z,face,hit?,sneak?,expected?,expectedHeld?}` checks reach,
   face and obstruction by ray and never falls back to plain item use.
@@ -63,7 +80,9 @@ Actions (`mb_act`) need running time, so resume first:
   (only eating has one). An item may change NBT, metadata or slot, or drop an
   entity, so check the whole inventory.
 
-Tile reads (`mb_obs` with `tile`, `nbt`, `waila`) come from the server:
+## Tile reads (`mb_obs` with `tile`, `nbt`, `waila`)
+
+These come from the server.
 
 - Loaded blocks within 128 blocks in the current dimension; no position means
   the crosshair. A plain block returns `hasTile: false`; unloaded is an error.
@@ -75,18 +94,7 @@ Tile reads (`mb_obs` with `tile`, `nbt`, `waila`) come from the server:
   IC2 and RF; an unsupported system is absent, not zero.
 - Pass `hwyla: false` to skip the Waila text when polling.
 
-## inventory.py: containers and items
-
-| Tool | Effect | What it does |
-| --- | --- | --- |
-| `mb_inventory` | read | Player inventory with identities, NBT, cursor and slot ownership. |
-| `mb_find` | read | Finds stacks by exact `{id, meta?, nbt_hash?, nbt?}` in the player or open container (`obs.find`). |
-| `mb_gui` | action | GUI primitives: open inventory, close, `click_slot`, `transfer`, `return_cursor`, `click_at`, `drag`, `scroll`, `key`, `type`, `button`, `text_field`, `hit_test`, `hover`. |
-| `mb_click_slot` | action | One guarded slot click with expected stack and cursor. |
-| `mb_transfer` | action | Moves up to 64 items to explicit ordinary slots and verifies the postcondition. |
-
-`ContainerSession` in the same file is the helper for model-written
-procedures: observe, act, and poll a postcondition with a bounded timeout.
+## Containers and items
 
 - Inventory indices and container slot indices are different namespaces.
   Stacks keep id, metadata, count and full SNBT; `nbt_hash` fingerprints the
@@ -103,35 +111,16 @@ procedures: observe, act, and poll a postcondition with a bounded timeout.
   an uncertain step.
 - `close` refuses an occupied cursor unless `allowCursorDrop: true`.
 
-## work.py: navigation, mining, construction
+## Navigation, mining, construction
 
-These wrap the `nav.*` methods (the Baritone engine); its read-only world
-queries are `obs.scan`, `obs.terrain`, `obs.fluid` and `obs.tools`.
-
-| Tool | Effect | What it does |
-| --- | --- | --- |
-| `mb_route` | action | Travels a saved corridor route, forward or reverse. |
-| `mb_follow` | action | Follows loaded entities for a bounded time. |
-| `mb_process` | action | Runs one upstream process: `goal`, `explore`, `get_to_block`, `farm`. |
-| `mb_mine` | action | Quantity mining by block/item selectors in bounds or a radius; success is measured inventory gain. |
-| `mb_scan` | read | Paged scan of loaded blocks by selector (`obs.scan`). |
-| `mb_build_preview` | read | Fresh diff of a plan against the world as counts and the first few of each list, the material allocation, and the build order as `steps`. For click cells and uses, `clicks {count, checked, ready, problems}`: whether each has a stance now, in the job's reason words. |
-| `mb_build` | action | Builds explicit cells, a selection or a drawing (at most 4,096 cells a job) one step (stage, then layer) at a time. There is one behaviour: no mode, no settings. A cell or legend entry may carry `click {face?, hit?, look?, sneak?}` and `expect`, and `uses` adds right clicks on blocks that stand; they are made inside the same job, after the plain cells of their stage. A job that does not finish stops with one reason and one cell (below). |
-| `mb_build_pause` | control | Pauses active build work (`stopped.reason: requested`); the `jobId` stays resumable. A build with blocks out for a click or scaffolds standing answers `closing` and puts them right first. |
-| `mb_build_materials` | read | Placeable states currently in inventory. |
-| `mb_schematic_import` | read | Reads an MCEdit `.schematic` or a canonical JSON plan inside the game's `schematics/` directory into `{plan:{cells,origin,size},size,count,skipped,tileEntities}`. Sponge `.schem` and Litematica are not read. |
-| `mb_schematic_build` | read/action | Imports, then previews (default) or builds the nested `plan`. |
-| `mb_copy` | read/action | Copies loaded blocks in inclusive bounds into the same result shape, optionally rebuilding the nested `plan` at another origin. |
-| `mb_work_status` | read | Durable job summary, progress and last receipt by `jobId`. |
-| `mb_work_resume` | action | Resumes a stopped job after the cause is corrected; permissions are re-supplied each time. |
-| `mb_settings` | action | Reads, sets or resets the pinned engine settings while idle. |
-| `mb_cache` | action | Inspects or administers the terrain cache. |
+The tools in `work.py` wrap the `nav.*` methods (the Baritone engine); its
+read-only world queries are `obs.scan`, `obs.terrain`, `obs.fluid` and
+`obs.tools`. Selectors, net-gain completion, the build contract and its limits
+are in [BARITONE_PORT.md](BARITONE_PORT.md).
 
 Work completions and failures write a small `auto`-tagged note at the job's
-location, in the `auto/` subfolder of the notes. `mb_notes` `find` leaves them out unless
-it asks for them (`auto: true`). Selectors,
-net-gain completion, the build contract and its limits are in
-[BARITONE_PORT.md](BARITONE_PORT.md).
+location, in the `auto/` subfolder of the notes. `mb_notes` `find` leaves them
+out unless it asks for them (`auto: true`).
 
 A build receipt has `placed`, `removed`, `left {count, first}` (cells still
 wrong, the first 8), `step {stage, y, index, of, left, first}` (where the build
@@ -179,7 +168,7 @@ resumable with `mb_work_resume`.
 `mb_task` says a task's `args` back whole only when they are small; a large
 plan comes back as `{omitted, bytes, sha256, keys}`.
 
-`mb_memory` (defined in `core.py`):
+## World memory (`mb_memory`)
 
 - `protect {name, min, max, replace?}`: a box that jobs will not dig through
   or build in on their way. It is a rule for the path search and for a mine's
@@ -204,26 +193,7 @@ plan comes back as `{omitted, bytes, sha256, keys}`.
   routes, 256 regions.
 - For long `mb_route` trips raise `timeout_ticks`.
 
-## recipes_quests.py: NEI and Better Questing
-
-| Tool | Effect | What it does |
-| --- | --- | --- |
-| `mb_recipe_status` | read | Whether the NEI catalogue and handlers are ready. |
-| `mb_item_search` | read | Searches the item catalogue with pagination and exact variants. |
-| `mb_item_info` | read | Tooltip, ore and fluid data, ItemBlock placement metadata for one variant. |
-| `mb_fluid_search` | read | Fluid ids, names and properties. |
-| `mb_recipes` | read | Every way to make an item (or `mode="uses"`), per handler, with voltage and duration. |
-| `mb_recipe_handlers` | read | All NEI categories and their machine catalysts. |
-| `mb_recipe_view` | action | Opens the native recipe page and returns it as an image. |
-| `mb_recipe_inspect` | action | Tooltip text at GUI coordinates on the open recipe page. |
-| `mb_quest_status` | read | Better Questing availability and counts. |
-| `mb_quest_sync` | read | Requests a full quest and chapter sync from the server. |
-| `mb_quest_lines` | read | Chapters with a quest unlocked, in book order with per-player totals; `locked=True` lists all, a query finds any. |
-| `mb_quest_search` | read | Quest ids, titles and descriptions. |
-| `mb_quest_observe` | read | One quest: prerequisites, tasks with progress, rewards and choices. |
-| `mb_quest_detect` | action | Asks the server to detect task completion. |
-| `mb_quest_select_choice` | action | Selects a reward option. |
-| `mb_quest_claim` | action | Claims all of a quest's rewards and reports what arrived. |
+## Recipes and quests
 
 Recipe workflow: `mb_item_search` (keep `id`, `meta`, `nbt` together), then
 `mb_recipes` with the default `limit=0` for the per-category overview, again
@@ -246,21 +216,21 @@ Quest actions only send Better Questing's normal packets and return
 `serverAcknowledged: false`. A claim needs a valid choice for every choice
 reward.
 
-## interrupts.py: watches that wake the model
+## Interrupts: watches that wake the model
 
-| Tool | Effect | What it does |
-| --- | --- | --- |
-| `mb_interrupt` | control | `add`, `remove`, `reload`, `status`, `ack` watches. A watch is declarative (`queries`, `conditions`, `effects`, `prompt`) or a Python file with `evaluate(context)`; effects are `notify`, `cancel`, `pause`. |
-| `mb_interrupt_events` | read | Replays the durable event journal after a cursor; a host uses it to give the model a turn. |
-| `mb_wait` | read | Blocks (1 to 900 s) until an event after the cursor needs the model: trigger, fault, stall, failed delivery or context change. Returns `woke`, `cursor`, the waking `events` and `gap`; from a world that is paused or pauses during the wait it returns at once with `paused`: the reason. A chat-style agent calls it instead of ending its turn. |
+A watch (`mb_interrupt`) is declarative (`queries`, `condition`, `effects`,
+`prompt`) or a Python file with `evaluate(context)`; effects are `notify`,
+`cancel`, `pause`. `mb_wait` blocks (1 to 900 s) until an event needs the
+model, and a chat-style agent calls it instead of ending its turn.
+`mb_interrupt_events` replays the event journal after a cursor.
 
 Fires are retried with the same event id and the watch is re-armed if the
 bridge cannot be reached; watches survive reconnects, and armed or undelivered
 watches are persisted next to the journal and re-armed after an MCP server
 restart. While a latch is set, the next acting call is refused
 (`interrupt_latched: ...`) with each latched event's reason and prompt; that
-refusal delivers them and releases the latch, so the call after it runs. `_examples/` holds a
-custom-predicate example.
+refusal delivers them and releases the latch, so the call after it runs.
+`harness/tools/_examples/` holds a custom-predicate example.
 
 ```json
 {"queries": {"player": {"method": "obs.player"},
@@ -285,20 +255,14 @@ custom-predicate example.
   resumes time nor retries anything. Re-arm a one-shot watch after recovery.
 - The journal is SQLite under `.state/interrupts` (`MODBENCH_INTERRUPTS_DIR`).
 
-## notes.py: durable world notes
-
-| Tool | Effect | What it does |
-| --- | --- | --- |
-| `mb_notes` | read | `find`: the notes by where their anchors are (near a point, in a region, for an entity, for an item or topic). `capture`: one anchor, observed and not saved, as the header line to add to a note. |
-| `mb_note_new` | action | Creates a note file with its anchors (block, entity, location, region, item type, topic), text, tags and data. |
-| `mb_note_append` | action | Adds a dated entry (`[2026-10-04T12:00] text`, UTC) as a new last line of an existing note, under the lock that keeps two writers from losing one; a retry of the entry that is already last adds nothing. |
-| `mb_craft` | action | One call per craft at any GUI station: opens `at` (or the inventory grid), then either lays out a shaped `pattern` `times` times and takes the output, or loads machine `inputs` into the slots the machine itself accepts them in and empties its output slots for up to `wait_s`; `at` alone collects. Returns ingredients if the pack has no such recipe; closes what it opened. |
-| `mb_run` | privileged | Runs a model-written Python script (`main(**args)`, every `mb_*` tool in scope, `log`) as one call; stops at the first error with the line and the log. Runs once unless given a `name`, which keeps it under `harness/scripts/` for re-running. Disposable by design: not listed in `mb_status`, no library. |
-| `mb_goal` | action | Reads or updates the goal stack (chapter, quest, sub-goal, serves, and progress: its 0 to 100 guess at the quest, shown on the stream) kept in the note `goal-stack`; `mb_status` returns it with a stall signal. |
+## World notes
 
 The notes are files, and the model reads, searches, edits and deletes them with
 its shell: `.state/notes/<world id>/<id>.md` (`MODBENCH_NOTES_DIR` moves
 `.state/notes`; `mb_status` and `find` return the folder as `notesFolder`).
+`mb_notes` does what a file search cannot (`find` by place, `capture` of an
+anchor), `mb_note_new` creates a note with its anchors, and `mb_note_append`
+adds a dated last line under a lock.
 
 ```
 title: Smelting room
@@ -339,45 +303,68 @@ The text, from the first line after the blank one.
   file has changed.
 - Notes protect nothing: use `mb_memory("protect")`.
 
-## Server-side tools
-
-`mb_reload_tools` re-imports the tool directory on demand and reports errors;
-`mb_tools_status` lists modules, tools, lanes, live state keys and the last
-reload error. Both are defined in `harness/mcp/server.py`.
-
 ## Adding a tool
 
 ```python
 from mbtool import tool, kernel
 
-@tool(lane="read", effect="read", coverage=["obs"])
+@tool(lane="read", coverage=["obs"])
 def mb_nearby_chests(radius: int = 16) -> dict:
     """Chests within radius of the player, with their observed contents."""
     ...
 ```
 
-Put it in any file under `harness/tools/` (files starting with `_` are
-skipped). The next tool call loads it. A duplicate name or an import error
-is reported and the previous tools stay registered. Keep live state in
-`mbtool.state[...]` so it survives the next reload.
+- Put it in any file under `harness/tools/`. The next tool call loads it. A
+  duplicate name or an import error is reported (`mb_reload_tools`,
+  `mb_tools_status`) and the previous tools stay registered.
+- Parameters are plain typed values (`int`, `float`, `str`, `bool`, `list`,
+  `dict`, optional with a default). The docstring becomes the tool's
+  description, and its first sentence becomes the line in `PROMPT.md`. Return
+  JSON-serialisable values; raise `BridgeError` or `ValueError` to fail.
+- `@tool(rung, coverage, name, title, effect, lane)`: `name` defaults to the
+  function name, `lane` to `act`; `lane` may be a function of the call's
+  arguments. `rung` and `coverage` are descriptive only.
+- `kernel().call("obs.player")` or `kernel().call("act.use_block", x=1, y=64,
+  z=2)` calls a raw bridge method. `mb_methods` lists them.
+- Keep live state in `mbtool.state[...]` so it survives the next reload.
+- Run `python harness/mcp/tool_table.py` afterwards so the table in
+  `PROMPT.md` follows, and add a test under `harness/tests/` with a fake
+  kernel if the tool has any logic.
 
-## Renamed in 2026-09
+`harness/mcp/mbtool.py` is the contract; changing it, or anything else under
+`harness/mcp/`, needs an MCP server restart.
 
-For operators and notes written against the earlier names. Parameters and
-result shapes did not change.
+## Adding a Java bridge method
 
-| Old | New |
-| --- | --- |
-| raw `baritone.goto`, `mine_block`, `place_block`, `mine`, `build`, `resume`, `build_preview`, `build_pause`, `build_materials`, `follow`, `process`, `route`, `cache`, `settings`, `status`, `work_status`, `schematic_import`, `copy` | `nav.<same name>` |
-| raw `baritone.scan`, `baritone.terrain`, `baritone.fluid`, `baritone.tools` | `obs.scan`, `obs.terrain`, `obs.fluid`, `obs.tools` |
-| raw `inv.find` | `obs.find` |
-| raw `keys.list` | `obs.keys` |
-| raw `keys.press` | `act.press_key` |
-| raw `obs.hwyla` | `obs.waila` (the alias was removed) |
-| `mb_builder_pause` | `mb_build_pause` |
-| `mb_builder_materials` | `mb_build_materials` |
-| `mb_nei_status` | `mb_recipe_status` |
-| `mb_search` | `mb_item_search` |
-| `mb_item` | `mb_item_info` |
-| `mb_fluids` | `mb_fluid_search` |
-| launcher `install-control`, `rollback-control` | `install-core`, `rollback-core` (client and server `mods/`) |
+Add Java only when Python cannot compose the result from existing methods,
+because it costs a rebuild and a client restart.
+
+1. Register it in the constructor of `ClientRuntime` (`mods/client`):
+
+   ```java
+   register("obs.example", "What it returns {param:type, ...}", "read", r -> Json.object("answer", 42));
+   ```
+
+   The arguments are the name, the description `mb_methods` shows (put the
+   parameters in it), the effect (`read`, `interaction` or `privileged`) and
+   the handler. A duplicate name throws at startup.
+2. The handler gets the `Request` (`r.params` is the JSON object sent) and
+   runs on the game thread. Return an object to reply; it is serialised with
+   Gson. Throw `IllegalArgumentException` for a bad request (`bad_request`);
+   any other exception is reported as `game_error`. Return `null` only to
+   reply later through the request, as the long jobs do.
+3. Keep it short: it runs inside a game tick. Work that takes more than a
+   tick belongs in a job, and anything that reads many blocks should be
+   covered by `TickBudgetTest` ([BUILD.md](BUILD.md#testing)).
+4. Declare the effect honestly. A `read` must not change the game; only reads
+   can be made available to `obs.batch` and to watches (`watchable(...)`), and
+   `act.stop` cancels queued methods that are not reads.
+5. Python reaches the client bridge only. A method on the dedicated server
+   (`ServerRuntime`, `mods/server`) is registered the same way and needs a
+   client method that relays it, as `time.*` and `obs.tile` do.
+6. Navigation and work methods go through the `Navigation` interface in
+   `mods/api`, which `BaritoneNavigation` (`mods/baritone`) implements and the
+   client registers as `nav.*`; the Baritone jar may refer to ModdedBench only
+   through `dev.modbench.api`.
+7. Build, install and restart ([BUILD.md](BUILD.md)). `mb_call` reaches the
+   new method at once; wrap it in a tool when it is worth a name.

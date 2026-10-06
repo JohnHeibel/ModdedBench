@@ -74,16 +74,17 @@ Python lanes use.
 ## Time control
 
 An opt-in whole-simulation-tick gate on the dedicated server. `time.pause`
-stops complete server ticks; `time.resume` returns to real time; there is no
-stepping. Guards (`healthDrop`, `healthBelow`, `airBelow`, `foodBelow`,
-`burning`, `pauseOnDisconnect`) pause at the tick boundary and never act. While
+stops complete server ticks; `time.resume` returns to real time; `time.step`
+runs exactly N server ticks and pauses again. Guards (`healthDrop`,
+`healthBelow`, `airBelow`, `foodBelow`, `burning`, `threatWithin`,
+`actionFailed`, `pauseOnDisconnect`) pause at the tick boundary and never act. While
 paused, networking, keepalives, chunk delivery, observations and screenshots
 stay live; gameplay packets are deferred and released in order at the network
 stage of the first resumed tick. GregTech's background structure jobs pass
 through a barrier so a pause settles only after admitted jobs finish;
 OpenComputers machines are paused cooperatively. The full contract, the
-barrier ordering rules (`PauseCoordinator`, `before:gregtech`) and the accepted
-evidence are in [TIME_CONTROL.md](TIME_CONTROL.md).
+barrier ordering rules (`PauseCoordinator`, `before:gregtech`) and the limits
+are in [TIME_CONTROL.md](TIME_CONTROL.md).
 
 ## Control ownership
 
@@ -127,11 +128,17 @@ event buffer, cancellation scopes. `lane` on a tool chooses its thread pool:
 interrupts, time).
 
 `harness/tools/` is the model-editable surface, split by domain: `core.py`
-(status, raw calls, observations, actions, keys, time, memory), `inventory.py`
-(GUI and inventory operations with postcondition polling), `work.py`
-(navigation, mining, construction, scanning, copy and schematic import, work
-journals), `recipes_quests.py` (NEI and Better Questing), `interrupts.py`
-(watches and the supervisor), `notes.py` (world notes and their surfacing).
+(status, raw calls, observations, actions, keys, time, memory, the map),
+`inventory.py` (GUI and inventory operations with postcondition polling,
+crafting), `work.py` (navigation, mining, construction, fighting, scanning,
+copy and schematic import, work journals), `recipes_quests.py` (NEI and Better
+Questing), `interrupts.py` (watches and the supervisor), `notes.py` (world
+notes, their surfacing, the goal stack), `plan.py` (the drawing: one format to
+look at a place, plan in it and build from), `scripts.py` (`mb_run`: a
+model-written script that chains tool calls as one call), `tasks.py`
+(background tasks that work the body while the model thinks, `mb_task`) and
+`wiki.py` (search and read of the offline GTNH wiki snapshot). The tool list
+itself is generated: see [TOOLS.md](TOOLS.md).
 
 ### Interrupts
 

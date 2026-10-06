@@ -10,7 +10,7 @@ without it; only `nav.*` and `obs.scan`/`terrain`/`fluid`/`tools` need it.
 
 | Location | Contents |
 | --- | --- |
-| `src/upstream/java` | 156 upstream files, adapted in place. `UPSTREAM_SOURCES.json` records each file's original path and SHA-256; the Gradle build verifies them. Modified files carry a notice. The hash pins provenance, not text identity after adaptation. |
+| `src/upstream/java` | 156 upstream files, adapted in place. `UPSTREAM_SOURCES.json` records each file's original path and the SHA-256 of the original; the build packs that list into the jar. Modified files carry a notice. The hash pins provenance, not text identity after adaptation. |
 | `src/main/java/baritone/compat` | Version boundary: coordinates, vectors, block state as registry id plus metadata, loaded-chunk index, native placement, inventory swaps, events, rendering. No fake `net.minecraft` classes. |
 | `src/main/java/baritone/gtnh` | ModdedBench side: `BaritoneNavigation` (the `Navigation` implementation the client registers), job wrappers (`Reference*Job`, `MiningProcess`, `ReferenceConstructionProcess`), the validated build plan (`ConstructionPlan`), `PlanImport`, `WorkJournal`, tool and placement adapters. |
 | package `baritone.gtnh.pathing` | Minecraft-free code written for this project and unit tested without a game: work and construction spec validation (`WorkSpec`, `ConstructionMask`), the build order and break rule (`BuildSteps`, `PlanBreaks`), `DeferredClearance`, the corridor constraint (`Corridor`), `GoalRange`, and terrain observation helpers (`TerrainGrid`, `CollisionBox`, `LadderFacing`, `FluidPolicy`). `Move` and `MoveRegistry` are how a kind of movement is added to the search, with the added ones in `baritone.gtnh.moves` ([MOVEMENTS.md](MOVEMENTS.md)). There is no second path search; all routing is upstream's. |
@@ -61,12 +61,11 @@ cancelled and a superseded search cannot install its result into a newer job.
 | Upstream chat command framework, `GuiClick`, multiple bots, `baritone.api` binary compatibility | Not implemented. MCP tools cover the operations. |
 | Flight | Gliding on worn wings is an added move, and other moves that take off and land are added the same way ([MOVEMENTS.md](MOVEMENTS.md)). Resting in the air (hover, creative flight) is not built. |
 | Water-bucket fall recovery | Disabled: the clutch is a provider boundary with no verified fluid-container provider. |
-| Swimming | Verified still vanilla water only. Modded fluids are excluded regardless of temperature. Flowing-water targets fail path calculation. |
-| Mining a block with liquid directly above | Rejected by the inherited `MovementHelper` safety rule (seen with water-capped obsidian). |
+| Fluids other than vanilla water | Not swum or waded: lava, any fluid at 500 K or hotter, and every modded fluid (`FluidPolicy`: `unverified_fluid`), whatever its temperature. Vanilla water, still and flowing, is swum, with breath as a limit of the search; `harness/smoke/movement_course.py` has the cases (currents, streams, a waterfall, dives). |
+| Breaking a block with liquid directly above | A walk does not (upstream's `MovementHelper.avoidBreaking`). A mining job with `besideFluid` (`mb_mine` turns it on whenever `allow_place` is on; it needs a throwaway block in the hotbar) breaks blocks beside and under a liquid other than lava and plugs the hole; lava is still refused. |
 | Snow of three or more layers | Treated as not walkable, as upstream does. |
-| Ordinary `ItemDoor` placement | A plan cell whose item is not a block item (a door, a bed) is made a click cell by `ConstructionPlan` and clicked in by `ClickRun`; the item is the one the game picks for the block when the cell names none. |
 | Silent (packet-only) look | Not migrated. Desktop notifications go to the log and chat. |
-| Explore | Frontier selection and cache persistence exercised on natural terrain; the round trip failed to a mob. No survival handling inside the process. |
+| Explore | No survival handling inside the process: the time guards pause, nothing fights or flees. |
 
 ## Mining contract (`nav.mine`, `mb_mine`)
 
@@ -224,6 +223,11 @@ the step from the world and the journal's per-click results.
 
 A cell that names `meta` and has no `click` is placed from wherever the walk
 stands, and stops as `mismatch` when that click would make another variant.
+
+Doors and other non-block items. A plan cell whose item is not a block item
+(a door, a bed) is made a click cell by `ConstructionPlan` and clicked in by
+`ClickRun`; the item is the one the game picks for the block when the cell
+names none.
 
 `PlacementStateAdapters` predicts the placed metadata for known callbacks,
 including GregTech's machine item registry; anything else is verified after
