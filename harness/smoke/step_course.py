@@ -23,6 +23,8 @@ STONE, LEVER = "minecraft:stonebrick", "minecraft:lever"
 
 
 class Steps(bs.Shells):
+    COST = "walk"   # its cases run no job today: the check judges one only when a row carries a cost
+
     def paused(self) -> dict:
         """Pause and wait for it to settle; the clock state."""
         state = self.c.call("time.status")["state"]
@@ -107,7 +109,7 @@ def main():
     ap.add_argument("--keep", action="store_true")
     ap.add_argument("--case")
     ap.add_argument("--server-host", default="127.0.0.1")
-    args = ap.parse_args(); args.seed, args.trials = 1, 1
+    bs.mc.tick_cost.argument(ap); args = ap.parse_args(); args.seed, args.trials = 1, 1
     t = Steps(args); t.setup()
     rows = []
     try:
@@ -115,7 +117,7 @@ def main():
             if args.case and args.case != name: continue
             try: row = getattr(t, name)()
             except Exception as e: row = {"ok": False, "crashed": f"{type(e).__name__}: {e}"}
-            rows.append(row)
+            t.costed(name, row, "ok"); rows.append(row)
             print(f"{name} {'PASS' if row['ok'] else 'FAIL'} {json.dumps({k: v for k, v in row.items() if k != 'ok'}, default=str)[:1500]}", flush=True)
             try:
                 if t.c.call("time.status")["state"].get("paused"): t.c.call("time.resume")

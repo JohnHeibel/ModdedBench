@@ -27,7 +27,7 @@ import static org.junit.Assert.*;
  * build's reads of its plan, and its order at a pass start and in a preview. Not reached, because they need a player or
  * the walker: the job step itself (ReferenceProcessJob.tick, ReferenceConstructionProcess.step and survey, MiningProcess,
  * ClickRun.tick), the walker's own tick, the tool warm-up, WorkAccess.Stands and GoalRoom. Those are measured in the
- * game: the receipt's `cost`, which the suites in harness/smoke hold to a limit (perf.py).
+ * game: the receipt's `cost`, which the suites in harness/smoke hold to a limit (tick_cost.py).
  */
 @org.junit.runner.RunWith(ForgePlanningTestRunner.class)
 public class TickBudgetTest {
