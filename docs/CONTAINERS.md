@@ -94,7 +94,7 @@ Settings in `docker/.env`:
 | `BRIDGE_TOKENS` | none, required | Host folder holding `bridge-47223.token`, normally `.moddedbench` in your user folder |
 | `SERVER_MEMORY_MIB` | `6144` | Server heap |
 | `BRIGHT_NIGHTS` | `false` | `true` turns off the pack's near-black night rendering, for recording; light levels in the game are unchanged |
-| `MB_DIFFICULTY` | `1` | The world's difficulty, written to `server.properties` at every server start: 0 peaceful, 1 easy, 2 normal, 3 hard. The pack ships 3; runs are played on easy unless this says otherwise. Not in `.env.example`; add the line to change it |
+| `MB_DIFFICULTY` | `1` | The world's difficulty, written to `server.properties` at every server start: 0 peaceful, 1 easy, 2 normal, 3 hard. The pack ships 3; runs are played on easy unless this says otherwise. |
 
 ## Operator console
 
