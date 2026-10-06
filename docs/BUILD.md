@@ -19,7 +19,9 @@ dependencies and the Gradle plugin. Later builds run `--offline`.
 
 ## Build and test
 
-From the repository root:
+From the repository root (`mods/baritone` is a git submodule: clone with
+`--recurse-submodules`, or run `git submodule update --init` in an existing
+clone):
 
 ```bash
 ./gradlew build
@@ -222,7 +224,7 @@ the server. Results print as a table; evidence files go under the ignored
 | `bridge_course.py` | Bridging a gap from a block lower than a full one (a chest's top). |
 | `ladder_course.py` | Going up, stopping on and coming down ladders, on each side of a block and through a roof. |
 | `scaffold_course.py` | A mining job climbs to a target on placed blocks, and with `cleanup_scaffold` removes them before it ends. |
-| `glide_course.py` | The added glide move ([MOVEMENTS.md](MOVEMENTS.md)): a body with wings crosses a drop and arrives unhurt; without them it stays. |
+| `glide_course.py` | The added glide move ([MOVEMENTS.md](../mods/baritone/docs/MOVEMENTS.md)): a body with wings crosses a drop and arrives unhurt; without them it stays. |
 | `explore_course.py` | `get_to_block` finds a block by id without a whole-world sweep, sees one in a chunk that loads later, and stays inside the tick budget. |
 | `step_course.py` | A time step never cuts a click, a slot selection or a held input short, and a guard still ends them ([TIME_CONTROL.md](TIME_CONTROL.md)). |
 | `notes_course.py` | World notes as files: written with what was observed, surfaced when the block is looked at, found by place, following edits made by hand. |
