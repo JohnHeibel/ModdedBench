@@ -24,7 +24,7 @@ import static org.junit.Assert.*;
 /**
  * What our code does on the game thread in one tick, at the sizes a base has, against TickBudget.LIMIT_MS. Reached
  * without a game: the two scanners, the shape warm-up, the queued tool and pick-block asks, the copy around clicks, a
- * build's reads of its plan, and its order at a pass start and in a preview. Not reached, because they need a player or
+ * build's reads of its plan, its order at a pass start and in a preview, and the slicing of its goals. Not reached, because they need a player or
  * the walker: the job step itself (ReferenceProcessJob.tick, ReferenceConstructionProcess.step and survey, MiningProcess,
  * ClickRun.tick), the walker's own tick, the tool warm-up, WorkAccess.Stands and GoalRoom. Those are measured in the
  * game: the receipt's `cost`, which the suites in harness/smoke hold to a limit (tick_cost.py).
@@ -78,18 +78,19 @@ public class TickBudgetTest {
     private static long cells(int radius){return (2L*radius+1)*33*(2*radius+1);}
     @Test public void aScanOfMiningBoundsIsASliceATickToItsLastTick(){
         for(int radius:new int[]{24,64})check("scan of mining bounds, worst tick of the first pass, "+cells(radius)+" cells, none match",pass(LIMIT_MS,radius,"minecraft:bookshelf"));
-        // A pass ends by publishing its matches and choosing the nearest, in the tick that reads the last cell.
-        check("scan of mining bounds, worst tick of the first pass, "+cells(8)+" cells, nearly all match",pass(LIMIT_MS,8,"minecraft:stone"));
+        // A pass ends by publishing its matches and choosing the nearest, in the tick that reads the last cell. Found
+        // 2026-10-05 at 0.2 s for 35,937 cells and 6 s for 79,233, when the matches were copied to publish them.
+        for(int radius:new int[]{8,16,24,64})check("scan of mining bounds, worst tick of the first pass, "+cells(radius)+" cells, nearly all match",pass(LIMIT_MS,radius,"minecraft:stone"));
     }
-    /**
-     * FINDING 2026-10-05, not a budget: with tens of thousands of matches the tick that ends a pass takes 0.2 s (35,937
-     * cells, here) to 6 s (79,233, measured once and not run here). MiningObservation.tick publishes with Map.copyOf, an
-     * open-addressed table, and Vec3i.hashCode gives a dense box few distinct values. The limit is set over what it takes
-     * today so that it does not get worse unseen; when it is fixed this goes into the test above at LIMIT_MS.
-     */
-    private static final double PUBLISH_KNOWN_MS=1000;
-    @Test public void publishingAPassOfManyMatchesIsNotSlicedYet(){
-        check("FINDING scan of mining bounds, worst tick of the first pass, "+cells(16)+" cells, nearly all match",PUBLISH_KNOWN_MS,pass(PUBLISH_KNOWN_MS,16,"minecraft:stone"));
+    @Test public void aPassPublishesWhatItFoundAndTheNextStartsEmpty(){
+        var scan=mining(2,"minecraft:stone");while(scan.passes==0)scan.tick();
+        assertEquals(5*5*32,scan.matches());var first=scan.capture();
+        var stone=new IBlockState(Blocks.stone,0,null,1,60,1);assertTrue(scan.has(stone)&&first.test(stone));
+        // What a search captured is the pass it was captured in, whatever later passes find.
+        world.set(1,60,1,Blocks.dirt);
+        try{while(scan.passes==1)scan.tick();assertEquals(5*5*32-1,scan.matches());assertFalse(scan.has(stone));assertTrue(first.test(stone));}
+        finally{world.set(1,60,1,Blocks.stone);}
+        assertEquals(List.of(new BlockPos(8,64,8),new BlockPos(9,64,8),new BlockPos(8,66,8)),MiningObservation.nearest(List.of(new BlockPos(9,64,8),new BlockPos(20,64,8),new BlockPos(8,66,8),new BlockPos(8,64,8),new BlockPos(8,70,8)),FEET,3));
     }
 
     @Test public void theShapeWarmUpStaysInItsSlice(){
@@ -148,6 +149,36 @@ public class TickBudgetTest {
                 var stays=BuildSteps.air(toFill,p->LegacyPlacement.empty(world,p.getX(),p.getY(),p.getZ()),feet,feet.up());
                 BuildSteps.held(toFill,now,stays::contains);}));
         }
+    }
+
+    /**
+     * The source builder asks ReferenceConstructionProcess for a goal for every unfinished cell near the player, every
+     * tick, and a step of the player or a second passing makes them all old: 1,728 of them were made again in one tick,
+     * up to 61 ms in the game. The goals themselves need a player (WorkAccess.Stands, the click prediction): here each
+     * costs 729 reads of the world, asked as the adapter asks, with a step every fourth tick.
+     */
+    @Test public void aBuildersGoalsAreMadeASliceATick(){
+        int cells=1728;int[] made=new int[cells];
+        java.util.function.IntUnaryOperator goal=k->{
+            int x=k%12,y=76+k/12%12,z=k/144,solid=0;made[k]++;
+            for(int dx=-4;dx<=4;dx++)for(int dy=-4;dy<=4;dy++)for(int dz=-4;dz<=4;dz++)if(!world.isAirBlock(x+dx,y+dy,z+dz))solid++;
+            return solid;
+        };
+        measure("build goals made in one tick, "+cells+" cells (what the limit is there to fail)",worstMs(Double.MAX_VALUE,()->()->{for(int k=0;k<cells;k++)goal.applyAsInt(k);return false;}));
+        check("build goals, worst of 400 ticks, "+cells+" cells",worstMs(()->{
+            var goals=new Sliced<Integer,Integer>();int[] tick={0};Arrays.fill(made,0);
+            return ()->{
+                if(tick[0]%4==0)goals.age();
+                goals.tick(ReferenceConstructionProcess.GOAL_NS);
+                for(int k=0;k<cells;k++){
+                    if(goals.fresh(k)!=null)continue;
+                    if(!goals.turn(k)){goals.last(k,-1);continue;}
+                    long began=System.nanoTime();goals.put(k,goal.applyAsInt(k));goals.spent(System.nanoTime()-began);
+                }
+                return ++tick[0]<400;
+            };
+        }));
+        assertTrue("every cell had its turn",Arrays.stream(made).min().getAsInt()>0);
     }
 
     private static ConstructionPlan row(int clicks){
