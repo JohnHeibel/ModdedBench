@@ -24,10 +24,12 @@ BUDGET_MS = 5.0   # the whole-world sweep this replaces measured 35 to 300 ms; o
 
 
 class Explore(bs.Shells):
+    COST, costs = "walk", []
+
     def job(self, process="get_to_block", **kw) -> dict:
         try: out = work.mb_process(process, **kw)
         except BridgeError as e: out = {"error": e.msg, **((e.reply or {}).get("error") or {})}
-        cost = out.get("cost") or (out.get("receipt") or {}).get("cost") or {}
+        cost = out.get("cost") or (out.get("receipt") or {}).get("cost") or {}; self.costs.append(cost)
         return {"state": out.get("state"), "reason": out.get("reason") or out.get("error"), "tickMsMax": round(cost.get("tickNsMax", -1e6) / 1e6, 2),
                 "tickMsMean": round(cost.get("tickNsMean", -1e6) / 1e6, 3), "ticks": cost.get("ticks"), "keys": sorted(out)[:14]}
 
@@ -71,15 +73,15 @@ def main():
     ap.add_argument("--case")
     ap.add_argument("--far", type=float, nargs=3, default=[325.5, 85, 25.5], metavar=("X", "Y", "Z"), help="a standing place more than a view distance from the arena (the build suite's first terrain hall)")
     ap.add_argument("--server-host", default="127.0.0.1")
-    args = ap.parse_args(); args.seed, args.trials = 1, 1
+    bs.mc.tick_cost.argument(ap); args = ap.parse_args(); args.seed, args.trials = 1, 1
     t = Explore(args); t.setup(); rows = []
     try:
         for name in ("found", "absent", "late"):
             if args.case and args.case != name: continue
             try: row = getattr(t, name)()
             except Exception as e: row = {"ok": False, "crashed": f"{type(e).__name__}: {e}"}
-            rows.append(row)
-            print(f"{name} {'PASS' if row['ok'] else 'FAIL'} {json.dumps({k: v for k, v in row.items() if k != 'ok'}, default=str)[:900]}", flush=True)
+            row["costs"], t.costs = t.costs, []; t.costed(name, row, "ok"); rows.append(row)
+            print(f"{name} {'PASS' if row['ok'] else 'FAIL'} {json.dumps({k: v for k, v in row.items() if k not in ('ok', 'costs')}, default=str)[:900]}", flush=True)
             try: t.c.call("act.stop")
             except BridgeError: pass
     finally:

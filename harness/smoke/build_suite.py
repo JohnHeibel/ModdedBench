@@ -301,7 +301,7 @@ class Suite(bs.Shells):
                 print(f"== {name}", flush=True); t = time.monotonic()
                 try: row = all_[name]()
                 except Exception as e: row = {"passed": False, "why": f"error {type(e).__name__}: {e}"}
-                row["wallS"] = round(time.monotonic() - t, 1); rows[name] = row
+                row["wallS"] = round(time.monotonic() - t, 1); rows[name] = row; self.costed(name, row)
                 print(f"{name:14} {'PASS' if row['passed'] else 'FAIL'} {row['wallS']:7.1f}s  {row['why']}", flush=True)
         finally:
             self.teardown()
@@ -322,7 +322,7 @@ def main():
     ap.add_argument("--server-host", default="127.0.0.1")
     ap.add_argument("--hall-at", type=int, nargs=2, default=[200, -60], metavar=("X", "Z"), help="low corner of the first hall; each run builds 40 blocks further east")
     ap.add_argument("--hall-index", type=int, help="build at this site again instead of a new one")
-    args = ap.parse_args(); args.seed, args.trials, args.case = 1, 1, None
+    mc.tick_cost.argument(ap); args = ap.parse_args(); args.seed, args.trials, args.case = 1, 1, None
     args.commit = os.environ.get("MB_COMMIT") or "unknown"
     suite = Suite(args); suite.run()
     return 0 if suite.evidence["ok"] else 1

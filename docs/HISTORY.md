@@ -8,6 +8,10 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-05** The live suites fail a case on its game-thread cost: one check (`harness/smoke/tick_cost.py`,
+  `Course.costed`) in the movement, replay, explore, step, shell and build suites prints each case's worst and mean
+  tick and fails it over the limit; `--warm-up` leaves the first case after a client start unjudged. Limits are
+  provisional, from receipts on record (builds 120 ms / 3 ms mean, walks 60 / 5). Not yet run in a game.
 - **2026-10-05** A job says when it cost the game too much: `cost.overBudget {tickMsMax, tickMsMean}` in the status
   of every job kind, there only when over (`Cost`: a tick over 100 ms, or a mean over 5 ms across 40 ticks or more).
   Silent on all 113 receipts on record (worst tick 98 ms, worst mean 1.4 ms past 40 ticks). Not yet seen in a game.
