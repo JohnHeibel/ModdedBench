@@ -252,7 +252,8 @@ GUI closed.
 | `python harness/smoke/gui_smoke.py` | Container observation, slot clicks, transfers, cursor return, text fields, buttons, hit tests. |
 | `python harness/smoke/primitive_regression_smoke.py` | Regressions from an early machine-building trial: grass clearing, attack-hold bounds, food budgets. |
 
-These four predate the test stack. Whether they still pass was not checked for
-this release.
+These four predate the test stack. Every bridge method and fixture they call
+is still registered, and the reload proof in `smoke.py` passes without a game;
+whether they pass in a game was not checked for this release.
 
 Contained runs, the console and backups are in [CONTAINERS.md](CONTAINERS.md).
