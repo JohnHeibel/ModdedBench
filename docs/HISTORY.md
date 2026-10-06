@@ -8,6 +8,12 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-05** The Java build holds one game tick to a limit: `TickBudgetTest` runs the scanners, the shape
+  warm-up, the queued asks, the copy around clicks and a build's reads of its plan at a base's sizes (289 and 1089
+  chunks, 4096 cells) against 20 ms (`TickBudget.LIMIT_MS`; measured 0.3 to 8). No game: the job step and the
+  walker are not in it. It found three paths over the limit, kept as named findings with their own limits: a mining
+  pass that ends with tens of thousands of matches (0.13 s at 36k cells, 6 s at 79k), a build preview of 32 click
+  cells (0.2 s), and the largest copy around clicks (10 ms on a 0.6 ms slice). Adds 9 s to the build.
 - **2026-10-05** `get_to_block` keeps looking while it explores: the engine rescanned for targets only once it
   knew one, so a search that began with none walked away for its whole duration and never saw a target that loaded
   on the way. The rescan now runs before the empty case, as `MineProcess` does it; this moves six lines in the pinned
