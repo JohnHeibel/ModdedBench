@@ -154,7 +154,7 @@ final class ReferenceConstructionProcess extends BulkJob {
             Set<BlockPos> restored=new HashSet<>();for(Object p:list(journal.progress.get("deferredAir")))restored.add(pos(p));
             Set<BlockPos> authorized=new HashSet<>();plan.cells.stream().filter(Cell::clear).forEach(c->authorized.add(c.pos()));
             if(!authorized.containsAll(restored))throw new IllegalArgumentException("saved clearance outside explicit air cells");
-            deferredAir=Set.copyOf(restored);cleanupPhase=bool(journal.progress,"cleanupPhase",false);
+            deferredAir=Collections.unmodifiableSet(restored);cleanupPhase=bool(journal.progress,"cleanupPhase",false);
             clearanceEgress=bool(journal.progress,"clearanceEgress",false);
         }else{
             deferredAir=DeferredClearance.capture(plan.cells,allowPlace,p->plan.loaded(p)&&world.isAirBlock(p.getX(),p.getY(),p.getZ()));
@@ -292,7 +292,7 @@ final class ReferenceConstructionProcess extends BulkJob {
             carried.put(selector,eligible);
         }
         // What the hooks below close over is read by path searches on their own threads: none of it changes after this.
-        var cells=plan.schematic;var order=plan.steps;var verified=correct;var pendingSnapshot=Set.copyOf(pending);var softSnapshot=soft;
+        var cells=plan.schematic;var order=plan.steps;var verified=correct;var pendingSnapshot=new HashSet<>(pending);var softSnapshot=soft;
         int shown=buildStep;boolean replace=plan.replace(),clearing=cleanupPhase;
         var builder=engine.getBuilderProcess();
         builder.stateValidator=(current,wanted,itemVerify)->{
