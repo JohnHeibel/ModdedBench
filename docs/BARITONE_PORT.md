@@ -122,7 +122,10 @@ a tick (`survey()`: block and metadata of each, the step counts, the receipt's
 counts), and that walk is its standing cost. At an estimated 200 ns a cell the
 limit is about 0.8 ms a tick; that figure is an estimate, not a measurement.
 The measurement is the receipt's `cost` (`tickNsMax`, `tickNsMean`: Baritone's
-game-thread time per client tick over the job, the survey included).
+game-thread time per client tick over the job, the survey included). When the
+worst tick is over 100 ms, or the mean over 5 ms across at least 40 ticks, the
+same map says so in `overBudget {tickMsMax, tickMsMean}` (`Cost.status()`, the
+limits beside it), and says nothing otherwise.
 
 Placement goes through native right-click handling and never writes blocks.
 Preview is a fresh loaded-world diff judged as the job judges it: counts

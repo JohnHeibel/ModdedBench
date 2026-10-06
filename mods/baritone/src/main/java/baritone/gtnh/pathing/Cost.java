@@ -13,6 +13,8 @@ public final class Cost {
     private static long tickNs,maxNs,totalNs,ticks;
     private static long searches,searchMsLast,searchMsMax;
     private static long pausedNs,pausedMaxNs,pausedFrames;
+    /** Over these a job's status says so (overBudget): one tick, and the mean of a job that ran at least MEAN_TICKS. */
+    public static final long TICK_LIMIT_MS=100,MEAN_LIMIT_MS=5,MEAN_TICKS=40;
 
     public static synchronized void reset(){tickNs=maxNs=totalNs=ticks=0;searches=searchMsLast=searchMsMax=0;pausedNs=pausedMaxNs=pausedFrames=0;}
     /** Game thread, world paused: one frame's servicing and planning (BaritoneNavigation.whilePaused), no tick. */
@@ -30,6 +32,11 @@ public final class Cost {
         out.put("tickNsMax",maxNs);out.put("tickNsMean",ticks==0?0:totalNs/ticks);out.put("ticks",ticks);
         out.put("pausedFrames",pausedFrames);out.put("pausedNsMax",pausedMaxNs);out.put("pausedNsMean",pausedFrames==0?0:pausedNs/pausedFrames);
         out.put("searches",searches);out.put("searchMsLast",searchMsLast);out.put("searchMsMax",searchMsMax);
+        Map<String,Object> over=new LinkedHashMap<>();
+        if(maxNs>TICK_LIMIT_MS*1_000_000)over.put("tickMsMax",ms(maxNs));
+        if(ticks>=MEAN_TICKS&&totalNs>MEAN_LIMIT_MS*1_000_000*ticks)over.put("tickMsMean",ms(totalNs/ticks));
+        if(!over.isEmpty())out.put("overBudget",over);
         return out;
     }
+    private static double ms(long ns){return Math.round(ns/1e5)/10.0;}
 }

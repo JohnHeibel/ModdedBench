@@ -49,4 +49,8 @@ python harness/mcp/tool_table.py                    # after adding or re-describ
 - Never edit `mods/baritone/src/upstream` without saying so in your report.
 - `harness/tools/*.py` reload on the next tool call; `harness/mcp` needs an MCP server restart;
   Java needs a build and a redeploy.
+- Code on the game thread has a budget: the build fails when a path `TickBudgetTest` runs (scans, queued asks,
+  the copy around clicks, a build's reads of its plan; not the job step or the walker) takes over 20 ms of one
+  tick (`TickBudget.LIMIT_MS`; three known slow paths have higher limits there), and in the game a job over
+  100 ms in a tick or 5 ms a tick on average says so in its result's `cost.overBudget`.
 - Keep code minimal and in the style of the file you touch.

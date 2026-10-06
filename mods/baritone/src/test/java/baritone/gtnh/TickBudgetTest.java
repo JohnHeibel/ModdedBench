@@ -1,0 +1,180 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// Copyright (c) 2026 ModdedBench contributors
+package baritone.gtnh;
+
+import baritone.ForgePlanningTestRunner;
+import baritone.Planning;
+import baritone.api.utils.BlockOptionalMeta;
+import baritone.compat.BlockPos;
+import baritone.compat.IBlockState;
+import baritone.compat.LegacyPlacement;
+import baritone.gtnh.ReferenceToolPolicy.Answer;
+import baritone.gtnh.pathing.*;
+import dev.modbench.api.*;
+import net.minecraft.block.Block;
+import net.minecraft.init.Blocks;
+import net.minecraft.init.Items;
+import net.minecraft.item.ItemStack;
+import java.util.*;
+import java.util.concurrent.*;
+import org.junit.*;
+import static baritone.TickBudget.*;
+import static org.junit.Assert.*;
+
+/**
+ * What our code does on the game thread in one tick, at the sizes a base has, against TickBudget.LIMIT_MS. Reached
+ * without a game: the two scanners, the shape warm-up, the queued tool and pick-block asks, the copy around clicks, a
+ * build's reads of its plan, and its order at a pass start and in a preview. Not reached, because they need a player or
+ * the walker: the job step itself (ReferenceProcessJob.tick, ReferenceConstructionProcess.step and survey, MiningProcess,
+ * ClickRun.tick), the walker's own tick, the tool warm-up, WorkAccess.Stands and GoalRoom. Those are measured in the
+ * game: the receipt's `cost`, which the suites in harness/smoke hold to a limit (tick_cost.py).
+ */
+@org.junit.runner.RunWith(ForgePlanningTestRunner.class)
+public class TickBudgetTest {
+    private static final BlockPos FEET=new BlockPos(8,64,8);
+    private static OfflineWorld world;
+    private static <T>T none(Class<T> type){return type.cast(java.lang.reflect.Proxy.newProxyInstance(type.getClassLoader(),new Class<?>[]{type},(proxy,method,args)->null));}
+    @BeforeClass public static void game() throws Exception {
+        Planning.bootstrap();world=OfflineWorld.install(16);world.set(5,70,6,Blocks.crafting_table);
+        // No protected regions: the copy around clicks asks about every solid cell.
+        ControlRegistry.register(none(Controls.class),none(Targeting.class),none(PlacementInfo.class),none(MemoryAccess.class));
+    }
+
+    /** The change of 2026-10-05 that this file exists for read every loaded chunk in one tick: 35 to 300 ms. */
+    @Test public void aSearchByIdReadsTheLoadedChunksASliceATick(){
+        var absent=new BlockOptionalMeta(Blocks.bookshelf);
+        for(int radius:new int[]{8,16}){
+            var loaded=world.within(radius);String n=loaded.size()+" loaded chunks";
+            // Nothing matches: every chunk is read to its end.
+            check("find a block by id, worst of the first sixty ticks, no match, "+n,worstMs(()->{var scan=new ChunkObservation(absent);int[] ticks={60};return ()->{scan.tick(()->loaded,FEET);return scan.passes==0&&ticks[0]-->0;};}));
+            var one=new ChunkObservation(absent);one.tick(()->loaded,FEET);
+            assertEquals("one tick does not read every loaded chunk",0,one.passes);
+            assertNotNull("so the source search is handed these and never sweeps the chunks itself (MineProcess.searchWorld)",one.observedLocations());
+            check("find a block by id, a tick after the first match, "+n,medianMs(()->{
+                var scan=new ChunkObservation(new BlockOptionalMeta(Blocks.crafting_table));scan.tick(()->loaded,FEET);assertFalse(scan.waiting());return ()->scan.tick(()->loaded,FEET);}));
+            // Every chunk has sixteen: the nearest are chosen again on each tick that finds more.
+            check("find a block by id, worst tick of the first pass, a common block, "+n,worstMs(()->{var scan=new ChunkObservation(new BlockOptionalMeta(Blocks.stone));return ()->{scan.tick(()->loaded,FEET);return scan.passes==0;};}));
+        }
+        var all=world.within(8);var sweep=new ChunkObservation(absent);
+        measure("the same search unsliced, 289 loaded chunks (what the limit is there to fail)",worstMs(Double.MAX_VALUE,()->()->{var out=new ArrayList<BlockPos>();for(var c:all.values())sweep.scan(c,64,16,out);return false;}));
+    }
+
+    private static String source(String path) throws java.io.IOException {
+        var file=java.nio.file.Path.of(path);return java.nio.file.Files.readString(java.nio.file.Files.exists(file)?file:java.nio.file.Path.of("mods/baritone").resolve(file));
+    }
+    /** The sweep is still in the source search (WorldScanner.scanChunkRadius reads every loaded chunk in the one call): the job hands it no block by id. */
+    @Test public void aSearchByIdIsNeverHandedToTheSourceScanner() throws java.io.IOException {
+        String job=source("src/main/java/baritone/gtnh/ReferenceProcessJob.java"),search=source("src/upstream/java/baritone/process/MineProcess.java");
+        assertEquals("the one place the job starts the source search with a bare block",1,job.split("getToBlock\\(block\\)",-1).length-1);
+        assertTrue(job.contains("if(scan==null&&loaded==null)engine.getGetToBlockProcess().getToBlock(block);"));
+        int supplied=search.indexOf("if(supplied!=null)"),sweep=search.indexOf("scanChunkRadius(");
+        assertTrue("locations an observation supplies are returned before the scanner is reached",supplied>=0&&supplied<sweep);
+    }
+
+    private static MiningObservation mining(int radius,String id){
+        return new MiningObservation(world,WorkSpec.bounds(Map.of("min",List.of(-radius,48,-radius),"max",List.of(radius,80,radius))),List.of(Map.<String,Object>of("id",id)),List.of(),()->FEET);
+    }
+    private static double pass(double limitMs,int radius,String id){return worstMs(limitMs,()->{var scan=mining(radius,id);return ()->{scan.tick();return scan.passes==0;};});}
+    private static long cells(int radius){return (2L*radius+1)*33*(2*radius+1);}
+    @Test public void aScanOfMiningBoundsIsASliceATickToItsLastTick(){
+        for(int radius:new int[]{24,64})check("scan of mining bounds, worst tick of the first pass, "+cells(radius)+" cells, none match",pass(LIMIT_MS,radius,"minecraft:bookshelf"));
+        // A pass ends by publishing its matches and choosing the nearest, in the tick that reads the last cell.
+        check("scan of mining bounds, worst tick of the first pass, "+cells(8)+" cells, nearly all match",pass(LIMIT_MS,8,"minecraft:stone"));
+    }
+    /**
+     * FINDING 2026-10-05, not a budget: with tens of thousands of matches the tick that ends a pass takes 0.2 s (35,937
+     * cells, here) to 6 s (79,233, measured once and not run here). MiningObservation.tick publishes with Map.copyOf, an
+     * open-addressed table, and Vec3i.hashCode gives a dense box few distinct values. The limit is set over what it takes
+     * today so that it does not get worse unseen; when it is fixed this goes into the test above at LIMIT_MS.
+     */
+    private static final double PUBLISH_KNOWN_MS=1000;
+    @Test public void publishingAPassOfManyMatchesIsNotSlicedYet(){
+        check("FINDING scan of mining bounds, worst tick of the first pass, "+cells(16)+" cells, nearly all match",PUBLISH_KNOWN_MS,pass(PUBLISH_KNOWN_MS,16,"minecraft:stone"));
+    }
+
+    @Test public void theShapeWarmUpStaysInItsSlice(){
+        int[] centre={0};
+        check("block shapes, worst tick of a warm-up",worstMs(()->{BlockShapes.warm(world,centre[0]+=8,64,0);int[] ticks={40};return ()->{BlockShapes.answer();return ticks[0]-->0;};}));
+    }
+
+    @Test public void aFullQueueOfToolAndPickAsksIsAnsweredASliceATick() throws Exception {
+        var tools=MiningTools.game;var picks=BlockIdentity.game;var pool=Executors.newSingleThreadExecutor();
+        // The game's answers cost what a block's own hooks cost; here they cost nothing, so this holds the queue's own work.
+        MiningTools.game=(stack,block,meta,x,y,z,placed,queued)->new Answer(1,true);BlockIdentity.game=(block,x,y,z)->Optional.empty();
+        ItemStack[] stacks={null,new ItemStack(Items.iron_pickaxe),new ItemStack(Items.iron_shovel)};
+        try{
+            check("tool and pick-block asks, worst tick answering full queues",worstMs(()->{
+                MiningTools.reset();MiningTools.answer(); // this thread is the game's; the search asks from another
+                try{pool.submit(()->{for(Object o:Block.blockRegistry)for(int meta=0;meta<16;meta++){MiningTools.answers(stacks,(Block)o,meta,0,64,0,true);BlockIdentity.at(new IBlockState((Block)o,meta,null,0,64,0));}}).get(30,TimeUnit.SECONDS);}
+                catch(Exception e){throw new AssertionError(e);}
+                assertEquals(MiningTools.ASKED,MiningTools.pending());assertTrue(BlockIdentity.pending()>1000);
+                return ()->{MiningTools.answer();return MiningTools.pending()+BlockIdentity.pending()>0;};
+            }));
+        }finally{pool.shutdownNow();MiningTools.game=tools;BlockIdentity.game=picks;MiningTools.reset();}
+    }
+
+    private static double copy(double limitMs,int half){return worstMs(limitMs,()->{var copy=new ClickWorld(world,new BlockPos(-half,64-half,-half),new BlockPos(half-1,63+half,half-1),false);return ()->!copy.step(600_000L);});}
+    /** 600 microseconds a tick is ClickRun.SLICE. */
+    @Test public void theCopyAroundClicksIsMadeASliceATick(){
+        for(int half:new int[]{8,22})check("copy around clicks, worst tick of "+8L*half*half*half+" blocks",copy(LIMIT_MS,half));
+    }
+    /**
+     * FINDING 2026-10-05, not a budget: at the largest copy (58 blocks a side, just under ClickWorld.MAX_VOLUME) one tick of
+     * a 0.6 ms slice takes about 10 ms, where 85,184 blocks stay at 1.5: the map of cells growing, by the look of it.
+     */
+    private static final double COPY_KNOWN_MS=40;
+    @Test public void theLargestCopyHasATickFarOverItsSlice(){
+        check("FINDING copy around clicks, worst tick of 195112 blocks",COPY_KNOWN_MS,copy(COPY_KNOWN_MS,29));
+    }
+
+    /** A cube half in the ground: cobblestone asked where stone and air are. */
+    private static ConstructionPlan cube(int side){
+        List<Map<String,Object>> cells=new ArrayList<>();
+        for(int x=0;x<side;x++)for(int y=80-side/2;y<80+side/2;y++)for(int z=0;z<side;z++)cells.add(Map.of("pos",List.of(x,y,z),"id","minecraft:cobblestone"));
+        return new ConstructionPlan(Map.of("cells",cells),new HashMap<>(),world);
+    }
+    @Test public void aBuildReadsItsWholePlanEachTick(){
+        for(int side:new int[]{8,16}){
+            var plan=cube(side);assertEquals(side*side*side,plan.cells.size());
+            // The world reads ReferenceConstructionProcess.survey makes for each cell, every tick; survey itself needs the job.
+            check("build survey's reads of the plan, "+plan.cells.size()+" cells",medianMs(()->()->{
+                int wrong=0;for(var c:plan.cells){var p=c.pos();if(plan.loaded(p)&&!plan.correct(c)&&(plan.occupied(p)||world.isAirBlock(p.getX(),p.getY(),p.getZ())))wrong++;}
+                assertEquals(plan.cells.size(),wrong);}));
+            // What startPass asks of the order when a step begins: what is shown, the air that stays, what waits.
+            Set<BlockPos> toFill=new HashSet<>();for(var c:plan.cells)if(!plan.occupied(c.pos()))toFill.add(c.pos());
+            BlockPos feet=new BlockPos(-2,80,0);
+            check("build order at a pass start, "+plan.cells.size()+" cells",medianMs(()->()->{
+                var shown=plan.steps.schematic(plan.schematic,plan.steps.count()-1);Set<BlockPos> now=new HashSet<>(toFill);now.retainAll(shown.keySet());
+                var stays=BuildSteps.air(toFill,p->LegacyPlacement.empty(world,p.getX(),p.getY(),p.getZ()),feet,feet.up());
+                BuildSteps.held(toFill,now,stays::contains);}));
+        }
+    }
+
+    private static ConstructionPlan row(int clicks){
+        List<Map<String,Object>> cells=new ArrayList<>();
+        for(int i=0;i<clicks;i++)cells.add(Map.of("pos",List.of(2*i,80,0),"id","minecraft:cobblestone","click",Map.of("face","up")));
+        return new ConstructionPlan(Map.of("cells",cells),new HashMap<>(),world);
+    }
+    /** ClickRun.preview's own loop, repeated here because it reads the player's reach: the copy in one go, then the order. */
+    private static void preview(ConstructionPlan plan){
+        var body=new Vantages.Body(1.62,4.5);
+        var copy=ClickWorld.around(world,plan.places.stream().map(StepPlan.Step::pos).toList(),7,false);while(!copy.step(Long.MAX_VALUE)){}
+        ClickSpace w=copy.space();List<StepPlan.Step> open=new ArrayList<>(plan.places);Map<String,List<Vantages.Vantage>> ways=new HashMap<>();
+        while(!open.isEmpty()){
+            var pick=StepPlan.next(open,w,body,ways);assertTrue(pick.ready());
+            open.remove(pick.step());w=w.with(pick.step().pos(),ClickSpace.Voxel.full(pick.step().pos(),pick.step().id(),false));StepPlan.placed(ways,open,pick.step().pos(),body);
+        }
+    }
+    @Test public void aPreviewOfAFewClicksIsOneShortCall(){
+        var plan=row(8);check("build preview, 8 click cells in a copy of "+StepPlan.volume(plan.places,7)+" blocks",medianMs(()->()->preview(plan)));
+    }
+    /**
+     * FINDING 2026-10-05, not a budget: a preview copies and orders in the one call that asked, on the game thread, and a
+     * row of 32 click cells (all a preview looks at, ClickRun.CHECKED) takes a third of a second. A job does the same
+     * order on its search thread.
+     */
+    private static final double PREVIEW_KNOWN_MS=1500;
+    @Test public void aPreviewOfThirtyTwoClicksIsNotSliced(){
+        var plan=row(32);check("FINDING build preview, 32 click cells in a copy of "+StepPlan.volume(plan.places,7)+" blocks",PREVIEW_KNOWN_MS,worstMs(PREVIEW_KNOWN_MS,()->()->{preview(plan);return false;}));
+    }
+}
