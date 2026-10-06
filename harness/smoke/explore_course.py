@@ -20,6 +20,7 @@ from movement_course import BridgeError
 from mbtools_gtnh import work
 
 TARGET, ABSENT = "minecraft:lapis_block", "minecraft:emerald_block"
+SCAN_MS = 2.0     # the scanner's share of a tick until its first match (ChunkObservation)
 BUDGET_MS = 5.0   # the whole-world sweep this replaces measured 35 to 300 ms; our own tick budget is 1 ms
 
 
@@ -46,7 +47,7 @@ class Explore(bs.Shells):
         self.stand(self.at((1.5, 0, 1.5)))
         row = self.job(block={"id": TARGET}, duration_ticks=600, timeout_s=120); row["distance"] = self.near((5, 0, 5))
         row["walk"] = {k: walk[k] for k in ("state", "tickMsMax", "tickMsMean", "ticks")}   # the same walk by a plain goal: what the engine costs without a search for blocks
-        row["ok"] = row["state"] == "succeeded" and row["distance"] < 3 and 0 <= row["tickMsMean"] < 2 * walk["tickMsMean"] + 1
+        row["ok"] = row["state"] == "succeeded" and row["distance"] < 3 and 0 <= row["tickMsMean"] < walk["tickMsMean"] + SCAN_MS + 1
         return row
 
     def absent(self) -> dict:
