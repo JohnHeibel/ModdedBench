@@ -114,8 +114,10 @@ Research code, developed and run on one Windows 11 machine.
 - The only agent runtime is the Codex CLI. The MCP server works with any
   stdio MCP client, but nothing else has been run unattended.
 - Unattended contained runs of 2, 4, 8 and 24 hours have been completed
-  ([docs/HISTORY.md](docs/HISTORY.md)). They cover the early game. Later tiers
-  have not been reached and are expected to need tool work by the model.
+  ([docs/HISTORY.md](docs/HISTORY.md)). The furthest world finished the Stone
+  Age and Steam chapters and entered the LV tier after about 64 hours of play
+  and 140 quests. Later tiers have not been reached and are expected to need
+  tool work by the model.
 - The managed runtime and the container setup have only been used on Windows.
   The Gradle build and the Python code are not Windows-specific.
 - Known limits are stated where they apply: navigation and construction in
