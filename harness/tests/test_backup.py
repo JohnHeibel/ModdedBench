@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
 """Offline tests for the operator's snapshots: docker is never run, its command lines are only looked at."""
 from __future__ import annotations
@@ -33,7 +33,7 @@ class BackupTests(unittest.TestCase):
                 self.assertIsNotNone(backup.snapshot())
             return ran
         take, release = backup.runtime.hold_cmd("backup", True), backup.runtime.hold_cmd("backup", False)
-        work = [backup.BUNDLE, backup.STATE]  # the agent's commits and loop state, read once the world runs again
+        work = [backup.BUNDLE, backup.BARITONE, backup.STATE]  # the agent's commits (the submodule's are apart) and loop state, read once the world runs again
         self.assertEqual(snapshot(free=True), [take, backup.WORLD, backup.NOTES, release, *work])
         self.assertEqual(snapshot(free=False), [take, backup.WORLD, backup.NOTES, *work])  # the operator's or the guard's hold was in force: it is not this snapshot's to end
 

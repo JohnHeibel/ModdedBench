@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
 """Failure/cancellation-sensitive composition behavior, without a crafting layout."""
 from copy import deepcopy

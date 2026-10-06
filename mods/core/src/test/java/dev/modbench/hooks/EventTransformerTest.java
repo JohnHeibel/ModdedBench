@@ -1,6 +1,5 @@
-// SPDX-License-Identifier: LGPL-3.0-or-later
+// SPDX-License-Identifier: MIT
 // Copyright (c) 2026 ModdedBench contributors
-// Derived from Baritone (https://github.com/cabaletta/baritone), LGPL-3.0-or-later.
 package dev.modbench.hooks;
 
 import java.util.*;

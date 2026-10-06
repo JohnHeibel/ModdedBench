@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
 """Minecraft 1.7.10 (protocol 5, no compression) wire format: frames, varints, strings, items, metadata."""
 from __future__ import annotations

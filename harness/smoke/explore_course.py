@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 ModdedBench contributors
 """get_to_block by registry id, in the game: the target is found without the engine's whole-world sweep, a search
 that begins with no target sees one in a chunk that loads later, and the game thread stays inside its budget.
 

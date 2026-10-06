@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
 """Copy into harness/tools/ (a non-underscore name) and adapt during a run; it reloads on the next call.
 

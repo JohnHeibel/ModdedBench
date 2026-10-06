@@ -47,6 +47,10 @@ python harness/mcp/tool_table.py                    # after adding or re-describ
 ## Either way
 
 - Never edit `mods/baritone/src/upstream` without saying so in your report.
+- `mods/baritone` is a separate git repository (the Modatone submodule, LGPL). A change there is committed there
+  first: `git -C mods/baritone commit -am "..."`, then `git add mods/baritone && git commit` in the root so the
+  root records the new commit. `git add -A` in the root does not pick up edits inside it. Never run
+  `git submodule update` with uncommitted or unrecorded work in `mods/baritone`: it checks out the recorded commit.
 - `harness/tools/*.py` reload on the next tool call; `harness/mcp` needs an MCP server restart;
   Java needs a build and a redeploy.
 - Code on the game thread has a budget: the build fails when a path `TickBudgetTest` runs (scans, queued asks,

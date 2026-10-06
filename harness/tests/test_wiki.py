@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 """The offline wiki tools against a small snapshot with the fetcher's schema."""
 from __future__ import annotations
 

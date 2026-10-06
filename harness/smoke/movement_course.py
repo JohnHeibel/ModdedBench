@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
 """Deterministic movement and flowing-liquid course, run through the model's own tools (mb_process, mb_mine, mb_act).
 

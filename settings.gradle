@@ -13,3 +13,7 @@ plugins {
 rootProject.name = 'modbench-gtnh'
 include 'api', 'core', 'baritone', 'client', 'server'
 rootProject.children.each { it.projectDir = file("mods/${it.name}") }
+// mods/baritone is a git submodule (Modatone). Without its files Gradle would build an empty jar and say nothing.
+if (!file('mods/baritone/build.gradle').isFile()) {
+    throw new GradleException('mods/baritone is empty: it is the Modatone submodule. Run: git submodule update --init')
+}

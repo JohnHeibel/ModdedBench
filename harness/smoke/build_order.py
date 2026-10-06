@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 """Build order, measured from a finished job's own files: no game, no model of the builder.
 
 A build job leaves <jobId>.attempts.jsonl beside its journal: one row per right-click the game took, in order,
