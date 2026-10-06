@@ -8,6 +8,8 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-05** `AGENTS.md` states the game-thread budget as the build enforces it: `TickBudgetTest` at 20 ms a
+  tick and what it does not reach, and `cost.overBudget` in a job's result.
 - **2026-10-05** The live suites fail a case on its game-thread cost: one check (`harness/smoke/tick_cost.py`,
   `Course.costed`) in the movement, replay, explore, step, shell and build suites prints each case's worst and mean
   tick and fails it over the limit; `--warm-up` leaves the first case after a client start unjudged. Limits are
