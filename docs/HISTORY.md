@@ -8,6 +8,9 @@ ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
 audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
 contract notes. What was still true is now in the current docs.
 
+- **2026-10-05** A job says when it cost the game too much: `cost.overBudget {tickMsMax, tickMsMean}` in the status
+  of every job kind, there only when over (`Cost`: a tick over 100 ms, or a mean over 5 ms across 40 ticks or more).
+  Silent on all 113 receipts on record (worst tick 98 ms, worst mean 1.4 ms past 40 ticks). Not yet seen in a game.
 - **2026-10-05** The Java build holds one game tick to a limit: `TickBudgetTest` runs the scanners, the shape
   warm-up, the queued asks, the copy around clicks and a build's reads of its plan at a base's sizes (289 and 1089
   chunks, 4096 cells) against 20 ms (`TickBudget.LIMIT_MS`; measured 0.3 to 8). No game: the job step and the

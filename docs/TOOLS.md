@@ -135,7 +135,9 @@ net-gain completion, the build contract and its limits are in
 
 A build receipt has `placed`, `removed`, `left {count, first}` (cells still
 wrong, the first 8), `step {stage, y, index, of, left, first}` (where the build
-order stands) and `cost`. A plan with clicks adds `clicks {of, done, verified,
+order stands) and `cost`. Any job's `cost` has `overBudget {tickMsMax, tickMsMean}`
+only when it went over (`Cost`: a tick over 100 ms, or a mean over 5 ms across at
+least 40 ticks), each figure there only if it is the one over. A plan with clicks adds `clicks {of, done, verified,
 unverified, alreadyPresent, unverifiedFirst}` (the per-click list is the job's
 `.clicks.jsonl`), and a finished job `accessLeft` and `scaffoldLeft
 {count, first}` for what it took out or put up and could not put right. One
