@@ -85,42 +85,6 @@ project(':server') {
         }
     }
 }
-project(':baritone') {
-    sourceSets.main.java.srcDir 'src/upstream/java'
-    configurations { fastutilBundle { transitive = false } }
-    dependencies {
-        // Only the api: the compiler enforces the seam between Baritone and the core mod.
-        compileOnly project(':api')
-        // fastutil is not shipped by MC 1.7.10 or the pack, so the jar bundles it from a
-        // detached configuration: resolving runtimeClasspath while wiring the jar task
-        // would run RFG's deobf transform on the unbuilt api jar.
-        compileOnly 'it.unimi.dsi:fastutil:8.5.15'
-        testRuntimeOnly 'it.unimi.dsi:fastutil:8.5.15'
-        fastutilBundle 'it.unimi.dsi:fastutil:8.5.15'
-        testImplementation project(':api')
-        // Allocating Minecraft for the settings persistence boundary resolves
-        // its declared legacy LWJGL exception types even though no display is
-        // created by the test.
-        testRuntimeOnly 'org.lwjgl.lwjgl:lwjgl:2.9.4-nightly-20150209'
-    }
-    tasks.named('compileJava') { options.compilerArgs += ['-Xmaxerrs', '1000'] }
-    tasks.named('test') {
-        dependsOn ':api:jar'
-        // Resolved at execution time: .asPath here would run RFG's deobf transform on
-        // sibling project jars before they are built.
-        doFirst {
-            systemProperty 'modbench.test.classpath', sourceSets.test.runtimeClasspath.asPath
-            systemProperty 'modbench.classes', sourceSets.main.output.classesDirs.asPath
-        }
-    }
-    tasks.named('jar') {
-        from({ configurations.fastutilBundle.collect { zipTree(it) } }) {
-            include 'it/unimi/dsi/fastutil/**'
-        }
-        from(rootProject.file('LICENSE')) { into 'META-INF/licenses'; rename { 'Baritone-LGPL-3.0.txt' } }
-        from(rootProject.file('mods/baritone/licenses')) { into 'META-INF/licenses' }
-        from(rootProject.file('mods/baritone/UPSTREAM_SOURCES.json')) { into 'META-INF/modbench' }
-    }
-}
+// :baritone is the Modatone submodule (mods/baritone, LGPL-3.0-or-later): its own build.gradle holds the rest of its build.
 tasks.named('assemble') { dependsOn ':core:build', ':client:build', ':server:build', ':baritone:build' }
 tasks.named('check') { dependsOn subprojects.collect { it.tasks.named('check') } }

@@ -106,6 +106,10 @@ def trial(task: str, n: int, a) -> dict:
     src = Path(a.checkout).resolve()
     c = sh(["git", "clone", "-q", "--no-hardlinks", str(src), str(folder / "checkout")])
     if c.returncode: raise RuntimeError("clone: " + c.stderr)
+    # mods/baritone is a submodule (Modatone): the trial gets the commit this checkout holds, from this checkout, not from the network.
+    sh(["git", "-C", str(folder / "checkout"), "config", "submodule.mods/baritone.url", str(src / "mods" / "baritone")])
+    c = sh(["git", "-C", str(folder / "checkout"), "-c", "protocol.file.allow=always", "submodule", "update", "--init"])
+    if c.returncode: raise RuntimeError("submodule: " + c.stderr)
     # The scenarios and these tasks hold worked answers (plans, graders): the agent's tree goes without them.
     c = sh(["git", "-C", str(folder / "checkout"), "sparse-checkout", "set", "--no-cone", "/*", "!/harness/smoke/"])
     if c.returncode or (folder / "checkout" / "harness" / "smoke").exists(): raise RuntimeError("sparse checkout: " + c.stderr)

@@ -23,13 +23,17 @@ COPY --chown=agent:agent gradlew settings.gradle build.gradle gradle.properties 
 COPY --chown=agent:agent gradle gradle
 COPY --chown=agent:agent mods/api/build.gradle mods/api/
 COPY --chown=agent:agent mods/core/build.gradle mods/core/
-RUN mkdir -p mods/baritone mods/client mods/server && ./gradlew build --console=plain -q && ./gradlew --stop
+# mods/baritone is the Modatone submodule: the context must hold its files (git submodule update --init).
+COPY --chown=agent:agent mods/baritone/build.gradle mods/baritone/
+RUN mkdir -p mods/client mods/server && ./gradlew build --console=plain -q && ./gradlew --stop
 COPY --chown=agent:agent . .
 # The throwaway test stack passes -PdevFixtures to ship the dev.* course fixtures; real images never do.
 # A git worktree has a .git file pointing outside the context: it builds, untagged.
 ARG GRADLE_EXTRA=""
+# The identity is global so that it also holds in mods/baritone, a repository of its own (the Modatone submodule).
 RUN ./gradlew build $GRADLE_EXTRA --console=plain -q && ./gradlew --stop \
- && if [ -d .git ]; then git config user.name agent && git config user.email agent@modbench.invalid && git tag -f modbench-base; fi
+ && git config --global user.name agent && git config --global user.email agent@modbench.invalid \
+ && if [ -d .git ]; then git tag -f modbench-base; fi
 ENV MODBENCH_OUTBOX=/outbox MB_BRIDGE_URL=ws://gateway:47223/ws MB_BRIDGE_TOKEN_FILE=/run/bridge/bridge-47223.token \
     MB_WIKI_DB=/wiki/gtnh-wiki.sqlite MB_BRIEF=/brief/PROMPT.md \
     HTTPS_PROXY=http://gateway:3128 HTTP_PROXY=http://gateway:3128 NO_PROXY=gateway PYTHONUNBUFFERED=1

@@ -45,7 +45,11 @@ def request(args: argparse.Namespace) -> int:
         shutil.copy2(runtime.artifact(kind), box / f"modbench-{kind}.jar")
     git = lambda *a: subprocess.run(["git", *a], cwd=REPO, capture_output=True, text=True).stdout
     base = git("rev-parse", "-q", "--verify", "modbench-base").strip()
-    (box / "source.patch").write_text(git("diff", base, "--", "mods", "build.gradle") if base else "", encoding="utf-8")
+    patch = git("diff", base, "--", "mods", "build.gradle") if base else ""
+    # mods/baritone is a submodule (Modatone): the diff above names only its commit, so its own diff from the base's commit follows.
+    sub = git("rev-parse", "-q", "--verify", f"{base}:mods/baritone").strip() if base and (REPO / "mods" / "baritone" / ".git").exists() else ""
+    if sub: patch += git("-C", "mods/baritone", "diff", "--src-prefix=a/mods/baritone/", "--dst-prefix=b/mods/baritone/", sub)
+    (box / "source.patch").write_text(patch, encoding="utf-8")
     save_json(box / "request.json", {"id": ident, "components": args.components, "commit": git("rev-parse", "HEAD").strip(), "reason": args.reason})
     deadline = time.monotonic() + args.timeout
     while time.monotonic() < deadline:
