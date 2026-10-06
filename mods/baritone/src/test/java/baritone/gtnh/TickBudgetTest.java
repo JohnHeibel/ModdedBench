@@ -23,7 +23,7 @@ import static org.junit.Assert.*;
 
 /**
  * What our code does on the game thread in one tick, at the sizes a base has, against TickBudget.LIMIT_MS. Reached
- * without a game: the two scanners, the shape warm-up, the queued tool and pick-block asks, the copy around clicks, a
+ * without a game: the two scanners, the shape warm-up, the queued tool and pick-block asks, the copy around clicks and its hand-over, a
  * build's reads of its plan, its order at a pass start and in a preview, and the slicing of its goals. Not reached, because they need a player or
  * the walker: the job step itself (ReferenceProcessJob.tick, ReferenceConstructionProcess.step and survey, MiningProcess,
  * ClickRun.tick), the walker's own tick, the tool warm-up, WorkAccess.Stands and GoalRoom. Those are measured in the
@@ -114,18 +114,21 @@ public class TickBudgetTest {
         }finally{pool.shutdownNow();MiningTools.game=tools;BlockIdentity.game=picks;MiningTools.reset();}
     }
 
-    private static double copy(double limitMs,int half){return worstMs(limitMs,()->{var copy=new ClickWorld(world,new BlockPos(-half,64-half,-half),new BlockPos(half-1,63+half,half-1),false);return ()->!copy.step(600_000L);});}
-    /** 600 microseconds a tick is ClickRun.SLICE. */
-    @Test public void theCopyAroundClicksIsMadeASliceATick(){
-        for(int half:new int[]{8,22})check("copy around clicks, worst tick of "+8L*half*half*half+" blocks",copy(LIMIT_MS,half));
-    }
+    private static ClickWorld copy(int half){return new ClickWorld(world,new BlockPos(-half,64-half,-half),new BlockPos(half-1,63+half,half-1),false);}
     /**
-     * FINDING 2026-10-05, not a budget: at the largest copy (58 blocks a side, just under ClickWorld.MAX_VOLUME) one tick of
-     * a 0.6 ms slice takes about 10 ms, where 85,184 blocks stay at 1.5: the map of cells growing, by the look of it.
+     * 600 microseconds a tick is ClickRun.SLICE; 58 blocks a side is just under ClickWorld.MAX_VOLUME, where the map of
+     * cells growing makes one tick about 5 ms. The tick that ends the copy hands it over as a ClickSpace: 5 s for 85,184
+     * blocks and 37 s for 195,112 while that was a Map.copyOf (found 2026-10-05; the note in ClickSpace says why).
      */
-    private static final double COPY_KNOWN_MS=40;
-    @Test public void theLargestCopyHasATickFarOverItsSlice(){
-        check("FINDING copy around clicks, worst tick of 195112 blocks",COPY_KNOWN_MS,copy(COPY_KNOWN_MS,29));
+    @Test public void theCopyAroundClicksIsMadeASliceATickAndHandedOverInOne(){
+        for(int half:new int[]{8,22,29}){
+            String n=8L*half*half*half+" blocks";
+            check("copy around clicks, worst tick of "+n,worstMs(()->{var copy=copy(half);return ()->!copy.step(600_000L);}));
+            var whole=copy(half);while(!whole.step(Long.MAX_VALUE)){}
+            ClickSpace[] space={null};check("copy around clicks handed over, "+n,medianMs(()->()->space[0]=whole.space()));
+            BlockPos[] all=new BlockPos[4096];for(int i=0;i<all.length;i++)all[i]=new BlockPos(i%16-8,64+i/256-8,i/16%16-8);
+            check("4096 reads of a copy of "+n,medianMs(()->()->{for(BlockPos p:all)assertTrue(space[0].known(p));}));
+        }
     }
 
     /** A cube half in the ground: cobblestone asked where stone and air are. */
@@ -134,18 +137,24 @@ public class TickBudgetTest {
         for(int x=0;x<side;x++)for(int y=80-side/2;y<80+side/2;y++)for(int z=0;z<side;z++)cells.add(Map.of("pos",List.of(x,y,z),"id","minecraft:cobblestone"));
         return new ConstructionPlan(Map.of("cells",cells),new HashMap<>(),world);
     }
+    /** A wall two thick, the most cells a plan holds: the shape whose positions hash (Vec3i) closest together. */
+    private static ConstructionPlan wall(){
+        List<Map<String,Object>> cells=new ArrayList<>();
+        for(int x=0;x<64;x++)for(int y=80;y<112;y++)for(int z=0;z<2;z++)cells.add(Map.of("pos",List.of(x,y,z),"id","minecraft:cobblestone"));
+        return new ConstructionPlan(Map.of("cells",cells),new HashMap<>(),world);
+    }
     @Test public void aBuildReadsItsWholePlanEachTick(){
-        for(int side:new int[]{8,16}){
-            var plan=cube(side);assertEquals(side*side*side,plan.cells.size());
+        for(var plan:List.of(cube(8),cube(16),wall())){
             // The world reads ReferenceConstructionProcess.survey makes for each cell, every tick; survey itself needs the job.
             check("build survey's reads of the plan, "+plan.cells.size()+" cells",medianMs(()->()->{
                 int wrong=0;for(var c:plan.cells){var p=c.pos();if(plan.loaded(p)&&!plan.correct(c)&&(plan.occupied(p)||world.isAirBlock(p.getX(),p.getY(),p.getZ())))wrong++;}
                 assertEquals(plan.cells.size(),wrong);}));
-            // What startPass asks of the order when a step begins: what is shown, the air that stays, what waits.
+            // What startPass asks of the order when a step begins: what is shown, the air that stays, what waits. The
+            // wall's copies (shown, pending, held) were 8 to 10 ms each as Map.copyOf and Set.copyOf.
             Set<BlockPos> toFill=new HashSet<>();for(var c:plan.cells)if(!plan.occupied(c.pos()))toFill.add(c.pos());
             BlockPos feet=new BlockPos(-2,80,0);
             check("build order at a pass start, "+plan.cells.size()+" cells",medianMs(()->()->{
-                var shown=plan.steps.schematic(plan.schematic,plan.steps.count()-1);Set<BlockPos> now=new HashSet<>(toFill);now.retainAll(shown.keySet());
+                var shown=plan.steps.schematic(DeferredClearance.schematic(plan.schematic,Set.of(feet),false),plan.steps.count()-1);Set<BlockPos> now=new HashSet<>(toFill);now.retainAll(shown.keySet());
                 var stays=BuildSteps.air(toFill,p->LegacyPlacement.empty(world,p.getX(),p.getY(),p.getZ()),feet,feet.up());
                 BuildSteps.held(toFill,now,stays::contains);}));
         }
@@ -201,10 +210,11 @@ public class TickBudgetTest {
     }
     /**
      * FINDING 2026-10-05, not a budget: a preview copies and orders in the one call that asked, on the game thread, and a
-     * row of 32 click cells (all a preview looks at, ClickRun.CHECKED) takes a third of a second. A job does the same
-     * order on its search thread.
+     * row of 32 click cells (all a preview looks at, ClickRun.CHECKED) takes 11 ms: the copy's reads of the world, then
+     * the order. A job does the same order on its search thread. (194 ms while the copy was handed over as a Map.copyOf;
+     * the limit is four times what is measured now.)
      */
-    private static final double PREVIEW_KNOWN_MS=1500;
+    private static final double PREVIEW_KNOWN_MS=50;
     @Test public void aPreviewOfThirtyTwoClicksIsNotSliced(){
         var plan=row(32);check("FINDING build preview, 32 click cells in a copy of "+StepPlan.volume(plan.places,7)+" blocks",PREVIEW_KNOWN_MS,worstMs(PREVIEW_KNOWN_MS,()->()->{preview(plan);return false;}));
     }

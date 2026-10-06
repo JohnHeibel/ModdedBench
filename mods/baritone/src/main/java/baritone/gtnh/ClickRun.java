@@ -124,7 +124,7 @@ final class ClickRun {
         switch(phase) {
             case "capture"->{
                 if(!capture.step(SLICE))return true;
-                ClickSpace s=capture.space();Set<BlockPos> prot=Set.copyOf(capture.protectedCells);capture=null;
+                ClickSpace s=capture.space();Set<BlockPos> prot=capture.protectedCells;capture=null;
                 if(task==null){space=s;kept=prot;spaceStep=job.clickStep();ways.clear();}
                 submit(s,prot);
             }

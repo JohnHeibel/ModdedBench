@@ -33,7 +33,7 @@ public final class TerrainGrid {
         this.flows = flows.clone();
         Map<BlockPos,List<CollisionBox>> copied=new HashMap<>();
         shapes.forEach((p,boxes)->copied.put(p,List.copyOf(boxes)));
-        this.shapes=Map.copyOf(copied);this.ladders=Map.copyOf(ladders);
+        this.shapes=copied;this.ladders=Map.copyOf(ladders);
     }
     public byte cell(int x, int y, int z) {
         x -= minX; y -= minY; z -= minZ;
