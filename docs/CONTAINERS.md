@@ -5,7 +5,10 @@ and the game client stays on the host, where the GPU and the screen recorder
 are. The agent can edit and build anything in its own checkout, but it reaches
 the world through exactly two doors. The agent is the Codex CLI; no other
 agent runtime is wired into the containers. This setup has been run on Windows
-11 with Docker Desktop only.
+11 with Docker Desktop only. On Linux with plain Docker Engine it is expected
+not to work as it stands: the gateway reaches the client bridge through
+`host.docker.internal`, and the bridge listens on the host's loopback only.
+Commands are written for Git Bash.
 
 ```
  agent container ──(internal network)── gateway ──► model provider (allowlist)
@@ -40,8 +43,12 @@ forbidden in `PROMPT.md` and reviewable afterwards: every deploy is kept under
 1. Install Docker Desktop (WSL 2 backend). Copy `docker/.env.example` to
    `docker/.env`; set `PACK_DIR`, `BRIDGE_TOKENS`, and `EULA=true` once you
    have read the Minecraft EULA. The other settings are in the table below.
+   Create the `BRIDGE_TOKENS` folder if it does not exist yet; the token file
+   appears in it when the modded client first starts (step 5).
 2. Prepare the host client as in [BUILD.md](BUILD.md) (`prepare`,
-   `provision-client`). Do not start the native server.
+   `provision-client`). Do not start the native server. No ModdedBench jar is
+   installed at this point, so `stop-client` cannot reach the game: quit it
+   from its own menu.
 3. Build and start. The first build downloads and decompiles Minecraft inside
    the `dev` stage and takes a while.
 
@@ -58,7 +65,9 @@ docker compose -f docker/compose.yaml --env-file docker/.env up -d --build
 python harness/wiki/fetch.py
 ```
 
-4. Log Codex in once; the login is kept in the `agent-home` volume.
+4. Log Codex in once; the login is kept in the `agent-home` volume. This needs
+   an OpenAI account with Codex access: the command prints a URL and a code to
+   enter in a browser on any machine.
 
 ```bash
 docker compose -f docker/compose.yaml exec agent codex login --device-auth
@@ -90,7 +99,7 @@ Settings in `docker/.env`:
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `EULA` | `false` | `true` accepts the Minecraft EULA; the server does not start without it |
-| `PACK_DIR` | none, required | Host folder holding the GTNH server zip named in `pack.lock.json` |
+| `PACK_DIR` | none, required | Host folder (not the zip itself) holding the GTNH server zip named in `pack.lock.json` |
 | `BRIDGE_TOKENS` | none, required | Host folder holding `bridge-47223.token`, normally `.moddedbench` in your user folder |
 | `SERVER_MEMORY_MIB` | `6144` | Server heap |
 | `BRIGHT_NIGHTS` | `false` | `true` turns off the pack's near-black night rendering, for recording; light levels in the game are unchanged |
