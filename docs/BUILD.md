@@ -3,16 +3,18 @@
 Everything below has been exercised on Windows 11. Linux and macOS should work
 for the Gradle build and the Python server; the managed Prism runtime has only
 been run on Windows.
+Commands are written for a POSIX shell; on Windows use Git Bash.
 
 ## Prerequisites
 
 | Need | Version | Why |
 | --- | --- | --- |
-| JDK | 25 (`JAVA_HOME` pointing at it) | RetroFuturaGradle 2.0.2 requires Java 25 to run Gradle. Gradle provisions the older JDK it needs to decompile Minecraft; the mods are compiled to Java 17 bytecode. |
+| JDK | 25 (`JAVA_HOME` pointing at it) | RetroFuturaGradle 2.0.2 requires Java 25 to run Gradle. Gradle provisions the older JDKs it needs (21 and 8) itself; the mods are compiled to Java 17 bytecode. JDK 17 and 21 start Gradle but the build does not support them. |
 | Gradle | wrapper, 9.2.0 | `gradlew` / `gradlew.bat` in the repository root; nothing to install. |
 | Python | 3.11 or newer | `pip install -r harness/mcp/requirements.txt` (`mcp`, `websockets`). |
-| GT New Horizons 2.8.4 | client and server archives, Java 17-25 builds | Not redistributed. `pack.lock.json` records the exact file names, sizes and SHA-256 the launcher verifies. |
+| GT New Horizons 2.8.4 | client and server archives, Java 17-25 builds | Not redistributed. Download `GT_New_Horizons_2.8.4_Java_17-25.zip` and `GT_New_Horizons_2.8.4_Server_Java_17-25.zip` from the official GTNH downloads page (https://www.gtnewhorizons.com/downloads/); about 1 GB together. `pack.lock.json` records the exact file names, sizes and SHA-256 the launcher verifies. |
 | Prism Launcher | any recent | Only for the managed local client instance. Any launcher that can run the pack with extra jars in `mods/` works for manual installs. |
+| Minecraft account | a Microsoft account that owns Minecraft: Java Edition | Signed in to Prism Launcher before `prepare`; Prism uses it once to download the game's assets. |
 
 The first build needs network access to fetch Forge, the GTNH Nexus
 dependencies and the Gradle plugin. Later builds run `--offline`.
@@ -97,6 +99,12 @@ Close Prism before `prepare`; a running launcher caches its instance list.
 ```bash
 python harness/launcher/runtime.py prepare --client-zip <client.zip> --server-zip <server.zip> --prism <prismlauncher.exe> --prism-data <PrismLauncher data dir> --java <jdk25 java.exe>
 ```
+
+`--prism` and `--prism-data` are normally
+`%LOCALAPPDATA%\Programs\PrismLauncher\prismlauncher.exe` and
+`%APPDATA%\PrismLauncher`. `prepare` needs both archives, also when the server
+will run in a container, and writes its settings to `.runtime/config.json`,
+which every other `runtime.py` command reads.
 
 `--java` must be a JDK 17 to 25; `prepare` refuses anything older. Add
 `--window 1920x1080` to set the client window size (Prism otherwise opens

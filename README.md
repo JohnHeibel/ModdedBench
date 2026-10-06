@@ -31,6 +31,23 @@ git clone --recurse-submodules https://github.com/JohnHeibel/ModdedBench.git
 In a clone made without that flag, run `git submodule update --init`. The
 build stops with a message saying so when `mods/baritone` is empty.
 
+## Check your checkout
+
+With JDK 25 and `pip install -r harness/mcp/requirements.txt` (details in
+[docs/BUILD.md](docs/BUILD.md)), these need no game and no pack:
+
+```bash
+./gradlew build
+```
+
+```bash
+python -m unittest discover -s harness/tests -p "test_*.py"
+```
+
+```bash
+python harness/mcp/server.py --check
+```
+
 ## Quick start: a contained run
 
 This is the usual mode. The agent (the Codex CLI) and the game server each run
@@ -47,7 +64,7 @@ every step and what the containers do and do not isolate. In outline:
    docker compose -f docker/compose.yaml --env-file docker/.env up -d --build
    ```
 
-4. Log Codex in once:
+4. Log Codex in once (an OpenAI account with Codex access):
 
    ```bash
    docker compose -f docker/compose.yaml exec agent codex login --device-auth
