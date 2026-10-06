@@ -49,4 +49,51 @@ public class WorkJournalTest {
         // No directory yet (the first job of a world) is nothing to do.
         WorkJournal.prune(directory.resolve("absent"),current);
     }
+
+    private WorkJournal fresh(){String id=UUID.randomUUID().toString();return new WorkJournal(id,"build","test",new LinkedHashMap<>(Map.of("name","spec")),directory.resolve("work").resolve(id+".json"));}
+    private static Map<String,Object> receipt(Object state,int n){Map<String,Object> out=new LinkedHashMap<>();out.put("state",state);out.put("n",n);return out;}
+    private static double n(Path file)throws Exception{return (Double)((Map<?,?>)WorkJournal.JSON.fromJson(Files.readString(file),Map.class).get("receipt")).get("n");}
+    /** The writer held on a task of the test's: what save() does by itself is all that happens until `release`. */
+    private static java.util.concurrent.CountDownLatch hold()throws Exception{
+        var held=new java.util.concurrent.CountDownLatch(1);var release=new java.util.concurrent.CountDownLatch(1);
+        WorkJournal.WRITER.execute(()->{held.countDown();try{release.await();}catch(InterruptedException e){}});held.await();return release;
+    }
+    @Test public void aSaveTouchesNoDiskAndTheLatestCheckpointIsTheOneWritten()throws Exception{
+        WorkJournal journal=fresh();Path file=directory.resolve("work").resolve(journal.id+".json");
+        var release=hold();int before=WorkJournal.written;
+        for(int i=1;i<=5;i++){journal.recordAttempt("cell",i);journal.recordClick(Map.of("click",i));journal.progress.put("at",i);journal.save(receipt("running",i));}
+        // The checkpoint is bytes when save returns: what the game changes afterwards is not in it.
+        journal.progress.put("at","later");
+        assertFalse("save made no directory, wrote no file",Files.exists(directory.resolve("work")));
+        release.countDown();WorkJournal.flush();
+        assertEquals("five saves behind a busy writer are one write",before+1,WorkJournal.written);
+        assertEquals(5.0,n(file),0);assertTrue(Files.readString(file).contains("\"at\":5"));
+        assertEquals("{\"name\":\"spec\"}",Files.readString(file.resolveSibling(journal.id+".spec.json")));
+        // Rows are joined, never dropped, in the order recorded.
+        assertEquals(List.of(1,2,3,4,5),Files.readAllLines(file.resolveSibling(journal.id+".attempts.jsonl")).stream().map(l->((Double)WorkJournal.JSON.fromJson(l,Map.class).get("count")).intValue()).toList());
+        assertEquals(List.of(1,2,3,4,5),Files.readAllLines(file.resolveSibling(journal.id+".clicks.jsonl")).stream().map(l->((Double)WorkJournal.JSON.fromJson(l,Map.class).get("click")).intValue()).toList());
+        try(var files=Files.list(file.getParent())){assertTrue("no temporary file left",files.noneMatch(f->f.toString().endsWith(".tmp")));}
+    }
+    @Test public void savesAreWrittenInOrderAndAJobsLastOneIsOnDiskWhenCloseReturns()throws Exception{
+        WorkJournal journal=fresh();Path file=directory.resolve("work").resolve(journal.id+".json");
+        for(int i=1;i<=50;i++){journal.recordAttempt("cell",i);journal.save(receipt("running",i));}
+        // No flush by the test: close is the flush. A reader that follows sees the end, with every row before it.
+        journal.recordAttempt("cell",51);journal.close(receipt("paused",51));
+        assertEquals(51.0,n(file),0);assertEquals(51,Files.readAllLines(file.resolveSibling(journal.id+".attempts.jsonl")).size());
+        // Another journal's writes queue behind this one's: one writer, one order.
+        WorkJournal other=fresh();var release=hold();journal.save(receipt("running",52));other.save(receipt("running",1));release.countDown();WorkJournal.flush();
+        assertEquals(52.0,n(file),0);assertEquals(1.0,n(directory.resolve("work").resolve(other.id+".json")),0);
+    }
+    @Test public void aWriteThatFailedIsThrownByTheNextSaveAndByClose()throws Exception{
+        Files.writeString(directory.resolve("work"),"a file where the directory belongs");
+        WorkJournal journal=fresh();journal.save(receipt("running",1));WorkJournal.flush();
+        try{journal.save(receipt("running",2));fail("the failed write was not reported");}catch(IllegalStateException expected){assertTrue(expected.getMessage().startsWith("cannot checkpoint work"));}
+        try{journal.close(receipt("failed",3));fail("the failed close was not reported");}catch(IllegalStateException expected){}
+    }
+    /** What save costs the game thread now: the checkpoint as bytes. 2,000 clicks is far past a build's click cap of 256. */
+    @Test public void aSaveOfALongClickLogIsFarInsideATick()throws Exception{
+        WorkJournal journal=fresh();Map<String,Object> clicks=new LinkedHashMap<>();for(int i=0;i<2000;i++)clicks.put(i+",64,"+i,"done");journal.progress.put("clicks",clicks);
+        int[] n={0};baritone.TickBudget.check("journal checkpoint handed to the writer, 2000 click results",baritone.TickBudget.medianMs(()->()->journal.save(receipt("running",n[0]++))));
+        journal.close(receipt("succeeded",0));
+    }
 }
