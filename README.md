@@ -134,7 +134,6 @@ wrote.
 
 ## Licence
 
-LGPL-3.0-or-later for the whole repository. `mods/baritone/src/upstream`
-contains files from [Baritone](https://github.com/cabaletta/baritone)
-(v1.2.19), pinned by hash in `UPSTREAM_SOURCES.json`; see `NOTICE.md` and
-`LICENSES/`. GT New Horizons itself is not redistributed.
+MIT (`LICENSE`). The Baritone port in the `mods/baritone` submodule is a
+separate repository, Modatone, under LGPL-3.0-or-later with its own licence
+files; see `NOTICE.md`. GT New Horizons itself is not redistributed.

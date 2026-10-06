@@ -1,6 +1,6 @@
 # Notices
 
-ModdedBench is licensed under the MIT License (see `LICENSE`), with the exceptions listed here.
+ModdedBench is licensed under the MIT License (see `LICENSE`), with the exception listed here.
 Each source file names its licence in an `SPDX-License-Identifier` line.
 
 ## Not covered by the MIT licence
@@ -12,11 +12,6 @@ Each source file names its licence in an `SPDX-License-Identifier` line.
   modifications, the fastutil notice) and `UPSTREAM_SOURCES.json`. Nothing in ModdedBench imports
   a Baritone class; the port reaches the rest through `dev.modbench.api` only. The jar built from
   it, `modbench-baritone`, is LGPL-3.0-or-later and carries its licence texts.
-- **Four files in `mods/core`** that are derived from Baritone's event and input hooks and stay
-  LGPL-3.0-or-later (`LICENSES/LGPL-3.0.txt`, `LICENSES/GPL-3.0.txt`), as their headers say:
-  `src/main/java/dev/modbench/hooks/ActionTransformer.java`, `EventTransformer.java`, and their
-  tests `src/test/java/dev/modbench/hooks/ActionTransformerTest.java`, `EventTransformerTest.java`.
-  The two transformers are compiled into `modbench-core`.
 
 ## Third-party files in this repository
 

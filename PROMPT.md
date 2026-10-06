@@ -476,7 +476,8 @@ repository copy stays true. Constraints that keep the harness healthy:
   continue. Do not edit files under `mods/*/src/upstream` (pinned upstream
   Baritone) unless there is no alternative, and say so in the commit.
 - **Contained runs** (`MODBENCH_OUTBOX` is set): you cannot reach the game
-  install. Build with `./gradlew build --offline`, commit, then
+  install. Build with `./gradlew build --offline`, commit (a Baritone change
+  is two commits: inside `mods/baritone`, then the root), then
   `python harness/launcher/deploy.py request client baritone core --reason "..."`
   (any subset). A supervisor outside your container installs those three jars
   on the client only, restarts it, rolls back if it does not join, and answers
