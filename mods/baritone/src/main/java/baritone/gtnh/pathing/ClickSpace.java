@@ -26,9 +26,15 @@ public final class ClickSpace {
     private final ClickSpace base;
     private TerrainGrid grid;
     public ClickSpace(BlockPos min,BlockPos max,Map<BlockPos,Voxel> cells){this(min,max,cells,List.of());}
-    /** around: tile entities beyond the copy's edge, so that a cell near the edge knows of a machine just past it. */
+    /**
+     * around: tile entities beyond the copy's edge, so that a cell near the edge knows of a machine just past it.
+     * cells is the space's from here on, never written again, and not copied, least of all with Map.copyOf: that and
+     * Set.copyOf are open-addressed tables, and the positions of a box hash (Vec3i) to neighbouring values with repeats,
+     * which costs such a table the square of their number to fill and as much again to read (85,184 blocks: 4.9 s to
+     * make, 15 microseconds a lookup). So no set or map of positions that may be large is one of those.
+     */
     public ClickSpace(BlockPos min,BlockPos max,Map<BlockPos,Voxel> cells,Collection<BlockPos> around) {
-        this(min,max,Map.copyOf(cells),Map.of(),null,new HashSet<>(around));
+        this(min,max,cells,Map.of(),null,new HashSet<>(around));
         cells.forEach((p,v)->{if(v.tile())tiles.add(p);});
     }
     private ClickSpace(BlockPos min,BlockPos max,Map<BlockPos,Voxel> cells,Map<BlockPos,Voxel> changed,ClickSpace base,Collection<BlockPos> tiles){this.min=min;this.max=max;this.cells=cells;this.changed=changed;this.base=base;this.tiles=tiles;}

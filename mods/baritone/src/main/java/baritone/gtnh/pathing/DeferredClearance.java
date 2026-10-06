@@ -15,12 +15,12 @@ public final class DeferredClearance {
         if(!mayPlace||cells.stream().allMatch(Cell::clear))return Set.of();
         Set<BlockPos> deferred=new HashSet<>();
         for(Cell cell:cells)if(cell.clear()&&initiallyAir.test(cell.pos()))deferred.add(cell.pos());
-        return Set.copyOf(deferred);
+        return Collections.unmodifiableSet(deferred);
     }
     public static <T> Map<BlockPos,T> schematic(Map<BlockPos,T> desired,Set<BlockPos> deferred,boolean cleanup){
-        if(cleanup||deferred.isEmpty())return Map.copyOf(desired);
+        if(cleanup||deferred.isEmpty())return Collections.unmodifiableMap(new HashMap<>(desired));
         Map<BlockPos,T> building=new HashMap<>(desired);deferred.forEach(building::remove);
-        return Map.copyOf(building);
+        return Collections.unmodifiableMap(building);
     }
     public static boolean needsEgress(Set<BlockPos> deferred,Predicate<BlockPos> alreadyClear){
         return deferred.stream().anyMatch(p->!alreadyClear.test(p));

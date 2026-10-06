@@ -27,6 +27,6 @@ final class Spaces {
     Spaces tileOutside(int x,int y,int z){around.add(p(x,y,z));return this;}
     /** A block with no collision that is not replaceable: a torch, a lever. */
     Spaces attached(int x,int y,int z){CollisionBox b=new CollisionBox(x+.4,y,z+.4,x+.6,y+.6,z+.6);cells.put(p(x,y,z),new Voxel(TerrainGrid.CLEAR,List.of(),List.of(b),false,false,"minecraft:torch"));return this;}
-    ClickSpace build(){return new ClickSpace(min,max,cells,around);}
+    ClickSpace build(){return new ClickSpace(min,max,new HashMap<>(cells),around);}
     static final Vantages.Body BODY=new Vantages.Body(1.62,4.5);
 }

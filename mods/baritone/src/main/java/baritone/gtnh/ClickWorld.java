@@ -60,6 +60,7 @@ final class ClickWorld {
     boolean complete(){return cursor>=w*h*d;}
     /** How far the copy has come: work the stall watchdog can see. */
     int cursor(){return cursor;}
+    /** The finished copy, which keeps the map of cells: nothing here writes it once complete. */
     ClickSpace space(){if(!complete())throw new IllegalStateException("capture incomplete");return new ClickSpace(min,max,cells,tiles);}
     static Voxel voxel(World world,int x,int y,int z) {
         var cell=ForgeSnapshot.sample(world,x,y,z);
