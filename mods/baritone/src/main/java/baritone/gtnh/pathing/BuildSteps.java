@@ -55,7 +55,7 @@ public final class BuildSteps {
     /** What the source builder is shown at `current`: the plain cells of the steps so far. */
     public <T> Map<BlockPos,T> schematic(Map<BlockPos,T> desired,int current) {
         if(current>=keys.length&&Arrays.stream(keys).allMatch(k->(k>>8&3)==CELLS))return desired;
-        Map<BlockPos,T> shown=new HashMap<>(desired);shown.keySet().removeIf(p->{Integer step=at.get(p);return step!=null&&(step>current||kind(step)!=CELLS);});return Map.copyOf(shown);
+        Map<BlockPos,T> shown=new HashMap<>(desired);shown.keySet().removeIf(p->{Integer step=at.get(p);return step!=null&&(step>current||kind(step)!=CELLS);});return Collections.unmodifiableMap(shown);
     }
     private Map<String,Object> name(int step) {
         Map<String,Object> out=new LinkedHashMap<>();out.put("stage",stage(step));
@@ -95,7 +95,7 @@ public final class BuildSteps {
             BlockPos n=beside(e.getKey(),side);Integer d=depth.get(n);
             if(d!=null&&d>e.getValue()&&now.contains(n)){held.add(e.getKey());first.add(n);}
         }
-        return held.isEmpty()?Held.NONE:new Held(Set.copyOf(held),Set.copyOf(first));
+        return held.isEmpty()?Held.NONE:new Held(Collections.unmodifiableSet(held),Collections.unmodifiableSet(first));
     }
     /**
      * The air that stays air around the cells still to be filled: empty cells no step fills, reached from the player or
