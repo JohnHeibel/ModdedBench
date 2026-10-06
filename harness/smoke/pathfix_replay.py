@@ -304,6 +304,7 @@ class Replay(Course):
                 try:
                     r = self.attempt(name, spec, paused)
                     r["verdict"], r["failures"] = self.judge(spec, r, world)
+                    self.costed(f"{name}[{i}]{' paused' if paused else ''}", r, "verdict")
                 except Exception as e:
                     r = {"paused": paused, "verdict": "fail", "failures": [f"harness error: {type(e).__name__}: {e}"]}
                 r["trial"] = i; ev["trials"].append(r)
@@ -374,7 +375,7 @@ def main():
     ap.add_argument("--no-idle", action="store_true", help="skip the idle performance baseline")
     ap.add_argument("--server-host", default="127.0.0.1", help="the server address as the client sees it, to rejoin")
     ap.add_argument("--from-here", action="store_true", help="start from the player's position instead of the case's start (chained legs)")
-    ap.add_argument("--list", action="store_true")
+    ap.add_argument("--list", action="store_true"); mc.tick_cost.argument(ap)
     args = ap.parse_args()
     args.seed = 1
     if args.list:

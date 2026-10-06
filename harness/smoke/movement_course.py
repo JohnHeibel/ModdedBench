@@ -32,6 +32,8 @@ sys.path.insert(0, str(ROOT / "harness" / "mcp"))
 from kernel import BridgeError, Kernel, bridge_url, resume_once  # noqa: E402
 import mbtool  # noqa: E402,F401  (installs the mbtools_gtnh package)
 from mbtools_gtnh import core, work  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import tick_cost  # noqa: E402
 
 OUT = ROOT / ".runtime" / "evidence" / "movement-course.json"
 FIX = "dev.movement_fixture"
@@ -258,6 +260,13 @@ def baseline(client):
 
 
 class Course:
+    COST = "walk"   # which of tick_cost.LIMITS judges this suite's cases
+
+    def costed(self, name: str, row: dict, key: str = "passed"):
+        """Every suite's one check of what a case cost the game thread: over the limit, the case fails."""
+        if not hasattr(self, "gate"): self.gate = tick_cost.Gate(self.COST, getattr(self.args, "warm_up", False))
+        return self.gate(name, row, key)
+
     def __init__(self, args):
         self.args = args
         self.c, self.s = Kernel(timeout=120), server_kernel(120)
@@ -479,7 +488,7 @@ class Course:
                 for i in range(self.args.trials if CASES[name]["expect"] != "script" else min(self.args.trials, self.args.script_trials)):
                     try: t = self.trial(name, i)
                     except Exception as e: t = {"trial": i, "passed": False, "failures": [f"harness error: {type(e).__name__}: {e}"]}
-                    trials.append(t)
+                    self.costed(f"{name}[{i}]", t); trials.append(t)
                     print(f"{name}[{i}] {'SKIP' if t.get('skipped') else 'PASS' if t.get('passed') else 'FAIL'} "
                           f"{t.get('state','')} {t.get('reason','') or ''} ticks={t.get('ticks')} {'; '.join(t.get('failures') or [])}", flush=True)
                     if t.get("skipped"): break
@@ -542,7 +551,7 @@ def main():
     ap.add_argument("--keep", action="store_true", help="leave the course and the journalled player in place")
     ap.add_argument("--no-idle", action="store_true", help="skip the idle performance baseline")
     ap.add_argument("--server-host", default="127.0.0.1", help="the server address as the client sees it, to rejoin")
-    ap.add_argument("--list", action="store_true")
+    ap.add_argument("--list", action="store_true"); tick_cost.argument(ap)
     args = ap.parse_args()
     if args.list:
         for n, s in CASES.items(): print(f"{n:22} {s['expect']:8} {CATALOGUE.get(n, '')}")

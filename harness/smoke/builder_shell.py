@@ -105,6 +105,8 @@ def diff(before: dict, after: dict, allowed=(), ignore=()) -> list[dict]:
 
 
 class Shells(Course):
+    COST = "build"
+
     def __init__(self, args):
         super().__init__(args)
         mc.mbtool.set_kernel_factory(lambda: self.c)   # the tool must act through the session that owns the clock
@@ -216,7 +218,7 @@ class Shells(Course):
                 print(f"== {name}", flush=True)
                 try: row = self.trial(name)
                 except Exception as e: row = {"passed": False, "outcome": "error", "error": f"{type(e).__name__}: {e}"}
-                self.evidence["cases"][name] = row
+                self.costed(name, row); self.evidence["cases"][name] = row
                 r = row.get("receipt") or {}
                 print(f"{name:14} {'PASS' if row['passed'] else 'FAIL'} {row['outcome']:14} state={r.get('state')} reason={r.get('reason')} "
                       f"ticks={r.get('ticks')} placed={r.get('placed')} wrong={len(row.get('wrong') or [])}/{row.get('cells')} "
@@ -233,7 +235,7 @@ def main():
     ap.add_argument("--case", action="append", choices=list(CASES), help="case name (repeatable); default all")
     ap.add_argument("--keep", action="store_true", help="leave the arena, the last shell and the journalled player in place")
     ap.add_argument("--server-host", default="127.0.0.1", help="the server address as the client sees it, to rejoin")
-    args = ap.parse_args()
+    mc.tick_cost.argument(ap); args = ap.parse_args()
     args.seed, args.trials = 1, 1
     course = Shells(args)
     course.run()
