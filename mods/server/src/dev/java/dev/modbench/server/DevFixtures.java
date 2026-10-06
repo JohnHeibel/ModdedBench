@@ -44,6 +44,7 @@ final class DevFixtures {
         runtime.fixture("dev.movement_fixture.restore","Restore original player, game rules, and remove the course","privileged",r->movement.restore());
         ReplayFixture replay=new ReplayFixture(server);
         runtime.fixture("dev.replay.place","Teleport the only connected player to {x,y,z,yaw?,pitch?} in a cloned world; changes no blocks","privileged",r->replay.place(r.params));
+        runtime.fixture("dev.replay.sustain","Fill the only connected player's health and food and, with {time:0..23999}, set the overworld's time of day; returns what they were","privileged",r->replay.sustain(r.params));
         runtime.fixture("dev.replay.status","The player as the server sees it, and block id/meta at {cells:[[x,y,z],...]} (<=64)","read",r->replay.status(r.params));
         WorkProcessFixture processes=new WorkProcessFixture(server);
         runtime.fixture("dev.work_process_fixture.create","Create journalled bounded mining/building course with native ToolBuilder loadout {width?:32..64,depth?:16..64,top?:185..200,bare?}; bare leaves the floor free of the built-in courses","privileged",r->processes.create(r.params));
