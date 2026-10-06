@@ -248,6 +248,11 @@ closing, when it has something to put back); server time keeps running.
 A job beginning deletes the journals beyond the newest twenty that ended and
 the newest twenty paused of each kind, with their spec and ledger, so an
 older job can no longer be resumed.
+A checkpoint (every 20 ticks of a build, and at each change of phase) is
+made into bytes on the game thread and written and synced by one writer
+thread, in order; a newer one replaces one not yet written. A crash can lose
+the last checkpoint handed over. The save that ends a job, any read of a
+journal and the game's shutdown wait for the writer.
 
 ## Schematic import and copy
 

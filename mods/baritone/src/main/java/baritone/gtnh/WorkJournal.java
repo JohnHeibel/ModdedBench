@@ -8,10 +8,17 @@ import com.google.gson.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
+import java.util.concurrent.*;
 import net.minecraft.client.Minecraft;
 import static baritone.gtnh.pathing.WorkSpec.*;
 
-/** Durable intent and receipts. Resume always re-observes the world before acting. */
+/**
+ * Durable intent and receipts. Resume always re-observes the world before acting.
+ * A checkpoint is turned into bytes on the thread that saves (the game's) and written and synced by one writer thread,
+ * in the order saved. A save that finds an unwritten one of its journal replaces it (the rows to append are joined), so
+ * a crash loses at most what the last save handed over. flush() returns when everything saved is on disk: a job's end,
+ * every read of a journal and the game's shutdown wait for it.
+ */
 final class WorkJournal {
     static final Gson JSON=new Gson();
     final String id,kind,scope;
@@ -19,12 +26,23 @@ final class WorkJournal {
     final Map<String,Object> progress=new LinkedHashMap<>();
     private final Path file;
     private final StringBuilder ledger=new StringBuilder(),clicks=new StringBuilder();
+    /** What one save hands the writer: bytes and text, nothing the game still changes. spec only until it is on disk. */
+    private record Batch(byte[] spec,String ledger,String clicks,byte[] checkpoint){}
+    static final ExecutorService WRITER=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"modbench-journal");t.setDaemon(true);return t;});
+    static{Runtime.getRuntime().addShutdownHook(new Thread(WorkJournal::flush,"modbench-journal-flush"));}
+    /** Checkpoint files written, counted by the writer. */
+    static volatile int written;
+    private Batch waiting;
+    private boolean specSaved;
+    private volatile Exception failure;
     WorkJournal(String kind,Map<String,Object> params) {
         this.id=UUID.randomUUID().toString();this.kind=kind;scope=ControlRegistry.memory().memory().scope();
         spec=object(JSON.fromJson(JSON.toJson(params),Map.class));file=path(id);
     }
+    WorkJournal(String id,String kind,String scope,Map<String,Object> spec,Path file){this.id=id;this.kind=kind;this.scope=scope;this.spec=spec;this.file=file;}
     WorkJournal(String id) {
         Map<String,Object> data=load(id);this.id=id;kind=string(data,"kind","");scope=string(data,"scope","");spec=child(data,"spec");progress.putAll(child(data,"progress"));file=path(id);
+        specSaved=Files.exists(file.resolveSibling(id+".spec.json"));
         if(!scope.equals(ControlRegistry.memory().memory().scope()))throw new IllegalArgumentException("work belongs to another world/dimension");
     }
     private static Path path(String id){UUID.fromString(id);return Minecraft.getMinecraft().mcDataDir.toPath().resolve("modbench/work").resolve(id+".json");}
@@ -65,7 +83,7 @@ final class WorkJournal {
     /** Inspection never rehydrates a million-cell spec or its per-click ledger. */
     static Map<String,Object> status(String id) {
         try {
-            var data=checkpoint(path(id));
+            flush();var data=checkpoint(path(id));
             if(data.containsKey("spec"))data.put("specSummary",summary(object(data.remove("spec"))));
             else if(!data.containsKey("specSummary"))data.put("specSummary",Map.of("storedSeparately",true));
             data.put("inspection","bounded checkpoint; resume loads the complete frozen specification");
@@ -84,26 +102,47 @@ final class WorkJournal {
     }
     static Map<String,Object> load(String id) {
         try {
-            Path file=path(id);var data=checkpoint(file);
+            flush();Path file=path(id);var data=checkpoint(file);
             if(!data.containsKey("spec")){Path spec=file.resolveSibling(id+".spec.json");if(Files.size(spec)>256L*1024*1024)throw new IllegalArgumentException("work spec too large");data.put("spec",object(JSON.fromJson(Files.readString(spec,StandardCharsets.UTF_8),Map.class)));}
             return data;
         }
         catch(Exception error){throw new IllegalArgumentException("work journal unavailable: "+error.getMessage(),error);}
     }
+    /** Everything saved so far, by any journal, is on disk or has failed when this returns. */
+    static void flush(){
+        try{WRITER.submit(()->{}).get();}
+        catch(InterruptedException interrupted){Thread.currentThread().interrupt();throw new IllegalStateException("interrupted while writing work journals");}
+        catch(ExecutionException impossible){throw new IllegalStateException(impossible.getCause());}
+    }
+    /** A write that failed since the last save says so here: in the next save, and in the close that ends the job. */
+    private void failed(){Exception error=failure;if(error!=null){failure=null;throw new IllegalStateException("cannot checkpoint work: "+error.getMessage(),error);}}
+    /** The save that ends a job: on disk when this returns, or thrown. */
+    void close(Map<String,Object> receipt){save(receipt);flush();failed();}
+    /** No disk here: the checkpoint as bytes, handed to the writer. */
     void save(Map<String,Object> receipt) {
+        failed();
+        Map<String,Object> data=new LinkedHashMap<>();data.put("version",2);data.put("jobId",id);data.put("kind",kind);data.put("scope",scope);data.put("specSummary",summary(spec));data.put("progress",progress);data.put("receipt",receipt);
+        byte[] bytes=JSON.toJson(data).getBytes(StandardCharsets.UTF_8),first=specSaved?null:JSON.toJson(spec).getBytes(StandardCharsets.UTF_8);specSaved=true;
+        synchronized(this){
+            Batch before=waiting;
+            waiting=before==null?new Batch(first,ledger.toString(),clicks.toString(),bytes):new Batch(before.spec,before.ledger+ledger,before.clicks+clicks,bytes);
+            if(before==null)WRITER.execute(this::write);
+        }
+        ledger.setLength(0);clicks.setLength(0);ended.put(id,ended(kind,receipt.get("state")));
+    }
+    private void write(){
+        Batch batch;synchronized(this){batch=waiting;waiting=null;}
         try {
-            Files.createDirectories(file.getParent());Path specFile=file.resolveSibling(id+".spec.json");
-            if(!Files.exists(specFile))write(specFile,JSON.toJson(spec).getBytes(StandardCharsets.UTF_8),256L*1024*1024);
-            if(ledger.length()>0){Files.writeString(file.resolveSibling(id+".attempts.jsonl"),ledger,StandardCharsets.UTF_8,StandardOpenOption.CREATE,StandardOpenOption.APPEND);ledger.setLength(0);}
-            if(clicks.length()>0){Files.writeString(file.resolveSibling(id+".clicks.jsonl"),clicks,StandardCharsets.UTF_8,StandardOpenOption.CREATE,StandardOpenOption.APPEND);clicks.setLength(0);}
-            Map<String,Object> data=new LinkedHashMap<>();data.put("version",2);data.put("jobId",id);data.put("kind",kind);data.put("scope",scope);data.put("specSummary",summary(spec));data.put("progress",progress);data.put("receipt",receipt);
-            byte[] bytes=JSON.toJson(data).getBytes(StandardCharsets.UTF_8);
-            write(file,bytes,64L*1024*1024);ended.put(id,ended(kind,receipt.get("state")));
-        }catch(Exception error){throw new IllegalStateException("cannot checkpoint work: "+error.getMessage(),error);}
+            Files.createDirectories(file.getParent());
+            if(batch.spec!=null)write(file.resolveSibling(id+".spec.json"),batch.spec,256L*1024*1024);
+            if(!batch.ledger.isEmpty())Files.writeString(file.resolveSibling(id+".attempts.jsonl"),batch.ledger,StandardCharsets.UTF_8,StandardOpenOption.CREATE,StandardOpenOption.APPEND);
+            if(!batch.clicks.isEmpty())Files.writeString(file.resolveSibling(id+".clicks.jsonl"),batch.clicks,StandardCharsets.UTF_8,StandardOpenOption.CREATE,StandardOpenOption.APPEND);
+            write(file,batch.checkpoint,64L*1024*1024);written++;
+        }catch(Exception error){failure=error;}
     }
     /**
      * One row per click the game took, in order: <id>.attempts.jsonl, a measurement log (harness/smoke/build_order.py),
-     * never read back. Rows wait here and are appended by the next checkpoint: no disk write on the tick of a click.
+     * never read back. Rows wait here and are appended with the next checkpoint.
      */
     void recordAttempt(String key,int count){ledger.append(JSON.toJson(Map.of("key",key,"count",count))).append('\n');}
     /** One row per click of a build's click cells and uses, in full: <id>.clicks.jsonl, appended like the attempts. The receipt keeps counts. */
