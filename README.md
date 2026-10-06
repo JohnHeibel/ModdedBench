@@ -111,7 +111,7 @@ mb_notes("find", {"near": "player"})      notes written near here (the notes are
 | `mods/core` | Coremod: class transformers, input arbiter, websocket transport, simulation clock | rebuild, reinstall, restart |
 | `mods/client` | Observation, action, GUI, inventory, NEI, quest, memory RPCs | rebuild, reinstall, restart |
 | `mods/server` | Authoritative tile/NBT/Waila reads, tick gate and guards | rebuild, reinstall, restart |
-| `mods/baritone` | Navigation, mining, construction: a port of Baritone to 1.7.10 as a plain mod. A submodule with its own documents: [BARITONE_PORT](mods/baritone/docs/BARITONE_PORT.md), [MOVEMENTS](mods/baritone/docs/MOVEMENTS.md) | rebuild, reinstall, restart |
+| `mods/baritone` | Navigation, mining, construction: a port of Baritone to 1.7.10 as a plain mod. A submodule with its own documents: [BARITONE_PORT](https://github.com/JohnHeibel/Modatone/blob/main/docs/BARITONE_PORT.md), [MOVEMENTS](https://github.com/JohnHeibel/Modatone/blob/main/docs/MOVEMENTS.md) | rebuild, reinstall, restart |
 | `harness/mcp` | MCP server, transport kernel, `@tool` contract | restart the server |
 | `harness/tools` | The tools the model sees and edits | reloaded on the next call |
 | `harness/launcher` | Managed local runtime (Prism instance, server, jar install and rollback), the deploy supervisor and backups for contained runs | |
@@ -150,7 +150,7 @@ Research code, developed and run on one Windows 11 machine.
 - The managed runtime and the container setup have only been used on Windows.
   The Gradle build and the Python code are not Windows-specific.
 - Known limits are stated where they apply: navigation and construction in
-  [mods/baritone/docs/BARITONE_PORT.md](mods/baritone/docs/BARITONE_PORT.md), time control in
+  [mods/baritone/docs/BARITONE_PORT.md](https://github.com/JohnHeibel/Modatone/blob/main/docs/BARITONE_PORT.md), time control in
   [docs/TIME_CONTROL.md](docs/TIME_CONTROL.md), isolation in
   [docs/CONTAINERS.md](docs/CONTAINERS.md).
 
