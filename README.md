@@ -123,6 +123,13 @@ Research code, developed and run on one Windows 11 machine.
   [docs/TIME_CONTROL.md](docs/TIME_CONTROL.md), isolation in
   [docs/CONTAINERS.md](docs/CONTAINERS.md).
 
+## Contributing and security
+
+[CONTRIBUTING.md](CONTRIBUTING.md) says how to build, test and report issues.
+[SECURITY.md](SECURITY.md) says what the harness exposes and how to report a
+vulnerability. Read it before a run: the game client executes code the model
+wrote.
+
 ## Licence
 
 LGPL-3.0-or-later for the whole repository. `mods/baritone/src/upstream`
