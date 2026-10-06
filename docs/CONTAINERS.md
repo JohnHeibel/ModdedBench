@@ -3,7 +3,9 @@
 For long unattended runs the agent and the server each live in a container
 and the game client stays on the host, where the GPU and the screen recorder
 are. The agent can edit and build anything in its own checkout, but it reaches
-the world through exactly two doors.
+the world through exactly two doors. The agent is the Codex CLI; no other
+agent runtime is wired into the containers. This setup has been run on Windows
+11 with Docker Desktop only.
 
 ```
  agent container ──(internal network)── gateway ──► model provider (allowlist)
@@ -37,7 +39,7 @@ forbidden in `PROMPT.md` and reviewable afterwards: every deploy is kept under
 
 1. Install Docker Desktop (WSL 2 backend). Copy `docker/.env.example` to
    `docker/.env`; set `PACK_DIR`, `BRIDGE_TOKENS`, and `EULA=true` once you
-   have read the Minecraft EULA.
+   have read the Minecraft EULA. The other settings are in the table below.
 2. Prepare the host client as in [BUILD.md](BUILD.md) (`prepare`,
    `provision-client`). Do not start the native server.
 3. Build and start. The first build downloads and decompiles Minecraft inside
@@ -82,6 +84,17 @@ python harness/launcher/deploy.py serve
 ```bash
 docker compose -f docker/compose.yaml exec agent sh -c 'mkdir -p .state && exec flock -n .state/loop.lock python3 harness/runner/codex_loop.py --prompt /brief/PROMPT.md --max-turns 200 --max-minutes 120'
 ```
+
+Settings in `docker/.env`:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `EULA` | `false` | `true` accepts the Minecraft EULA; the server does not start without it |
+| `PACK_DIR` | none, required | Host folder holding the GTNH server zip named in `pack.lock.json` |
+| `BRIDGE_TOKENS` | none, required | Host folder holding `bridge-47223.token`, normally `.moddedbench` in your user folder |
+| `SERVER_MEMORY_MIB` | `6144` | Server heap |
+| `BRIGHT_NIGHTS` | `false` | `true` turns off the pack's near-black night rendering, for recording; light levels in the game are unchanged |
+| `MB_DIFFICULTY` | `1` | The world's difficulty, written to `server.properties` at every server start: 0 peaceful, 1 easy, 2 normal, 3 hard. The pack ships 3; runs are played on easy unless this says otherwise. Not in `.env.example`; add the line to change it |
 
 ## Operator console
 
@@ -130,8 +143,9 @@ the right, and the goal stack and run totals sit along the bottom.
 
 In OBS, with a 1920x1080 canvas:
 
-1. Add the game as a Window or Game Capture, resize it to 1440x810 and put it in the
-   top-left corner (Edit Transform: position 0, 0; size 1440 x 810).
+1. Add the game as a Game Capture (Window Capture does not work for this client),
+   resize it to 1440x810 and put it in the top-left corner (Edit Transform: position
+   0, 0; size 1440 x 810).
 2. Add a Browser source above it: that URL, width 1920, height 1080, and empty the
    Custom CSS box. Tick "Refresh browser when scene becomes active" if you like.
 3. The console must be running; the page polls it every second and keeps the last
@@ -168,9 +182,25 @@ keeps with `mb_goal`, and action lines are templates over its tool calls. Initia
 | Take the agent's commits out | `docker compose ... exec agent git bundle create /outbox/run.bundle modbench-base..HEAD`, then `git fetch .runtime/outbox/run.bundle` on the host |
 | Hold the world paused / release | `docker compose ... exec server sh -c 'echo operator > /data/modbench-hold'` / `... rm -f /data/modbench-hold` (`cat` it first: `backup` or `compaction` is a hold that ends by itself) |
 | New world | `docker compose ... down`, `docker volume rm moddedbench_server-data` |
-| New world that keeps the old one | start the console with `MB_COMPOSE_PROJECT=<name>`: a second stack (`docker/compose.side.yaml`) with its own world and agent checkout and the same Codex login. Stop the other stacks first. |
+| New world that keeps the old one | a side stack, below |
 | Start a run without the console | fill the four placeholders in a copy of `PROMPT.md`, save it as `.runtime/brief/PROMPT.md`, then start the loop as in step 6 above (under `flock`, or the one-loop guard does not cover it), or paste it into an interactive `codex` in that container |
 | Snapshot the world, the notes and the agent's work | `python harness/launcher/backup.py once`, or `loop --every 30` in a terminal you leave open (one loop per stack: a second exits) |
+
+## Side stacks and the test stack
+
+A stack is one Compose project: a server, a gateway, an agent, and their
+volumes. The default project is `moddedbench`. Two overlay files make further
+stacks beside it. Each has its own world and agent checkout and shares the
+Codex login volume of the default stack (a copy of the login would log one of
+the two out), so the default stack must have been created and logged in
+first. All stacks publish port 25575: stop the others before starting one.
+
+| Stack | For | How |
+| --- | --- | --- |
+| Side stack (`docker/compose.side.yaml`) | A second world for real runs, keeping the first | Start the console with `MB_COMPOSE_PROJECT=<name>` set; every button then acts on that stack |
+| Test stack (`docker/compose.test.yaml`) | Tests that need a game; its server is built with the development fixtures | Project name `mbtest`; the command and the tests are in [BUILD.md](BUILD.md#testing) |
+
+`harness/launcher/backup.py` follows `MB_COMPOSE_PROJECT` too.
 
 ## The brief and the heartbeat
 
@@ -182,7 +212,8 @@ Codex reads `~/.codex/AGENTS.md` at the start of every session, and the agent
 container restores that file from a root-owned copy in the image at every
 start. It tells a freshly started or freshly compacted agent to re-read the
 brief, call `mb_status` (which returns the goal stack and names the brief
-again) and read its notes. `CLAUDE.md` imports the same file for Claude Code.
+again) and read its notes. `CLAUDE.md` imports the same file, for a Claude Code
+session that uses the tools by hand on the host; contained runs use Codex only.
 The agent may edit everything else in its checkout, including the repository's
 copies of these files, but not the mounted brief.
 
@@ -218,8 +249,9 @@ copy the two files into `.runtime/outbox` and, in the agent container,
 `tar -xzf /outbox/state.tar.gz -C .state`.
 Set `MB_COMPOSE_PROJECT=mbtest` to act on a test stack.
 
-Recording: OBS window capture matched on the window title picks the client up
-again after a deploy restarts it; record to `.mkv` and split by time. With
+Recording: an OBS Game Capture set to a specific window, matched on the window
+title, picks the client up again after a deploy restarts it; record to `.mkv`
+and split by time. With
 the `pauseOnDisconnect` guard set (`PROMPT.md` asks for it at session start)
 the world is held while the client is down. The pack's Darkerer mod makes nights
 near-black on video; it only changes rendering, and its config is synced from the server on

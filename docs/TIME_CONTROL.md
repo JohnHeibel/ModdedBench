@@ -74,9 +74,19 @@ job keeps its controls, break progress and path, and runs on whenever the
 world runs. `nav.resume {jobId: suspendedJobId}` waits on it again (or returns
 its outcome if it finished meanwhile). A guard pause or any new action ends it.
 
-Guards (`healthDrop`, `healthBelow`, `airBelow`, `foodBelow`, `burning`,
-`pauseOnDisconnect`, and `actionFailed`, which pauses when a caller sends
-`time.report_failure`) pause at a tick boundary. They never act. A guard's
+Guards are set with `time.configure` and pause at a tick boundary. They never
+act.
+
+| Guard | Pauses when |
+| --- | --- |
+| `healthDrop` (boolean) | the player loses health |
+| `healthBelow`, `airBelow`, `foodBelow` (number, -1 off) | the value crosses the threshold |
+| `burning` (boolean) | the player is on fire |
+| `threatWithin` (blocks, at most 32, -1 off) | a mob takes the player as its target within N blocks (2N with line of sight) or a creeper starts to swell; reason `threat`, once per mob |
+| `actionFailed` (boolean) | a caller sends `time.report_failure` |
+| `pauseOnDisconnect` (boolean, on by default) | the client disconnects |
+
+A guard's
 reason stays the pause reason until the resume, whatever pauses after it; one
 that fires on a step's last tick ends the step and is its `endedBy`; and each
 threshold is reported by its own pause, once, until the value recovers. While a
@@ -126,23 +136,20 @@ OpenComputers workload has been tested.
 
 Other asynchronous mods have not been audited.
 
-## Evidence and limits
+## Limits
 
-Accepted on 2026-09-12 with the development fixtures:
+The gate was checked with development fixtures (a furnace, fluids, entities and
+a small GregTech line): state did not change while paused, and a GregTech line
+ended in the same state whether it ran uninterrupted or in paused windows.
+That check was made in September 2026 on an earlier layout of this code and
+has not been repeated as a whole since. Stepping and resume-and-act have a
+test in the game (`harness/smoke/step_course.py`), and `PauseCoordinator` and
+`SimulationClock` are unit tested.
 
-- Frozen time in all dimensions; fixture furnace, fluid and entity state
-  unchanged; responsive screenshots and GUI observation; deferred actions;
-  guard pauses; keepalives; disconnect and reconnect; chunk delivery; a full
-  client JVM restart while paused; resume.
-- GT progression equivalence: one uninterrupted 800-tick run and four
-  interrupted 200-tick windows ended with the same chest inventory, machine EU
-  and tank/pipe fluid state (diesel generator, cable, macerator, extractor,
-  item and fluid export).
-
-Not verified: full-pack timer quiescence, Applied Energistics, GT multiblocks
-under pause, live OpenComputers workloads, arbitrary restart and recovery
-scenarios. State this contract and the controlled fixture when citing a run;
-do not generalise it to the pack.
+Not verified: that every timer in the full pack is quiet while paused, Applied
+Energistics, GT multiblocks under pause, live OpenComputers workloads,
+arbitrary restart and recovery scenarios. Do not generalise the contract above
+to the whole pack.
 
 The launcher checks installed jar hashes before launch because a stale core
 jar next to a newer client jar fails at runtime with `NoSuchMethodError`.
