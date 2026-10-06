@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
 """Closed shells built in one job on a flat floor, through the model's own tool (mb_build), with no scaffolding.
 

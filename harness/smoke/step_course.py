@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 ModdedBench contributors
 """A step never cuts a single action short, in the game: a click, a slot selection and a held input sent with a step
 shorter than they need answer as done, the world is paused again afterwards, and a guard still ends them.
 

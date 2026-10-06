@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
 """Spectator mirror: wire codec, late-viewer snapshot, the byte pipe's immunity to the parser, viewer greeting."""
 import asyncio

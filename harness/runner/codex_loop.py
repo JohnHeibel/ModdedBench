@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
 """Outer loop that keeps Codex CLI on the mission: one ``codex exec``, then ``codex exec resume <id>`` per turn.
 

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
 """Live replay of the pathfix branch's cases in a CLONE of the played world (no fixture is built, no block is changed).
 

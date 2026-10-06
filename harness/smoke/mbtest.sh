@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
 # Run a smoke script against the throwaway `mbtest` stack, from a container that shares the server's network.
 # The server bridge (47224) listens only on the server container's loopback and is never published; the host

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LGPL-3.0-or-later
+// SPDX-License-Identifier: MIT
 // The stream's pop-ups and its banner, drawn over the game by overlay.html. Stream only: nothing here reaches the agent.
 // A pop-up is what the agent just looked at (harness/runner/feed.py writes pops.json), drawn big for a few seconds;
 // the banner says in plain words why the world stands still, from the clock's own state.

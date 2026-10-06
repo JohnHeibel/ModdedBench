@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 ModdedBench contributors
 """A doorway one block up, in the game: the step up from the ground lands in the cell an open door stands in, and the
 door's leaf takes a strip of that cell's side. A body that comes round a corner and jumps for the cell's middle hits
 the leaf's edge; it has to jump for the middle of the room the leaf leaves.

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
 """EBF primitive regressions in journalled fixtures; never operate on the user's machines."""
 from __future__ import annotations

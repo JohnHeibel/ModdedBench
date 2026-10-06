@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
 """Offline tests for the operator console: the prompt it writes and who may press its buttons."""
 from __future__ import annotations

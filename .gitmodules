@@ -1,0 +1,3 @@
+[submodule "mods/baritone"]
+	path = mods/baritone
+	url = https://github.com/JohnHeibel/Modatone.git

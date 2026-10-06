@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 ModdedBench contributors
 """The mining job's scaffold in the game: a target out of reach is climbed to on placed blocks, and with
 cleanup_scaffold the job breaks them again before it ends; without, they stand and the receipt says where.
 
