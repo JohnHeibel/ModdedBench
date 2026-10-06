@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 """The tool table in PROMPT.md is generated; this fails when someone changes a tool and forgets to regenerate it."""
 from pathlib import Path
 import sys

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
 """Read-only spectator mirror: python -m harness.mirror (see docs/MIRROR.md)."""
 from __future__ import annotations

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
 """Offline GTNH wiki: search and read a snapshot made by harness/wiki/fetch.py. Never touches Minecraft or the network.
 

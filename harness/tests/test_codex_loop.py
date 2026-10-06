@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
 """codex_loop against a fake Codex command; no model is ever called."""
 import base64, contextlib, io, json, os, sys, tempfile, unittest, unittest.mock

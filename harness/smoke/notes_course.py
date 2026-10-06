@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 ModdedBench contributors
 """World notes as files, in the game: a note on a real block is written with what was observed there, surfaces when
 the block is looked at, is found by place, and follows the edits made to its file by hand.
 

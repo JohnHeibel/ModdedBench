@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
 """Click cells and uses on the dummy world, through the model's own tools (mb_build, mb_work_resume): one call a build.
 

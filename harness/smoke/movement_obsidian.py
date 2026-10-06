@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
 """The obsidian cases of the movement course: what a careful player does with raw mb_act primitives, and what the
 model's high-level mining tool does in the same room.

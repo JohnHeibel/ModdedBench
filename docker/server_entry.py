@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
 """Container entry point for the pinned GTNH server: unpack once, pin the jars, exec Java."""
 import json, os, re, shutil, sys, types

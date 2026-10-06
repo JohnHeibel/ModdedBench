@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
 """Background tasks (harness/tools/tasks.py) against fake kernels and fake processes; no bridge, no game."""
 import importlib

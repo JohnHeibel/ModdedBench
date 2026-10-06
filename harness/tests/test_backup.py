@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
 """Offline tests for the operator's snapshots: docker is never run, its command lines are only looked at."""
 from __future__ import annotations

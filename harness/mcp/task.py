@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
 """One background task's process: ``python harness/mcp/task.py <id>``, started by mb_run(background=True).
 

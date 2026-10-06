@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 """What a result costs the model: every tool answers in one compact shape, and says a thing once."""
 import asyncio
 import json

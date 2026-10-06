@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 """Snapshot the GTNH wiki into one searchable SQLite file for offline use by the agent.
 
 The wiki's text is CC BY-SA 4.0 and is not part of this repository: this script

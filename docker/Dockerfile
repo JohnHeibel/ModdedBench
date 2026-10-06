@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Build context is the repository root: docker compose -f docker/compose.yaml build
 # No Mojang or GTNH file is baked into an image you could publish by accident: the pack archive is
 # mounted at run time, and the Gradle cache (which holds decompiled Minecraft) exists only in `dev`.

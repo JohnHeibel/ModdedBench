@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 ModdedBench contributors
 """Ladders: the walker goes up one, stops on one and comes down one, on each side of a block and through a roof.
 
 A stone brick block three wide and four high stands in a fresh arena with one ladder on one side of it. Each side is a
