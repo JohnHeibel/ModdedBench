@@ -235,15 +235,21 @@ public class BridgeTransportTest {
 
     @Test public void asyncJobOutlivingItsDeadlineGetsTimeoutThenMaintainReleasesIt() throws Exception {
         Client client = connect(true);
-        client.call(13, "act.hold", "_timeout_ms", 100);
+        client.call(13, "act.hold", "_timeout_ms", 500);
+        awaitHeld(1);
+        // Two things watch an async job's deadline: the timer, which answers timeout, and the job's own maintain pass,
+        // which sees expired() and answers for itself (cancelled, here and in the client's jobs). Whichever looks
+        // first answers. The game thread is held still across the deadline so that this is the timer's case.
+        stalled = true; Thread.sleep(20);
+        assertTrue("the job was held and the game thread stopped well inside the deadline", client.frames.isEmpty() && runtime.released.isEmpty());
         JsonObject reply = client.next();
         assertEquals(13, reply.get("id").getAsInt());
         assertEquals("timeout", code(reply));
         assertFalse(reply.has("late"));
+        assertEquals("nothing released the job but the timer's answer", 1, runtime.held.size());
+        stalled = false;
         awaitHeld(0);
-        // The game thread may see the deadline pass a moment before the timer answers, so done is not asserted here.
-        assertEquals(1, runtime.released.size());
-        assertTrue(runtime.released.get(0).startsWith("13 ") && runtime.released.get(0).endsWith("connected=true"));
+        assertEquals(List.of("13 done=true connected=true"), runtime.released);
         assertNull("exactly one reply", client.frames.poll(300, TimeUnit.MILLISECONDS));
     }
 
