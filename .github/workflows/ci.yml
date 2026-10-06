@@ -1,0 +1,68 @@
+# What `docs/BUILD.md` lists under "Testing: without a game". Nothing here starts Minecraft, and the
+# scripts in harness/smoke (which need a running game and the test stack) are not run.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: harness/mcp/requirements.txt
+      - run: pip install -r harness/mcp/requirements.txt
+      - name: Unit tests
+        run: python -m unittest discover -s harness/tests -p "test_*.py"
+      - name: Every tool module imports and registers
+        run: python harness/mcp/server.py --check
+      - name: The tool table in PROMPT.md matches the code
+        run: python harness/mcp/tool_table.py --check
+
+  java:
+    name: Gradle build and JUnit
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive   # mods/baritone is the Modatone submodule; settings.gradle refuses to build without it
+      # JDK 25 runs Gradle (RetroFuturaGradle 2.0.2 needs it). The build compiles with a Java 21 toolchain and
+      # decompiles Minecraft with a Java 8 one; all three are installed here so that Gradle finds them, and the
+      # foojay resolver in settings.gradle downloads any it does not find. The last one listed is JAVA_HOME.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            21
+            25
+      - uses: gradle/actions/setup-gradle@v4   # caches the Gradle home, which holds the decompiled Minecraft
+      # The first run downloads Forge, the Minecraft jars and the GTNH Nexus dependencies and decompiles
+      # Minecraft, which takes a long time; no GT New Horizons pack file is needed to compile or test.
+      - run: ./gradlew build --console=plain
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: mods/*/build/reports/tests/
+          if-no-files-found: ignore
