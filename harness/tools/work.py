@@ -271,6 +271,7 @@ def mb_process(process: str, duration_ticks: int = 1200, goal: dict | None = Non
     on ground already covered with no progress (for farm: no inventory change) end it as
     stalled_no_progress_near_x,y,z.
     pathRules: which of your block rules decided about which block, as in mb_mine.
+    cost.overBudget: there only when the job's code held the game thread too long, as in mb_build.
     get_to_block also takes block {item:{id,meta?}} or {ore}: found by what pick-block returns
     (GregTech ores and machines keep their kind there, not in meta).
     Farm: crops, soils, seeds, fertilizers, collect are selectors; the receipt's farmRules shows the
@@ -455,6 +456,7 @@ def mb_mine(blocks: list[dict] | None = None, items: list[dict] | None = None, q
     lost, air lost, burning, webbed, slowed), each first seen with the feet/head/under blocks
     there and a count. pathRules: which of your block rules (hazards, standOn, neverStandOn,
     blocksToDisallowBreaking; see mb_settings) decided about which block, as search checks.
+    cost.overBudget: there only when the job's code held the game thread too long, as in mb_build.
     """
     params = dict(blocks=blocks, quantity=quantity, radius=radius,
                   allowBreak=allow_break, allowPlace=allow_place,
@@ -649,7 +651,9 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
     matches. Every receipt has jobId, placed, removed, left {count, first: up to 8 cells still
     wrong}, step {stage, y, index, of, left, first} (where the order stands: the index-th of `of`
     steps, `left` cells of it and of earlier steps still wrong), symptoms (what happened to you, as
-    in mb_mine), and labels (the region notes of yours the build touches). A plan with clicks adds
+    in mb_mine), and labels (the region notes of yours the build touches). cost.overBudget {tickMsMax,
+    tickMsMean} is there only when the job's code held the game thread too long: a tick over 100 ms,
+    or over 5 ms a tick on average. A plan with clicks adds
     clicks {of, done, verified (its expect held), unverified, alreadyPresent, unverifiedFirst: up to
     8}; the full list is in the job's .clicks.jsonl. Before it ends, a job puts back what it took out
     for a click and takes away the scaffolds it placed outside the plan (state closing while it
