@@ -96,7 +96,7 @@ abstract class BulkJob implements Navigation.Job {
         state=ending.terminal(terminal);reason=ending.reason(named);
         try{releaseProcess();}finally{if(lease!=null)lease.close();}
         journal.progress.put("lastTicks",ticks);
-        try{journal.save(status());}catch(Exception error){state="failed";reason+="; checkpoint_failed: "+error.getMessage();}
+        try{journal.close(status());}catch(Exception error){state="failed";reason+="; checkpoint_failed: "+error.getMessage();}
     }
     @Override public void cancel(String reason){finish("cancelled",reason,true);}
     @Override public boolean done(){return Set.of("succeeded","failed","cancelled","paused").contains(state);}

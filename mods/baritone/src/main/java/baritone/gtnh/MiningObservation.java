@@ -17,8 +17,11 @@ final class MiningObservation extends BlockOptionalMetaLookup {
     private final World world;
     private final WorkSpec.Bounds bounds;
     private final List<Map<String,Object>> selectors,items;
-    private final Map<baritone.compat.BlockPos,IBlockState.StateKey> scanning=new HashMap<>();
-    private Map<baritone.compat.BlockPos,IBlockState.StateKey> published=Map.of();
+    // A pass fills `scanning` and hands it over whole: never written again, it is the published map. No copy is made:
+    // Map.copyOf is an open-addressed table, and the positions of a dense box hash (Vec3i) to a run of neighbouring
+    // values with repeats, which costs it the square of their number (0.2 s at 36,000 matches, 6 s at 79,000).
+    private Map<baritone.compat.BlockPos,IBlockState.StateKey> scanning=new HashMap<>();
+    private volatile Map<baritone.compat.BlockPos,IBlockState.StateKey> published=Map.of();
     // The mine process prunes and sorts every location it is offered, several times a second: with a centre it is offered
     // the `wide` matches nearest it, chosen when a pass ends, and more only once it has no use for those.
     private final java.util.function.Supplier<BlockPos> centre;
@@ -46,12 +49,15 @@ final class MiningObservation extends BlockOptionalMetaLookup {
                 scanning.put(new baritone.compat.BlockPos(p.getX(),p.getY(),p.getZ()),new IBlockState.StateKey(world.getBlock(p.getX(),p.getY(),p.getZ()),world.getBlockMetadata(p.getX(),p.getY(),p.getZ())));
             }
         }
-        if(cursor==bounds.volume()){published=Map.copyOf(scanning);scanning.clear();cursor=0;passes++;if(centre!=null)near=nearest(published.keySet(),centre.get(),wide);}
+        if(cursor==bounds.volume()){
+            var found=scanning;scanning=new HashMap<>(found.size()*4/3+16);published=Collections.unmodifiableMap(found);cursor=0;passes++;
+            if(centre!=null)near=nearest(found.keySet(),centre.get(),wide);
+        }
     }
     /** The k positions nearest `centre`, nearest first. */
     static List<BlockPos> nearest(Collection<BlockPos> all,BlockPos centre,int k){
         var kept=new PriorityQueue<BlockPos>(Comparator.comparingDouble((BlockPos p)->centre.distanceSq(p)).reversed());
-        for(BlockPos p:all){kept.add(p);if(kept.size()>k)kept.poll();}
+        for(BlockPos p:all){if(kept.size()<k)kept.add(p);else if(centre.distanceSq(p)<centre.distanceSq(kept.peek())){kept.poll();kept.add(p);}}
         List<BlockPos> out=new ArrayList<>(kept);out.sort(Comparator.comparingDouble(centre::distanceSq));return out;
     }
     /** Offer twice as many matches, nearest the centre as it is now; false when every match was already on offer. */

@@ -50,7 +50,14 @@ final class ReferenceConstructionProcess extends BulkJob {
     /** Cells to be emptied that were seen holding something: counted as removed when they are next seen empty. */
     private final Set<BlockPos> placedObserved=new HashSet<>(),removedObserved=new HashSet<>(),dirty=new HashSet<>();
     private boolean started;
-    private final Map<Cell,Goal> placementGoals=new HashMap<>();
+    /**
+     * Where to stand for each cell near the player, asked by the source builder for all of them every tick. A second
+     * passing, a step of the player or a block going in changes what any of them may be: they are made again GOAL_NS a
+     * tick, and a cell waiting its turn keeps the goal it had (or the source's own, which is a way towards it).
+     */
+    private final Sliced<Cell,Goal> placementGoals=new Sliced<>();
+    static final long GOAL_NS=1_000_000L;
+    private int goalTick=-1;
     private int placementGoalEpoch=-1;
     private BlockPos placementGoalFeet;
     /** The standing poses around the player that the cells near it share (WorkAccess.Stands), kept as long as the goals made from them. */
@@ -61,7 +68,7 @@ final class ReferenceConstructionProcess extends BulkJob {
     private boolean cleanupPhase;
     private boolean clearanceEgress;
     private Goal egressGoal;
-    private final Map<BlockPos,Goal> breakGoals=new HashMap<>();
+    private final Sliced<BlockPos,Goal> breakGoals=new Sliced<>();
     /** Per cell holding a block to remove: the poses near the player from whose centre that block is in view. As old as `stands`. */
     private final Map<BlockPos,List<WorkAccess.Pose>> breakViews=new HashMap<>();
     /** How many such poses a cell's goal is made of. */
@@ -128,7 +135,7 @@ final class ReferenceConstructionProcess extends BulkJob {
             int count=attempts.merge(pos,1,Integer::sum);journal.recordAttempt(ConstructionPlan.key(cell),count);pending.add(pos);
             // The poses stay a second old (a pose a new block fills is refused live, one on top of it is the source goal's own);
             // what is in view from them is asked again.
-            placementGoals.clear();breakGoals.clear();breakViews.clear();
+            placementGoals.age();breakGoals.age();breakViews.clear();
         };
         survey();
         // A block the job may not remove can never become the plan's: say so now, with the cell, before any input.
@@ -269,13 +276,14 @@ final class ReferenceConstructionProcess extends BulkJob {
         if(!offered.isEmpty()&&searched.calculationsStarted()>offeredSearches+1&&"FAILURE".equals(searched.lastCalculation().get("type"))
             &&searched.lastCalculation().get("search") instanceof Map<?,?> search&&"exhausted".equals(search.get("why"))&&!Integer.valueOf(1).equals(search.get("nodes"))){
             offered.forEach((cell,spots)->{if(Boolean.FALSE.equals(correct.get(cell)))noWay.computeIfAbsent(cell,k->new HashSet<>()).addAll(spots);});
-            offered.clear();placementGoals.clear();
+            offered.clear();placementGoals.age();
         }
         if(placementGoalEpoch!=ticks/20||!currentFeet.equals(placementGoalFeet)){
             offered.clear();
             if(placementGoalEpoch!=ticks/20)stands=null;
-            placementGoalEpoch=ticks/20;placementGoalFeet=currentFeet;placementGoals.clear();breakGoals.clear();
+            placementGoalEpoch=ticks/20;placementGoalFeet=currentFeet;placementGoals.age();breakGoals.age();
         }
+        if(goalTick!=ticks){goalTick=ticks;placementGoals.tick(GOAL_NS);breakGoals.tick(GOAL_NS);}
         survey();
         Map<Map<String,Object>,Set<StackIdentity>> carried=new HashMap<>();
         for(var selector:kinds){
@@ -318,48 +326,30 @@ final class ReferenceConstructionProcess extends BulkJob {
         builder.placementGoalAdapter=(target,goal)->{
             Cell cell=cells.get(new BlockPos(target.getX(),target.getY(),target.getZ()));
             if(cell==null||cell.clear())return goal;
-            if(placementGoals.containsKey(cell))return placementGoals.get(cell);
+            Goal made=placementGoals.fresh(cell);if(made!=null)return made;
             int slot=plan.slot(cell);if(slot<0||!mc.thePlayer.onGround)return goal;
             // A cell out of reach of every pose near the player keeps the source goal, which is enough to walk towards it:
             // what can be seen of it from where is asked on arrival, so a plan costs the game by its surroundings, not its size.
             if(!stands(currentFeet).covers(cell.pos())){placementGoals.put(cell,goal);return goal;}
-            Set<BlockPos> legal=vantages(cell,slot,stands.around(cell.pos()),currentFeet);offer(cell.pos(),legal);
-            boolean adjacent=legal.stream().anyMatch(goal::isInGoal);
-            // No existing vantage is not proof that construction is impossible:
-            // the source planner may still build the support it needs to stand on.
-            if(legal.isEmpty()){
-                // Standing in the cell itself fails native collision from every vantage, and the source goal (stand on top of the
-                // new block) is unreachable without scaffolding: step out to a neighbouring column first, then this adapter runs again.
-                var at=cell.pos();
-                if(!inside(at)){placementGoals.put(cell,goal);return goal;}
-                // A low neighbouring stance can still overlap a different floor
-                // cell, while searchForPlaceables refuses every upward click.
-                // Egress must reach a height where this cell becomes actionable.
-                boolean covered=world.getBlock(at.getX(),at.getY()+1,at.getZ())!=net.minecraft.init.Blocks.air;int up=reachUp();
-                var out=egress(at,covered,up);
-                // Nowhere level with the cell to step to (the last cell of a course, stood in): down beside it, and it is filled from there.
-                if(out.length==0&&!covered)out=egress(at,true,up);
-                offer(at,java.util.Arrays.stream(out).map(g->((GoalBlock)g).getGoalPos()).map(g->new BlockPos(g.getX(),g.getY(),g.getZ())).collect(java.util.stream.Collectors.toSet()));
-                return out.length==0?goal:new GoalComposite(out);
-            }
-            // Existing work poses supplement the source goal, never replace it: removing a future goal would keep A*
-            // from constructing its own support (notably a pillar), even though a distant existing pose is legal.
-            // A cell filled from outside has only those spots: the source goal is also the spot inside it.
-            Goal[] spots=legal.stream().map(p->new baritone.process.BuilderProcess.GoalPlace(p.down())).toArray(Goal[]::new);
-            Goal adapted=fromOutside.contains(cell.pos())?new GoalComposite(spots):adjacent?goal:new GoalComposite(goal,new GoalComposite(spots));
-            placementGoals.put(cell,adapted);return adapted;
+            // A cell filled from outside never waits with the source goal: that is also the spot inside it.
+            if(!fromOutside.contains(cell.pos())&&!placementGoals.turn(cell))return placementGoals.last(cell,goal);
+            long began=System.nanoTime();try{return placementGoal(cell,slot,goal,currentFeet);}finally{placementGoals.spent(System.nanoTime()-began);}
         };
         builder.breakGoalAdapter=(target,goal)->{
             BlockPos p=new BlockPos(target.getX(),target.getY(),target.getZ());
-            return breakGoals.computeIfAbsent(p,key->{
-                // Far off, upstream's goal (beside the block or up to two below it) and the columns under it are a way towards it.
-                if(!stands(currentFeet).covers(p))return new GoalComposite(goal,new GoalBlock(p.down(3)),new GoalBlock(p.down(4)),new GoalBlock(p.down(5)));
+            Goal made=breakGoals.fresh(p);if(made!=null)return made;
+            // Far off, upstream's goal (beside the block or up to two below it) and the columns under it are a way towards it.
+            if(!stands(currentFeet).covers(p))made=new GoalComposite(goal,new GoalBlock(p.down(3)),new GoalBlock(p.down(4)),new GoalBlock(p.down(5)));
+            else if(!breakGoals.turn(p))return breakGoals.last(p,goal);
+            else{
+                long began=System.nanoTime();
                 // Near, only a pose from which the block is in view is an arrival: beside or under it with something in the
                 // way is where a job waits for ever. Here the source builder's own test decides, as it will at the click. No pose: upstream's goal stands.
                 Goal[] seen=breakViews.computeIfAbsent(p,k->views(p,stands.around(p),VIEWS)).stream()
                     .filter(pose->!pose.feet().equals(currentFeet)||baritone.api.utils.RotationUtils.reachable(engine.getPlayerContext(),new baritone.api.utils.BetterBlockPos(p.getX(),p.getY(),p.getZ()),mc.playerController.getBlockReachDistance()).isPresent()).map(pose->(Goal)new GoalBlock(pose.feet())).toArray(Goal[]::new);
-                return seen.length==0?goal:new GoalComposite(seen);
-            });
+                made=seen.length==0?goal:new GoalComposite(seen);breakGoals.spent(System.nanoTime()-began);
+            }
+            breakGoals.put(p,made);return made;
         };
         if(clearanceEgress&&!DeferredClearance.needsEgress(deferredAir,p->correct.getOrDefault(p,false))){
             // A paused job may be resumed after another actor cleared its supports.
@@ -404,6 +394,34 @@ final class ReferenceConstructionProcess extends BulkJob {
             if(!builder.stateComparison.test(predicted,states.get(pos))){blamed=pos;finish("paused","mismatch");return;}
             if(attempts.getOrDefault(pos,0)>=ConstructionPlan.ATTEMPTS){blamed=pos;finish("paused","attempt_limit");}
         };
+    }
+    /** The goal of a cell within reach of the poses near the player: the spots a face to place it against is in view from. */
+    private Goal placementGoal(Cell cell,int slot,Goal goal,BlockPos currentFeet){
+        Set<BlockPos> legal=vantages(cell,slot,stands.around(cell.pos()),currentFeet);offer(cell.pos(),legal);
+        boolean adjacent=legal.stream().anyMatch(goal::isInGoal);
+        // No existing vantage is not proof that construction is impossible:
+        // the source planner may still build the support it needs to stand on.
+        if(legal.isEmpty()){
+            // Standing in the cell itself fails native collision from every vantage, and the source goal (stand on top of the
+            // new block) is unreachable without scaffolding: step out to a neighbouring column first, then this adapter runs again.
+            var at=cell.pos();
+            if(!inside(at)){placementGoals.put(cell,goal);return goal;}
+            // A low neighbouring stance can still overlap a different floor
+            // cell, while searchForPlaceables refuses every upward click.
+            // Egress must reach a height where this cell becomes actionable.
+            boolean covered=world.getBlock(at.getX(),at.getY()+1,at.getZ())!=net.minecraft.init.Blocks.air;int up=reachUp();
+            var out=egress(at,covered,up);
+            // Nowhere level with the cell to step to (the last cell of a course, stood in): down beside it, and it is filled from there.
+            if(out.length==0&&!covered)out=egress(at,true,up);
+            offer(at,java.util.Arrays.stream(out).map(g->((GoalBlock)g).getGoalPos()).map(g->new BlockPos(g.getX(),g.getY(),g.getZ())).collect(java.util.stream.Collectors.toSet()));
+            return out.length==0?goal:new GoalComposite(out);
+        }
+        // Existing work poses supplement the source goal, never replace it: removing a future goal would keep A*
+        // from constructing its own support (notably a pillar), even though a distant existing pose is legal.
+        // A cell filled from outside has only those spots: the source goal is also the spot inside it.
+        Goal[] spots=legal.stream().map(p->new baritone.process.BuilderProcess.GoalPlace(p.down())).toArray(Goal[]::new);
+        Goal adapted=fromOutside.contains(cell.pos())?new GoalComposite(spots):adjacent?goal:new GoalComposite(goal,new GoalComposite(spots));
+        placementGoals.put(cell,adapted);return adapted;
     }
     /** The poses near the player, captured again once it has walked off or a second has passed. */
     private WorkAccess.Stands stands(BlockPos feet){
@@ -515,7 +533,7 @@ final class ReferenceConstructionProcess extends BulkJob {
             double dx=x-mc.thePlayer.posX,dz=z-mc.thePlayer.posZ;
             lease.look((float)Math.toDegrees(Math.atan2(-dx,dz)),mc.thePlayer.rotationPitch);
             lease.setKeys(Set.of(mc.gameSettings.keyBindSneak.getKeyCode(),mc.gameSettings.keyBindForward.getKeyCode()));
-            placementGoals.clear();state="positioning";return true;
+            placementGoals.age();state="positioning";return true;
         }
         return false;
     }
