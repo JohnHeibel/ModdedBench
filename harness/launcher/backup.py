@@ -9,10 +9,12 @@ A snapshot holds the world with the operator hold (no ticks, so no saves in flig
 last autosave, at most 45 s of game time old), streams the server's data folder without the
 pack's own files, archives the notes folder (the note files and their git history), and releases the hold.
 It then saves what else lives only in the agent's volume: agent.bundle, every commit and ref of
-its checkout (`git bundle --all`; uncommitted edits are not in it), and state.tar.gz, its .state
+its checkout (`git bundle --all`; uncommitted edits are not in it), baritone.bundle, the same for
+the mods/baritone submodule (its commits are in no other bundle), and state.tar.gz, its .state
 without the logs (thread id, run budget, tasks, call log). `restore` puts back the world and the
-notes only; the other two are put back by hand, inside the agent container, when they are wanted:
-`git fetch <agent.bundle> 'refs/heads/*:refs/heads/*'` (or `git clone` it), `tar -xzf <state.tar.gz> -C .state`.
+notes only; the others are put back by hand, inside the agent container, when they are wanted:
+`git fetch <agent.bundle> 'refs/heads/*:refs/heads/*'` (or `git clone` it), `git -C mods/baritone fetch <baritone.bundle>
+'refs/heads/*:refs/remotes/snapshot/*' HEAD`, `tar -xzf <state.tar.gz> -C .state`.
 Snapshots land in .runtime/snapshots, which no container mounts: the agent cannot see, make or
 restore them, and nothing in its brief mentions them. Restoring is an operator decision for
 infrastructure faults only (a corrupted world, a lost disk, a harness bug that damaged state),
@@ -47,6 +49,7 @@ NOTES = "mkdir -p .state/notes; tar -C .state --exclude='*.lock' --exclude='*.tm
 # What else exists only in the agent's volume, where one `git clean -fdx` or a lost volume ends it. Read without the hold: neither
 # depends on the world's tick. tar's exit 1 is "a file changed as it was read" (the call log, mid-run), and the archive is whole.
 BUNDLE = "git bundle create -q - --all"
+BARITONE = "git -C mods/baritone bundle create -q - --all"  # the Modatone submodule: a repository of its own, and none of its commits are in the bundle above
 STATE = "tar -C .state --exclude='*.log' --exclude='*.err' --exclude='*.lock' --exclude=./notes -czf - .; [ $? -le 1 ]"
 
 
@@ -73,7 +76,7 @@ def snapshot() -> Path | None:
         shutil.rmtree(folder, ignore_errors=True); raise  # an empty folder would count as a snapshot and push a real one out
     if not world:
         shutil.rmtree(folder); print("no snapshot: the world could not be archived (the cause is the line above)", file=sys.stderr); return None
-    extra = {"notes": notes, "commits": sh("agent", "sh", "-c", BUNDLE, to=folder / "agent.bundle"), "state": sh("agent", "sh", "-c", STATE, to=folder / "state.tar.gz")}
+    extra = {"notes": notes, "commits": sh("agent", "sh", "-c", BUNDLE, to=folder / "agent.bundle"), "baritone": sh("agent", "sh", "-c", BARITONE, to=folder / "baritone.bundle"), "state": sh("agent", "sh", "-c", STATE, to=folder / "state.tar.gz")}
     print(f"{folder.name}: world {(folder / 'world.tar.gz').stat().st_size >> 20} MiB, " + ", ".join(f"{k} {'ok' if v else 'MISSING (the cause is the line above)'}" for k, v in extra.items()))
     return folder
 
