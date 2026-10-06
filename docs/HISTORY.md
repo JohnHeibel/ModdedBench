@@ -1,212 +1,34 @@
 # History
 
-Dated milestones, newest first, one to three lines each.
+A short account of how the project got here. The record of every change is
+`git log`: commit messages say what failed in the game and what the change
+fixes. The dated entries this file used to hold are in its own history
+(`git log -p -- docs/HISTORY.md`).
 
-The 25 detailed records they summarise lived in `docs/legacy/`, last present
-at commit `01ab0b6` (`git show 01ab0b6:docs/legacy/<file>`): old README,
-ROADMAP, LAYERS, VALIDATION, Baritone parity audit and port notes, time-control
-audit, runtime acceptance, EBF trial and follow-ups, and the per-subsystem
-contract notes. What was still true is now in the current docs.
+## How it got here
 
-- **2026-10-05** `AGENTS.md` states the game-thread budget as the build enforces it: `TickBudgetTest` at 20 ms a
-  tick and what it does not reach, and `cost.overBudget` in a job's result.
-- **2026-10-05** The live suites fail a case on its game-thread cost: one check (`harness/smoke/tick_cost.py`,
-  `Course.costed`) in the movement, replay, explore, step, shell and build suites prints each case's worst and mean
-  tick and fails it over the limit; `--warm-up` leaves the first case after a client start unjudged. Limits are
-  provisional, from receipts on record (builds 120 ms / 3 ms mean, walks 60 / 5). Not yet run in a game.
-- **2026-10-05** A job says when it cost the game too much: `cost.overBudget {tickMsMax, tickMsMean}` in the status
-  of every job kind, there only when over (`Cost`: a tick over 100 ms, or a mean over 5 ms across 40 ticks or more).
-  Silent on all 113 receipts on record (worst tick 98 ms, worst mean 1.4 ms past 40 ticks). Not yet seen in a game.
-- **2026-10-05** The Java build holds one game tick to a limit: `TickBudgetTest` runs the scanners, the shape
-  warm-up, the queued asks, the copy around clicks and a build's reads of its plan at a base's sizes (289 and 1089
-  chunks, 4096 cells) against 20 ms (`TickBudget.LIMIT_MS`; measured 0.3 to 8). No game: the job step and the
-  walker are not in it. It found three paths over the limit, kept as named findings with their own limits: a mining
-  pass that ends with tens of thousands of matches (0.13 s at 36k cells, 6 s at 79k), a build preview of 32 click
-  cells (0.2 s), and the largest copy around clicks (10 ms on a 0.6 ms slice). Adds 9 s to the build.
-- **2026-10-05** `get_to_block` keeps looking while it explores: the engine rescanned for targets only once it
-  knew one, so a search that began with none walked away for its whole duration and never saw a target that loaded
-  on the way. The rescan now runs before the empty case, as `MineProcess` does it; this moves six lines in the pinned
-  upstream `GetToBlockProcess.java`, whose target list is private. Found and first fixed by the agent in a 2 h run;
-  not yet tried in the game on this branch.
-- **2026-10-05** A `get_to_block` target named by registry id is found by `ChunkObservation`: the loaded chunks
-  nearest first within 2 ms a tick before the walk starts, then each chunk that loads later, once, within 0.25 ms a
-  tick. Before, the engine's scanner read every loaded chunk on the client thread at every target update (every 5
-  ticks) while fewer than 64 targets were known: measured outside the game at 35 to 300 ms a sweep for 289 to 1089
-  chunks. Blocks the engine's cache tracks keep the cache path. A match placed in a chunk after it was read is not seen.
-- **2026-10-05** Machine collection (`mb_craft`) looks again when the stale-stack guard refused its click before
-  the press because the output grew since the look (a furnace finishing an item in between): twice at most, only on an
-  ordinary slot holding the same stack with a larger count, the cursor unchanged and no transaction sent. Before, a
-  running machine's output could stop the collection. From the agent's own fix in a 2 h run, where it met the refusal
-  on a furnace; unit-tested on a fake kernel, our version not yet in the game.
-- **2026-10-05** `mb_quest_lines` lists the lines that have a quest unlocked or completed, all on one page, and counts
-  the fully locked ones it leaves out (`lockedLinesNotListed`); `locked=True` lists every line, a query finds any. In
-  8 h the model listed the book four times, read `total 46, nextOffset 10` each time and never asked for page two:
-  the first ten are the tier lines, so 9 side lines with 87 unlocked quests went unseen.
-- **2026-10-05** `mb_build` places doors: a cell whose block is placed by an item that is no block item is clicked
-  in like a click cell, after the plain cells of its stage, and what the plan replaces in such cells is out before the
-  first click; the item is asked of the game when the cell names none. Before, such a cell was refused without `item`
-  and stalled with it (the source builder only knows block items).
-- **2026-10-05** The builder no longer shuts itself in: the block that would close its last walk out waits while
-  other cells are left (a 3x3x3 oven had stopped `no_route` at 24 of 30, the builder inside it under its own last
-  cell). When it is the last of its step and the finished plan leaves no room inside, the builder walks out
-  and places it from outside. An `occupied` stop says what is in the cell (`present`). A plan cell of flowing liquid is walked to like any other; such a job had paused at once as `stalled`.
-- **2026-10-05** A recipe summary gives its inputs as `pattern`, rows of cells in the recipe's own layout: the shape
-  `mb_craft` takes. The summary had listed them flat, so 67 of 74 full-detail calls in a 4 h run were made to learn
-  a crafting grid's shape.
-- **2026-10-05** A step never cuts a click, a selection or a held input short: the world steps on until the action
-  answers. In a 4 h run all 13 clicks sent with `resume=1` were reported cancelled although they had landed. The
-  suggested guard set no longer names an air threshold: it stopped dives the walker had planned breath for.
-- **2026-10-05** Four defaults that filled the context: `mb_quest_lines` lists lines and gives entries for one,
-  a settings set answers with what it named, `nav.status` sends the movement trace only when asked, and `mb_wait`
-  goes on from its last cursor. In a 4 h run they were 1.0M of 5.5M result characters. The call log records each
-  result's size and `mb_cost` shows the heaviest tools.
-- **2026-10-05** A hold names its holder to the agent: `heldBy` in the clock status, and a refused resume says a
-  backup is routine and short. In a 4 h run three calls met the half-hourly backup and read "the operator is holding".
-- **2026-10-05** A hold's pause reason names its holder (`backup_hold`, not `operator_hold` for all). In a live run the
-  model read a one-minute backup as "the world is now on operator hold".
-- **2026-10-05** Drawings accept `clear: true` legend entries, including entries without a block id, so a saved
-  excavation plan reaches the same clearing as explicit cells, and `mb_view` counts what of it is still to dig.
-- **2026-10-05** A stack's NBT text and hash are printed with compound keys sorted (`Stacks.canonical`): the game can
-  reorder a tag when it copies a stack, which changed the hash and made a crafted tool look missing. From the agent.
-- **2026-10-05** Protected regions bind the planner only: no click is refused for one. The click-time guard, region
-  modes and per-lease override flags are gone; a build's own cells are exempt, `override_protection` lifts the rest
-  for one job, and a job that loses its controls says why.
-- **2026-10-04** Movement registry: a kind of movement is one class and one line (`MoveRegistry`), with gliding on
-  worn wings as the worked example; `docs/MOVEMENTS.md` says how to add one and what hovering would still need.
-- **2026-10-03** Background body tasks: `mb_run(background=True)` runs a script in its own
-  process holding a body lock while the model keeps thinking; acting tools refuse with
-  `body_busy`, every result carries `body`/`finished`, `mb_task` waits or cancels (never pauses).
-- **2026-10-03** Batching prompt: one paragraph, "Batch almost everything", with buckets carried
-  one by one to a smelter as the pattern to catch.
-- **2026-10-03** An operator's run extension no longer resets the run's start (the console's
-  run token total): a start before the old end, or under ten minutes after it, continues the run.
-- **2026-10-03** The client gives time to one session, so a task's time commands are relayed
-  through the model's MCP server, or wait in a file until one starts (`relayPending`); a task is
-  alive while it holds the body lock, so an unreaped zombie counts as crashed. It waits out
-  ordinary pauses and ends on a guard stop.
-- **2026-10-03** Paused mining receipts say `remainingTargets` and mb_status lists the veins
-  left (`pausedMining`); the prompt makes the whole vein, mined in the background, the default.
-- **2026-10-03** Scripts could swallow a guard interrupt with `except Exception`. A
-  latch, pause or cancellation met inside mb_run now stops the script and is reported
-  as `interrupted`; guard settings a script changed come back as `guardsChanged`.
-- **2026-10-03** Upstreamed the agent's 24 h run fixes: clicks aim where the ray lands,
-  construction places under ceilings and skips path doors, traverse recentres off raised
-  edges, the client refuses mistargeted attacks, GUI moves release a grabbed cursor.
-- **2026-10-03** Inventory tools count what the player's slots gained; machine loading
-  spreads one transfer; mb_hold(None) empties the hand; tooltips hold modifiers only for
-  the read; mb_fight can block or draw in a protected room without lifting protection.
-
-- **2026-10-02** Overnight the agent nearly drowned: the air guard re-paused on every
-  resume, so it disabled the guard and swam out by hand. Threshold and burning guards
-  now pause once per crossing; mb_process has a `breathable` goal (cells re-checked live,
-  verified on four clay dives); a latch refusal delivers the interrupt; unsettled pauses
-  are waited out; an accepted inventory swap whose stacks drift replans; deploy accepts a
-  client that joined by itself.
-- **2026-10-02** Scripts saw bare tool functions and rejected `resume`, so a chore
-  could not step the world between actions. Script tool calls now take resume=True|N
-  through the same kernel routine as direct calls (found by the agent overnight).
-- **2026-10-02** A farm with nothing ready searched for an empty goal, failed and
-  dropped the job. FarmProcess now waits instead; the job's own limits still end it
-  (found by the agent overnight).
-- **2026-10-02** Building a subset of a drawing ignored its listed heights and
-  placed walls at the floor. Drawing conversion now preserves absolute layer
-  heights and rejects nonnumeric survey heights and overlapping layers.
-- **2026-10-02** Resuming mining reread the original forced-tool slot after
-  crafting had rearranged it. The journal now retains the chosen tool kind
-  across resumes and client restarts; missing tools cannot become other items.
-- **2026-10-02** Farming rejected empty selector lists, preventing pickup-only jobs.
-  Explicit empty lists now disable individual farm phases; omitted fields retain
-  their defaults, and nonempty selectors keep their normal validation.
-- **2026-10-01** Container clicks aimed at an obstructed block centre could miss
-  its exposed rim. Crafting and item moves now accept optional native face and
-  hit coordinates; verified opening a buffered input hopper from ground level.
-- **2026-10-01** Opening machine GUIs with a held tool toggled machines instead.
-  Container compositions now prepare and verify an empty hand, restoring parked
-  stacks after the GUI opens; full inventories require explicit interaction.
-- **2026-10-01** A malformed machine input moved an unrelated tool before failing.
-  Crafting now validates every item selector and count before opening a GUI or
-  transferring anything; fake-kernel tests cover invalid later inputs too.
-- **2026-10-01** Ranged calibration averaged impact velocities into flight drag.
-  It now fits consistent velocity samples and undoes gravity as well as drag
-  when estimating launch speed; recorded throwing-weapon impacts reproduced it.
-- **2026-10-01** Construction stopped with `invalid pitch` after a native vertical
-  aiming nudge exceeded 90 degrees. Placement now clamps generated fallback pitch
-  while continuing to reject out-of-range explicit angles.
-- **2026-10-01** Reached-goal quantity mining reset its swing by publishing
-  input twice per tick. Adapter aiming now runs before the single publication;
-  direct mining proved the same tool and target could break normally.
-- **2026-10-01** Quantity mining could reach an exposed target's approach goal
-  and stall without swinging. The adapter now uses native tool selection,
-  reachable targeting and attack input at a reached goal, retaining break safety.
-- **2026-10-01** Single-block mining and placement could immediately lose input
-  focus after closing a container. They now restore logical game focus before
-  starting, matching the other navigation actions.
-- **2026-09-30** Tool probes returned `game_did_not_answer` for every stack,
-  blocking mining. Native observations now initialize the game-thread answers,
-  and navigation ticks service queued path-search tool and block-identity probes.
-- **2026-09-29** Stepping: `mb_time` `step {ticks:N}` runs exactly N server
-  ticks and pauses again, and acting tools take `resume=N`. `resume=True` now
-  starts the action on the first resumed tick: the client runs that tick before
-  asking the server to resume, and the server replays its packets first. Live in
-  a test world: the server position matched the client's after one-tick steps.
-- **2026-09-29** Spectator mirror (`harness/mirror`, [MIRROR.md](MIRROR.md)): a host-side byte pipe between the
-  client and the server whose copy feeds a read-only, compacted world for stock GTNH clients on a separate port.
-  A stock client joined it live; that found GTNH's extra item varint, the need to pace the snapshot on the
-  viewer's FML handshake, and a crash on an avatar spawn with no metadata. Join by Direct Connect.
-- **2026-09-29** Builder block goals could stop at a boundary overlapping the
-  next placement, oscillating between stances. Construction now centres on its
-  verified footing when native prediction permits the centred pose only;
-  recovery cancels the movement segment without cancelling the builder and
-  considers only its active layer, so future cells cannot interrupt traversal.
-- **2026-09-29** Construction egress accepted low neighbouring stances beneath
-  open floor cells, repeatedly reaching a goal with no actionable placement.
-  Egress now applies the source placement scan's height restrictions.
-- **2026-09-29** Short sneak+mouse chords still withdrew single drawer items on
-  the contained server. `mb_act` now composes a bounded native pose hold before
-  modifier clicks, reports it, and sends no click if that hold is interrupted.
-- **2026-09-29** Default detection of an unfinished quest sent an empty task
-  list rejected by the native adapter. `mb_quest_detect` now supplies observed
-  task IDs and preserves explicit selections, including checkbox quests.
-- **2026-09-22** Detecting an already completed Better Questing quest sent an
-  empty task request that the native adapter rejected. `mb_quest_detect` now
-  returns the observed completion without sending a detect packet.
-- **2026-09-21** Python build tools confine builder-mode edits to plan cells by
-  default, including staged plans. Unrestricted access excavation uprooted a
-  workshop station; explicit `settings.restricted: false` remains available.
-- **2026-09-21** Builder source-fluid replacement now uses its native reachable-face
-  placement adapter. The upstream BuilderProcess previously required standing
-  directly above water, stalling safe side placement beneath an overhang.
-- **2026-09-21** Direct sneak+attack/use chords prime native sneaking for two
-  ticks before the mouse press; simultaneous input previously withdrew single
-  drawer items because the pose packet followed the click.
-- **2026-09-21** Named key presses now dispatch native FML input events with
-  synthetic event state. Better Questing's key previously queued a binding but
-  never opened its screen; a GUI opened by the press now completes that input.
-- **2026-09-21** Saving a survival camp waypoint exposed `mb_view` assuming array
-  coordinates. It now accepts the native world-memory coordinate objects for
-  waypoints and protected regions, retaining spatial filtering.
-- **2026-09-21** Stone Age mortar batches exposed a crafting composition gap.
-  `mb_craft` now accepts explicit per-cell counts for retained tools and returns
-  remaining ingredients after crafting; verified with a 19-clay batch in survival.
-- **2026-09-19** Restructured into this repository from the ModdedBench
-  workspace (Baritone fork branch `modbench-gtnh`, commit `a1c43ef4`).
-  LGPL-3.0-or-later throughout; one coremod (`core`), plain Baritone jar, the
-  whole `harness/tools/` directory hot-reloaded, world notes surfacing as a
-  side effect of observations, `PROMPT.md` for quest-book runs.
-- **2026-09-18** Electric Blast Furnace agent trial: a supervised agent built
-  and ran an EBF line from supplied materials and exported two aluminium
-  ingots. Follow-up fixed grass clearing, attack-hold bounds and food handling
-  (13 live regression checks). Layer ownership doc updated with conditional
-  self-prompts and survival guards (`foodBelow`, `burning`).
-- **2026-09-14** Native runtime and API acceptance: event bus, rendering,
-  free-look and the Java process API run through Forge 1.7.10 adapters; 16
-  live checks. Roadmap refreshed.
-- **2026-09-13** Baritone parity audit against upstream, then the source port of the upstream engine (pinned upstream
-  revision `d9cb2d91`, 162 files) validated. Natural-world log mining attempt
-  recorded as a failure (nothing collected in 1,352 ticks) and fixed later.
-- **2026-09-12** First standalone GTNH bridge milestone on Windows: client and
-  server bridges, tokens, observations, aiming, finite input, cancellation,
-  screenshots. Time-control audit accepted the whole-tick gate contract with
-  GregTech and OpenComputers background-work barriers.
-- **Before 2026-09-12** The harness targeted a different, 1.12.2 modpack. Its
+- **Before 2026-09-12.** The harness targeted a different, 1.12.2 modpack. Its
   structure informed this one; none of its code is here.
+- **2026-09-12 to 09-18.** First GTNH bridge on Windows: client and server
+  bridges, tokens, observations, input, screenshots, and the whole-tick pause
+  with its GregTech and OpenComputers barriers. Upstream Baritone (v1.2.19)
+  was ported to 1.7.10 for navigation, mining and construction. A supervised
+  agent built and ran an Electric Blast Furnace line from supplied materials.
+- **2026-09-19.** Restructured into this repository: one coremod (`core`), a
+  plain Baritone mod, the whole `harness/tools/` directory reloaded on change,
+  world notes, and `PROMPT.md` for quest-book runs. Earlier commits are not in
+  this repository.
+- **2026-09-20.** Contained runs: server and agent containers, a gateway, a
+  constrained client deploy path, the operator console and the stream overlay.
+  First runs with the Codex CLI.
+- **2026-09-29 to 10-05.** Time stepping and resume-and-act; the spectator
+  mirror; background tasks; swimming and currents; one build behaviour with
+  click cells; notes as plain files; the movement registry; the game-thread
+  budget tests. Unattended runs of 2, 4, 8 and 24 hours were made in this
+  period, and their failures drove most of these changes. Many fixes were
+  written by the playing agent during a run and merged afterwards.
+
+## Notes for future sessions
+
+`PROMPT.md` asks the playing agent to add a line here for anything a later
+session should know exists. One line each, newest first, with the date.

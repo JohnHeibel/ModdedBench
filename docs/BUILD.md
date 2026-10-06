@@ -34,7 +34,8 @@ python -m unittest discover -s harness/tests -p "test_*.py"
 ```
 
 `build` compiles every module, runs the JUnit suites and writes the jars under
-`mods/<module>/build/libs/`. Install the reobfuscated jars, not the `-dev` or
+`mods/<module>/build/libs/`. What the three commands check is under
+[Testing](#testing). Install the reobfuscated jars, not the `-dev` or
 `-sources` variants:
 
 | Jar | Install where | Role |
@@ -48,8 +49,8 @@ The server jar is not needed in a client-only install, and the client works
 without a dedicated server when the game hosts its own world, but time control
 and authoritative observations need the server jar on a dedicated server.
 
-Development fixtures (privileged world-editing helpers used by the smoke
-tests) are compiled from `mods/server/src/dev` and left out of the jar. Build
+Development fixtures (privileged world-editing helpers used by the tests that
+need a game) are compiled from `mods/server/src/dev` and left out of the jar. Build
 with `-PdevFixtures` to include them, and start the server with
 `--dev-fixtures` to register their `dev.*` methods. Never ship such a jar.
 
@@ -164,14 +165,92 @@ python harness/launcher/runtime.py launch-client
 Work journals, world memory, world notes and quest progress all survive the
 restart. Only the running job's execution is lost; resume it from its job id.
 
-## Smoke tests
+## Testing
 
-With the client joined to the server and its GUI closed:
+### Without a game
+
+Run these before every commit. None of them needs Minecraft running.
+
+| Command | What it checks |
+| --- | --- |
+| `./gradlew build` | The JUnit suites of every module: transport, simulation clock and pause ordering, class transformers, JSON, path search, build order, click search, work specifications, quest access. Seam tests scan the built jars: the Baritone jar refers to ModdedBench only through `dev.modbench.api`, and the server jar carries no development fixtures. |
+| `python -m unittest discover -s harness/tests -p "test_*.py"` | The Python side with a fake bridge: transport, tool reload and state survival, lanes, the interrupt supervisor, world notes, scripts and background tasks, the launcher, deploy and backup, the console, the Codex loop, the spectator mirror. |
+| `python harness/mcp/server.py --check` | Every tool module imports and registers; prints the tool list. |
+| `python harness/mcp/tool_table.py --check` | The tool table in `PROMPT.md` matches the code. Without `--check` it rewrites the table. |
+
+**Game-thread budget.** The game has 50 ms a tick for everything.
+`TickBudgetTest` (in `mods/baritone`, part of `./gradlew build`) runs the
+paths that work on the game thread without a player (block scans, queued asks,
+the copy of blocks around clicks, a build's reads of its plan) at the sizes of
+a real base, and fails the build when one takes over 20 ms of a tick
+(`TickBudget.LIMIT_MS`). Paths found slower are kept there as named findings
+with their own limits. The job step and the walker need a game: every job's
+result carries `cost`, and says `cost.overBudget` when a tick took over 100 ms
+or the mean was over 5 ms across 40 ticks or more.
+
+### With a game: the test stack
+
+Most tests that need a game run against a throwaway stack named `mbtest`: its
+own world and agent checkout, and a server built with the development
+fixtures, which build an arena, set blocks and place the player. Stop the real
+server first, since both publish port 25575. From the repository root:
 
 ```bash
-python harness/smoke/smoke.py --mcp-reload-proof
+OUTBOX=../.runtime/test/outbox BRIEF=../.runtime/test/brief docker compose -p mbtest -f docker/compose.yaml -f docker/compose.test.yaml --env-file docker/.env up -d --build
 ```
 
-`harness/smoke/` also holds the interaction, GUI and primitive regression
-probes. They need a live game; some need the development fixtures. Screenshots
-and evidence go under the ignored `.runtime/evidence/`.
+Join the host client to that server, then run a script through
+`harness/smoke/mbtest.sh` (bash; Git Bash on Windows). It runs the script in a
+container on the server's network, so the script reaches both bridges and no
+token appears on a command line.
+
+```bash
+bash harness/smoke/mbtest.sh harness/smoke/movement_course.py --case pit_loop --trials 3
+```
+
+Each script calls the model's own tools and then reads the result back from
+the server. Results print as a table; evidence files go under the ignored
+`.runtime/evidence/`.
+
+| Script | What it proves |
+| --- | --- |
+| `movement_course.py` | Walking, from fixtures rebuilt for every trial: corners, pits, stairs, doors and gates, parkour gaps, shafts, lava edges, swimming, currents, dives, mining beside liquids. `--list` names the cases. The obsidian cases are in `movement_obsidian.py`. |
+| `build_suite.py` | Every build scenario in one run, one PASS/FAIL row each: closed shells, stages, missing materials and resume, occupied cells, timeout and resume, clearing, hidden and buried cells, flowing water, doors, building on terrain. |
+| `builder_shell.py` | The closed 7x7 shells on their own (also part of the build suite). |
+| `faceclick_course.py` | Click cells and uses in a build: a hopper clicked against a chosen face, facings by look, access through a block that is put back, the stop reasons when no stance exists. |
+| `door_course.py` | Walking through a doorway one block up, past the open door's leaf. |
+| `bridge_course.py` | Bridging a gap from a block lower than a full one (a chest's top). |
+| `ladder_course.py` | Going up, stopping on and coming down ladders, on each side of a block and through a roof. |
+| `scaffold_course.py` | A mining job climbs to a target on placed blocks, and with `cleanup_scaffold` removes them before it ends. |
+| `glide_course.py` | The added glide move ([MOVEMENTS.md](MOVEMENTS.md)): a body with wings crosses a drop and arrives unhurt; without them it stays. |
+| `explore_course.py` | `get_to_block` finds a block by id without a whole-world sweep, sees one in a chunk that loads later, and stays inside the tick budget. |
+| `step_course.py` | A time step never cuts a click, a slot selection or a held input short, and a guard still ends them ([TIME_CONTROL.md](TIME_CONTROL.md)). |
+| `notes_course.py` | World notes as files: written with what was observed, surfaced when the block is looked at, found by place, following edits made by hand. |
+| `pathfix_replay.py` | Replays recorded path-search failures in a clone of a played world. Its cases name positions in one particular world, so it is of use only with a snapshot of that world. |
+| `challenge.py`, `challenge_tasks.py` | A fresh model in the agent container gets one prepared task and a minute cap; the grade is read from blocks on the server. `challenge.py` runs on the host, not through `mbtest.sh`. |
+
+`tick_cost.py` is not a test by itself. The movement, replay, explore, step,
+shell and build scripts use it to fail a case whose worst or mean game-thread
+tick is over a limit; `--warm-up` leaves the first case after a client start
+unjudged. Its limits are marked provisional in the file. `build_order.py`
+reads a finished build job's files and prints the placement order as numbers;
+it needs no game.
+
+### With a game: the managed runtime
+
+Four older probes talk to both bridges directly, so they need the native
+server of the managed runtime (not a container), built with `-PdevFixtures`
+and started with `start-server --dev-fixtures`, with the client joined and its
+GUI closed.
+
+| Script | What it checks |
+| --- | --- |
+| `python harness/smoke/smoke.py --mcp-reload-proof` | Both bridges, player identity, observations, aiming, finite input, cancellation, screenshots, and tool reload with a syntax error kept out safely. |
+| `python harness/smoke/interaction_smoke.py` | Block, entity and item use, eating, hotbar selection, bounded combat, interrupt reactions. |
+| `python harness/smoke/gui_smoke.py` | Container observation, slot clicks, transfers, cursor return, text fields, buttons, hit tests. |
+| `python harness/smoke/primitive_regression_smoke.py` | Regressions from an early machine-building trial: grass clearing, attack-hold bounds, food budgets. |
+
+These four predate the test stack. Whether they still pass was not checked for
+this release.
+
+Contained runs, the console and backups are in [CONTAINERS.md](CONTAINERS.md).
