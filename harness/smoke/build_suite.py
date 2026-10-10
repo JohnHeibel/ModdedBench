@@ -31,7 +31,12 @@ a scenario that passed before and fails now is a regression.
   door_terrain  the same with a block of terrain in the upper door cell (the run of 2026-10-05: the game takes a door only
                 with both its cells free, and the upper one is a later step)
   terrain       a hall on natural ground, whatever stands there dug out: 11 x 11 and 5 high with a door, 320 cells
-  hall          only when named (--only hall): run 2's hall, 25 x 25 and 7 high, 1728 cells, resumed until done
+  hall          only when named (--only hall): run 2's hall, 25 x 25 and 7 high, 1728 cells, resumed until done; the scale gate
+                (its row records ticks, wall seconds, cells placed and the worst and mean tick of every session)
+
+The two on natural ground take a site no run has stood on: its place is the world's age (--hall-index names one instead).
+While they build, the server keeps the player fed and healed and the time at noon (dev.replay.sustain): a build of a
+quarter of an hour is no test of hunger or of the night's mobs. What the player had lost by each refill is in the row.
 
 Evidence: .runtime/evidence/build-suite.json (history: one entry per run with the commit), and a table on stdout.
 """
@@ -41,6 +46,7 @@ import argparse
 import json
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -254,14 +260,35 @@ class Suite(bs.Shells):
 
     def door_terrain(self): return self.door(terrain=True)
 
-    def terrain(self): return self.hall(SMALL, "terrainRuns", 80)
+    def terrain(self): return self.hall(SMALL, 80)
 
-    def hall(self, size=HALL, counter="hallRuns", south=0):
-        """Each run takes fresh ground: 40 blocks east of the last of its kind, the small one 80 south of the large."""
+    def site(self) -> int:
+        """Ground no run has stood on, whichever checkout ran it: the site's number is the world's age in spans of ten
+        seconds, and a world is never the same age twice."""
+        if self.args.hall_index is not None: return self.args.hall_index
+        return next(d["totalTime"] for d in self.s.call("obs.world")["dimensions"] if d["dimension"] == 0) // 200
+
+    def sustained(self, build):
+        """build(), the player kept fed, healed and in daylight meanwhile; with it the least health and food a refill found."""
+        low = {"health": 20.0, "food": 20}; done = threading.Event()
+
+        def keep():
+            try:
+                server = mc.server_kernel(30)
+                while True:
+                    was = server.call("dev.replay.sustain", time=6000)
+                    for k in low: low[k] = min(low[k], was[k])
+                    if done.wait(20): return
+            except Exception as e: low["error"] = str(e); print("NOT SUSTAINED (the server's fixtures are older than this suite?):", e, flush=True)
+        thread = threading.Thread(target=keep, daemon=True); thread.start()
+        try: return build(), low
+        finally: done.set(); thread.join(40)
+
+    def hall(self, size=HALL, south=0):
+        """Sites lie 40 blocks apart in rows of 256, the rows 160 apart; the small one 80 south of the large."""
         self.arena()   # the fixture journals the player and lets the suite hand out blocks; the hall stands on real ground
-        runs = self.history.get(counter, 0) if self.args.hall_index is None else self.args.hall_index
-        if self.args.hall_index is None: self.history[counter] = runs + 1
-        ox, oz = self.args.hall_at[0] + 40 * runs, self.args.hall_at[1] + south; cx, cz = ox + size[0] // 2, oz + size[2] // 2
+        runs = self.site()
+        ox, oz = self.args.hall_at[0] + 40 * (runs % 256), self.args.hall_at[1] + 160 * (runs // 256) + south; cx, cz = ox + size[0] // 2, oz + size[2] // 2
         column = [[cx, y, cz] for y in range(110, 46, -1)]; found = self.blocks(column)
         ground = next((c[1] for c in column if found.get(tuple(c), AIR) != AIR and not any(k in found[tuple(c)].lower() for k in ("leaves", "log", "plant", "tallgrass", "flower", "snow_layer"))), 63)
         origin = [ox, ground, oz]; cells, door = hall_cells(size)
@@ -269,17 +296,23 @@ class Suite(bs.Shells):
         for slot in (4, 6, 7, 8, 9, 10, 11, *range(15, 36)): self.s.call(bs.FIX + ".set_stack", slot=slot, id=DIRT, meta=0, count=64)
         self.stand([cx + .5, ground + 1, cz + .5])
         print("hall at", origin, "inventory", [(i["slot"], i["id"].split(":")[-1], i["count"]) for i in self.s.call(bs.FIX + ".status")["inventory"] if i["slot"] < 9 or "dirt" not in i["id"]], flush=True)
-        t = time.monotonic(); sessions = []; r = call(work.mb_build, cells=cells, origin=origin, replace_existing=True, allow_break=True)
-        sessions.append(r)
-        while r.get("state") == "paused" and (r.get("stopped") or {}).get("reason") == "timeout" and len(sessions) < 6:
-            r = call(work.mb_work_resume, job_id=r["jobId"]); sessions.append(r)
+        t = time.monotonic(); sessions = []
+
+        def build():
+            r = call(work.mb_build, cells=cells, origin=origin, replace_existing=True, allow_break=True); sessions.append(r)
+            while r.get("state") == "paused" and (r.get("stopped") or {}).get("reason") == "timeout" and len(sessions) < 6:
+                r = call(work.mb_work_resume, job_id=r["jobId"]); sessions.append(r)
+            return r
+        r, low = self.sustained(build)
         wrong = self.wrong(origin, cells); gap = self.wrong(origin, [{"pos": p, "id": AIR} for p in door]); player = self.s.call("dev.replay.status")
         ticks = sum(int(s.get("ticks") or 0) for s in sessions); order = self.ledger(r.get("jobId", ""))
-        row = {"origin": origin, "sessions": len(sessions), "ticks": ticks, "wallS": round(time.monotonic() - t, 1), "wrong": wrong[:16], "wrongCount": len(wrong),
+        row = {"origin": origin, "site": runs, "sessions": len(sessions), "ticks": ticks, "wallS": round(time.monotonic() - t, 1), "wrong": wrong[:16], "wrongCount": len(wrong),
+               "cells": len(cells), "placed": sum(int(s.get("placed") or 0) for s in sessions), "lowest": low,
                "cellsPerMinute": round(len(cells) * 1200 / ticks, 1) if ticks else None, "costs": [s.get("cost") for s in sessions],
                "order": build_order.metrics(order, ticks, [c for c in wrong]) if order else None, "receipt": r, "dead": player["dead"]}
         row["passed"] = r.get("state") == "succeeded" and not wrong and not gap and not player["dead"]
-        row["why"] = (f"state={r.get('state')} stopped={r.get('stopped')} sessions={len(sessions)} ticks={ticks} cells/min={row['cellsPerMinute']} wrong={len(wrong)} "
+        row["why"] = (f"state={r.get('state')} stopped={r.get('stopped')} site={runs} sessions={len(sessions)} ticks={ticks} wallS={row['wallS']} placed={row['placed']}/{len(cells)} "
+                      f"cells/min={row['cellsPerMinute']} wrong={len(wrong)} lowest={low} overBudget={[(c or {}).get('overBudget') for c in row['costs']]} "
                       f"tickNsMean={[(c or {}).get('tickNsMean') for c in row['costs']]} tickNsMax={[(c or {}).get('tickNsMax') for c in row['costs']]} order={row['order']}")
         return row
 
@@ -320,8 +353,8 @@ def main():
     ap.add_argument("--only", action="append"); ap.add_argument("--skip", action="append")
     ap.add_argument("--keep", action="store_true", help="leave the arena and the journalled player in place")
     ap.add_argument("--server-host", default="127.0.0.1")
-    ap.add_argument("--hall-at", type=int, nargs=2, default=[200, -60], metavar=("X", "Z"), help="low corner of the first hall; each run builds 40 blocks further east")
-    ap.add_argument("--hall-index", type=int, help="build at this site again instead of a new one")
+    ap.add_argument("--hall-at", type=int, nargs=2, default=[200, -60], metavar=("X", "Z"), help="low corner of site 0")
+    ap.add_argument("--hall-index", type=int, help="build at this site instead of a new one")
     mc.tick_cost.argument(ap); args = ap.parse_args(); args.seed, args.trials, args.case = 1, 1, None
     args.commit = os.environ.get("MB_COMMIT") or "unknown"
     suite = Suite(args); suite.run()
