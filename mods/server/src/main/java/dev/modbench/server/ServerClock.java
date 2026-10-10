@@ -28,16 +28,45 @@ public final class ServerClock implements ClockHooks.Driver, PauseCoordinator.Ho
     private final ConcurrentLinkedQueue<Incoming> messages=new ConcurrentLinkedQueue<>();
     /** The operator console and the backup create this file in the server directory, which no agent can reach. */
     private static final java.io.File HOLD=new java.io.File("modbench-hold");
-    /** Whose hold it is: the file's one word (harness runtime.hold_cmd). A file that cannot be read yet is still a hold. */
-    private static String holder() {
-        if(!HOLD.exists()) return null;
-        try { String by=new String(java.nio.file.Files.readAllBytes(HOLD.toPath()),StandardCharsets.UTF_8).trim();return by.matches("[a-z_]{1,24}")?by:"operator"; }
+    /**
+     * Whose hold it is: the file's one word (harness runtime.hold_cmd). A file that cannot be read yet is still a hold.
+     * A backup's or the compaction guard's file older than PauseCoordinator.STALE_HOLD_MINUTES was left by a holder that
+     * died: it is removed, so the world runs again and the next holder finds no hold in force.
+     */
+    static String holder(java.io.File hold,long now) {
+        if(!hold.exists()) return null;
+        String by;
+        try { by=new String(java.nio.file.Files.readAllBytes(hold.toPath()),StandardCharsets.UTF_8).trim();if(!by.matches("[a-z_]{1,24}")) by="operator"; }
         catch(java.io.IOException unread) { return "operator"; }
+        long written=hold.lastModified();
+        if(!PauseCoordinator.expires(by) || written==0 || now-written<=PauseCoordinator.STALE_HOLD_MINUTES*60_000L) return by;
+        System.err.println("[ModdedBench] the "+by+" hold is over "+PauseCoordinator.STALE_HOLD_MINUTES+" minutes old: its holder is gone, the hold is ended");
+        return hold.delete()?null:by;
     }
     private NetHandlerPlayServer client;
     private long lastHeartbeat;
+    /** The pause and the guards, kept in the world's folder so that a restarted server comes back as it stopped (SimulationClock.saved). */
+    private final java.nio.file.Path stateFile;
+    private JsonObject restored;
+    private String savedState;
 
-    public ServerClock(MinecraftServer server, ServerRuntime runtime) { this.server=server;this.runtime=runtime;net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(this); }
+    public ServerClock(MinecraftServer server, ServerRuntime runtime) {
+        this.server=server;this.runtime=runtime;net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(this);
+        stateFile=new java.io.File(server.worldServers[0].getSaveHandler().getWorldDirectory(),"modbench-clock.json").toPath();
+        try { if(java.nio.file.Files.exists(stateFile)) { restored=Json.GSON.fromJson(new String(java.nio.file.Files.readAllBytes(stateFile),StandardCharsets.UTF_8),JsonObject.class);clock.restore(restored); } }
+        catch(java.io.IOException|RuntimeException unreadable) { restored=null;warn("saved clock state could not be read; starting unpaused with no guards: "+unreadable); }
+    }
+    /** Writes the clock's state when it changed, whole or not at all. Not before a restored pause is applied: the file still holds it. */
+    private void save() {
+        String now=clock.saved().toString();
+        if(restored!=null || now.equals(savedState)) return;
+        savedState=now;
+        try {
+            java.nio.file.Path part=stateFile.resolveSibling("modbench-clock.json.part");
+            java.nio.file.Files.write(part,now.getBytes(StandardCharsets.UTF_8));
+            java.nio.file.Files.move(part,stateFile,java.nio.file.StandardCopyOption.REPLACE_EXISTING,java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+        } catch(java.io.IOException failed) { warn("clock state could not be saved: "+failed); }
+    }
     /** The damage type of the agent's own hurt exists on the server only; a player learns it from what hit them and the death message. */
     @cpw.mods.fml.common.eventhandler.SubscribeEvent public void hurt(net.minecraftforge.event.entity.living.LivingHurtEvent event) {
         if(client==null||event.entityLiving!=client.playerEntity) return;
@@ -113,7 +142,7 @@ public final class ServerClock implements ClockHooks.Driver, PauseCoordinator.Ho
                             }
                             case "command" -> {
                                 String id=data.get("id").getAsString();
-                                coordinator.command(Json.string(data,"method",""),data.getAsJsonObject("params"),
+                                coordinator.request(Json.string(data,"method",""),data.getAsJsonObject("params"),
                                     result->send(Json.object("type","reply","id",id,"result",result)));
                             }
                         }
@@ -163,8 +192,14 @@ public final class ServerClock implements ClockHooks.Driver, PauseCoordinator.Ho
             if(!connected()) clock.pause("client_disconnected");
             else if(System.nanoTime()-lastHeartbeat>15_000_000_000L) clock.pause("client_unresponsive");
         }
-        // Pack mods (AmunRa) build world data on their first server tick and fail every join without it: a held server still warms up.
-        coordinator.hold(clock.ticks()>=20?holder():null);
+        // Pack mods (AmunRa) build world data on their first server tick and fail every join without it: a held server still warms up,
+        // and so does one that was paused when it stopped. That pause comes back first, under its own reason, so that a hold's release leaves it standing.
+        if(restored!=null && clock.ticks()>=20) {
+            if(Json.bool(restored,"paused",false)) coordinator.command("time.pause",Json.object("reason",Json.string(restored,"reason","requested_pause")),result->{});
+            restored=null;
+        }
+        coordinator.hold(clock.ticks()>=20?holder(HOLD,System.currentTimeMillis()):null);
+        save();
         if(!coordinator.before()) return false;
         runtime.simulationTick();return true;
     }

@@ -220,6 +220,26 @@ public class PauseCoordinatorTest {
     }
 
     @Test
+    public void thePauseOwnersDeadlineIsAnsweredHereSayingTheWorldStaysGated() {
+        Fixture f=new Fixture();
+        BridgeRuntime runtime=new BridgeRuntime("test") {
+            @Override protected void controlsChanged(String reason) {}
+            @Override protected void maintainControls() {}
+        };
+        List<JsonObject> replies=new ArrayList<>();
+        f.host.connected=true; // never acks, so the pause cannot settle
+        Request pause=new Request(new JsonPrimitive(1),"time.pause",Json.object("_timeout_ms",1),new Session(),runtime,replies::add);
+        assertTrue(pause.start());assertNull(f.coordinator.command(pause));pause.detach();
+        while(!pause.expired()) Thread.onSpinWait();
+        pause.expire(); // the transport's timer: a started request is not its to answer
+        assertTrue(replies.isEmpty());
+        assertFalse(f.coordinator.before());
+        assertEquals("clock_error",replies.get(0).getAsJsonObject("error").get("code").getAsString());
+        assertEquals("pause_timeout; simulation remains gated",replies.get(0).getAsJsonObject("error").get("msg").getAsString());
+        assertTrue(f.clock.paused());
+    }
+
+    @Test
     public void pauseTimeoutInterruptsButLeavesTheSimulationGated() {
         Fixture f=new Fixture();f.host.connected=true;
         f.command("time.pause");
@@ -322,5 +342,22 @@ public class PauseCoordinatorTest {
         f.coordinator.runForFixture(7);
         assertEquals(7,run(f,100));
         assertEquals("fixture_checkpoint",f.clock.reason());
+    }
+
+    @Test
+    public void anAgentCannotNameItsPauseAsAHoldsButAHoldCan() {
+        Fixture f=new Fixture();
+        assertTrue(f.coordinator.before());f.coordinator.after();
+        f.coordinator.request("time.pause",Json.object("reason","backup_hold"),f.replies::add);
+        assertEquals("a pause reason may not end in _hold: that names a hold's pause",f.replies.get(0).get("error").getAsString());
+        assertFalse("nothing was paused",f.clock.paused());
+        f.coordinator.request("time.pause",Json.object("reason","thinking"),f.replies::add);
+        assertTrue(f.clock.paused());assertEquals("thinking",f.clock.reason());
+        Fixture held=new Fixture();
+        assertTrue(held.coordinator.before());held.coordinator.after();
+        held.coordinator.hold("backup");
+        assertEquals("backup_hold",held.clock.reason());
+        assertTrue(PauseCoordinator.heldRefusal("backup").contains("within "+PauseCoordinator.STALE_HOLD_MINUTES+" minutes"));
+        assertFalse("the operator's hold has no end to promise",PauseCoordinator.heldRefusal("operator").contains("minutes"));
     }
 }

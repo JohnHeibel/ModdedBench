@@ -12,10 +12,10 @@ import java.util.function.Consumer;
  * QUEUED -> RUNNING -> DONE: the game thread claims execution with {@link #start()}; the deadline timer
  * ({@link #expire()}) never answers a RUNNING request, whose synchronous handler reports its real outcome
  * with {@code late: true} when it finishes past the deadline. A handler that returns without answering has
- * started an async job: {@link #detach()} moves it to ASYNC, where the timer answers {@code timeout} as it
- * does for QUEUED and the job's own maintain() pass releases it on the next tick. A job that has a receipt to
- * hand back takes the deadline for itself ({@link #ownDeadline()}): the timer then stands down and the game
- * thread answers, with what the job did, when it sees the deadline passed.
+ * started an async job: {@link #detach()} moves it to ASYNC, and the deadline stays with the game thread. The job's
+ * own maintain() pass sees {@link #expired()} and answers, with a receipt of what the job did where it has one, so
+ * an expired job has one owner and one possible answer. The timer answers {@code timeout} for a QUEUED request only.
+ * Every method that detaches must therefore poll its request (isDone, expired, session.connected) each tick.
  */
 public final class Request {
     private static final int QUEUED = 0, RUNNING = 1, ASYNC = 2, DONE = 3;
@@ -30,7 +30,6 @@ public final class Request {
     private final Consumer<JsonObject> output;
     /** Set when this request resumed a paused world to run (resume-and-act); the reply carries it as {@code resumedWorld}. */
     public volatile JsonObject resumed;
-    private volatile boolean owned;
 
     public Request(JsonElement id, String method, JsonObject params, Session session,
                    BridgeRuntime runtime, Consumer<JsonObject> output) {
@@ -47,11 +46,9 @@ public final class Request {
     public boolean expired() { return System.nanoTime() >= deadline; }
     /** Game thread: claims execution. False when a timer, cancel or disconnect already answered. */
     public boolean start() { return state.compareAndSet(QUEUED, RUNNING); }
-    /** Game thread, after a handler returned without answering: the deadline timer owns the timeout again. */
-    public void detach() { if (state.compareAndSet(RUNNING, ASYNC) && expired()) expire(); }
-    /** Deadline timer: never answers while a synchronous handler is running. */
-    /** Game thread: this request's job answers its own deadline, so that the answer carries the job's receipt. */
-    public void ownDeadline() { owned = true; }
+    /** Game thread, after a handler returned without answering: the job it started answers from here on, its deadline included. */
+    public void detach() { state.compareAndSet(RUNNING, ASYNC); }
+    /** Deadline timer: answers only a request the game thread never started. */
     public void expire() { finish(false, Json.object("code", "timeout", "msg", "request deadline elapsed"), true); }
     public void reply(Object data) { finish(true, Json.GSON.toJsonTree(data), false); }
     public void fail(String code, String message) { finish(false, Json.object("code", code, "msg", message), false); }
@@ -63,7 +60,7 @@ public final class Request {
         int previous;
         do {
             previous = state.get();
-            if (previous == DONE || timer && (previous == RUNNING || owned)) return;
+            if (previous == DONE || timer && previous != QUEUED) return;
         } while (!state.compareAndSet(previous, DONE));
         session.pending.remove(id.toString(), this);
         if (!ok) runtime.failed(this);
