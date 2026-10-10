@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 import mbtool
-from kernel import BridgeError, Kernel, resume_once
+from kernel import BridgeError, Kernel, refused, resume_once
 from mbtool import kernel, state, tool
 from mbtools_gtnh import scripts
 
@@ -389,7 +389,7 @@ class TaskKernel(Kernel):
         while True:
             try: return super().call(method, timeout, **params)
             except BridgeError as e:
-                if not str(e.msg).startswith("time_paused") or not self._wait_out(): raise
+                if not refused(e, "time_paused") or not self._wait_out(): raise
 
     def _wait_out(self) -> bool:
         while True:

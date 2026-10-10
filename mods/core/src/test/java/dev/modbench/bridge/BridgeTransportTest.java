@@ -74,6 +74,7 @@ public class BridgeTransportTest {
         final CountDownLatch open = new CountDownLatch(1), closed = new CountDownLatch(1);
         final WebSocketClientHandshaker handshaker;
         Channel channel;
+        boolean origin; // a browser always names the page's Origin; our clients (the Python kernel) never send one
         Client(URI uri) { handshaker = WebSocketClientHandshakerFactory.newHandshaker(uri, WebSocketVersion.V13, null, false, new DefaultHttpHeaders()); }
         @Override public void channelActive(ChannelHandlerContext ctx) { handshaker.handshake(ctx.channel()); }
         @Override public void channelInactive(ChannelHandlerContext ctx) { closed.countDown(); }
@@ -122,12 +123,26 @@ public class BridgeTransportTest {
         Files.deleteIfExists(tokenFile);
     }
 
-    private Client connect(boolean authenticate) throws Exception {
+    private Client open(boolean origin) throws Exception {
         URI uri = new URI("ws://127.0.0.1:" + transport.port() + "/ws");
-        Client client = new Client(uri);
+        Client client = new Client(uri); client.origin = origin;
         client.channel = new Bootstrap().group(group).channel(NioSocketChannel.class).handler(new ChannelInitializer<SocketChannel>() {
-            @Override protected void initChannel(SocketChannel ch) { ch.pipeline().addLast(new HttpClientCodec(), new HttpObjectAggregator(1 << 20), client); }
+            @Override protected void initChannel(SocketChannel ch) {
+                ch.pipeline().addLast(new HttpClientCodec(), new HttpObjectAggregator(1 << 20), new io.netty.channel.ChannelOutboundHandlerAdapter() {
+                    @Override public void write(ChannelHandlerContext ctx, Object message, io.netty.channel.ChannelPromise promise) throws Exception {
+                        if (message instanceof io.netty.handler.codec.http.HttpRequest request) {
+                            request.headers().remove("Origin");
+                            if (client.origin) request.headers().set("Origin", "http://a-page.example");
+                        }
+                        super.write(ctx, message, promise);
+                    }
+                }, client);
+            }
         }).connect("127.0.0.1", transport.port()).sync().channel();
+        return client;
+    }
+    private Client connect(boolean authenticate) throws Exception {
+        Client client = open(false);
         assertTrue("websocket handshake", client.open.await(5, TimeUnit.SECONDS));
         if (authenticate) { client.send(Json.object("id", 0, "auth", token)); assertTrue(client.next().get("ok").getAsBoolean()); }
         return client;
@@ -189,7 +204,7 @@ public class BridgeTransportTest {
         assertEquals("too many pending requests", refused.getAsJsonObject("error").get("msg").getAsString());
         JsonObject expired = client.next();
         assertEquals(1, expired.get("id").getAsInt());
-        assertEquals("timeout", code(expired));
+        assertEquals("the job answers its own deadline", "cancelled", code(expired));
         client.call(130, "obs.fast");
         assertTrue("a freed slot admits new work", client.next().get("ok").getAsBoolean());
     }
@@ -204,6 +219,32 @@ public class BridgeTransportTest {
         assertTrue(ack.getAsJsonObject("data").get("cancelled").getAsBoolean());
         assertEquals("cancelled", code(cancelled));
         awaitHeld(127);
+    }
+
+    @Test public void anUpgradeThatNamesAnOriginIsRefusedBeforeTheHandshake() throws Exception {
+        Client page = open(true); // what a web page's websocket to loopback looks like
+        assertTrue("the connection is closed", page.closed.await(5, TimeUnit.SECONDS));
+        assertEquals("no handshake", 1, page.open.getCount());
+        Client ours = connect(true);
+        ours.call(1, "obs.fast");
+        assertTrue("a client without an Origin is served as before", ours.next().get("ok").getAsBoolean());
+    }
+
+    @Test public void theTokenFileIsTheOwnersAloneWhetherItIsNewOrLeftByAnEarlierStart() throws Exception {
+        Path fresh = tokenFile.resolveSibling(tokenFile.getFileName() + ".fresh");
+        try {
+            BridgeTransport.writeToken(fresh, "first");
+            assertEquals("first", Files.readString(fresh));
+            BridgeTransport.writeToken(fresh, "second"); // a restart writes over the dead token
+            assertEquals("second", Files.readString(fresh));
+            assertEquals(token, Files.readString(tokenFile));
+            if (java.nio.file.FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+                Files.setPosixFilePermissions(fresh, java.nio.file.attribute.PosixFilePermissions.fromString("rw-r--r--"));
+                BridgeTransport.writeToken(fresh, "third");
+                for (Path file : new Path[]{fresh, tokenFile})
+                    assertEquals("rw-------", java.nio.file.attribute.PosixFilePermissions.toString(Files.getPosixFilePermissions(file)));
+            } else assertTrue(fresh.toFile().canRead() && fresh.toFile().canWrite()); // Windows: no modes to pin; the owner still reads and writes it
+        } finally { Files.deleteIfExists(fresh); }
     }
 
     @Test public void handlerRunningAcrossTheDeadlineAnswersOnceWithItsRealOutcomeMarkedLate() throws Exception {
@@ -233,23 +274,25 @@ public class BridgeTransportTest {
         assertNull(client.frames.poll(200, TimeUnit.MILLISECONDS));
     }
 
-    @Test public void asyncJobOutlivingItsDeadlineGetsTimeoutThenMaintainReleasesIt() throws Exception {
+    @Test public void asyncJobOutlivingItsDeadlineIsAnsweredByItsOwnMaintainPassAndNeverByTheTimer() throws Exception {
         Client client = connect(true);
-        client.call(13, "act.hold", "_timeout_ms", 500);
+        client.call(13, "act.hold", "_timeout_ms", 300);
         awaitHeld(1);
-        // Two things watch an async job's deadline: the timer, which answers timeout, and the job's own maintain pass,
-        // which sees expired() and answers for itself (cancelled, here and in the client's jobs). Whichever looks
-        // first answers. The game thread is held still across the deadline so that this is the timer's case.
+        // An async job's deadline has one owner, the job's own maintain pass, which answers for itself (cancelled, here
+        // and in the client's jobs, with a receipt). The game thread is held still across the deadline, which is when
+        // the timer used to get there first and answer a bare timeout: it must stay silent however long that lasts.
         stalled = true; Thread.sleep(20);
         assertTrue("the job was held and the game thread stopped well inside the deadline", client.frames.isEmpty() && runtime.released.isEmpty());
+        assertNull("the timer does not answer a started job", client.frames.poll(700, TimeUnit.MILLISECONDS));
+        assertEquals(1, runtime.held.size());
+        stalled = false;
         JsonObject reply = client.next();
         assertEquals(13, reply.get("id").getAsInt());
-        assertEquals("timeout", code(reply));
+        assertEquals("cancelled", code(reply));
+        assertEquals("released by maintain", reply.getAsJsonObject("error").get("msg").getAsString());
         assertFalse(reply.has("late"));
-        assertEquals("nothing released the job but the timer's answer", 1, runtime.held.size());
-        stalled = false;
         awaitHeld(0);
-        assertEquals(List.of("13 done=true connected=true"), runtime.released);
+        assertEquals("the job was still its own to end", List.of("13 done=false connected=true"), runtime.released);
         assertNull("exactly one reply", client.frames.poll(300, TimeUnit.MILLISECONDS));
     }
 

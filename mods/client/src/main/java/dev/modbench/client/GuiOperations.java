@@ -43,7 +43,7 @@ final class GuiOperations {
         if(mc.thePlayer==null||mc.currentScreen==null) throw new IllegalArgumentException("open a GUI first");
         if(active!=null) throw new IllegalArgumentException("GUI operation already active");
         Job job=new Job(request);active=job;
-        try {job.begin();} catch(Exception failure) {job.fail("gui_error",failure.getMessage());}
+        try {job.begin();} catch(Refusal refused) {job.fail(refused.code,refused.getMessage());} catch(Exception failure) {job.fail("gui_error",failure.getMessage());}
         return null;
     }
     void outgoing(Object packet) {
@@ -58,7 +58,7 @@ final class GuiOperations {
     }
     void tick() {
         Job job=active;if(job==null) return;
-        try {job.tick();}catch(Exception error) {job.fail("gui_error",error.toString());}
+        try {job.tick();}catch(Refusal refused) {job.fail(refused.code,refused.getMessage());}catch(Exception error) {job.fail("gui_error",error.toString());}
     }
     void cancel(String reason) {if(active!=null) active.fail("cancelled",reason);else UiInput.clear();}
     boolean running() {return active!=null;}
@@ -88,7 +88,7 @@ final class GuiOperations {
         int destinationBefore,planned;
         Job(Request request) {
             this.request=request;p=request.params;method=request.method.substring(4);container=view.require(p);epoch=view.epoch();
-            if(p.has("expectedCursor")&&!cursorBefore.equals(p.get("expectedCursor"))) throw new IllegalArgumentException("stale_cursor: observe again");
+            if(p.has("expectedCursor")&&!cursorBefore.equals(p.get("expectedCursor"))) throw new Refusal("stale_cursor","observe again");
             for(int i=0;i<container.inventorySlots.size();i++) before.put(i,Json.GSON.toJsonTree(Stacks.json(InventoryView.slot(container,i).getStack())));
         }
         void begin() throws Exception {
@@ -148,7 +148,7 @@ final class GuiOperations {
         }
         void post(int x,int y,int button,boolean down,int wheel) {
             if(button>=0&&down) {
-                if(p.has("expectedCursor")&&!Stacks.expected(mc.thePlayer.inventory.getItemStack(),p.get("expectedCursor"))) throw new IllegalStateException("stale_cursor before native press");
+                if(p.has("expectedCursor")&&!Stacks.expected(mc.thePlayer.inventory.getItemStack(),p.get("expectedCursor"))) throw new Refusal("stale_cursor","before native press");
                 pressGuard.run();
             }
             lastX=x;lastY=y;attempted=true;afterFrame=UiInput.frames();
@@ -188,10 +188,10 @@ final class GuiOperations {
         void clickSlot() {
             if(!p.has("slot")||!p.has("windowId")) throw new IllegalArgumentException("windowId,slot required");
             int index=Json.integer(p,"slot",-1,0,container.inventorySlots.size()-1);Slot slot=InventoryView.slot(container,index);
-            if(p.has("expected")&&!Stacks.expected(slot.getStack(),p.get("expected"))) throw new IllegalArgumentException("stale_stack: observe again");
+            if(p.has("expected")&&!Stacks.expected(slot.getStack(),p.get("expected"))) throw new Refusal("stale_stack","observe again");
             if(p.has("expected")) pressGuard=()->{
                 if(index>=container.inventorySlots.size()||InventoryView.slot(container,index)!=slot||!Stacks.expected(slot.getStack(),p.get("expected")))
-                    throw new IllegalStateException("stale_stack before native press; virtual results may have reordered");
+                    throw new Refusal("stale_stack","before native press; virtual results may have reordered");
             };
             String type=Json.string(p,"type",new String[]{"pickup","quick_move","swap","clone","throw","","pickup_all"}[Json.integer(p,"mode",0,0,6)]); // mode: the vanilla click number, for those who know it
             int mode=switch(type) {case "pickup"->0;case "quick_move"->1;case "swap"->2;case "clone"->3;case "throw"->4;case "pickup_all"->6;default->throw new IllegalArgumentException("unsupported click type; use gui.drag for drag distribution");};
@@ -220,9 +220,9 @@ final class GuiOperations {
                 sourceStack=sourceStack.copy();planned=sourceStack.stackSize;
             } else {
                 if(!p.has("count")||!p.has("source")) throw new IllegalArgumentException("source and count required");
-                if(mc.thePlayer.inventory.getItemStack()!=null) throw new IllegalArgumentException("cursor_occupied: return cursor explicitly first");
+                if(mc.thePlayer.inventory.getItemStack()!=null) throw new Refusal("cursor_occupied","return cursor explicitly first");
                 int index=Json.integer(p,"source",-1,0,container.inventorySlots.size()-1);source=InventoryView.slot(container,index);sourceStack=source.getStack();
-                if(!p.has("expected")||sourceStack==null||!Stacks.expected(sourceStack,p.get("expected"))) throw new IllegalArgumentException("stale_stack: expected source required");
+                if(!p.has("expected")||sourceStack==null||!Stacks.expected(sourceStack,p.get("expected"))) throw new Refusal("stale_stack","expected source required");
                 sourceStack=sourceStack.copy();
                 if(!InventoryView.ordinary(source,index)||!source.canTakeStack(mc.thePlayer)||!source.isItemValid(sourceStack)) throw new IllegalArgumentException("source needs ordinary inventory semantics; use native click for output/custom slots");
                 planned=Math.min(Json.integer(p,"count",0,1,64),sourceStack.stackSize);

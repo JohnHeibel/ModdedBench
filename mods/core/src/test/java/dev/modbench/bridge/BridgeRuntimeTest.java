@@ -164,47 +164,76 @@ public class BridgeRuntimeTest {
     }
 
     @Test
-    public void asyncJobIsHandedBackToTheDeadlineTimerOnceItsHandlerReturns() {
+    public void anAsyncJobAnswersItsOwnDeadlineWithItsReceiptAndTheTimerNeverDoes() {
         Runtime runtime = new Runtime();
         runtime.add("act.job", request -> { request.expire(); return null; }); // timer during the handler: ignored
         Object world = new Object();
         runtime.startTick(world);
         Session session = new Session();
         List<JsonObject> replies = new ArrayList<>();
-        Request request = request(runtime, session, 4, "act.job", new JsonObject(), replies);
+        JsonObject params = new JsonObject();
+        params.addProperty("_timeout_ms", 1);
+        Request request = request(runtime, session, 4, "act.job", params, replies);
         runtime.dispatch(request);
         runtime.startTick(world);
-        assertFalse(request.isDone());
+        while (!request.expired()) Thread.onSpinWait();
 
-        request.expire(); // the job is async now, so the timer answers as it always did
-        request.reply("job finished after the caller was told");
-
-        assertEquals(1, replies.size());
-        assertEquals("timeout", replies.get(0).getAsJsonObject("error").get("code").getAsString());
-        assertFalse(replies.get(0).has("late"));
-    }
-
-    @Test
-    public void aJobThatOwnsItsDeadlineAnswersItWithItsReceipt() {
-        Runtime runtime = new Runtime();
-        runtime.add("act.job", request -> null);
-        Object world = new Object();
-        runtime.startTick(world);
-        Session session = new Session();
-        List<JsonObject> replies = new ArrayList<>();
-        Request request = request(runtime, session, 5, "act.job", new JsonObject(), replies);
-        runtime.dispatch(request);
-        runtime.startTick(world);
-
-        request.ownDeadline();
-        request.expire(); // the timer stands down: its bare timeout would lose the job's id and what it did
-        assertFalse(request.isDone());
+        request.expire(); // the job is async and past its deadline: the timer's bare timeout would lose the job's id and what it did
+        assertFalse("one owner: the job's own pass on the game thread", request.isDone());
         request.fail("cancelled", "the wait ended before the job did", Json.object("jobId", "j-1", "state", "cancelled"));
+        request.expire();
 
         assertEquals(1, replies.size());
         JsonObject error = replies.get(0).getAsJsonObject("error");
         assertEquals("cancelled", error.get("code").getAsString());
         assertEquals("j-1", error.getAsJsonObject("receipt").get("jobId").getAsString());
+        assertFalse(replies.get(0).has("late"));
+    }
+
+    @Test
+    public void aRefusalAnswersUnderItsOwnCodeAndAnyOtherBadArgumentAsBadRequest() {
+        Runtime runtime = new Runtime();
+        runtime.add("act.refused", request -> { throw new Refusal("time_paused", "paused by step; resume before acting"); });
+        runtime.add("act.bad", request -> { throw new IllegalArgumentException("x,y,z required"); });
+        runtime.addRead("obs.stale", request -> { throw new Refusal("stale_window", "windowId changed"); }); runtime.watchable("obs.stale");
+        Object world = new Object();
+        runtime.startTick(world);
+        Session session = new Session();
+        List<JsonObject> replies = new ArrayList<>();
+        runtime.dispatch(request(runtime, session, 1, "act.refused", new JsonObject(), replies));
+        runtime.dispatch(request(runtime, session, 2, "act.bad", new JsonObject(), replies));
+        runtime.startTick(world);
+
+        assertEquals("time_paused", replies.get(0).getAsJsonObject("error").get("code").getAsString());
+        assertEquals("the message keeps its prefix, as callers read it before the code was typed",
+            "time_paused: paused by step; resume before acting", replies.get(0).getAsJsonObject("error").get("msg").getAsString());
+        assertEquals("bad_request", replies.get(1).getAsJsonObject("error").get("code").getAsString());
+        JsonObject batched = runtime.observeBatch(request(runtime, session, 3, "obs.batch", Json.object("queries", Json.object("a", Json.object("method", "obs.stale"))), replies), null)
+            .getAsJsonObject("errors").getAsJsonObject("a");
+        assertEquals("stale_window", batched.get("code").getAsString());
+        assertEquals("stale_window: windowId changed", batched.get("msg").getAsString());
+    }
+
+    @Test
+    public void aHandlerThatThrowsIsLoggedOnceWithItsStackTrace() {
+        Runtime runtime = new Runtime();
+        runtime.add("act.crash", request -> { throw new IllegalStateException("slot table missing"); });
+        runtime.add("act.bad", request -> { throw new IllegalArgumentException("x,y,z required"); });
+        Object world = new Object();
+        runtime.startTick(world);
+        List<JsonObject> replies = new ArrayList<>();
+        runtime.dispatch(request(runtime, new Session(), 1, "act.crash", new JsonObject(), replies));
+        runtime.dispatch(request(runtime, new Session(), 2, "act.bad", new JsonObject(), replies));
+        java.io.PrintStream err = System.err; java.io.ByteArrayOutputStream log = new java.io.ByteArrayOutputStream();
+        System.setErr(new java.io.PrintStream(log, true));
+        try { runtime.startTick(world); } finally { System.setErr(err); }
+
+        assertEquals("game_error", replies.get(0).getAsJsonObject("error").get("code").getAsString());
+        assertEquals("java.lang.IllegalStateException: slot table missing", replies.get(0).getAsJsonObject("error").get("msg").getAsString());
+        String text = log.toString();
+        assertEquals("one record, and none for a refused argument", 1, text.split("\\[ModdedBench\\]", -1).length - 1);
+        assertTrue(text, text.contains("test handler act.crash failed: java.lang.IllegalStateException: slot table missing"));
+        assertTrue("where it happened", text.contains("\tat " + BridgeRuntimeTest.class.getName()));
     }
 
     @Test

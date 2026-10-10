@@ -17,6 +17,8 @@ public final class ComputerPause {
     private static boolean requested;
     private static CompletableFuture<Void> pending=CompletableFuture.completedFuture(null);
     private static long generation;
+    /** The first machine whose pause threw in the current request. It is reported, and it does not outlive the request. */
+    private static volatile String error;
     private ComputerPause() {}
 
     public static synchronized void register(Object machine) {
@@ -25,7 +27,8 @@ public final class ComputerPause {
     }
     public static synchronized void begin() {
         if(requested) return;
-        requested=true;generation++;
+        requested=true;generation++;error=null;
+        pending=CompletableFuture.completedFuture(null); // each request starts clean: an earlier one's failure is not this one's
         enqueue(new ArrayList<>(machines.keySet()));
     }
     private static void enqueue(java.util.List<Object> targets) {
@@ -35,19 +38,18 @@ public final class ComputerPause {
                     // Native API waits for an in-flight run, preserves an existing positive
                     // pause, and resumes a zero-duration pause on the next host tile update.
                     machine.getClass().getMethod("pause",double.class).invoke(machine,0.0);
-                } catch(ReflectiveOperationException e) {
+                } catch(ReflectiveOperationException|RuntimeException|LinkageError e) {
+                    // One machine that cannot be paused must not leave the others running, nor the clock unable to resume.
                     Throwable cause=e instanceof InvocationTargetException?e.getCause():e;
-                    throw new CompletionException(cause);
+                    if(error==null) error=String.valueOf(cause);
+                    System.err.println("[ModdedBench] OpenComputers machine "+machine.getClass().getName()+" did not take the pause: "+cause);
                 }
             }
         },executor);
     }
-    public static synchronized boolean ready() { return requested && pending.isDone() && !pending.isCompletedExceptionally(); }
-    public static synchronized String failure() {
-        if(!pending.isCompletedExceptionally()) return null;
-        try { pending.join();return null; }
-        catch(CompletionException e) { return String.valueOf(e.getCause()); }
-    }
+    /** Every registered machine has been asked. One that refused is in {@link #failure()}, which fails that pause request; it does not hold the resume back. */
+    public static synchronized boolean ready() { return requested && pending.isDone(); }
+    public static String failure() { return error; }
     public static synchronized void resume() {
         if(!ready()) throw new IllegalStateException("computer pause has not settled");
         requested=false;

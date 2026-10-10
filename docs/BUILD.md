@@ -62,7 +62,9 @@ with `-PdevFixtures` to include them, and start the server with
 
 Both bridges bind to loopback and require a token that the mod generates at
 startup and writes to `~/.moddedbench/bridge-<port>.token`. The Python kernel
-reads that file itself; do not paste tokens anywhere. `-Dmodbench.port=` and
+reads that file itself; do not paste tokens anywhere. The file is readable
+by its owner only, and an upgrade request that carries an `Origin` header (a
+web page) is refused with 403 before the token is asked for. `-Dmodbench.port=` and
 `-Dmodbench.tokenFile=` on the game's JVM override the defaults.
 `MB_BRIDGE_URL` (default `ws://127.0.0.1:47223/ws`) tells the Python side where
 the client bridge is.
