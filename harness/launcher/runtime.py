@@ -531,7 +531,7 @@ def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def set_server_properties(server: Path, accept_eula: bool, server_ip: str = "127.0.0.1") -> None:
+def set_server_properties(server: Path, accept_eula: bool, server_ip: str = "127.0.0.1", max_players: int | None = None) -> None:
     eula = server / "eula.txt"
     if not eula.is_file() or "eula=true" not in eula.read_text(encoding="utf-8", errors="replace").lower():
         if not accept_eula:
@@ -542,6 +542,7 @@ def set_server_properties(server: Path, accept_eula: bool, server_ip: str = "127
     # The pack ships difficulty=3 (hard); runs are played on easy unless MB_DIFFICULTY says otherwise.
     wanted = {"server-ip": server_ip, "server-port": "25575", "online-mode": "false", "white-list": "false", "enable-rcon": "false",
               "difficulty": os.environ.get("MB_DIFFICULTY", "1")}
+    if max_players is not None: wanted["max-players"] = str(max_players)  # offline mode admits any name: the contained server has room for its one player only
     seen: set[str] = set()
     out = []
     for line in lines:

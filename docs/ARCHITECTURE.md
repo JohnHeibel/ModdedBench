@@ -57,12 +57,18 @@ Notifications from the game (`event` frames) are bounded per session, and a
 session may hold at most 128 pending requests (`requests.cancel` is exempt).
 
 A request is QUEUED, then RUNNING on the game thread, then DONE. The deadline
-(`_timeout_ms`) answers `timeout` only while the request is still queued, and
+timer (`_timeout_ms`) answers `timeout` only while the request is still queued, and
 a request that timed out in the queue is never executed. A handler that is
 already running always reports its real outcome, marked `late: true` if the
 deadline passed meanwhile, so a `timeout` never hides an action that happened.
-Long jobs (mining, building, routing) hand the request back to the deadline
-timer, keep working, and expose a `jobId` that survives a client restart.
+A handler that returns without answering has started a job (a click, a held
+input, mining, building, routing, a question to the server), and the job owns
+the deadline from then on: its own pass on the game thread sees the deadline
+pass, stops, and answers once. Jobs that act answer `cancelled` with a receipt
+of what they did (work jobs with a `jobId` that survives a client restart);
+questions forwarded to the server answer `timeout`, and a server-side
+`time.pause` or `time.step` answers `clock_error` saying whether the world is
+still gated or stepping. The timer never answers a started job.
 Cancellation is `requests.cancel` (what MCP cancellation sends), `act.stop`,
 or `nav.build_pause` for a resumable build. If Python gives up waiting before
 a late reply arrives, the outcome is unknown: observe before retrying.

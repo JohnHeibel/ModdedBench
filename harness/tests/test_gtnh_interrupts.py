@@ -62,7 +62,7 @@ class InterruptTests(unittest.TestCase):
     def setUp(self): self.tmp=tempfile.TemporaryDirectory(); self.k=FakeKernel(); self.s=InterruptSupervisor(self.k,self.tmp.name,retained=3,poll_s=10,fire_backoff_s=.001)
     def tearDown(self): self.s.close(); self.tmp.cleanup()
     def wait_fires(self,n):
-        end=time.monotonic()+.5
+        end=time.monotonic()+5  # an upper bound for a loaded machine; a fire that comes is seen within milliseconds
         while len(self.k.fires)<n and time.monotonic()<end: time.sleep(.005)
         self.assertEqual(n,len(self.k.fires))
     def wait_kind(self,sup,kind):
@@ -111,9 +111,15 @@ class InterruptTests(unittest.TestCase):
         bad=[{"wat":"x"},{"all":{"path":"x","where":{"eq":["$",1,2]}}},{"any_of":{"path":3,"where":{"eq":["$",1]}}}]
         for c in bad:
             with self.assertRaises(ValueError): self.s.add("bad"+str(bad.index(c)),{"condition":c})
-        self.s.add("edge",{"queries":{"x":{"method":"obs.x"}},"condition":{"gt":["x.n",0]},"oneShot":False,"edge":True,"cooldown":.05})
+        self.s.add("edge",{"queries":{"x":{"method":"obs.x"}},"condition":{"gt":["x.n",0]},"oneShot":False,"edge":True,"cooldown":60})
         self.k.value=1; self.s.poll(); self.s.poll(); self.wait_fires(1)
-        self.k.value=0; self.s.poll(); self.k.value=1; self.s.poll(); time.sleep(.02); self.assertEqual(1,len(self.k.fires)); time.sleep(.06); self.k.value=0; self.s.poll(); self.k.value=1; self.s.poll(); self.wait_fires(2)
+        # The cooldown is far longer than any machine takes to get here, and it is ended by moving the fire back in time:
+        # a 50 ms cooldown raced the polls and sleeps of a loaded machine, which then saw the second edge outside it.
+        self.k.value=0; self.s.poll(); self.k.value=1; self.s.poll(); time.sleep(.02); self.assertEqual(1,len(self.k.fires))
+        with self.s.lock: self.s.watches["edge"].last_fire-=59.9
+        self.k.value=0; self.s.poll(); self.k.value=1; self.s.poll(); time.sleep(.02); self.assertEqual(1,len(self.k.fires),"a rising edge inside the cooldown")
+        with self.s.lock: self.s.watches["edge"].last_fire-=.2
+        self.k.value=0; self.s.poll(); self.k.value=1; self.s.poll(); self.wait_fires(2)
         self.k.errors={}; old=self.k.call
         def missing(method,**kw):
             result=old(method,**kw)

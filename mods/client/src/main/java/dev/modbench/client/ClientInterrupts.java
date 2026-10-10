@@ -38,15 +38,15 @@ final class ClientInterrupts {
             m.startsWith("gui.")&&!Set.of("gui.status","gui.hit_test").contains(m) ||
             m.startsWith("quest.")||m.startsWith("nav.")) {
             // The refusal is the delivery: the caller now knows, so its next action (often the escape) is let through.
-            String text=refusal(latched,receipts);
+            Refusal refused=refusal(latched,receipts);
             for(String id:latched)receipts.get(id).addProperty("latched",false);
             latched.clear();
-            throw new IllegalArgumentException(text);
+            throw refused;
         }
     }
     /** Names each latched event's reason and model prompt; refusing with it delivers them, so the latch is released. */
-    static String refusal(Set<String> latched,Map<String,JsonObject> receipts) {
-        StringBuilder out=new StringBuilder("interrupt_latched: "+latched+" delivered, this action was not started; read them, then act (the latch is released)");int shown=0;
+    static Refusal refusal(Set<String> latched,Map<String,JsonObject> receipts) {
+        StringBuilder out=new StringBuilder(latched+" delivered, this action was not started; read them, then act (the latch is released)");int shown=0;
         for(String id:latched) {
             if(shown++==8) {out.append("; ...");break;}
             JsonObject receipt=receipts.get(id);JsonElement payload=receipt.get("payload");
@@ -54,7 +54,7 @@ final class ClientInterrupts {
             out.append("; ").append(id).append(": ").append(receipt.get("reason").getAsString());
             if(prompt!=null&&prompt.isJsonPrimitive()) {String text=prompt.getAsString();out.append(" | ").append(text.length()>240?text.substring(0,240)+"...":text);}
         }
-        return out.toString();
+        return new Refusal("interrupt_latched",out.toString());
     }
     Object ack(Request r) {
         String id=Json.string(r.params,"eventId","");
@@ -64,10 +64,10 @@ final class ClientInterrupts {
     Object fire(Request r) {
         String id=UUID.fromString(Json.string(r.params,"eventId","")).toString();
         if(receipts.containsKey(id)) return receipts.get(id);
-        if(!context().equals(r.params.get("expectedContext"))) throw new IllegalArgumentException("stale_context: bridge/world changed");
-        if(r.params.has("expectedOperationId")&&r.params.get("expectedOperationId").getAsLong()!=ControlRegistry.controls().arbiter().current().operationId()) throw new IllegalArgumentException("stale_operation: control owner changed");
+        if(!context().equals(r.params.get("expectedContext"))) throw new Refusal("stale_context","bridge/world changed");
+        if(r.params.has("expectedOperationId")&&r.params.get("expectedOperationId").getAsLong()!=ControlRegistry.controls().arbiter().current().operationId()) throw new Refusal("stale_operation","control owner changed");
         String reason=Json.string(r.params,"reason","interrupt");
-        if(reason.isBlank()||reason.length()>240) throw new IllegalArgumentException("reason must contain 1..240 characters");
+        if(reason.isBlank()||reason.length()>240||reason.endsWith("_hold")) throw new IllegalArgumentException("reason must contain 1..240 characters and not end in _hold (a hold's pause is named so)");
         JsonArray effects=r.params.getAsJsonArray("effects");
         if(effects==null||effects.size()==0||effects.size()>3) throw new IllegalArgumentException("nonempty effects array required (notify, cancel, pause)");
         Set<String> selected=new LinkedHashSet<>();for(JsonElement e:effects) {

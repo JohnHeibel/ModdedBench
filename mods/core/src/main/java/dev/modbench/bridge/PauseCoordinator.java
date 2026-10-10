@@ -89,9 +89,18 @@ public final class PauseCoordinator {
     }
     public Object command(Request r) {
         Consumer<JsonObject> reply=value->{if(value.has("error")) r.fail("clock_error",value.get("error").getAsString());else r.reply(value);};
-        command(r.method,r.params,reply);
+        request(r.method,r.params,reply);
         if(completion==reply) owner=r;
         return null;
+    }
+    /**
+     * A command from an agent: the bridge, or the client's clock channel. Only a hold may name a pause *_hold, because
+     * that suffix is what a running job waits out and what a hold's release resumes.
+     */
+    public void request(String method, JsonObject params, Consumer<JsonObject> reply) {
+        if(method.equals("time.pause") && SimulationClock.held(Json.string(params,"reason","")))
+            reply.accept(Json.object("error","a pause reason may not end in _hold: that names a hold's pause"));
+        else command(method,params,reply);
     }
     public void command(String method, JsonObject params, Consumer<JsonObject> reply) {
         try {
@@ -129,10 +138,17 @@ public final class PauseCoordinator {
             syncBoundary();broadcast(true);reply.accept(status());
         } catch(IllegalArgumentException error) { reply.accept(Json.object("error",error.getMessage())); }
     }
+    /**
+     * A backup's or the compaction guard's hold ends by itself after this long, should its holder have died holding: a
+     * backup copies the world in a minute or two and the guard lets go after ten minutes at the latest. The operator's never does.
+     */
+    public static final int STALE_HOLD_MINUTES=20;
+    public static boolean expires(String by) { return "backup".equals(by) || "compaction".equals(by); }
     /** What a refused resume says: whose hold it is and what to expect of it. */
     public static String heldRefusal(String by) {
-        if("backup".equals(by)) return "the world is held for a routine backup, which is over in under a minute: wait, then call again";
-        if("compaction".equals(by)) return "the world was held while you were silent and is released within seconds: call again";
+        String atMost=" (if it is not, the hold ends by itself within "+STALE_HOLD_MINUTES+" minutes)";
+        if("backup".equals(by)) return "the world is held for a routine backup, which is over in under a minute"+atMost+": wait, then call again";
+        if("compaction".equals(by)) return "the world was held while you were silent and is released within seconds"+atMost+": call again";
         return "the operator is holding the world paused; wait for the release";
     }
     public void hold(boolean value) { hold(value?"operator":null); }
@@ -214,10 +230,11 @@ public final class PauseCoordinator {
             background.resume();
             host.warn("background barrier was requested while the tick gate was open; resumed it to avoid a tick-lock deadlock");
         }
-        if(owner!=null && (owner.isDone() || !owner.session.connected || owner.expired())) interrupt("pause_owner_lost");
+        if(owner!=null && (owner.isDone() || !owner.session.connected)) interrupt("pause_owner_lost");
         if(completion!=null) {
             if(computers.failure()!=null) interrupt("computer_pause_failed: "+computers.failure());
-            else if(host.nanos()>operationDeadline) interrupt(stepTotal>0?"step_timeout; the world is still stepping":"pause_timeout; simulation remains gated");
+            else if(host.nanos()>operationDeadline || owner!=null && owner.expired()) interrupt( // the owner's deadline is answered here, saying what became of the world
+                stepTotal>0?"step_timeout; the world is still stepping":"pause_timeout; simulation remains gated");
             else if(settled()) {
                 Consumer<JsonObject> done=completion;completion=null;owner=null;done.accept(status());
             }

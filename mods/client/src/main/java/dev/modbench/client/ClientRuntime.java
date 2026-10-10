@@ -52,7 +52,7 @@ public final class ClientRuntime extends BridgeRuntime {
     private Request navigationRequest;
     private Navigation.Job navigationJob, fightJob;
     // A job whose step ended: held where it stopped, no caller waiting. It runs on when the world does; nav.resume with its id waits on it again.
-    private String suspendedId; private Map<String,Object> suspendedEnd;
+    private String suspendedId, suspendedFailure; private Map<String,Object> suspendedEnd;
     private long refusalMark; // clicks the harness had refused when the current job or hold began
     private InputChord inputChord;
     private Object lastWorld, lastPlayer, identity;
@@ -216,16 +216,16 @@ public final class ClientRuntime extends BridgeRuntime {
             requirePlayer(); controlsChanged("gui_changed"); mc.displayGuiScreen(new GuiInventory(mc.thePlayer)); return gui();
         });
         register("gui.close", "Close the current player screen", "interaction", r -> {
-            requirePlayer(); if(mc.thePlayer.inventory.getItemStack()!=null&&!Json.bool(r.params,"allowCursorDrop",false)) throw new IllegalArgumentException("cursor_occupied: return cursor before closing"); controlsChanged("gui_changed"); mc.thePlayer.closeScreen(); return gui();
+            requirePlayer(); if(mc.thePlayer.inventory.getItemStack()!=null&&!Json.bool(r.params,"allowCursorDrop",false)) throw new dev.modbench.bridge.Refusal("cursor_occupied","return cursor before closing"); controlsChanged("gui_changed"); mc.thePlayer.closeScreen(); return gui();
         });
         for(String method:GuiOperations.METHODS) register("gui."+method,GuiOperations.description(method),"interaction",r->{
-            if(clock.refusesActions()) throw new IllegalArgumentException(clock.refusal("executing native GUI actions"));
+            if(clock.refusesActions()) throw clock.refusal("executing native GUI actions");
             controlsChanged("superseded");return ui.start(r);
         });
         for(String method:List.of("mine","build","resume")) register("nav."+method,"Owned, checkpointed "+method+" process; timeoutTicks<=72000. Mine: blocks/items selectors, quantity, bounds/radius, toolSlot (forces the tool in that slot). Build: cells (at most 4096) or selection, a cell may carry click {face,hit,look,sneak} and expect; uses (right clicks on standing blocks); origin, replaceExisting, allowBreak/allowPlace. Resume: jobId. A protected region refuses the job's path edits and a mine's targets inside it, never the cells a build names; overrideProtection:true lifts it for this attempt.","interaction",r->{
             requirePlayer();Navigation provider=navigation();Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");
             if(method.equals("resume")&&suspendedId!=null&&suspendedId.equals(Json.string(r.params,"jobId",""))) { // wait on the held job again, as it is
-                if(suspendedEnd!=null){Map<String,Object> end=suspendedEnd;suspendedId=null;suspendedEnd=null;return end;}
+                if(suspendedEnd!=null){Map<String,Object> end=suspendedEnd;suspendedId=null;suspendedEnd=null;answer(r,end,suspendedFailure);return null;}
                 navigationRequest=r;suspendedId=null;return null;
             }
             controlsChanged("superseded");ControlRegistry.controls().focusForInput();
@@ -512,8 +512,7 @@ public final class ClientRuntime extends BridgeRuntime {
         nei.pump(clock.isPaused());
         ui.maintain();
         interactions.maintain();
-        // A job's caller is always told what the job did, its jobId included: a deadline is answered here, not by the timer.
-        if (navigationRequest != null) navigationRequest.ownDeadline();
+        // A job's caller is always told what the job did, its jobId included: a deadline is answered here, never by the timer (Request).
         if (navigationRequest != null && (navigationRequest.isDone() || !navigationRequest.session.connected || navigationRequest.expired())) {
             boolean waited=!navigationRequest.isDone()&&navigationRequest.session.connected;
             navigationJob.cancel(waited?"request_deadline_elapsed":"cancelled");
@@ -522,7 +521,7 @@ public final class ClientRuntime extends BridgeRuntime {
         }
         if (navigationRequest != null && clock.endsWork() && !clock.guardPause()) suspendNavigation(); // a step ended: hold the job, answer the caller
         if (navigationRequest == null && navigationJob != null && suspendedId != null && clock.guardPause()) { // a guard ends held work as it ends running work
-            navigationJob.cancel("world_paused: "+clock.pauseReason());suspendedEnd=refused(navigationJob.status());navigationJob=null;
+            navigationJob.cancel("world_paused: "+clock.pauseReason());suspendedEnd=refused(navigationJob.status());suspendedFailure=failure(suspendedEnd,false);navigationJob=null;
         }
         if (navigationRequest != null && clock.endsWork()) { // no tick will end this job: hand back what it did, now, with why
             navigationJob.cancel("world_paused: "+clock.pauseReason());
@@ -551,18 +550,15 @@ public final class ClientRuntime extends BridgeRuntime {
         interactions.tick();
         dev.modbench.api.ControlRegistry.memory().sample();
         if (navigationRequest == null && navigationJob != null && suspendedId != null && navigationJob.done()) { // a held job finished with no one waiting
-            suspendedEnd=refused(navigationJob.status());navigationJob=null;
+            suspendedEnd=refused(navigationJob.status());suspendedFailure=failure(suspendedEnd,navigationJob.succeeded());navigationJob=null;
+            if(suspendedFailure!=null&&!suspendedFailure.equals("cancelled")) clock.actionFailed(); // the guard trips when the job fails, as with a waiter; nav.resume then collects the same error
         }
         if (navigationRequest != null && navigationJob.done()) {
             Request r=navigationRequest; Navigation.Job job=navigationJob;
             navigationRequest=null; navigationJob=null;
-            Map<String,Object> receipt=refused(job.status());
-            if (job.succeeded() || "paused".equals(receipt.get("state"))) r.reply(receipt);
-            else {
-                boolean cancelled=receipt.get("state").equals("cancelled");
-                r.fail(cancelled ? "cancelled" : "build".equals(receipt.get("action")) ? "build_failed" : "path_failed", String.valueOf(receipt.get("reason")),receipt);
-                if(!cancelled) clock.actionFailed();
-            }
+            Map<String,Object> receipt=refused(job.status());String failure=failure(receipt,job.succeeded());
+            answer(r,receipt,failure);
+            if(failure!=null&&!failure.equals("cancelled")) clock.actionFailed();
         }
         if (control == null) return;
         if (mc.theWorld != lastWorld || mc.thePlayer != lastPlayer || mc.thePlayer == null) {
@@ -596,6 +592,14 @@ public final class ClientRuntime extends BridgeRuntime {
         navigationRequest=null; navigationJob=null; suspendedId=null; suspendedEnd=null;
         ControlRegistry.controls().arbiter().revoke(reason);
         refusalMark=ControlRegistry.memory().refusals();
+    }
+    /** The error code a finished job answers under, null for a plain reply: the same whether its caller waited or collects it later. */
+    static String failure(Map<String,Object> receipt,boolean succeeded) {
+        if(succeeded||"paused".equals(receipt.get("state"))) return null;
+        return "cancelled".equals(receipt.get("state"))?"cancelled":"build".equals(receipt.get("action"))?"build_failed":"path_failed";
+    }
+    static void answer(Request r,Map<String,Object> receipt,String failure) {
+        if(failure==null) r.reply(receipt);else r.fail(failure,String.valueOf(receipt.get("reason")),receipt);
     }
     /** A job's receipt with the clicks the harness refused it (protected regions, a held attack locked to its block). */
     /** The step ended with work in hand: answer its caller with where it stands, and keep the job and its controls. */
@@ -634,7 +638,7 @@ public final class ClientRuntime extends BridgeRuntime {
         boolean heldEnded=m.equals("nav.resume")&&suspendedEnd!=null&&suspendedId!=null&&suspendedId.equals(Json.string(r.params,"jobId","")); // only collects an outcome
         if(clock.refusesActions()&&!heldEnded&&(m.startsWith("act.")&&!Set.of("act.stop","act.look").contains(m)
             ||m.startsWith("nav.")&&!Set.of("nav.settings","nav.cache").contains(m)||m.startsWith("quest.")))
-            throw new IllegalArgumentException(clock.refusal("starting simulation actions"));
+            throw clock.refusal("starting simulation actions");
     }
 
     private JsonObject look(Request r) {

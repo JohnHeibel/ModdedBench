@@ -15,6 +15,7 @@ METHODS = Reply(True, 0, 0, 0, [{"name": "obs.player", "effect": "read"}, {"name
 class FakeWorld(Kernel):
     """The clock and one action; the world pauses again after `repause` actions ran."""
     refusal = "time_paused: paused by requested_pause; resume before starting simulation actions"
+    code = "bad_request"
     def __init__(self, held=False, repause=None):
         self.paused, self.held, self.repause, self.sent, self.ran = True, held, repause, [], 0
 
@@ -26,7 +27,7 @@ class FakeWorld(Kernel):
         if method == "time.resume":
             if self.held: return Reply(False, 0, 0, 0, error={"code": "clock_error", "msg": "held by the operator"})
             self.paused = False; return Reply(True, 0, 0, 0, {"paused": False})
-        if self.paused: return Reply(False, 0, 0, 0, error={"code": "bad_request", "msg": self.refusal})
+        if self.paused: return Reply(False, 0, 0, 0, error={"code": self.code, "msg": self.refusal})
         self.ran += 1
         if self.repause and self.ran >= self.repause: self.paused = True
         return Reply(True, 0, 0, 0, {"done": True})
@@ -52,6 +53,19 @@ def test_resume_lifts_the_pause_once_and_records_it():
     assert record == {"pausedBy": "threat", "threats": [{"entityId": 7}], "resumed": True}
     with pytest.raises(BridgeError, match="time_paused"): k.call("act.input")  # a second pause in the same call is news
     assert k.sent.count("time.resume") == 1
+
+
+def test_a_refusal_is_known_by_its_code_and_an_older_bridges_by_its_message_prefix():
+    from kernel import refused
+    assert refused({"code": "time_paused", "msg": "paused by step"}, "time_paused")
+    assert refused({"code": "bad_request", "msg": "time_paused: paused by step"}, "time_paused")  # a bridge from before the typed codes
+    assert refused(BridgeError("stale_stack", "stale_stack: observe again", "gui.click_slot"), "stale_stack")
+    assert not refused({"code": "bad_request", "msg": "slot required"}, "time_paused") and not refused(None, "time_paused")
+    k = FakeWorld(); k.code = "time_paused"; resume_once.set({})
+    assert k.call("act.input") == {"done": True} and k.sent.count("time.resume") == 1  # the typed refusal is resumed through as the old one was
+    k2 = FakeWorld(); k2.code = "time_paused"
+    with pytest.raises(BridgeError) as e: k2.call("act.input")
+    assert str(e.value).startswith("act.input: time_paused: paused by requested_pause")  # the code is said once
 
 
 def test_an_operator_hold_is_not_lifted():

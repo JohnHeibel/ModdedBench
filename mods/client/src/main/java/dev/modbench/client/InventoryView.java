@@ -33,10 +33,10 @@ final class InventoryView {
                 if(!value.isJsonPrimitive()||!value.getAsJsonPrimitive().isNumber()) throw new ArithmeticException();
                 expected=value.getAsBigDecimal().longValueExact();
             } catch(ArithmeticException invalid) {throw new IllegalArgumentException("epoch must be an integer");}
-            if(expected!=epoch()) throw new IllegalArgumentException("stale_window: screen/container epoch changed");
+            if(expected!=epoch()) throw new dev.modbench.bridge.Refusal("stale_window","screen/container epoch changed");
         }
         Container c=mc.thePlayer.openContainer;
-        if(params.has("windowId")&&Json.integer(params,"windowId",-1,0,255)!=c.windowId) throw new IllegalArgumentException("stale_window: windowId changed");
+        if(params.has("windowId")&&Json.integer(params,"windowId",-1,0,255)!=c.windowId) throw new dev.modbench.bridge.Refusal("stale_window","windowId changed");
         return c;
     }
     static Slot slot(Container c,int index) {

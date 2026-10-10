@@ -318,4 +318,30 @@ public class SimulationClockTest {
         assertEquals(before, clock.status().getAsJsonObject("conditions"));
     }
 
+    @Test
+    public void aRestartedClockComesBackWithItsGuardsAndThePauseIsSavedUnderItsOwnReason() {
+        SimulationClock before = new SimulationClock(() -> 0L);
+        before.configure(Json.object("healthDrop", true, "airBelow", 60, "threatWithin", 12, "pauseOnDisconnect", false));
+        before.observe(20, 300); before.observe(15, 300);
+        JsonObject saved = Json.GSON.fromJson(before.saved().toString(), JsonObject.class); // as read back from the file
+
+        SimulationClock after = new SimulationClock(() -> 0L);
+        after.restore(saved);
+        assertEquals(before.status().getAsJsonObject("conditions"), after.status().getAsJsonObject("conditions"));
+        assertFalse(after.pauseOnDisconnect());
+        assertTrue(saved.get("paused").getAsBoolean());
+        assertEquals("the guard that paused is still what the agent is told", "health_dropped", saved.get("reason").getAsString());
+        assertFalse("the host applies the pause once the world may be gated", after.paused());
+    }
+
+    @Test
+    public void aHoldsPauseIsNotSavedBecauseTheHoldFileRestoresIt() {
+        SimulationClock clock = new SimulationClock(() -> 0L);
+        assertFalse(clock.saved().get("paused").getAsBoolean());
+        clock.pause("backup_hold");
+        assertFalse("a release would find nothing of its own to resume", clock.saved().get("paused").getAsBoolean());
+        assertTrue(clock.saved().get("reason").isJsonNull());
+        clock.resume(); clock.pause("requested_pause");
+        assertTrue(clock.saved().get("paused").getAsBoolean());
+    }
 }

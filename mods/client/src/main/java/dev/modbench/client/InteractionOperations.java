@@ -48,7 +48,7 @@ final class InteractionOperations {
         if(mc.currentScreen!=null) throw new IllegalArgumentException("close GUI before targeted actions");
         Job job=new Job(r); // Validate before acquiring controls or changing a slot.
         active=job;
-        try {job.start();}catch(Exception|LinkageError e) {job.finish("failed",e.toString());}
+        try {job.start();}catch(Refusal refused) {job.refuse(refused);}catch(Exception|LinkageError e) {job.finish("failed",e.toString());}
         return null;
     }
     Object status() {return active==null?last:active.receipt("running",null);}
@@ -62,7 +62,7 @@ final class InteractionOperations {
             job.stopUse();job.deliveredAt=job.elapsed;
         }
     }
-    void tick() {Job job=active;if(job!=null) try {job.tick();}catch(Exception|LinkageError e) {job.finish("failed",e.toString());}}
+    void tick() {Job job=active;if(job!=null) try {job.tick();}catch(Refusal refused) {job.refuse(refused);}catch(Exception|LinkageError e) {job.finish("failed",e.toString());}}
     void cancel(String reason) {if(active!=null)active.finish("cancelled",reason);}
     boolean running() {return active!=null;}
     void itemUseFinished() {
@@ -75,7 +75,7 @@ final class InteractionOperations {
     }
 
     private final class Job {
-        final Request r;final JsonObject p;final String kind;
+        final Request r;final JsonObject p;final String kind;String code;
         final net.minecraft.client.entity.EntityClientPlayerMP player=mc.thePlayer;
         final net.minecraft.client.multiplayer.WorldClient world=mc.theWorld;
         final int duration,settle,interval;final double range;
@@ -94,7 +94,7 @@ final class InteractionOperations {
             duration=Json.integer(p,"ticks",combat?200:kind.equals("eat")?400:40,1,72000);
             settle=Json.integer(p,"settleTicks",4,1,100);interval=Json.integer(p,"intervalTicks",10,1,200);
             range=Json.number(p,"range",3,0.5,3);sneak=Json.bool(p,"sneak",false);
-            if(p.has("expectedHeld")&&!Stacks.expected(player.getHeldItem(),p.get("expectedHeld"))) throw new IllegalArgumentException("stale_held: observed stack changed");
+            if(p.has("expectedHeld")&&!Stacks.expected(player.getHeldItem(),p.get("expectedHeld"))) throw new Refusal("stale_held","observed stack changed");
             if(kind.equals("select_hotbar")) Json.integer(p,"slot",-1,0,8);
             if(kind.equals("use_block")||p.has("x")) {
                 if(!p.has("x")||!p.has("y")||!p.has("z")) throw new IllegalArgumentException("x,y,z required");
@@ -112,7 +112,7 @@ final class InteractionOperations {
                 target=world.getEntityByID(Json.integer(p,"entityId",-1,0,Integer.MAX_VALUE));
                 if(target==null||target==player||target.isDead) throw new IllegalArgumentException("target entity is not loaded");
                 targetHandle=handle(target);
-                if(p.has("expectedHandle")&&!targetHandle.equals(p.get("expectedHandle").getAsString())) throw new IllegalArgumentException("stale_entity: handle changed");
+                if(p.has("expectedHandle")&&!targetHandle.equals(p.get("expectedHandle").getAsString())) throw new Refusal("stale_entity","handle changed");
                 if((combat||kind.equals("attack_entity"))&&target instanceof EntityPlayer&&!Json.bool(p,"allowPlayers",false))throw new IllegalArgumentException("allowPlayers required to attack a player");
             }
             if(kind.equals("eat")) {
@@ -197,10 +197,10 @@ final class InteractionOperations {
             point=Vec3.createVectorHelper(Math.max(box.minX+margin,Math.min(box.maxX-margin,eye.xCoord)),Math.max(box.minY+margin,Math.min(box.maxY-margin,eye.yCoord)),Math.max(box.minZ+margin,Math.min(box.maxZ-margin,eye.zCoord)));
             aim(point);
         }
-        void checkHeld() {if(p.has("expectedHeld")&&!Stacks.expected(player.getHeldItem(),p.get("expectedHeld")))throw new IllegalArgumentException("stale_held: changed before use");}
+        void checkHeld() {if(p.has("expectedHeld")&&!Stacks.expected(player.getHeldItem(),p.get("expectedHeld")))throw new Refusal("stale_held","changed before use");}
         void checkBlock() {
             if(p.has("expected")) {JsonObject expected=p.getAsJsonObject("expected");
-                if(expected.has("id")&&!Json.string(expected,"id","").equals(Block.blockRegistry.getNameForObject(world.getBlock(x,y,z)))||expected.has("meta")&&expected.get("meta").getAsInt()!=world.getBlockMetadata(x,y,z)) throw new IllegalArgumentException("stale_block: identity changed");}
+                if(expected.has("id")&&!Json.string(expected,"id","").equals(Block.blockRegistry.getNameForObject(world.getBlock(x,y,z)))||expected.has("meta")&&expected.get("meta").getAsInt()!=world.getBlockMetadata(x,y,z)) throw new Refusal("stale_block","identity changed");}
         }
         MovingObjectPosition ray() {
             if(fluidTarget) {
@@ -231,14 +231,14 @@ final class InteractionOperations {
                 try {
                     if(blockTarget) {
                         MovingObjectPosition hit=ray();
-                        if(hit==null||hit.typeOfHit!=MovingObjectPosition.MovingObjectType.BLOCK||hit.blockX!=x||hit.blockY!=y||hit.blockZ!=z||kind.equals("use_block")&&hit.sideHit!=face)throw new IllegalArgumentException("target_not_visible: "+unseen(hit));
+                        if(hit==null||hit.typeOfHit!=MovingObjectPosition.MovingObjectType.BLOCK||hit.blockX!=x||hit.blockY!=y||hit.blockZ!=z||kind.equals("use_block")&&hit.sideHit!=face)throw new Refusal("target_not_visible",""+unseen(hit));
                         if(kind.equals("use_block")) {
-                            if(hit.hitVec.distanceTo(point)>.03)throw new IllegalArgumentException("target_not_visible: requested hit point is not on the visible surface");
+                            if(hit.hitVec.distanceTo(point)>.03)throw new Refusal("target_not_visible","requested hit point is not on the visible surface");
                             accepted=mc.playerController.onPlayerRightClick(player,world,player.getHeldItem(),x,y,z,face,hit.hitVec);if(accepted)player.swingItem();
                         }
                         else useItem();
                     } else if(target!=null) {
-                        if(!entityInReach())throw new IllegalArgumentException("target_not_visible: entity lost, obstructed or out of reach");
+                        if(!entityInReach())throw new Refusal("target_not_visible","entity lost, obstructed or out of reach");
                         if(kind.equals("attack_entity")){mc.playerController.attackEntity(player,target);player.swingItem();accepted=true;attacks++;}
                         else {accepted=mc.playerController.interactWithEntitySendPacket(player,target);if(accepted)player.swingItem();}
                     } else useItem();
@@ -273,7 +273,7 @@ final class InteractionOperations {
             accepted=mc.playerController.sendUseItem(player,world,player.getHeldItem());ownUse=player.isUsingItem();
             nativeUseTicks=ownUse?player.getItemInUseCount():0;
             if(kind.equals("eat")&&ownUse&&nativeUseTicks>duration-elapsed)
-                throw new IllegalArgumentException("native_use_duration_exceeds_budget: item requires "+nativeUseTicks+" ticks, remaining budget "+(duration-elapsed)+"; choose another food or explicitly increase ticks");
+                throw new Refusal("native_use_duration_exceeds_budget","item requires "+nativeUseTicks+" ticks, remaining budget "+(duration-elapsed)+"; choose another food or explicitly increase ticks");
             if(!ownUse&&kind.equals("eat"))throw new IllegalArgumentException("item did not start consumption: food="+player.getFoodStats().getFoodLevel()+", invulnerable="+player.capabilities.disableDamage+", canEat="+player.canEat(false)+"; native item rules apply");
         }
         void combatTick() {
@@ -325,11 +325,13 @@ final class InteractionOperations {
             if(ownUse) {ownUse=false;if(mc.thePlayer==player&&player.isUsingItem())mc.playerController.onStoppedUsingItem(player);}
             if(lease!=null)lease.close();
         }
+        /** A refusal answers under its own code (stale_held, target_not_visible); the receipt reads failed, as for any failure. */
+        void refuse(Refusal refused) {code=refused.code;finish("failed",refused.getMessage());}
         void finish(String state,String reason) {
             if(finished)return;finished=true;
             try {stopUse();}finally {if(lease!=null)lease.close();if(active==this)active=null;}
             last=receipt(state,reason);
-            if(state.equals("completed"))r.reply(last);else r.fail(state,reason,last);
+            if(state.equals("completed"))r.reply(last);else r.fail(code==null?state:code,reason,last);
         }
     }
     /** Some modded mobs report NaN health; JSON has no NaN, and one such mob must not blind the whole observation. */
