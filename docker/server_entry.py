@@ -16,7 +16,7 @@ if not (DATA / runtime.MARKER).is_file():
     runtime.extract_zip(Path("/pack") / name, DATA)
     runtime.save_json(DATA / runtime.MARKER, {"managedBy": "modbench", "kind": "server"})
 # The port is published to the host's loopback only; inside the container the server must listen on every interface.
-runtime.set_server_properties(DATA, os.environ.get("EULA", "").lower() == "true", server_ip="")
+runtime.set_server_properties(DATA, os.environ.get("EULA", "").lower() == "true", server_ip="", max_players=1)
 # Darkerer (pitch-black nights) syncs its config from the server on join, so a client-side edit does nothing. It only changes
 # rendering: light levels and mob spawning are untouched, and the agent does not look at pixels to see in the dark.
 dark = DATA / "config" / "darkerer.cfg"

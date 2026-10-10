@@ -13,6 +13,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from kernel import refused
 from mbtool import BridgeError, kernel, tool
 from mbtools_gtnh import notes
 from mbtools_gtnh.core import lane_by_method, method_name, no_threat
@@ -144,7 +145,7 @@ class ContainerSession:
                 return self._mutate("gui.click_slot", view, **params)
             except ProcedureStopped:
                 error = self.receipts[-1].get("failed", {}).get("error") or {}
-                if not (growing and again and current.get("ordinary") and str(error.get("msg")).startswith("stale_stack")
+                if not (growing and again and current.get("ordinary") and refused(error, "stale_stack")
                         and ((error.get("receipt") or {}).get("transactions") or {}).get("sent") == 0):
                     raise
                 was, cursor, view = current.get("stack"), view.get("cursor"), self.observe()

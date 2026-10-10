@@ -112,6 +112,21 @@ public final class SimulationClock {
         lastHealth=null; java.util.Arrays.fill(inDanger,false);
         if(threatWithin<0) threats=new com.google.gson.JsonArray(); // the host stops looking for threats: none it listed before is still known to be one
     }
+    /**
+     * What a restarted server needs to come back as it was: the guards, and the pause with its reason. A hold's pause is
+     * left out: the hold file is what restores it, and a release must find nothing of its own still paused.
+     */
+    public JsonObject saved() {
+        boolean kept=paused && !held(reason);
+        return Json.object("paused",kept,"reason",kept?reason:null,"conditions",conditions());
+    }
+    /** The guards of {@link #saved()}; the host pauses again, with the saved reason, once the world may be gated. */
+    public void restore(JsonObject saved) { if(saved.has("conditions")) configure(saved.getAsJsonObject("conditions")); }
+    private JsonObject conditions() {
+        return Json.object("healthDrop",healthDrop,"healthBelow",healthBelow,"airBelow",airBelow,
+            "foodBelow",foodBelow,"burning",burning,"threatWithin",threatWithin,
+            "actionFailed",actionFailed,"pauseOnDisconnect",pauseOnDisconnect);
+    }
     private void transition(boolean value) {
         if(paused==value) return;
         long now=nanos.getAsLong();
@@ -123,9 +138,7 @@ public final class SimulationClock {
         return Json.object("mode", paused?"paused":"realtime", "paused",paused,
             "simulationTicks",simulationTicks,"reason",reason,
             "wallMs",(now-started)/1_000_000L,"pausedMs",(pausedNanos+(paused?now-changed:0))/1_000_000L,
-            "conditions",Json.object("healthDrop",healthDrop,"healthBelow",healthBelow,"airBelow",airBelow,
-                "foodBelow",foodBelow,"burning",burning,"threatWithin",threatWithin,
-                "actionFailed",actionFailed,"pauseOnDisconnect",pauseOnDisconnect),"threats",threats,"events",events,
+            "conditions",conditions(),"threats",threats,"events",events,
             "fight",fighting()?Json.object("untilTick",fightUntil,"radius",fightRadius):null);
     }
 }

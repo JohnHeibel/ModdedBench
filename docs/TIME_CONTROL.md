@@ -15,8 +15,19 @@ the status carries it as `heldBy`, and the refusal says what to expect of that
 holder (`PauseCoordinator.heldRefusal`), so an agent that meets the half-hourly
 backup reads that it is a backup and short. The pause a hold makes is named
 for the holder too (`operator_hold`, `backup_hold`), and any reason ending in
-`_hold` is waited out by a running job and resumed only by the hold's release.
+`_hold` is waited out by a running job and resumed only by the hold's release;
+an agent's own `time.pause` or `interrupt.fire` may not use such a reason.
 A hold that interrupts a step gives the step its remaining ticks back on release.
+A `backup` or `compaction` hold whose file is older than 20 minutes
+(`PauseCoordinator.STALE_HOLD_MINUTES`) was left by a holder that died: the
+server removes the file and the world runs again. The operator's hold never
+expires.
+
+The pause, its reason and the guards are kept in `modbench-clock.json` in the
+world's folder and written when they change. A server that restarts reads it:
+the guards are armed at once and the pause is applied, under its saved reason,
+after the 20 warm-up ticks every start runs. A hold's pause is not saved; the
+hold file restores it. Not tested in the game.
 
 ## Contract
 
@@ -131,7 +142,10 @@ stopping handler resumes the barrier first and blocked tasks finish normally.
 loading. `ModOrderingTest` pins this.
 
 **OpenComputers.** Registered machines receive `Machine.pause(0)` at a pause
-transition and the clock waits for those requests to settle. No live
+transition and the clock waits for those requests to settle. A machine whose
+pause throws is logged and fails that pause request (`computer_pause_failed`,
+the world stays gated); the other machines are still paused, and the failure
+does not outlast the request: resume and the next pause work. No live
 OpenComputers workload has been tested.
 
 Other asynchronous mods have not been audited.

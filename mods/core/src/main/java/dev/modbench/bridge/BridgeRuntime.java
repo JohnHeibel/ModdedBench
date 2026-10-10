@@ -70,7 +70,7 @@ public abstract class BridgeRuntime {
                 Object result=methods.get(name).handler.call(child);
                 if(result==null) throw new IllegalStateException("watchable handler returned asynchronously");
                 values.add(entry.getKey(),Json.GSON.toJsonTree(result));
-            } catch(Exception error) {errors.add(entry.getKey(),Json.object("code","observation_failed","msg",error.toString()));}
+            } catch(Exception error) {errors.add(entry.getKey(),Json.object("code",error instanceof Refusal refused?refused.code:"observation_failed","msg",error.toString()));}
         }
         return Json.object("values",values,"errors",errors,"context",context,"tick",tick());
     }
@@ -152,14 +152,22 @@ public abstract class BridgeRuntime {
                 if (r.method.equals("sys.shutdown")) cancelQueue(queue, "shutdown");
                 Object result = methods.get(r.method).handler.call(r);
                 if (result != null) r.reply(result); else r.detach();
+            } catch (Refusal e) {
+                r.fail(e.code, e.getMessage());
             } catch (IllegalArgumentException e) {
                 r.fail("bad_request", e.getMessage());
             } catch (Exception e) {
-                r.fail("game_error", e.toString());
+                crashed(r, e); r.fail("game_error", e.toString());
             } catch (LinkageError e) {
-                r.fail("linkage_error", "installed runtime API is incompatible with this handler: "+e);
+                crashed(r, e); r.fail("linkage_error", "installed runtime API is incompatible with this handler: "+e);
             }
         }
+    }
+
+    /** The reply carries one line of a handler's crash; the game log gets where it happened. */
+    private void crashed(Request r, Throwable e) {
+        java.io.StringWriter trace = new java.io.StringWriter(); e.printStackTrace(new java.io.PrintWriter(trace, true));
+        System.err.println("[ModdedBench] " + side + " handler " + r.method + " failed: " + trace);
     }
 
     protected final void cancelQueuedInteractions() {

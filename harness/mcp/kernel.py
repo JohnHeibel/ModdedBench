@@ -101,8 +101,15 @@ class CancellationScope:
 
 class BridgeError(RuntimeError):
     def __init__(self, code: str, msg: str, method: str = "?", reply: dict | None = None):
-        super().__init__(f"{method}: {code}: {msg}")
+        super().__init__(f"{method}: {msg}" if str(msg).startswith(f"{code}: ") else f"{method}: {code}: {msg}")  # a refusal's message already leads with its code
         self.code, self.msg, self.method, self.reply = code, msg, method, reply
+
+
+def refused(error: Any, code: str) -> bool:
+    """Whether an error (a reply's error object or a BridgeError) is this refusal: by its code, or by the message prefix
+    a bridge built before refusals carried their own code sent under bad_request."""
+    get = error.get if isinstance(error, dict) else lambda key, default=None: getattr(error, key, default)
+    return error is not None and (get("code") == code or str(get("msg", "")).startswith(code))
 
 @dataclass
 class Reply:
@@ -270,13 +277,13 @@ class Kernel:
         if armed and isinstance(asked, dict):
             wanted.update(asked, resumed=True)
             if wanted.pop("stayedPaused", False): del wanted["resumed"]  # the action failed at once and the client sent no resume: the directive is not spent
-        if not r.ok and armed and not wanted.get("resumed") and str((r.error or {}).get("msg", "")).startswith("time_paused"):
+        if not r.ok and armed and not wanted.get("resumed") and refused(r.error, "time_paused"):
             params.pop("_resume", None)  # a client without resume-and-act: resume first, then send it again
             self._resume_for(wanted)  # the refused request never ran, so sending it again is its first run
             r = self.call_reply(method, timeout, **params)
         if not r.ok:
             msg = (r.error or {}).get("msg", "")
-            if wanted is None and msg.startswith("time_paused") and "by a guard" not in msg:  # a guard's pause is one to look at first
+            if wanted is None and refused(r.error, "time_paused") and "by a guard" not in msg:  # a guard's pause is one to look at first
                 msg += " (or call the tool again with resume=True: it resumes the world and acts in one step)"
             if isinstance(asked, dict) and asked.get("stayedPaused"):
                 msg += " (the action ended at once, so the world was not resumed: it is still paused)"

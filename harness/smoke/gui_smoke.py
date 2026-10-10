@@ -50,7 +50,7 @@ def main():
                 c.call(method, **params)
             except BridgeError as error:
                 evidence['receipts'].append(error.reply)
-                check(name, error.code in ('bad_request', 'gui_error'), str(error))
+                check(name, error.code in ('bad_request', 'gui_error', 'time_paused', 'stale_stack', 'stale_window', 'cursor_occupied'), str(error))
             else: raise AssertionError(name+': unexpectedly succeeded')
         def open_at(name):
             c.call('gui.close')
