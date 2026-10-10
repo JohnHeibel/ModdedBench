@@ -78,9 +78,9 @@ AGENT_PROBE = ("import json,subprocess,pathlib;s=pathlib.Path('.state');" + TAIL
 # is the only trace of a loop that died, so it is kept.
 LOOP = ("mkdir -p .state; p=PROMPT.md; [ -f /brief/PROMPT.md ] && p=/brief/PROMPT.md; exec flock -n .state/loop.lock sh -c "
         "'rm -f .state/STOP; exec python3 harness/runner/agent_loop.py \"$@\" >/dev/null 2>>.state/agent-loop.err' sh --prompt $p \"$@\"")
-# Ends the loop, the agent CLI of either runtime (Claude Code by its command line: its process name depends on how it was
+# Ends the loop, the agent CLI of either runtime (Claude Code by its arguments: its process name depends on how it was
 # installed) and the MCP server.
-KILL = "pkill -f '[a]gent_loop.py'; pkill -x codex; pkill -f '[c]laude -p --output-format'; "
+KILL = "pkill -f '[a]gent_loop.py'; pkill -x codex; pkill -f -- '-p --output-format [s]tream-json'; "
 # Whether a runtime could start a turn now: a key in the container's environment (docker/.env; an empty one is no key), else its stored login.
 LOGIN = {"codex": '[ -n "$CODEX_API_KEY" ] || codex login status',
          "claude": '[ -n "$CLAUDE_CODE_OAUTH_TOKEN$ANTHROPIC_API_KEY" ] || claude auth status | grep -q \'"loggedIn": *true\''}
