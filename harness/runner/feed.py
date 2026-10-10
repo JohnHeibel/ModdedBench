@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
-"""What a viewer sees of a run: Codex's event stream turned into a feed of short lines and a live summary.
+"""What a viewer sees of a run: the agent runtime's event stream turned into a feed of short lines and a live summary.
 
-The loop hands every Codex event to ``Feed.event``. Two files come out, in ``$MODBENCH_OUTBOX/overlay`` (the
+The loop hands every event to ``Feed.event``, as the runtime's module (rt_codex.py, rt_claude.py) normalised it. Two files come out, in ``$MODBENCH_OUTBOX/overlay`` (the
 host sees that folder, ``.state/overlay`` without one; the console serves it to OBS): ``feed.jsonl``, one line per thing the model said or
 did ({ts, kind: say|tool|fail|mark, text, tool?}; ``mark`` lines are the run's milestones), and ``live.json``,
 the goal stack, what the agent is doing now, its background task (``body``), and running totals; and ``pops.json`` with ``pop-<n>.png``, the last few
@@ -13,7 +13,6 @@ from __future__ import annotations
 import base64, json, re, time
 from pathlib import Path
 
-BLOB = re.compile(r"[A-Za-z0-9+/=]{4000,}")  # base64 image data inside a logged tool result
 ACTIVE = ("thinking", "acting", "waiting")  # the states of a running turn
 BASE = 30000  # tokens every call carries before the conversation: system prompt, brief and the tool schemas (a guess, corrected at turn end)
 
@@ -175,7 +174,7 @@ class Feed:
         self.live = {"goal": {}, "status": {}, "stats": {"activeSeconds": 0.0, "activeSince": None, "turns": 0, "calls": 0, "failed": 0, "scripts": 0, "claims": 0,
                                                        "tokens": {"input": 0, "cached": 0, "output": 0, "estimated": 0, "uncounted": 0}}}
         self.me = None  # where the player was last seen, for pop-ups of results that do not say
-        self.context = 0  # characters Codex has been shown this turn, for the estimate below
+        self.context = 0  # tokens the runtime has been shown this turn, for the estimate below
         try: self.live.update(json.loads((self.folder / "live.json").read_text(encoding="utf-8")))  # a restarted loop keeps the run's totals
         except (OSError, ValueError): pass
         stats = self.live["stats"]; stats.setdefault("activeSeconds", 0.0)
@@ -210,45 +209,52 @@ class Feed:
         self.live["status"] = {"state": state, "text": text, "since": now}; self._save()
 
     def event(self, e):
-        kind, item = e.get("type"), e.get("item") if isinstance(e.get("item"), dict) else {}
-        stats, what = self.live["stats"], item.get("type")
-        if kind == "turn.started":
+        """One event of the runtime's stream, as its module normalised it (rt_codex.py lists them)."""
+        kind, stats = e.get("type"), self.live["stats"]
+        if kind == "turn_start":
             # A turn cut by the budget, a kill or a crash never reports its usage: keep its estimate instead of losing it.
             t = stats["tokens"]; t["uncounted"] = t.get("uncounted", 0) + t.get("estimated", 0); t["estimated"] = 0
-            stats["turns"] += 1; self.context = BASE; self.status("thinking")
-        elif kind == "turn.completed":
-            u = e.get("usage") or {}
-            for key, field in (("input", "input_tokens"), ("cached", "cached_input_tokens"), ("output", "output_tokens")): stats["tokens"][key] += int(u.get(field) or 0)
+            stats["turns"] += 1; self.context = BASE; self.live["compacting"] = False; self.status("thinking")
+        elif kind == "turn_end":
+            for key in ("input", "cached", "output"): stats["tokens"][key] += int((e.get("usage") or {}).get(key) or 0)
             stats["tokens"]["estimated"] = 0  # the exact count has replaced it
             self.status("between_turns")
-        if kind == "item.completed" and what in ("mcp_tool_call", "agent_message", "reasoning", "command_execution"):
+        elif kind == "usage":  # exact, call by call: nothing to estimate
+            for key in ("input", "cached", "output"): stats["tokens"][key] += int(e.get(key) or 0)
+            self.live["context"] = {"tokens": e.get("context"), "window": e.get("window") or (self.live.get("context") or {}).get("window")}
+        if "size" in e:
             # Codex reports usage only when a turn ends, and a turn can last hours. Every call is billed for the whole context
             # again (mostly cached), so the bill grows with context x calls: this estimate is that sum, with the context
             # held at the size Codex compacts it to. Roughly right for gpt-6 (~4 characters a token); the turn's end corrects it.
-            # An image is billed by its size in tiles, about a thousand tokens for a screenshot, not by its base64 text.
-            self.context = min((self.context or BASE) + len(BLOB.sub("x" * 4000, json.dumps(item, default=str))) // 4, 120000)
+            self.context = min((self.context or BASE) + e["size"] // 4, 120000)
             stats["tokens"]["estimated"] += self.context
-        if kind == "item.started" and what == "mcp_tool_call":
-            self.status("waiting" if item.get("tool") == "mb_wait" else "acting", line(item.get("tool", ""), item.get("arguments"), None))
-            if item.get("tool") in ("mb_run", "mb_build"):  # a script or a build can run for minutes: say what it is while it runs, not after
-                try: self.look(item["tool"], item.get("arguments"), {}, [])
+        if kind == "compacting":  # only a runtime that says so (Claude Code): the console holds the world on it
+            if e.get("done"):
+                stats["compactions"] = stats.get("compactions", 0) + bool(self.live.get("compacting")); self.live["compacting"] = False
+                if e.get("context"): self.live["context"] = {**(self.live.get("context") or {}), "tokens": e["context"]}
+            else: self.live["compacting"] = True
+            self.status("thinking")
+        elif kind == "tool_start":
+            self.live["compacting"] = False
+            self.status("waiting" if e.get("tool") == "mb_wait" else "acting", line(e.get("tool", ""), e.get("args"), None))
+            if e.get("tool") in ("mb_run", "mb_build"):  # a script or a build can run for minutes: say what it is while it runs, not after
+                try: self.look(e["tool"], e.get("args"), {}, [])
                 except Exception: pass
-        elif kind == "item.started" and what == "command_execution": self.status("acting", "shell")
-        elif kind == "item.completed" and what == "agent_message": self.add("say", str(item.get("text", "")).strip()[:600])
-        elif kind == "item.completed" and what == "reasoning" and str(item.get("text") or "").strip():
-            # Codex's summary of the model's reasoning (model_reasoning_summary), written for people: "**Title**\n\nbody", maybe several
-            text = str(item["text"]).strip(); title = (re.findall(r"\*\*(.+?)\*\*", text) or [""])[0]
+        elif kind == "shell" and not e.get("done"): self.status("acting", "shell")
+        elif kind == "say": self.add("say", str(e.get("text", "")).strip()[:600])
+        elif kind == "think" and str(e.get("text") or "").strip():
+            # The runtime's account of the model's reasoning, written for people: "**Title**\n\nbody", maybe several
+            text = str(e["text"]).strip(); title = (re.findall(r"\*\*(.+?)\*\*", text) or [""])[0]
             body = re.sub(r"\s+", " ", re.sub(r"\*\*(.+?)\*\*", "", text)).strip()
             self.add("think", body[:700] or title, title=title); self.status("thinking", title)
-        elif kind == "item.completed" and what == "command_execution":
-            cmd = str(item.get("command", ""))
-            if "deploy.py request" in cmd: self.add("mark", "asked for a deploy of its own Java changes")
+        elif kind == "shell":
+            if "deploy.py request" in str(e.get("command", "")): self.add("mark", "asked for a deploy of its own Java changes")
             self.status("thinking")
-        elif kind == "item.completed" and what == "mcp_tool_call":
-            tool = item.get("tool", ""); stats["calls"] += 1
-            try: result = json.loads(item["result"]["content"][0]["text"])
+        elif kind == "tool_end":
+            tool, content = e.get("tool", ""), e.get("content") if isinstance(e.get("content"), list) else []; stats["calls"] += 1
+            try: result = json.loads(content[0]["text"])
             except (KeyError, IndexError, TypeError, ValueError): result = {}
-            failed = item.get("status") == "failed" or bool(item.get("error")); stats["failed"] += failed
+            failed = bool(e.get("failed")); stats["failed"] += failed
             goal = result if tool == "mb_goal" else result.get("goal") if tool == "mb_status" and isinstance(result, dict) else None
             if isinstance(goal, dict) and "subgoal" in goal and not failed:
                 if goal.get("chapter") and self.live["goal"].get("chapter") not in (None, goal["chapter"]): self.add("mark", "new chapter: " + str(goal["chapter"]))
@@ -260,10 +266,10 @@ class Feed:
             else:
                 why = result.get("error") if isinstance(result, dict) and isinstance(result.get("error"), dict) else {}
                 why = "" if not failed else ": bad arguments" if why.get("code") == "bad_request" else ": " + str(why.get("code") or "failed").replace("_", " ")
-                text = line(tool, item.get("arguments"), result)
+                text = line(tool, e.get("args"), result)
                 self.add("fail" if failed or isinstance(result, dict) and result.get("stopped") else "tool", text and text + why, tool=tool)
             if not failed:
-                try: self.look(tool, item.get("arguments"), result, item["result"].get("content") or [])
+                try: self.look(tool, e.get("args"), result, content)
                 except Exception: pass  # a pop-up is decoration: a shape it did not expect shows nothing
             self.status("thinking")
 

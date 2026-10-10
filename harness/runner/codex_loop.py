@@ -19,24 +19,13 @@ from __future__ import annotations
 import argparse, hashlib, json, os, shutil, subprocess, sys, threading, time
 from pathlib import Path
 from feed import Feed
+import rt_codex
 
 REPO = Path(__file__).resolve().parents[2]
 BACKOFF = (1, 10, 60, 120)  # times backoff_s: 30 s, 5 min, 30 min, then hourly
 LONG_TURN = 600  # seconds: a turn that ran this long was working, so its failure is the first of a row, not one more
 CONTINUE = ("Continue the mission in your standing brief (mb_status says where it is). Rebuild your picture from mb_status, mb_quest_status and notes. "
             "If you are only waiting, call mb_wait instead of ending the turn.")
-
-def _find_id(value):
-    """``thread.started`` carries ``thread_id``; ``session_id`` and nesting are accepted defensively."""
-    if isinstance(value, dict):
-        for key in ("thread_id", "session_id"):
-            if isinstance(value.get(key), str) and value[key]: return value[key]
-        value = list(value.values())
-    if isinstance(value, list):
-        for child in value:
-            found = _find_id(child)
-            if found: return found
-    return None
 
 def _in_world():
     """The client is up and the player is in the world."""
@@ -93,10 +82,10 @@ def _git(repo, *args):
     try: return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, timeout=20).stdout.strip() or None
     except Exception: return None
 
-def turn(cmd, prompt, cwd, log, feed=None, over=lambda: None, seen=lambda thread: None):
+def turn(cmd, prompt, cwd, log, feed=None, over=lambda: None, seen=lambda thread: None, parser=None):
     """One Codex turn, streamed to the log and stdout: (exit code, thread id or None, last agent message, budget reason or None).
     ``seen`` gets the thread id the moment Codex names it."""
-    thread, last, spent, cut = None, "", None, []
+    thread, last, spent, cut, parser = None, "", None, [], parser or rt_codex.Parser()
     with subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace") as p:
         p.stdin.write(prompt); p.stdin.close()
         done = threading.Event()
@@ -110,13 +99,12 @@ def turn(cmd, prompt, cwd, log, feed=None, over=lambda: None, seen=lambda thread
             try: event = json.loads(line)
             except ValueError: continue
             if not isinstance(event, dict): continue
-            item = event.get("item")
-            if not thread:
-                thread = _find_id(event)
-                if thread: seen(thread)
-            try: feed and feed.event(event)
+            try:
+                for ev in parser.events(event):
+                    if ev["type"] == "thread" and not thread: thread = ev["id"]; seen(thread)
+                    if ev["type"] == "say": last = ev["text"]
+                    if feed: feed.event(ev)
             except Exception as e: log.write("# feed: %r\n" % e)  # the overlay never costs a turn
-            if event.get("type") == "item.completed" and isinstance(item, dict) and item.get("type") == "agent_message" and isinstance(item.get("text"), str): last = item["text"]
             spent = over()
             if spent:  # the budget ends the turn where it stands; Codex has written the thread so far, which resumes later
                 log.write("# %s budget: %s\n" % (time.strftime("%Y-%m-%dT%H:%M:%S"), spent)); p.terminate()
@@ -182,8 +170,7 @@ def run(repo=REPO, prompt=None, max_turns=50, state=None, codex=None, extra=(), 
                 waited = True; feed.status("game_down"); idle(backoff_s)
             if (repo / ".state" / "STOP").exists(): return end("stop_file")
             if over(): return end(over())
-            # Options go before ``resume``: that subcommand does not accept all of them (-C, -s) after it.
-            cmd = [*codex, "exec", "--json", "-C", str(repo), *extra, *(["resume", thread] if thread else []), "-"]
+            cmd = rt_codex.command(codex, repo, prompt, thread, extra=extra)
             log.write("# %s %s\n" % (time.strftime("%Y-%m-%dT%H:%M:%S"), " ".join(cmd)))
             body = _body(folder)
             again = CONTINUE + (" Your background task %s (%s) is still running: mb_task shows it." % (body["task"], body["name"] or "unnamed") if body else "")
