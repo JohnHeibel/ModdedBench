@@ -202,7 +202,7 @@ public class BridgeRuntimeTest {
         List<JsonObject> replies = new ArrayList<>();
         runtime.dispatch(request(runtime, session, 1, "act.refused", new JsonObject(), replies));
         runtime.dispatch(request(runtime, session, 2, "act.bad", new JsonObject(), replies));
-        runtime.startTick(world);
+        for (int i = 0; i < 50 && replies.size() < 2; i++) runtime.startTick(world);   // a tick serves requests for 4 ms; a cold first throw can use it up
 
         assertEquals("time_paused", replies.get(0).getAsJsonObject("error").get("code").getAsString());
         assertEquals("the message keeps its prefix, as callers read it before the code was typed",
