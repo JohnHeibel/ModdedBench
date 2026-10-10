@@ -221,7 +221,7 @@ class Feed:
             self.status("between_turns")
         elif kind == "usage":  # exact, call by call: nothing to estimate
             for key in ("input", "cached", "output"): stats["tokens"][key] += int(e.get(key) or 0)
-            self.live["context"] = {"tokens": e.get("context"), "window": e.get("window") or (self.live.get("context") or {}).get("window")}
+            self.live["context"] = {**(self.live.get("context") or {}), **{k: e[k] for k in ("context", "window") if e.get(k)}}  # tokens in it now; its size, once said
         if "size" in e:
             # Codex reports usage only when a turn ends, and a turn can last hours. Every call is billed for the whole context
             # again (mostly cached), so the bill grows with context x calls: this estimate is that sum, with the context
@@ -231,7 +231,7 @@ class Feed:
         if kind == "compacting":  # only a runtime that says so (Claude Code): the console holds the world on it
             if e.get("done"):
                 stats["compactions"] = stats.get("compactions", 0) + bool(self.live.get("compacting")); self.live["compacting"] = False
-                if e.get("context"): self.live["context"] = {**(self.live.get("context") or {}), "tokens": e["context"]}
+                if e.get("context"): self.live["context"] = {**(self.live.get("context") or {}), "context": e["context"]}
             else: self.live["compacting"] = True
             self.status("thinking")
         elif kind == "tool_start":
