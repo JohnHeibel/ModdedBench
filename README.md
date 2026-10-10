@@ -19,6 +19,35 @@ reloaded when the model edits it.
 GT New Horizons is not included. You need the GTNH 2.8.4 client and server
 archives named in `pack.lock.json`.
 
+## Get the code
+
+The Baritone port is a git submodule (`mods/baritone`, the
+[Modatone](https://github.com/JohnHeibel/Modatone) repository), so clone with it:
+
+```bash
+git clone --recurse-submodules https://github.com/JohnHeibel/ModdedBench.git
+```
+
+In a clone made without that flag, run `git submodule update --init`. The
+build stops with a message saying so when `mods/baritone` is empty.
+
+## Check your checkout
+
+With JDK 25 and `pip install -r harness/mcp/requirements.txt` (details in
+[docs/BUILD.md](docs/BUILD.md)), these need no game and no pack:
+
+```bash
+./gradlew build
+```
+
+```bash
+python -m unittest discover -s harness/tests -p "test_*.py"
+```
+
+```bash
+python harness/mcp/server.py --check
+```
+
 ## Quick start: a contained run
 
 This is the usual mode. The agent (the Codex CLI) and the game server each run
@@ -35,7 +64,7 @@ every step and what the containers do and do not isolate. In outline:
    docker compose -f docker/compose.yaml --env-file docker/.env up -d --build
    ```
 
-4. Log Codex in once:
+4. Log Codex in once (an OpenAI account with Codex access):
 
    ```bash
    docker compose -f docker/compose.yaml exec agent codex login --device-auth
@@ -82,7 +111,7 @@ mb_notes("find", {"near": "player"})      notes written near here (the notes are
 | `mods/core` | Coremod: class transformers, input arbiter, websocket transport, simulation clock | rebuild, reinstall, restart |
 | `mods/client` | Observation, action, GUI, inventory, NEI, quest, memory RPCs | rebuild, reinstall, restart |
 | `mods/server` | Authoritative tile/NBT/Waila reads, tick gate and guards | rebuild, reinstall, restart |
-| `mods/baritone` | Navigation, mining, construction: a port of Baritone to 1.7.10 as a plain mod | rebuild, reinstall, restart |
+| `mods/baritone` | Navigation, mining, construction: a port of Baritone to 1.7.10 as a plain mod. A submodule with its own documents: [BARITONE_PORT](https://github.com/JohnHeibel/Modatone/blob/main/docs/BARITONE_PORT.md), [MOVEMENTS](https://github.com/JohnHeibel/Modatone/blob/main/docs/MOVEMENTS.md) | rebuild, reinstall, restart |
 | `harness/mcp` | MCP server, transport kernel, `@tool` contract | restart the server |
 | `harness/tools` | The tools the model sees and edits | reloaded on the next call |
 | `harness/launcher` | Managed local runtime (Prism instance, server, jar install and rollback), the deploy supervisor and backups for contained runs | |
@@ -93,7 +122,7 @@ mb_notes("find", {"near": "player"})      notes written near here (the notes are
 | `harness/tests` | Python unit tests; no game needed | |
 | `harness/smoke` | Tests that need a running game ([docs/BUILD.md](docs/BUILD.md#testing)) | |
 | `docker/` | Server, agent and gateway images for contained runs | |
-| `docs/` | [ARCHITECTURE](docs/ARCHITECTURE.md), [BUILD](docs/BUILD.md), [CONTAINERS](docs/CONTAINERS.md), [TOOLS](docs/TOOLS.md), [TIME_CONTROL](docs/TIME_CONTROL.md), [BARITONE_PORT](docs/BARITONE_PORT.md), [MOVEMENTS](docs/MOVEMENTS.md), [MIRROR](docs/MIRROR.md), [HISTORY](docs/HISTORY.md) | |
+| `docs/` | [ARCHITECTURE](docs/ARCHITECTURE.md), [BUILD](docs/BUILD.md), [CONTAINERS](docs/CONTAINERS.md), [TOOLS](docs/TOOLS.md), [TIME_CONTROL](docs/TIME_CONTROL.md), [MIRROR](docs/MIRROR.md), [HISTORY](docs/HISTORY.md) | |
 
 ## Design rules
 
@@ -121,7 +150,7 @@ Research code, developed and run on one Windows 11 machine.
 - The managed runtime and the container setup have only been used on Windows.
   The Gradle build and the Python code are not Windows-specific.
 - Known limits are stated where they apply: navigation and construction in
-  [docs/BARITONE_PORT.md](docs/BARITONE_PORT.md), time control in
+  [mods/baritone/docs/BARITONE_PORT.md](https://github.com/JohnHeibel/Modatone/blob/main/docs/BARITONE_PORT.md), time control in
   [docs/TIME_CONTROL.md](docs/TIME_CONTROL.md), isolation in
   [docs/CONTAINERS.md](docs/CONTAINERS.md).
 

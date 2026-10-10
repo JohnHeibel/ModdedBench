@@ -3,23 +3,27 @@
 Everything below has been exercised on Windows 11. Linux and macOS should work
 for the Gradle build and the Python server; the managed Prism runtime has only
 been run on Windows.
+Commands are written for a POSIX shell; on Windows use Git Bash.
 
 ## Prerequisites
 
 | Need | Version | Why |
 | --- | --- | --- |
-| JDK | 25 (`JAVA_HOME` pointing at it) | RetroFuturaGradle 2.0.2 requires Java 25 to run Gradle. Gradle provisions the older JDK it needs to decompile Minecraft; the mods are compiled to Java 17 bytecode. |
+| JDK | 25 (`JAVA_HOME` pointing at it) | RetroFuturaGradle 2.0.2 requires Java 25 to run Gradle. Gradle provisions the older JDKs it needs (21 and 8) itself; the mods are compiled to Java 17 bytecode. JDK 17 and 21 start Gradle but the build does not support them. |
 | Gradle | wrapper, 9.2.0 | `gradlew` / `gradlew.bat` in the repository root; nothing to install. |
 | Python | 3.11 or newer | `pip install -r harness/mcp/requirements.txt` (`mcp`, `websockets`). |
-| GT New Horizons 2.8.4 | client and server archives, Java 17-25 builds | Not redistributed. `pack.lock.json` records the exact file names, sizes and SHA-256 the launcher verifies. |
+| GT New Horizons 2.8.4 | client and server archives, Java 17-25 builds | Not redistributed. Download `GT_New_Horizons_2.8.4_Java_17-25.zip` and `GT_New_Horizons_2.8.4_Server_Java_17-25.zip` from the official GTNH downloads page (https://www.gtnewhorizons.com/downloads/); about 1 GB together. `pack.lock.json` records the exact file names, sizes and SHA-256 the launcher verifies. |
 | Prism Launcher | any recent | Only for the managed local client instance. Any launcher that can run the pack with extra jars in `mods/` works for manual installs. |
+| Minecraft account | a Microsoft account that owns Minecraft: Java Edition | Signed in to Prism Launcher before `prepare`; Prism uses it once to download the game's assets. |
 
 The first build needs network access to fetch Forge, the GTNH Nexus
 dependencies and the Gradle plugin. Later builds run `--offline`.
 
 ## Build and test
 
-From the repository root:
+From the repository root (`mods/baritone` is a git submodule: clone with
+`--recurse-submodules`, or run `git submodule update --init` in an existing
+clone):
 
 ```bash
 ./gradlew build
@@ -95,6 +99,12 @@ Close Prism before `prepare`; a running launcher caches its instance list.
 ```bash
 python harness/launcher/runtime.py prepare --client-zip <client.zip> --server-zip <server.zip> --prism <prismlauncher.exe> --prism-data <PrismLauncher data dir> --java <jdk25 java.exe>
 ```
+
+`--prism` and `--prism-data` are normally
+`%LOCALAPPDATA%\Programs\PrismLauncher\prismlauncher.exe` and
+`%APPDATA%\PrismLauncher`. `prepare` needs both archives, also when the server
+will run in a container, and writes its settings to `.runtime/config.json`,
+which every other `runtime.py` command reads.
 
 `--java` must be a JDK 17 to 25; `prepare` refuses anything older. Add
 `--window 1920x1080` to set the client window size (Prism otherwise opens
@@ -222,7 +232,7 @@ the server. Results print as a table; evidence files go under the ignored
 | `bridge_course.py` | Bridging a gap from a block lower than a full one (a chest's top). |
 | `ladder_course.py` | Going up, stopping on and coming down ladders, on each side of a block and through a roof. |
 | `scaffold_course.py` | A mining job climbs to a target on placed blocks, and with `cleanup_scaffold` removes them before it ends. |
-| `glide_course.py` | The added glide move ([MOVEMENTS.md](MOVEMENTS.md)): a body with wings crosses a drop and arrives unhurt; without them it stays. |
+| `glide_course.py` | The added glide move ([MOVEMENTS.md](https://github.com/JohnHeibel/Modatone/blob/main/docs/MOVEMENTS.md)): a body with wings crosses a drop and arrives unhurt; without them it stays. |
 | `explore_course.py` | `get_to_block` finds a block by id without a whole-world sweep, sees one in a chunk that loads later, and stays inside the tick budget. |
 | `step_course.py` | A time step never cuts a click, a slot selection or a held input short, and a guard still ends them ([TIME_CONTROL.md](TIME_CONTROL.md)). |
 | `notes_course.py` | World notes as files: written with what was observed, surfaced when the block is looked at, found by place, following edits made by hand. |
@@ -250,7 +260,8 @@ GUI closed.
 | `python harness/smoke/gui_smoke.py` | Container observation, slot clicks, transfers, cursor return, text fields, buttons, hit tests. |
 | `python harness/smoke/primitive_regression_smoke.py` | Regressions from an early machine-building trial: grass clearing, attack-hold bounds, food budgets. |
 
-These four predate the test stack. Whether they still pass was not checked for
-this release.
+These four predate the test stack. Every bridge method and fixture they call
+is still registered, and the reload proof in `smoke.py` passes without a game;
+whether they pass in a game was not checked for this release.
 
 Contained runs, the console and backups are in [CONTAINERS.md](CONTAINERS.md).

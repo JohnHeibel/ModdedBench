@@ -116,7 +116,7 @@ These come from the server.
 The tools in `work.py` wrap the `nav.*` methods (the Baritone engine); its
 read-only world queries are `obs.scan`, `obs.terrain`, `obs.fluid` and
 `obs.tools`. Selectors, net-gain completion, the build contract and its limits
-are in [BARITONE_PORT.md](BARITONE_PORT.md).
+are in [BARITONE_PORT.md](https://github.com/JohnHeibel/Modatone/blob/main/docs/BARITONE_PORT.md).
 
 Work completions and failures write a small `auto`-tagged note at the job's
 location, in the `auto/` subfolder of the notes. `mb_notes` `find` leaves them
