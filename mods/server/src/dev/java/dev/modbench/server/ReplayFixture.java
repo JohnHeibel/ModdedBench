@@ -10,6 +10,7 @@ import net.minecraft.block.Block;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.world.WorldServer;
@@ -43,6 +44,16 @@ final class ReplayFixture {
         pl.fallDistance=0;pl.motionX=pl.motionY=pl.motionZ=0;pl.extinguish();
         pl.playerNetServerHandler.setPlayerLocation(x,y,z,(float)Json.number(p,"yaw",0,-360,360),(float)Json.number(p,"pitch",0,-90,90));
         return status(p);
+    }
+    /** A long course is not a test of survival: the player's health and food are filled, and with {time:0..23999} the
+     *  overworld's time of day is set (noon keeps a surface site free of the night's mobs). Returns what they were. */
+    Object sustain(JsonObject p){
+        EntityPlayerMP pl=player();var food=pl.getFoodStats();
+        JsonObject was=Json.object("health",pl.getHealth(),"food",food.getFoodLevel(),"time",world().getWorldTime()%24000,"dead",pl.getHealth()<=0);
+        if(pl.getHealth()>0)pl.setHealth(pl.getMaxHealth());
+        NBTTagCompound tag=new NBTTagCompound();food.writeNBT(tag);tag.setInteger("foodLevel",20);tag.setFloat("foodSaturationLevel",5);tag.setFloat("foodExhaustionLevel",0);food.readNBT(tag);
+        if(p.has("time")){long now=world().getWorldTime();world().setWorldTime(now-now%24000+Json.integer(p,"time",6000,0,23999));}
+        return was;
     }
     /** The player as the server sees it, and {cells:[[x,y,z],...]} (at most 64): block id, meta and collision boxes (cell-relative). */
     Object status(JsonObject p){
