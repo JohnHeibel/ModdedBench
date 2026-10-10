@@ -152,7 +152,7 @@ function draw(d){
   const g=d.goal||{},st=d.status||{},s=d.stats||{},t=s.tokens||{},run=d.run||{};
   canvas.dataset.tier=opts.get("tier")||tierOf(d.chapters);
   $("clock").textContent=hms((s.activeSeconds||0)+(s.activeSince?d.now-s.activeSince:0));  // agent time: only while a turn runs
-  // A run is sized in minutes and tokens; turns are only how Codex recovers, so the header shows what is left of the budget.
+  // A run is sized in minutes and tokens; turns are only how the agent recovers, so the header shows what is left of the budget.
   const b=d.budget||{},left=b.minutes&&b.startedAt?b.minutes*60-(d.now-b.startedAt):null; $("turn").textContent=left==null?"":left>0?span(left)+" left":"budget spent";
   $("model").textContent=[run.model,run.effort&&run.effort+" effort"].filter(Boolean).join(", ");
   const [label,cls]=STATES[st.state]||[st.state||"Idle","idle"];
@@ -178,7 +178,7 @@ function draw(d){
   window.Pops&&Pops.draw(d);
   $("readout").innerHTML=`<dt>target</dt><dd class="key">${esc(d.target||"")}</dd><dt>quests done</dt><dd>${big(d.chapters&&d.chapters.length?d.chapters.reduce((n,c)=>n+c.completed,0):s.claims)}</dd><dt>actions</dt><dd>${big(s.calls)}</dd>`+
     `<dt>failed</dt><dd class="bad">${big(s.failed)}</dd><dt>scripts</dt><dd>${big(s.scripts)}</dd><dt>tokens in</dt><dd>${(t.estimated||t.uncounted)?"~":""}${big((t.input||0)+(t.uncounted||0)+(t.estimated||0))}</dd>`+
-    `<dt>tokens out</dt><dd>${big(t.output)}</dd>`;  // the console reads both from Codex's own record; the feed's estimate (input only) is the fallback
+    `<dt>tokens out</dt><dd>${big(t.output)}</dd>`;  // for Codex the console reads both from its own record and the feed's estimate (input only) is the fallback; Claude Code reports them call by call
 }
 // The goal is never cut short: its type steps down the font's grid until the whole text fits its box; the line under it steps down once.
 function fit(){const h=$("goal").querySelector("h2"),s=$("goal").querySelector(".serves"); if(!h)return;

@@ -27,6 +27,8 @@ LAUNCHER, DEPLOY = str(REPO / "harness" / "launcher" / "runtime.py"), str(REPO /
 BRIEF = REPO / ".runtime" / "brief"
 OVERLAY = Path(os.environ.get("MODBENCH_OVERLAY") or REPO / ".runtime" / "outbox" / "overlay")  # written by the loop (harness/runner/feed.py)
 SNAPSHOTS = REPO / ".runtime" / "snapshots"  # written by harness/launcher/backup.py, which holds the world while it copies
+# What the loop's own live.json says is read first (harness/runner/feed.py): Claude Code reports each call's usage and says
+# when it compacts. Codex does neither in its exec stream, so for a Codex run the three probes below read its own record of the thread.
 # Codex compacts its context without a word in the exec stream; only its own record of the thread says how full the context is.
 CONTEXT = ("f=$(ls -t /home/agent/.codex/sessions/*/*/*/rollout-*.jsonl 2>/dev/null | head -1); "
            "[ -n \"$f\" ] && tail -c 4000000 \"$f\" | grep '\"last_token_usage\"' | tail -1")
@@ -66,16 +68,23 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 TAIL = "r=lambda n,k=24000:(lambda f:(f.seek(max(0,f.seek(0,2)-k)),f.read().decode(errors='replace'),f.close())[1])(open(s/n,'rb')) if (s/n).exists() else ''"
 # One line of JSON about the loop, produced inside the agent container.
 AGENT_PROBE = ("import json,subprocess,pathlib;s=pathlib.Path('.state');" + TAIL + ";"
-               "print(json.dumps({'running':subprocess.run(['pgrep','-f','[c]odex_loop.py'],capture_output=True).returncode==0,"
-               "'stopRequested':(s/'STOP').exists(),'thread':r('codex-loop.json'),'run':r('run.json'),'prompt':pathlib.Path('/brief/PROMPT.md').exists(),"
+               "print(json.dumps({'running':subprocess.run(['pgrep','-f','[a]gent_loop.py'],capture_output=True).returncode==0,"
+               "'stopRequested':(s/'STOP').exists(),'thread':r('agent-loop.json') or r('codex-loop.json'),'run':r('run.json'),'prompt':pathlib.Path('/brief/PROMPT.md').exists(),"
                "'commits':subprocess.run(['git','rev-list','--count','modbench-base..HEAD'],capture_output=True,text=True).stdout.strip(),"
-               "'log':r('codex-loop.log')[-6000:],'err':r('codex-loop.err')[-2000:]}))")
-# One loop per checkout: two would drive one Codex thread and one body. The lock is flock's, so it lasts exactly as long as the
+               "'log':r('agent-loop.log')[-6000:],'err':r('agent-loop.err')[-2000:]}))")
+# One loop per checkout: two would drive one conversation and one body. The lock is flock's, so it lasts exactly as long as the
 # loop, however that ends, and the stop file is cleared only by the start that got it. LOOP_FREE is the same question asked
-# first, where the operator sees the answer; the loop itself starts detached. Its stdout repeats codex-loop.log; its stderr
+# first, where the operator sees the answer; the loop itself starts detached. Its stdout repeats agent-loop.log; its stderr
 # is the only trace of a loop that died, so it is kept.
 LOOP = ("mkdir -p .state; p=PROMPT.md; [ -f /brief/PROMPT.md ] && p=/brief/PROMPT.md; exec flock -n .state/loop.lock sh -c "
-        "'rm -f .state/STOP; exec python3 harness/runner/codex_loop.py \"$@\" >/dev/null 2>>.state/codex-loop.err' sh --prompt $p \"$@\"")
+        "'rm -f .state/STOP; exec python3 harness/runner/agent_loop.py \"$@\" >/dev/null 2>>.state/agent-loop.err' sh --prompt $p \"$@\"")
+# Ends the loop, the agent CLI of either runtime (Claude Code by its command line: its process name depends on how it was
+# installed) and the MCP server.
+KILL = "pkill -f '[a]gent_loop.py'; pkill -x codex; pkill -f '[c]laude -p --output-format'; "
+# Whether a runtime could start a turn now: a key in the container's environment (docker/.env; an empty one is no key), else its stored login.
+LOGIN = {"codex": '[ -n "$CODEX_API_KEY" ] || codex login status',
+         "claude": '[ -n "$CLAUDE_CODE_OAUTH_TOKEN$ANTHROPIC_API_KEY" ] || claude auth status | grep -q \'"loggedIn": *true\''}
+EFFORTS = ("minimal", "low", "medium", "high", "xhigh", "max")  # Codex has no max, Claude Code no minimal: the CLI refuses what it does not know
 LOOP_FREE = "mkdir -p .state; flock -n .state/loop.lock true || { echo 'a loop is already running on this checkout: stop it and wait for \"loop idle\", then start'; exit 1; }"
 
 
@@ -126,6 +135,11 @@ class Shortener:
         except Exception: pass  # the original stays on screen; the key stays pending, so this text is not asked about again in this session
 
 
+def cli(live):
+    """The agent CLI the loop last ran (live.json run.runtime); a feed from before the loop had runtimes is Codex's."""
+    return ((live or {}).get("run") or {}).get("runtime") or "codex"
+
+
 def serving(name):
     """Whether a supervisor or a backup loop is running on this host, the console's own child or one that outlived an earlier
     console: its lock (runtime.only_one) is held."""
@@ -139,7 +153,7 @@ def sh(cmd, stdin=None, timeout=30):
 class Console:
     def __init__(self):
         self.lock = threading.Lock(); self.kernel = None; self.supervisor = None; self.backups = None
-        self.guard = None  # (compactions in the rollout when the guard held the world, monotonic time, the silence's start)
+        self.guard = None  # (compactions so far when the guard held the world, monotonic time, the silence's start)
         self.guard_done = None  # the start of the silence the guard last let go of
         self.job = {"name": "", "running": False, "ok": True, "log": ""}; self.login = (0.0, None); self.book = (0.0, []); self.ctx = (0.0, None); self.used = (0.0, None); self.quest = (0.0, None, None); self.shorten = Shortener(runtime.RUNTIME / "overlay-short.json")
 
@@ -172,8 +186,8 @@ class Console:
             try: agent = json.loads(probe.stdout)
             except ValueError: agent = {"error": (probe.stderr or probe.stdout)[-300:]}
             if time.monotonic() - self.login[0] > 60:
-                self.login = (time.monotonic(), sh([*COMPOSE, "exec", "-T", "agent", "codex", "login", "status"]).returncode == 0)
-            agent["loggedIn"] = self.login[1]
+                self.login = (time.monotonic(), {name: sh([*COMPOSE, "exec", "-T", "agent", "sh", "-c", check]).returncode == 0 for name, check in LOGIN.items()})
+            agent["login"] = self.login[1]
             try:  # what the run has been billed so far, as the loop counts it against run.json's tokenCap (feed.Feed.billed)
                 t = json.loads((OVERLAY / "live.json").read_text(encoding="utf-8"))["stats"]["tokens"]; agent["billed"] = t["input"] + t.get("uncounted", 0) + t.get("estimated", 0)
             except (OSError, ValueError, KeyError, TypeError): pass
@@ -200,11 +214,19 @@ class Console:
         except Exception: used = None
         self.used = (time.monotonic(), used); return used
 
-    def compacting(self, status):
-        """Codex compacts its context without a word in the exec stream. It starts once the context is nearly full (both
-        observed ones at 94-95%) and is a silence of a few minutes; the 'compacted' record in its rollout marks the end."""
-        if status.get("state") != "thinking" or time.time() - (status.get("since") or time.time()) <= 20: return False
+    def compacting(self, status, live=None):
+        """Claude Code says in its stream when it compacts, and the loop keeps that in live.json. Codex compacts without a
+        word in the exec stream: it starts once the context is nearly full (both observed ones at 94-95%) and is a silence
+        of a few minutes; the 'compacted' record in its rollout marks the end."""
+        if status.get("state") != "thinking": return False
+        if cli(live) != "codex": return bool(live.get("compacting"))
+        if time.time() - (status.get("since") or time.time()) <= 20: return False
         ctx = self.context(); return bool(ctx and ctx[1] and ctx[0] >= 0.94 * ctx[1])
+
+    def compactions(self, live):
+        """Compactions so far: the loop's count for a runtime that reports them, else the 'compacted' records in Codex's rollout."""
+        if cli(live) != "codex": return int((live.get("stats") or {}).get("compactions") or 0)
+        return int(self.agent_sh(COMPACTIONS).stdout.strip() or 0)
 
     def quest_progress(self, name):
         """How far the goal's quest is by the quest book's own count, 0 to 1: per task, the share of its required items
@@ -250,15 +272,15 @@ class Console:
                 except (OSError, ValueError): live = {}
                 status = live.get("status") or {}
                 if self.guard is None:
-                    if status.get("since") == self.guard_done or not self.compacting(status): continue  # one hold per silence
+                    if status.get("since") == self.guard_done or not self.compacting(status, live): continue  # one hold per silence
                     if live.get("body"): continue  # a background task is working through the compaction
                     clock = self.call("time.status")["state"]
                     if clock.get("held") or clock.get("paused"): continue  # someone else's hold, or the agent's own pause
-                    count = int(self.agent_sh(COMPACTIONS).stdout.strip() or 0)
+                    count = self.compactions(live)
                     if self.hold_file(runtime.hold_cmd(OWN_HOLD, True)).returncode == 0:
                         self.guard = (count, time.monotonic(), status.get("since")); print("[ModdedBench] compaction: world held", flush=True)
                     continue
-                done = int(self.agent_sh(COMPACTIONS).stdout.strip() or 0) > self.guard[0]
+                done = self.compactions(live) > self.guard[0]
                 acted = status.get("state") != "thinking"
                 if done or acted or time.monotonic() - self.guard[1] > 600:
                     self.hold_file(runtime.hold_cmd(OWN_HOLD, False))
@@ -282,7 +304,7 @@ class Console:
         try: clock = self.call("time.status")["state"]
         except Exception: clock = None
         status = dict(live.get("status") or {})
-        compacting = self.guard is not None or self.compacting(status)
+        compacting = self.guard is not None or self.compacting(status, live)
         # The backup holds the world while it copies (about 20 s); its newest snapshot folder is being written all that time.
         try: backup = self.guard is None and bool(clock and clock.get("held")) and time.time() - max((p.stat().st_mtime for p in max(SNAPSHOTS.glob("2*"), default=SNAPSHOTS).glob("*")), default=0) < 15
         except OSError: backup = False
@@ -314,8 +336,8 @@ class Console:
         for entry in [e for e in feed if e.get("kind") == "say"][-12:]: entry["short"] = self.shorten.get("say", entry.get("text"))
         try: target = re.search(r'^TARGET_QUEST\s*=\s*"([^"<]+)"', (BRIEF / "PROMPT.md").read_text(encoding="utf-8"), re.M).group(1)
         except (OSError, AttributeError): target = ""
-        stats, used = dict(live.get("stats") or {}), self.usage()
-        if used: stats["tokens"] = {**used, "estimated": 0, "uncounted": 0}  # exact, where the feed can only estimate a running turn
+        stats, used = dict(live.get("stats") or {}), self.usage() if cli(live) == "codex" else None
+        if used: stats["tokens"] = {**used, "estimated": 0, "uncounted": 0}  # exact, where the feed can only estimate a running Codex turn
         return {"now": time.time(), "goal": goal, "status": status, "stats": stats, "run": live.get("run"), "budget": live.get("budget"), "target": target, "feed": feed, "chapters": self.book[1], "clock": why, "pops": pops}
 
     # Actions. Anything slow runs as the single background job; its command lines and output are the job log.
@@ -361,8 +383,9 @@ class Console:
             if self.backups is None or self.backups.poll() is not None:  # operator snapshots every 30 minutes while the console runs; the agent never sees them
                 log = runtime.RUNTIME / "logs" / "backups.log"; log.parent.mkdir(parents=True, exist_ok=True)
                 self.backups = subprocess.Popen([*PY, str(REPO / "harness" / "launcher" / "backup.py"), "loop"], cwd=REPO, stdout=log.open("ab"), stderr=subprocess.STDOUT, creationflags=NO_WINDOW)
-            extra = ["--", "-m", a["model"]] if re.fullmatch(r"[\w.\-]{1,64}", a.get("model") or "") else []
-            if a.get("effort") in ("minimal", "low", "medium", "high", "xhigh"): extra = [*(extra or ["--"]), "-c", f'model_reasoning_effort="{a["effort"]}"']
+            extra = ["--runtime", a["runtime"] if a.get("runtime") in LOGIN else "codex"]  # the loop spells model and effort for the runtime (rt_codex.py, rt_claude.py)
+            if re.fullmatch(r"[\w.\-\[\]]{1,64}", a.get("model") or ""): extra += ["--model", a["model"]]
+            if a.get("effort") in EFFORTS: extra += ["--effort", a["effort"]]
             # Turns are recovery, not a unit of the run: the run is sized in minutes and tokens, and a turn is cut where it stands.
             # A field left blank is not sent: the loop then continues to the end and the cap the run already has (.state/run.json),
             # so a restart does not hand the run another full budget. The page fills in 120 min and 50 M when nothing is stored.
@@ -371,7 +394,7 @@ class Console:
             if a.get("maxTokens"): budget += ["--max-tokens", str(max(100000, min(int(a["maxTokens"]), 10**11)))]
             self.run_job(name, [[*COMPOSE, "up", "-d", "gateway", "agent"], [*agent, "sh", "-c", LOOP_FREE], [*COMPOSE, "exec", "-d", "agent", "sh", "-c", LOOP, "sh", *budget, *extra]])
         elif name == "agent.stop": self.run_job(name, [[*agent, "sh", "-c", "mkdir -p .state && touch .state/STOP"]])
-        elif name == "agent.kill": self.run_job(name, [[*agent, "sh", "-c", "pkill -f '[c]odex_loop.py'; pkill -x codex; pkill -f '[h]arness/mcp/server.py'; true"]])
+        elif name == "agent.kill": self.run_job(name, [[*agent, "sh", "-c", KILL + "pkill -f '[h]arness/mcp/server.py'; true"]])
         elif name == "agent.down":
             if self.backups: self.backups.terminate()
             self.run_job(name, [[*COMPOSE, "stop", "agent", "gateway"]])
@@ -379,13 +402,13 @@ class Console:
             self.free()  # before anything is deleted or written: a refused init leaves the running run's feed and brief alone
             prompt = fill_prompt((REPO / "PROMPT.md").read_text(encoding="utf-8"), str(a.get("targetQuest", "")).strip(), str(a.get("targetChapter", "")).strip())
             up = "agent" in sh([*COMPOSE, "ps", "--services", "--status", "running"]).stdout.split()
-            steps = [[*agent, "sh", "-c", "pkill -f '[c]odex_loop.py'; pkill -x codex; true"]] if up else []
+            steps = [[*agent, "sh", "-c", KILL + "true"]] if up else []
             if a.get("freshWorld"): steps += [[*COMPOSE, "rm", "-sf", "server"], [DOCKER, "volume", "rm", "-f", f"{PROJECT or 'moddedbench'}_server-data"]]
             if a.get("freshAgent"): steps += [[*COMPOSE, "rm", "-sf", "agent"], [DOCKER, "volume", "rm", "-f", f"{PROJECT or 'moddedbench'}_agent-work"]]
             # The brief lives on the host and is mounted read-only at /brief: the agent can read its mission and rules but not rewrite them.
             shutil.rmtree(OVERLAY, ignore_errors=True)  # a new run starts a new feed and new totals
             BRIEF.mkdir(parents=True, exist_ok=True); (BRIEF / "PROMPT.md").write_text(prompt, encoding="utf-8", newline="")
-            steps += [[*COMPOSE, "up", "-d"], [*agent, "sh", "-c", "mkdir -p .state && rm -f .state/STOP .state/codex-loop.json .state/run.json .state/run-prompt.md"]]  # run.json: a new run has a new start, end and cap
+            steps += [[*COMPOSE, "up", "-d"], [*agent, "sh", "-c", "mkdir -p .state && rm -f .state/STOP .state/agent-loop.json .state/codex-loop.json .state/run.json .state/run-prompt.md"]]  # run.json: a new run has a new start, end and cap
             self.run_job(name, steps)
         else: raise ValueError(f"unknown action {name}")
         return {"accepted": name}
