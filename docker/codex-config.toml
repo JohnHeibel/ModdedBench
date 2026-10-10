@@ -1,6 +1,8 @@
 # Codex inside the agent container. The container is the sandbox, so Codex's own is off here and only here.
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
+# The run is played from the game, the offline wiki and the repository: Codex's own web search (on by default) is off.
+web_search = "disabled"
 
 [mcp_servers.moddedbench]
 command = "python3"
