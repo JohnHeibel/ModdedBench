@@ -3,8 +3,10 @@
 For long unattended runs the agent and the server each live in a container
 and the game client stays on the host, where the GPU and the screen recorder
 are. The agent can edit and build anything in its own checkout, but it reaches
-the world through exactly two doors. The agent is the Codex CLI; no other
-agent runtime is wired into the containers. This setup has been run on Windows
+the world through exactly two doors. The agent is one of two CLIs, chosen per
+run: the Codex CLI or Claude Code (`--runtime codex|claude`; the loop in
+`harness/runner/agent_loop.py` drives either, through `rt_codex.py` and
+`rt_claude.py`). This setup has been run on Windows
 11 with Docker Desktop only. On Linux with plain Docker Engine it is expected
 not to work as it stands: the gateway reaches the client bridge through
 `host.docker.internal`, and the bridge listens on the host's loopback only.
@@ -12,7 +14,8 @@ Commands are written for Git Bash.
 
 ```
  agent container ──(internal network)── gateway ──► model provider (allowlist)
-   Codex, repo, JDK, Gradle cache,         │
+   Codex or Claude Code, repo, JDK,        │
+   Gradle cache,                           │
    Python MCP server                       └──────► host 127.0.0.1:47223  client bridge
         │ /outbox (the only host folder it can write)
         ▼
@@ -24,7 +27,7 @@ Commands are written for Git Bash.
 | Boundary | How it is held |
 | --- | --- |
 | Agent to server | No shared network, volume or console. `time.*` and the authoritative observations already travel through the client's game connection. |
-| Agent to internet | The agent's network is `internal`. The gateway proxies `*.openai.com` and `*.chatgpt.com` and refuses the rest (`docker/squid.conf`). |
+| Agent to internet | The agent's network is `internal`. The gateway proxies `*.openai.com` and `*.chatgpt.com` (Codex) and `api.anthropic.com`, `platform.claude.com` and `claude.ai` (Claude Code) and refuses the rest (`docker/squid.conf`). Neither CLI has a web tool: Codex's web search is off in `docker/codex-config.toml`, and Claude Code is started with `WebSearch`, `WebFetch` and sub-agents disallowed and its automatic memory off (`harness/runner/rt_claude.py`). |
 | Agent to game | The client bridge, forwarded by the gateway; the token folder is mounted read-only and re-read after each client restart. |
 | Agent to host files | `/outbox` only. `harness/launcher/deploy.py serve` on the host accepts `modbench-client.jar`, `modbench-core.jar` and `modbench-baritone.jar`, nothing else, installs them on the client only, restarts it and rolls back if it does not join (a client that will not shut down for the rollback is terminated: the java process of the managed instance, nothing else). One supervisor per checkout: a second `serve` exits. |
 | Server code | `modbench-server.jar` and `modbench-core.jar` are copied from the image on every start, built from the commit the image was built from. |
@@ -65,13 +68,27 @@ docker compose -f docker/compose.yaml --env-file docker/.env up -d --build
 python harness/wiki/fetch.py
 ```
 
-4. Log Codex in once; the login is kept in the `agent-home` volume. This needs
-   an OpenAI account with Codex access: the command prints a URL and a code to
-   enter in a browser on any machine.
+4. Log in the CLI you will run, once; both logins are kept in the `agent-home`
+   volume and survive a rebuilt or recreated container. Neither needs a browser
+   in the container. Codex (an OpenAI account with Codex access) prints a URL
+   and a code to enter in a browser on any machine. Claude Code (a Claude
+   subscription, or `--console` for API billing) prints a URL to open in a
+   browser on any machine; paste the code that page shows back into the
+   terminal.
 
 ```bash
 docker compose -f docker/compose.yaml exec agent codex login --device-auth
+docker compose -f docker/compose.yaml exec agent claude auth login
 ```
+
+   A key or token works instead of a login: uncomment `CODEX_API_KEY`,
+   `CLAUDE_CODE_OAUTH_TOKEN` (what `claude setup-token` prints, run on any
+   machine) or `ANTHROPIC_API_KEY` in `docker/.env`, fill it in, and run
+   `docker compose ... up -d` again. A key that is set is used in place of the
+   login; one left out, or empty, leaves the login in charge. The agent can
+   read either inside its container, as it can the login file. `codex login
+   status` and `claude auth status` in the container say what is in use, and
+   the console shows both.
 
 5. On the host, build and install the same commit on the client, launch it,
    and leave the supervisor running.
@@ -88,10 +105,12 @@ python harness/launcher/deploy.py serve
 6. Start the run: fill the four placeholders in a copy of `PROMPT.md` and save
    it as `.runtime/brief/PROMPT.md` (mounted read-only at `/brief`; the console's
    Initialize does both). The loop runs under the checkout's lock, so a second
-   one cannot start beside it.
+   one cannot start beside it. `--runtime` is `codex` (the default) or `claude`;
+   `--model` and `--effort` are passed to that CLI in its own spelling, and
+   left out they are the CLI's defaults.
 
 ```bash
-docker compose -f docker/compose.yaml exec agent sh -c 'mkdir -p .state && exec flock -n .state/loop.lock python3 harness/runner/codex_loop.py --prompt /brief/PROMPT.md --max-turns 200 --max-minutes 120'
+docker compose -f docker/compose.yaml exec agent sh -c 'mkdir -p .state && exec flock -n .state/loop.lock python3 harness/runner/agent_loop.py --runtime claude --model sonnet --prompt /brief/PROMPT.md --max-turns 200 --max-minutes 120'
 ```
 
 Settings in `docker/.env`:
@@ -129,7 +148,7 @@ continues to the same end and cap (the blank field shows what is left) instead
 of handing the run a fresh budget; a run with nothing stored gets 120 minutes
 and 50 M. Initialize clears them. Start is refused while a loop is running on
 the checkout (`.state/loop.lock`, held by `flock` for as long as the loop
-lives). A loop that dies leaves its last words in `.state/codex-loop.err`, and
+lives). A loop that dies leaves its last words in `.state/agent-loop.err`, and
 the page shows them above the log while no loop is running.
 
 Pause is an operator hold, not a bridge call: the console writes
@@ -193,6 +212,7 @@ keeps with `mb_goal`, and action lines are templates over its tool calls. Initia
 | New world | `docker compose ... down`, `docker volume rm moddedbench_server-data` |
 | New world that keeps the old one | a side stack, below |
 | Start a run without the console | fill the four placeholders in a copy of `PROMPT.md`, save it as `.runtime/brief/PROMPT.md`, then start the loop as in step 6 above (under `flock`, or the one-loop guard does not cover it), or paste it into an interactive `codex` in that container |
+| Change the agent CLI on a world | Start with the other runtime. A conversation belongs to one CLI, so this begins a new one from the brief, the notes and the goal stack; the old thread id is kept as `.state/agent-loop.json.<runtime>` |
 | Snapshot the world, the notes and the agent's work | `python harness/launcher/backup.py once`, or `loop --every 30` in a terminal you leave open (one loop per stack: a second exits) |
 
 ## Side stacks and the test stack
@@ -200,7 +220,7 @@ keeps with `mb_goal`, and action lines are templates over its tool calls. Initia
 A stack is one Compose project: a server, a gateway, an agent, and their
 volumes. The default project is `moddedbench`. Two overlay files make further
 stacks beside it. Each has its own world and agent checkout and shares the
-Codex login volume of the default stack (a copy of the login would log one of
+login volume (both CLIs') of the default stack (a copy of the login would log one of
 the two out), so the default stack must have been created and logged in
 first. All stacks publish port 25575: stop the others before starting one.
 
@@ -221,8 +241,11 @@ Codex reads `~/.codex/AGENTS.md` at the start of every session, and the agent
 container restores that file from a root-owned copy in the image at every
 start. It tells a freshly started or freshly compacted agent to re-read the
 brief, call `mb_status` (which returns the goal stack and names the brief
-again) and read its notes. `CLAUDE.md` imports the same file, for a Claude Code
-session that uses the tools by hand on the host; contained runs use Codex only.
+again) and read its notes. Claude Code reads `CLAUDE.md` in its working
+directory, the checkout, which imports the same file; and since it takes a
+system prompt on its command line, the loop gives it the mounted brief there at
+every launch, where a compaction cannot drop it (the prompt cache makes that
+cost a cache read, not fresh input). Codex gets the brief as its first message.
 The agent may edit everything else in its checkout, including the repository's
 copies of these files, but not the mounted brief.
 

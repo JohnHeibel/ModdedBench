@@ -3,16 +3,19 @@
 # No Mojang or GTNH file is baked into an image you could publish by accident: the pack archive is
 # mounted at run time, and the Gradle cache (which holds decompiled Minecraft) exists only in `dev`.
 
-# dev: the agent's whole world. Repository, JDK 25 (RetroFuturaGradle needs it to run; it provisions 21 and 8 itself), a warm Gradle cache, Python, Codex.
+# dev: the agent's whole world. Repository, JDK 25 (RetroFuturaGradle needs it to run; it provisions 21 and 8 itself), a warm Gradle cache, Python, and the two agent CLIs (Codex, Claude Code).
 FROM eclipse-temurin:25-jdk-noble AS dev
 RUN apt-get update && apt-get install -y --no-install-recommends git python3 python3-pip curl ca-certificates procps \
  && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y --no-install-recommends nodejs \
- && npm install -g @openai/codex && rm -rf /var/lib/apt/lists/*
+ && npm install -g @openai/codex @anthropic-ai/claude-code@2.1.284 && rm -rf /var/lib/apt/lists/*
 RUN useradd -m agent && mkdir -p /work /outbox && chown agent:agent /work /outbox
 USER agent
 WORKDIR /work/modbench
 # ~/.codex is a volume (it keeps the login), so the config and the heartbeat (Codex reads ~/.codex/AGENTS.md in every session)
-# are copied in from root-owned files at every start rather than frozen at first use.
+# are copied in from root-owned files at every start rather than frozen at first use. Claude Code keeps its login, its
+# sessions and its state file in CLAUDE_CONFIG_DIR, a folder of the same volume; its heartbeat is the checkout's CLAUDE.md
+# and its MCP server and rules are on its command line (harness/runner/rt_claude.py). Its version is pinned: the loop
+# reads its stream, and rt_claude's tests are recordings of this one.
 COPY docker/codex-config.toml AGENTS.md /opt/
 RUN mkdir -p /home/agent/.codex
 COPY --chown=agent:agent harness/mcp/requirements.txt /tmp/requirements.txt
@@ -36,8 +39,9 @@ RUN ./gradlew build $GRADLE_EXTRA --console=plain -q && ./gradlew --stop \
  && if [ -d .git ]; then git tag -f modbench-base; fi
 ENV MODBENCH_OUTBOX=/outbox MB_BRIDGE_URL=ws://gateway:47223/ws MB_BRIDGE_TOKEN_FILE=/run/bridge/bridge-47223.token \
     MB_WIKI_DB=/wiki/gtnh-wiki.sqlite MB_BRIEF=/brief/PROMPT.md \
-    HTTPS_PROXY=http://gateway:3128 HTTP_PROXY=http://gateway:3128 NO_PROXY=gateway PYTHONUNBUFFERED=1
-CMD ["sh", "-c", "cp /opt/codex-config.toml /home/agent/.codex/config.toml && cp /opt/AGENTS.md /home/agent/.codex/AGENTS.md && exec sleep infinity"]
+    HTTPS_PROXY=http://gateway:3128 HTTP_PROXY=http://gateway:3128 NO_PROXY=gateway PYTHONUNBUFFERED=1 \
+    CLAUDE_CONFIG_DIR=/home/agent/.codex/claude DISABLE_AUTOUPDATER=1
+CMD ["sh", "-c", "cp /opt/codex-config.toml /home/agent/.codex/config.toml && cp /opt/AGENTS.md /home/agent/.codex/AGENTS.md && mkdir -p \"$CLAUDE_CONFIG_DIR\" && exec sleep infinity"]
 
 # server: the pinned pack server. Its ModdedBench jars come from this image on every start, never from a volume.
 FROM eclipse-temurin:25-jre-noble AS server

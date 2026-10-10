@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "moddedbench": {
+      "command": "python3",
+      "args": ["-u", "/work/modbench/harness/mcp/server.py"],
+      "env": {
+        "MB_BRIDGE_URL": "ws://gateway:47223/ws",
+        "MB_BRIDGE_TOKEN_FILE": "/run/bridge/bridge-47223.token",
+        "MB_WIKI_DB": "/wiki/gtnh-wiki.sqlite",
+        "MB_BRIEF": "/brief/PROMPT.md"
+      }
+    }
+  }
+}

@@ -50,7 +50,7 @@ python harness/mcp/server.py --check
 
 ## Quick start: a contained run
 
-This is the usual mode. The agent (the Codex CLI) and the game server each run
+This is the usual mode. The agent (the Codex CLI or Claude Code) and the game server each run
 in a Docker container; the game client runs on the host. It has been run on
 Windows 11 with Docker Desktop. [docs/CONTAINERS.md](docs/CONTAINERS.md) has
 every step and what the containers do and do not isolate. In outline:
@@ -64,10 +64,14 @@ every step and what the containers do and do not isolate. In outline:
    docker compose -f docker/compose.yaml --env-file docker/.env up -d --build
    ```
 
-4. Log Codex in once (an OpenAI account with Codex access):
+4. Log in the agent CLI you will run, once: Codex (an OpenAI account with Codex
+   access) or Claude Code (a Claude subscription). Each prints a URL for a
+   browser on any machine. A key or token in `docker/.env` works instead
+   ([docs/CONTAINERS.md](docs/CONTAINERS.md), step 4).
 
    ```bash
    docker compose -f docker/compose.yaml exec agent codex login --device-auth
+   docker compose -f docker/compose.yaml exec agent claude auth login
    ```
 
 5. Start the operator console and open `http://127.0.0.1:47300`:
@@ -115,7 +119,7 @@ mb_notes("find", {"near": "player"})      notes written near here (the notes are
 | `harness/mcp` | MCP server, transport kernel, `@tool` contract | restart the server |
 | `harness/tools` | The tools the model sees and edits | reloaded on the next call |
 | `harness/launcher` | Managed local runtime (Prism instance, server, jar install and rollback), the deploy supervisor and backups for contained runs | |
-| `harness/runner` | The loop that keeps the Codex CLI on the mission (`codex_loop.py`) and the stream feed it writes (`feed.py`) | |
+| `harness/runner` | The loop that keeps the agent CLI on the mission (`agent_loop.py`; `rt_codex.py` and `rt_claude.py` hold each CLI's command line and stream) and the stream feed it writes (`feed.py`) | |
 | `harness/console` | Local web console and stream overlay for contained runs | |
 | `harness/mirror` | Optional read-only spectator copy of the world for stock clients ([docs/MIRROR.md](docs/MIRROR.md)) | |
 | `harness/wiki` | Fetches the GTNH wiki into one SQLite file for the offline wiki tools | |
@@ -140,8 +144,9 @@ mb_notes("find", {"near": "player"})      notes written near here (the notes are
 
 Research code, developed and run on one Windows 11 machine.
 
-- The only agent runtime is the Codex CLI. The MCP server works with any
-  stdio MCP client, but nothing else has been run unattended.
+- Every run so far used the Codex CLI. Claude Code is wired in as a second
+  runtime and tested against recorded streams, but has not yet played a run.
+  The MCP server works with any stdio MCP client.
 - Unattended contained runs of 2, 4, 8 and 24 hours have been completed
   ([docs/HISTORY.md](docs/HISTORY.md)). The furthest world finished the Stone
   Age and Steam chapters and entered the LV tier after about 64 hours of play
