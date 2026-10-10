@@ -184,7 +184,7 @@ Run these before every commit. None of them needs Minecraft running.
 | Command | What it checks |
 | --- | --- |
 | `./gradlew build` | The JUnit suites of every module: transport, simulation clock and pause ordering, class transformers, JSON, path search, build order, click search, work specifications, quest access. Seam tests scan the built jars: the Baritone jar refers to ModdedBench only through `dev.modbench.api`, and the server jar carries no development fixtures. |
-| `python -m unittest discover -s harness/tests -p "test_*.py"` | The Python side with a fake bridge: transport, tool reload and state survival, lanes, the interrupt supervisor, world notes, scripts and background tasks, the launcher, deploy and backup, the console, the Codex loop, the spectator mirror. |
+| `python -m unittest discover -s harness/tests -p "test_*.py"` | The Python side with a fake bridge: transport, tool reload and state survival, lanes, the interrupt supervisor, world notes, scripts and background tasks, the launcher, deploy and backup, the console, the agent loop and both runtimes' streams (Claude Code's from recordings), the spectator mirror. |
 | `python harness/mcp/server.py --check` | Every tool module imports and registers; prints the tool list. |
 | `python harness/mcp/tool_table.py --check` | The tool table in `PROMPT.md` matches the code. Without `--check` it rewrites the table. |
 
