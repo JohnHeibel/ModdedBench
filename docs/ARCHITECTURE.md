@@ -158,7 +158,7 @@ restart. `mb_interrupt_events` is how a host learns it should give the model a n
 MCP connection cannot wake a model whose turn has ended, so a chat-style agent
 stays in its turn by blocking in `mb_wait`, which returns when an event needs
 it; an ended turn is restarted by an outer loop such as
-`harness/runner/codex_loop.py`. Without either, the event is kept and the
+`harness/runner/agent_loop.py`. Without either, the event is kept and the
 native effects still happen.
 
 Every fire carries the expected bridge id, world id, dimension and world

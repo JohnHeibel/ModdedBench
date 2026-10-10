@@ -2,13 +2,13 @@
 # Copyright (c) 2026 ModdedBench contributors
 """Model challenges: one fresh model on one prepared task, graded from the server, one row a trial.
 
-    python harness/smoke/challenge.py TASK [TASK ...] [--trials 3] [--minutes 12] [--model M] [--effort E] [--checkout DIR]
+    python harness/smoke/challenge.py TASK [TASK ...] [--trials 3] [--minutes 12] [--runtime codex|claude] [--model M] [--effort E] [--checkout DIR]
 
 Runs on the host against the throwaway `mbtest` stack (server up with dev fixtures, client in its world). A trial:
   1. the scene, kit and start position (challenge_tasks.py setup, inside the server's network);
   2. a fresh clone of the commit under test (its tools, an empty .state: no notes, no thread), and the real brief with
      the task put at its top;
-  3. the agent container on that clone: one Codex turn, ended by its own MISSION COMPLETE line or the minute cap;
+  3. the agent container on that clone: one turn of the agent CLI, ended by its own MISSION COMPLETE line or the minute cap;
   4. the grade (challenge_tasks.py grade): blocks on the server, never a receipt.
 Rows go to .runtime/evidence/challenge.json; everything a trial left (calls, loop log, brief, snapshots) stays in
 .runtime/trials/<stamp>-<task>-<n>/. `--minutes-left` in the ledger there keeps a total budget across invocations.
@@ -68,14 +68,15 @@ def brief(checkout: Path, task: str) -> str:
 
 
 def agent(folder: Path, a) -> dict:
-    """One Codex turn in the agent image, on the trial's own clone; the container is gone when it returns."""
-    codex = f'-m {a.model} -c model_reasoning_effort=\\"{a.effort}\\" -c model_reasoning_summary=\\"detailed\\"'
+    """One turn of the agent CLI in the agent image, on the trial's own clone; the container is gone when it returns.
+    The CLI's login is the main stack's (its agent-home volume); a key set in this process's environment is passed on."""
+    keys = [x for name in ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "CODEX_API_KEY") if os.environ.get(name) for x in ("-e", name)]
     inner = ("cp /work/modbench/docker/codex-config.toml ~/.codex/config.toml && cp /work/modbench/AGENTS.md ~/.codex/AGENTS.md && "
              "git config --global --add safe.directory /work/modbench && cd /work/modbench && "
-             f"exec python3 harness/runner/codex_loop.py --prompt /brief/PROMPT.md --max-turns 1 --max-minutes {a.minutes} -- {codex}")
+             f"exec python3 harness/runner/agent_loop.py --prompt /brief/PROMPT.md --max-turns 1 --max-minutes {a.minutes} --runtime {a.runtime} --model {a.model} --effort {a.effort}")
     tokens = Path.home() / ".moddedbench"
     cmd = [DOCKER, "run", "--rm", "--name", "mbtrial", "--network", "mbtest_agent", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
-           "--memory", "8g", "--pids-limit", "2048",
+           "--memory", "8g", "--pids-limit", "2048", *keys,
            "-v", f"{folder / 'checkout'}:/work/modbench", "-v", "moddedbench_agent-home:/home/agent/.codex", "-v", f"{folder / 'outbox'}:/outbox",
            "-v", f"{folder / 'brief'}:/brief:ro", "-v", f"{a.wiki}:/wiki:ro", "-v", f"{tokens}:/run/bridge:ro",
            a.image, "sh", "-c", inner]
@@ -115,7 +116,7 @@ def trial(task: str, n: int, a) -> dict:
     if c.returncode or (folder / "checkout" / "harness" / "smoke").exists(): raise RuntimeError("sparse checkout: " + c.stderr)
     commit = sh(["git", "-C", str(folder / "checkout"), "rev-parse", "--short", "HEAD"]).stdout.strip()
     (folder / "brief" / "PROMPT.md").write_text(brief(folder / "checkout", prompt), encoding="utf-8", newline="\n")
-    row = {"task": task, "trial": n, "model": a.model, "effort": a.effort, "commit": commit, "folder": folder.name, "started": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    row = {"task": task, "trial": n, "runtime": a.runtime, "model": a.model, "effort": a.effort, "commit": commit, "folder": folder.name, "started": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     try: row.update(agent(folder, a))
     except subprocess.TimeoutExpired:
         sh([DOCKER, "rm", "-f", "mbtrial"]); row.update(exit="timeout", wallS=a.minutes * 60 + 300)
@@ -128,11 +129,12 @@ def trial(task: str, n: int, a) -> dict:
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("tasks", nargs="+"); ap.add_argument("--trials", type=int, default=1); ap.add_argument("--minutes", type=float, default=12)
-    ap.add_argument("--model", default="gpt-6.1-sol"); ap.add_argument("--effort", default="medium")
+    ap.add_argument("--runtime", choices=("codex", "claude"), default="codex"); ap.add_argument("--model", help="default: gpt-6.1-sol, or sonnet for claude")
+    ap.add_argument("--effort", default="medium")
     ap.add_argument("--checkout", default=str(ROOT), help="the repository whose HEAD the agent runs (cloned fresh for every trial)")
     ap.add_argument("--image", default="mbtest-agent:latest"); ap.add_argument("--wiki", default=str(ROOT.parent.parent / "modbench" / ".runtime" / "wiki"))
     ap.add_argument("--budget-minutes", type=float, help="stop before a trial that could take the ledger's total past this")
-    a = ap.parse_args()
+    a = ap.parse_args(); a.model = a.model or {"codex": "gpt-6.1-sol", "claude": "sonnet"}[a.runtime]
     try: history = json.loads(OUT.read_text())
     except (OSError, ValueError): history = {"rows": []}
     for task in a.tasks:

@@ -31,7 +31,9 @@ class ConsoleTests(unittest.TestCase):
     def test_start_sends_only_the_budgets_the_operator_filled_in(self):
         self.assertEqual(start({})[2][:2], ["--max-turns", "200"]); self.assertNotIn("--max-minutes", start({"maxMinutes": None, "maxTokens": 0})[2])  # blank: the loop keeps the run's stored end and cap
         args = start({"maxMinutes": 90, "maxTokens": 2e6, "model": "gpt-x"})[2]
-        self.assertEqual(args[:8], ["--max-turns", "200", "--max-minutes", "90.0", "--max-tokens", "2000000", "--", "-m"])
+        self.assertEqual(args, ["--max-turns", "200", "--max-minutes", "90.0", "--max-tokens", "2000000", "--runtime", "codex", "--model", "gpt-x"])
+        self.assertEqual(start({"runtime": "claude", "model": "sonnet[1m]", "effort": "max"})[2][2:], ["--runtime", "claude", "--model", "sonnet[1m]", "--effort", "max"])
+        self.assertEqual(start({"runtime": "rm -rf", "model": "x; y", "effort": "lots"})[2][2:], ["--runtime", "codex"])  # the loop spells model and effort for the runtime
 
     def test_init_is_refused_while_a_job_runs_before_it_touches_the_feed_or_the_brief(self):
         import tempfile, types
@@ -51,12 +53,12 @@ class ConsoleTests(unittest.TestCase):
     def test_the_probe_reads_the_end_of_the_log_and_not_the_whole_file(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
-            Path(tmp, "codex-loop.log").write_bytes(b"x" * 3_000_000 + "\u00e9nd of the log".encode()); Path(tmp, "run.json").write_text('{"startedAt": 1}')
+            Path(tmp, "agent-loop.log").write_bytes(b"x" * 3_000_000 + "\u00e9nd of the log".encode()); Path(tmp, "run.json").write_text('{"startedAt": 1}')
             read = []
             def spy(path, mode):
                 f = open(path, mode); inner = f.read; f = type("F", (), {"seek": f.seek, "close": f.close, "read": lambda self: read.append(inner()) or read[-1]})(); return f
             space = {"s": Path(tmp), "open": spy}; exec(console.TAIL, space); r = space["r"]
-            self.assertTrue(r("codex-loop.log").endswith("\u00e9nd of the log")); self.assertEqual(24000, len(read[0]))
+            self.assertTrue(r("agent-loop.log").endswith("\u00e9nd of the log")); self.assertEqual(24000, len(read[0]))
             self.assertEqual(('{"startedAt": 1}', ""), (r("run.json"), r("absent")))
         self.assertIn(console.TAIL, console.AGENT_PROBE); compile(console.AGENT_PROBE, "probe", "exec")
 
@@ -73,8 +75,8 @@ class ConsoleTests(unittest.TestCase):
             done = subprocess.run(["sh", "-c", console.LOOP, "sh", "--max-minutes", "5", "--", "-c", "two words"], cwd=tmp, env=env, capture_output=True, text=True)
             self.assertEqual((3, "", ""), (done.returncode, done.stdout, done.stderr))
             self.assertEqual("-n .state/loop.lock\n", Path(tmp, "flock.txt").read_text())
-            self.assertEqual(["harness/runner/codex_loop.py", "--prompt", brief, "--max-minutes", "5", "--", "-c", "two words"], Path(tmp, "argv.txt").read_text().splitlines())
-            self.assertNotIn("STOP", Path(tmp, "state.txt").read_text()); self.assertEqual("trace\n", Path(tmp, ".state", "codex-loop.err").read_text())
+            self.assertEqual(["harness/runner/agent_loop.py", "--prompt", brief, "--max-minutes", "5", "--", "-c", "two words"], Path(tmp, "argv.txt").read_text().splitlines())
+            self.assertNotIn("STOP", Path(tmp, "state.txt").read_text()); self.assertEqual("trace\n", Path(tmp, ".state", "agent-loop.err").read_text())
 
     @unittest.skipUnless(shutil.which("sh"), "runs the hold's shell lines")
     def test_pause_takes_the_hold_over_and_resume_ends_only_the_operators(self):
@@ -155,7 +157,7 @@ class ConsoleTests(unittest.TestCase):
             c.hold_file = lambda cmd: held.append(cmd) or types.SimpleNamespace(returncode=0 if "echo" in cmd else 1)
             c.agent_sh = lambda cmd: types.SimpleNamespace(stdout="3")
             c.call = lambda method, **kw: {"state": {"paused": False, "held": False}}
-            c.compacting = lambda status: True
+            c.compacting = lambda status, live: True
             ticks = iter(range(2))
             stop = lambda s: next(ticks, None) is None and (_ for _ in ()).throw(Done())
             with tempfile.TemporaryDirectory() as tmp, mock.patch.object(console, "OVERLAY", Path(tmp)), mock.patch.object(console.time, "sleep", stop), mock.patch("builtins.print"):
@@ -166,6 +168,42 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(guard({"status": status, "body": {"task": "t1"}}), ([], None))  # the task works through the compaction
         holds, state = guard({"status": status, "body": None})  # once it has ended, the guard holds
         self.assertEqual((len(holds), state[0]), (1, 3))
+
+    def test_a_claude_run_is_held_on_the_loops_own_word_and_never_on_codex_probes(self):
+        import tempfile, types
+        from unittest import mock
+        class Done(BaseException): pass
+        c = object.__new__(console.Console); c.guard, c.guard_done, c.ctx = None, None, (0.0, None); held = []
+        c.hold_file = lambda cmd: held.append("hold" if "echo" in cmd else "release") or types.SimpleNamespace(returncode=0 if "echo" in cmd else 1)
+        c.agent_sh = c.context = lambda *a: self.fail("a Claude run asked Codex's rollout")
+        c.call = lambda method, **kw: {"state": {"paused": False, "held": False}}
+        def live(compacting, done, state="thinking"):
+            return {"run": {"runtime": "claude"}, "status": {"state": state, "since": 1.0}, "compacting": compacting, "stats": {"compactions": done}}
+        self.assertEqual([True, False, False], [c.compacting(l["status"], l) for l in (live(True, 0), live(False, 0), live(True, 0, "acting"))])
+        self.assertEqual("codex", console.cli({"stats": {}}))  # a feed from before the loop had runtimes
+        frames = iter([live(False, 4), live(True, 4), live(True, 4), live(False, 5)])
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(console, "OVERLAY", Path(tmp)), mock.patch("builtins.print"):
+            def tick(seconds):
+                frame = next(frames, None)
+                if frame is None: raise Done()
+                (Path(tmp) / "live.json").write_text(json.dumps(frame), encoding="utf-8")
+            with mock.patch.object(console.time, "sleep", tick), self.assertRaises(Done): c.compaction_guard()
+        self.assertEqual((["release", "hold", "release"], None, 1.0), (held, c.guard, c.guard_done))  # the first release is the start's own check for a hold left behind
+
+    def test_the_login_checks_take_a_key_from_the_environment_or_ask_the_cli_and_an_empty_key_is_no_key(self):
+        import os, subprocess, tempfile
+        if not shutil.which("sh"): self.skipTest("runs the checks' shell lines")
+        with tempfile.TemporaryDirectory() as tmp:
+            bin = Path(tmp, "bin"); bin.mkdir()
+            (bin / "codex").write_text('#!/bin/sh\necho "$@" >> asked.txt; exit 1\n', newline="\n")
+            (bin / "claude").write_text('#!/bin/sh\necho "$@" >> asked.txt; echo \'{ "loggedIn": true }\'\n', newline="\n")
+            for fake in bin.iterdir(): fake.chmod(0o755)
+            def ok(name, **env):
+                clean = {k: v for k, v in os.environ.items() if k not in ("CODEX_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY")}
+                return subprocess.run(["sh", "-c", console.LOGIN[name]], cwd=tmp, env={**clean, "PATH": str(bin) + os.pathsep + os.environ["PATH"], **env}).returncode == 0
+            self.assertEqual([False, False, True], [ok("codex"), ok("codex", CODEX_API_KEY=""), ok("codex", CODEX_API_KEY="k")])
+            self.assertEqual([True, True, True], [ok("claude"), ok("claude", CLAUDE_CODE_OAUTH_TOKEN=""), ok("claude", ANTHROPIC_API_KEY="k")])
+            self.assertEqual(["login status", "login status", "auth status", "auth status"], Path(tmp, "asked.txt").read_text().splitlines())  # a key that is set is not checked with the CLI
 
 
 if __name__ == "__main__":
