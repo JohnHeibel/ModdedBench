@@ -5,7 +5,12 @@ import base64, contextlib, io, json, os, sys, tempfile, unittest, unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runner"))
-import codex_loop
+import codex_loop, rt_codex
+
+def fed(feed, *raw):
+    """Codex's own events through its parser into the feed, as the loop does it."""
+    for e in raw:
+        for ev in rt_codex.Parser().events(e): feed.event(ev)
 
 # Replays plan.json[n] for the n-th call: {"events": [...], "exit": 0, "stop": false}; records argv and stdin.
 FAKE = """import json, sys
@@ -75,33 +80,33 @@ class CodexLoopTests(unittest.TestCase):
         from feed import Feed, BASE
         with tempfile.TemporaryDirectory() as d:
             f = Feed(Path(d))
-            f.event({"type": "turn.started"})
-            f.event({"type": "item.completed", "item": {"type": "mcp_tool_call", "tool": "mb_screenshot", "result": {"content": [{"type": "image", "data": "A" * 133000}]}}})
+            fed(f, {"type": "turn.started"})
+            fed(f, {"type": "item.completed", "item": {"type": "mcp_tool_call", "tool": "mb_screenshot", "result": {"content": [{"type": "image", "data": "A" * 133000}]}}})
             self.assertLess(f.billed() - BASE, 2000)
-            f.event({"type": "item.completed", "item": {"type": "mcp_tool_call", "tool": "mb_recipes", "result": {"content": [{"type": "text", "text": "x y " * 4000}]}}})
+            fed(f, {"type": "item.completed", "item": {"type": "mcp_tool_call", "tool": "mb_recipes", "result": {"content": [{"type": "text", "text": "x y " * 4000}]}}})
             self.assertGreater(f.billed() - 2 * BASE, 5000)
 
     def test_a_turn_that_never_reports_its_usage_keeps_its_estimate(self):
         from feed import Feed
         with tempfile.TemporaryDirectory() as d:
             f = Feed(Path(d))
-            f.event({"type": "turn.started"})
-            f.event({"type": "item.completed", "item": {"type": "mcp_tool_call", "tool": "mb_obs", "result": {"content": [{"type": "text", "text": "x" * 4000}]}}})
+            fed(f, {"type": "turn.started"})
+            fed(f, {"type": "item.completed", "item": {"type": "mcp_tool_call", "tool": "mb_obs", "result": {"content": [{"type": "text", "text": "x" * 4000}]}}})
             cut = f.billed()
-            f.event({"type": "turn.started"})  # the first turn was killed: no turn.completed
+            fed(f, {"type": "turn.started"})  # the first turn was killed: no turn.completed
             self.assertEqual(cut, f.billed())
-            f.event({"type": "turn.completed", "usage": {"input_tokens": 100}})
+            fed(f, {"type": "turn.completed", "usage": {"input_tokens": 100}})
             self.assertEqual(cut + 100, f.billed())
 
     def test_the_overlay_clock_runs_only_inside_turns(self):
         from feed import Feed
         with tempfile.TemporaryDirectory() as d, unittest.mock.patch("feed.time.time") as now:
             now.return_value = 100.0; f = Feed(Path(d))
-            f.event({"type": "turn.started"}); now.return_value = 130.0
-            f.event({"type": "turn.completed", "usage": {}}); now.return_value = 1000.0
+            fed(f, {"type": "turn.started"}); now.return_value = 130.0
+            fed(f, {"type": "turn.completed", "usage": {}}); now.return_value = 1000.0
             f.status("backing_off"); f.status("between_turns")
             self.assertEqual((30.0, None), (f.live["stats"]["activeSeconds"], f.live["stats"]["activeSince"]))
-            f.event({"type": "turn.started"}); now.return_value = 1010.0; f.status("acting", "mining")  # then the loop is killed
+            fed(f, {"type": "turn.started"}); now.return_value = 1010.0; f.status("acting", "mining")  # then the loop is killed
             now.return_value = 5000.0; self.assertEqual((40.0, None), (Feed(Path(d)).live["stats"]["activeSeconds"], None))
 
     def test_token_budget_ends_the_turn_where_it_stands_and_the_thread_resumes(self):
@@ -118,12 +123,12 @@ class CodexLoopTests(unittest.TestCase):
             {"events": [{"type": "thread.started", "thread_id": "T-1"}, message("not MISSION COMPLETE yet")]},
             {"events": [{"type": "thread.started", "thread_id": "T-2"}, message("claimed and verified\nMISSION COMPLETE\n")]}], extra=["-m", "x"])
         self.assertEqual("complete", reason); self.assertEqual(2, len(calls))
-        self.assertEqual(["exec", "--json", "-C", str(self.repo), "-m", "x", "-"], calls[0]["argv"]); self.assertEqual("the mission", calls[0]["stdin"])
+        self.assertEqual(["exec", "--json", "-C", str(self.repo), "-c", 'model_reasoning_summary="detailed"', "-m", "x", "-"], calls[0]["argv"]); self.assertEqual("the mission", calls[0]["stdin"])
         self.assertEqual(["resume", "T-1", "-"], calls[1]["argv"][-3:]); self.assertEqual(codex_loop.CONTINUE, calls[1]["stdin"])
         self.assertEqual({"thread": "T-1"}, json.loads((self.repo / ".state" / "codex-loop.json").read_text()))
         self.assertIn("MISSION COMPLETE", (self.repo / ".state" / "codex-loop.log").read_text())
         # A restarted loop resumes the saved thread; session_id nested in a payload is also accepted.
-        self.assertEqual("T-9", codex_loop._find_id({"type": "session_meta", "payload": {"session_id": "T-9"}}))
+        self.assertEqual("T-9", rt_codex._find_id({"type": "session_meta", "payload": {"session_id": "T-9"}}))
         (self.repo / "calls.json").unlink(); reason, calls = self.loop([{}], max_turns=1)
         self.assertEqual(("max_turns", ["resume", "T-1", "-"]), (reason, calls[0]["argv"][-3:]))
 
@@ -150,7 +155,7 @@ class CodexLoopTests(unittest.TestCase):
         from feed import Feed
         with tempfile.TemporaryDirectory() as d:
             f = Feed(Path(d)); (Path(d) / "live.tmp").mkdir(); (Path(d) / "feed.jsonl").mkdir()  # every write now raises OSError
-            f.status("game_down"); f.body({"task": "t1"}); f.add("mark", "MISSION COMPLETE"); f.event({"type": "turn.started"})
+            f.status("game_down"); f.body({"task": "t1"}); f.add("mark", "MISSION COMPLETE"); fed(f, {"type": "turn.started"})
             self.assertEqual("thinking", f.live["status"]["state"])
 
     def test_a_loop_that_dies_says_when_on_stderr(self):
@@ -226,17 +231,17 @@ class CodexLoopTests(unittest.TestCase):
                 "things": [{"what": "unnamed", "count": 2}], "you": [1, 64, 1]}
         with tempfile.TemporaryDirectory() as d:
             f = Feed(Path(d)); pops = lambda: json.loads((Path(d) / "pops.json").read_text(encoding="utf-8"))
-            f.event(call("mb_obs", {"method": "player"}, {"pos": [5.5, 64.0, 7.5]}))
-            f.event(call("mb_obs", {"method": "entities", "params": {"radius": 16}}, {"entities": [{"type": "Zombie", "pos": [8, 64, 7], "distance": 2.5, "hostile": True}]}))
-            f.event(call("mb_view", {"look_down": False}, view))
-            f.event(call("mb_scan", {"blocks": [{"id": "x:y"}]}, {"ok": False}, status="failed"))  # a failure shows nothing
-            f.event(call("mb_inventory", {"container": True}, {"windowId": 3}))  # a container's slots are not drawn
+            fed(f, call("mb_obs", {"method": "player"}, {"pos": [5.5, 64.0, 7.5]}))
+            fed(f, call("mb_obs", {"method": "entities", "params": {"radius": 16}}, {"entities": [{"type": "Zombie", "pos": [8, 64, 7], "distance": 2.5, "hostile": True}]}))
+            fed(f, call("mb_view", {"look_down": False}, view))
+            fed(f, call("mb_scan", {"blocks": [{"id": "x:y"}]}, {"ok": False}, status="failed"))  # a failure shows nothing
+            fed(f, call("mb_inventory", {"container": True}, {"windowId": 3}))  # a container's slots are not drawn
             radar, shown = pops()[0], pops()[1]
             self.assertEqual(("radar", [5.5, 64.0, 7.5], "Zombie"), (radar["kind"], radar["data"]["me"], radar["data"]["entities"][0]["type"]))
             self.assertEqual(("view", {"id": "gregtech:gt.blockmachines", "count": 1, "name": "Steam Macerator", "tile": True}, []), (shown["kind"], shown["data"]["legend"]["~"], shown["data"]["things"]))
             self.assertEqual(2, len(pops()))
             png = base64.b64encode(b"\x89PNG fake").decode()
-            for i in range(POPS + 2): f.event(call("mb_screenshot", {}, None, image=png))
+            for i in range(POPS + 2): fed(f, call("mb_screenshot", {}, None, image=png))
             kept = pops(); self.assertEqual(POPS, len(kept))
             self.assertEqual(sorted(p["image"] for p in kept), sorted(x.name for x in Path(d).glob("pop-*.png")))  # images go with their records
             self.assertEqual(b"\x89PNG fake", (Path(d) / kept[-1]["image"]).read_bytes())

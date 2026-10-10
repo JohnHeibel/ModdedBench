@@ -363,8 +363,6 @@ class Console:
                 self.backups = subprocess.Popen([*PY, str(REPO / "harness" / "launcher" / "backup.py"), "loop"], cwd=REPO, stdout=log.open("ab"), stderr=subprocess.STDOUT, creationflags=NO_WINDOW)
             extra = ["--", "-m", a["model"]] if re.fullmatch(r"[\w.\-]{1,64}", a.get("model") or "") else []
             if a.get("effort") in ("minimal", "low", "medium", "high", "xhigh"): extra = [*(extra or ["--"]), "-c", f'model_reasoning_effort="{a["effort"]}"']
-            # Codex's readable summary of each reasoning step, for the stream's feed; the model's own reasoning is unchanged by it.
-            extra = [*(extra or ["--"]), "-c", 'model_reasoning_summary="detailed"']
             # Turns are recovery, not a unit of the run: the run is sized in minutes and tokens, and a turn is cut where it stands.
             # A field left blank is not sent: the loop then continues to the end and the cap the run already has (.state/run.json),
             # so a restart does not hand the run another full budget. The page fills in 120 min and 50 M when nothing is stored.
