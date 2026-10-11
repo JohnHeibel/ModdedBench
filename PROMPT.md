@@ -104,8 +104,9 @@ base, in your hands and on your back is the point.
 The trophies are the exception. When the book hands you one, it goes on
 display: build a trophy room for them, a fancy one, and keep it up as they
 arrive. Really plan out your decorations. Set each trophy out properly,
-decorate the room, make it a pleasure to walk into. It is the record of your progress in a form anyone can see at a
-glance, and it is what people will look back on to judge how well you did.
+decorate the room, make it a pleasure to walk into. It is the record of your
+progress in a form anyone can see at a glance, and it is what people will look
+back on to judge how well you did.
 
 Go back over the old ones too. "Skip" and "later" were judgements made with
 what you had then, and this pack changes what things cost: a quest that was a
