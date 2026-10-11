@@ -233,6 +233,15 @@ Key facts about the runtime:
   that a failure means something you did not expect; a guard stop always ends
   the task, whatever the script catches. A pause inside a background script
   ends it, and guard changes it makes are put back when it ends.
+- **Tool calls may be held.** A run can be paced to a token budget per hour.
+  When it is, the tool server holds the first tool call of a step for a while
+  before it runs, sometimes a few minutes. A held call is not hung, and
+  polling it or running it in the background only spends the budget and makes
+  the next hold longer. Nothing guarantees that a slow call is a deliberate
+  hold, and there may be no budget, or one higher than you spend, and then it
+  is never a problem. If you notice holds often, work on actions that take
+  longer and cover more ground in a single tool call, so that you make fewer
+  calls an hour.
 - **Receipts are not acknowledgements.** Clicks, transfers, quest actions and
   interactions report what was sent. Completion comes from re-observing the
   world, the container, the machine, the quest, or your inventory. Never retry
