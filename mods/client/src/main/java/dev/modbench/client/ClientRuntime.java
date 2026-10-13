@@ -330,6 +330,8 @@ public final class ClientRuntime extends BridgeRuntime {
         out.addProperty("regionProtection",true);
         out.addProperty("tickControl",true);
         out.addProperty("nei",cpw.mods.fml.common.Loader.isModLoaded("NotEnoughItems"));
+        // The jar names the pack it was built for; a game without that pack's own mod is not the pack.
+        if(!cpw.mods.fml.common.Loader.isModLoaded("dreamcraft")) out.addProperty("pack","none: Forge 1.7.10 without "+out.get("pack").getAsString());
         return out;
     }
 

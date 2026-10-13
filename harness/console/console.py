@@ -91,7 +91,7 @@ LOOP_FREE = "mkdir -p .state; flock -n .state/loop.lock true || { echo 'a loop i
 def fill_prompt(prompt, quest, chapter):
     """PROMPT.md with its four placeholders filled for a contained run."""
     if not quest or not chapter or any(len(x) > 200 or '"' in x or "\n" in x for x in (quest, chapter)): raise ValueError("target quest and chapter are required, without quotes")
-    for key, value in (("TARGET_QUEST", quest), ("TARGET_CHAPTER", chapter), ("WORLD", "the contained GTNH server (one world)"), ("REPO", "/work/modbench")):
+    for key, value in (("TARGET_QUEST", quest), ("TARGET_CHAPTER", chapter), ("WORLD", f"the contained {'plain Minecraft' if runtime.PACK == 'vanilla' else 'GTNH'} server (one world)"), ("REPO", "/work/modbench")):
         prompt, n = re.subn(rf'^({key}\s*=\s*)"<[^\n]*>"', lambda m: f'{m.group(1)}"{value}"', prompt, count=1, flags=re.M)
         if n != 1: raise ValueError(f"PROMPT.md has no {key} placeholder")
     return prompt

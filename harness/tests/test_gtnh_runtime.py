@@ -125,6 +125,20 @@ class RuntimeTests(unittest.TestCase):
             finally:
                 runtime.REPO = old_repo
 
+    def test_vanilla_strips_the_pack_and_keeps_the_loader(self):
+        names = ("lwjgl3ify-3.0.15.jar", "+unimixins-all-1.7.10-0.3.0.jar", "gtnhlib-0.9.33.jar", "gregtech-5.09.51.jar", "NotEnoughItems-2.8.40-GTNH.jar")
+        for pack, kept in (("vanilla", list(names[:3])), ("gtnh", list(names))):
+            with tempfile.TemporaryDirectory() as tmp, patch.object(runtime, "PACK", pack):
+                game = Path(tmp)
+                for folder in ("mods/1.7.10", "config/GregTech", "scripts", "libraries"): (game / folder).mkdir(parents=True)
+                for name in names: (game / "mods" / name).write_bytes(b"jar")
+                (game / "mods" / "1.7.10" / "CodeChickenLib.jar").write_bytes(b"jar")
+                runtime.strip_pack(game)
+                self.assertEqual(sorted(x.name for x in (game / "mods").iterdir() if x.is_file()), sorted(kept))
+                self.assertEqual((game / "config").exists(), pack == "gtnh")
+                self.assertEqual((game / "mods" / "1.7.10").exists(), pack == "gtnh")
+                self.assertTrue((game / "libraries").is_dir())
+
     def test_zip_member_rejects_traversal_and_strips_client_root(self):
         with tempfile.TemporaryDirectory() as tmp:
             archive = Path(tmp) / "pack.zip"

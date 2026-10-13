@@ -13,7 +13,7 @@ HOME, DATA = Path("/opt/modbench"), Path("/data")
 if not (DATA / runtime.MARKER).is_file():
     name = next(a["file"] for a in json.loads((HOME / "pack.lock.json").read_text())["archives"] if a["side"] == "server")
     runtime.verify_pack_archive(Path("/pack") / name, "server", HOME / "pack.lock.json")
-    runtime.extract_zip(Path("/pack") / name, DATA)
+    runtime.extract_zip(Path("/pack") / name, DATA); runtime.strip_pack(DATA)  # MB_PACK=vanilla: plain Forge
     runtime.save_json(DATA / runtime.MARKER, {"managedBy": "modbench", "kind": "server"})
 # The port is published to the host's loopback only; inside the container the server must listen on every interface.
 runtime.set_server_properties(DATA, os.environ.get("EULA", "").lower() == "true", server_ip="", max_players=1)

@@ -74,7 +74,7 @@ class Server(FastMCP):
         super().__init__(
             "moddedbench",
             instructions=(
-                "Tools for playing GT New Horizons through the ModdedBench bridge. Tool modules under harness/tools are "
+                "Tools for playing Minecraft 1.7.10 (GT New Horizons, or plain Forge: mb_status names the pack) through the ModdedBench bridge. Tool modules under harness/tools are "
                 "hot-reloaded on the next call; mb_call(method, params) can invoke any bridge method and mb_methods lists them."
             ),
         )

@@ -123,6 +123,7 @@ Settings in `docker/.env`:
 | `SERVER_MEMORY_MIB` | `6144` | Server heap |
 | `BRIGHT_NIGHTS` | `false` | `true` turns off the pack's near-black night rendering, for recording; light levels in the game are unchanged |
 | `MB_DIFFICULTY` | `1` | The world's difficulty, written to `server.properties` at every server start: 0 peaceful, 1 easy, 2 normal, 3 hard. The pack ships 3; runs are played on easy unless this says otherwise. |
+| `MB_PACK` | `gtnh` | `vanilla` runs plain Forge 1.7.10 from the same pinned archives: every pack mod, config and script is removed on a fresh extract, leaving the loader that runs Java 17 mods (lwjgl3ify, UniMixins, GTNHLib) and ours. Set it for the console and the launcher too (they then use the Prism instance `Modbench-Vanilla-Dev`), and start from an empty server volume. |
 
 ## Operator console
 

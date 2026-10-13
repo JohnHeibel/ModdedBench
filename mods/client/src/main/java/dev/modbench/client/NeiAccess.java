@@ -35,7 +35,9 @@ final class NeiAccess {
         if(latest!=catalogue) { catalogue=latest;generation++;cachedSearches.clear();cachedRecipes.clear(); }
     }
     private void requireReady() throws Exception {
-        if(!((JsonObject)status()).get("ready").getAsBoolean() || catalogue==null)
+        JsonObject status=(JsonObject)status();
+        if(!status.get("installed").getAsBoolean()) throw new IllegalArgumentException("NEI is not installed: this game has no recipe or item catalogue to ask");
+        if(!status.get("ready").getAsBoolean() || catalogue==null)
             throw new IllegalArgumentException("NEI catalogue is still loading; retry nei.status");
     }
     Object search(Request request) throws Exception {

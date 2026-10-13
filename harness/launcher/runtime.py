@@ -24,7 +24,10 @@ from typing import Any
 
 REPO = Path(__file__).resolve().parents[2]
 RUNTIME = REPO / ".runtime"
-INSTANCE_NAME = "Modbench-GTNH-Dev"
+# MB_PACK=vanilla: plain Forge 1.7.10 from the same pinned archives, with every pack mod removed (strip_pack) and an instance of its own.
+PACK = os.environ.get("MB_PACK", "gtnh")
+INSTANCE_NAME = "Modbench-Vanilla-Dev" if PACK == "vanilla" else "Modbench-GTNH-Dev"
+LOADER_MODS = ("lwjgl3ify-", "+unimixins-", "gtnhlib-")  # what runs Java 17 mods on Forge 1.7.10; none of them adds or changes game content
 MARKER = ".modbench-gtnh.json"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "mcp"))
 from kernel import bridge_url  # noqa: E402
@@ -203,6 +206,17 @@ def extract_zip(archive_path: Path, target: Path, *, strip_root: bool = False) -
                 shutil.copyfileobj(source, out)
 
 
+def strip_pack(game: Path) -> None:
+    """MB_PACK=vanilla, on a freshly extracted pack: everything in ``mods`` goes except the loader that runs Java 17 mods
+    (LOADER_MODS), and the pack's configs and scripts go with it, so Forge and the three kept mods run on their defaults.
+    What is left is Minecraft 1.7.10 with Forge; our own jars are installed afterwards, as for the pack."""
+    if PACK != "vanilla": return
+    for entry in (game / "mods").iterdir():
+        if entry.is_dir(): shutil.rmtree(entry)
+        elif not entry.name.startswith(LOADER_MODS): entry.unlink()
+    for name in ("config", "scripts"): shutil.rmtree(game / name, ignore_errors=True)
+
+
 def instance_dir(cfg: dict[str, Any]) -> Path:
     data = cfg.get("prismData")
     if not data:
@@ -332,14 +346,14 @@ def prepare(args: argparse.Namespace) -> None:
     cfg["prism"] = prism
     server = runtime / "server"
     if not server.exists():
-        extract_zip(Path(cfg["serverZip"]), server)
+        extract_zip(Path(cfg["serverZip"]), server); strip_pack(server)
     elif not (server / MARKER).is_file():
         raise RuntimeError_(f"refusing to use unmarked server directory: {server}")
     save_json(server / MARKER, {"managedBy": "modbench", "kind": "server"})
     client = instance_dir(cfg)
     assert_managed_instance(client, allow_new=True)
     if not (client / MARKER).is_file():
-        extract_zip(Path(cfg["clientZip"]), client, strip_root=True)
+        extract_zip(Path(cfg["clientZip"]), client, strip_root=True); strip_pack(client_game_dir(client))
         save_json(client / MARKER, {"managedBy": "modbench", "kind": "prism-instance"})
     write_instance_config(client, java, int(cfg["memoryMiB"]), cfg.get("window", ""))
     set_client_options(client_game_dir(client))
@@ -542,6 +556,7 @@ def set_server_properties(server: Path, accept_eula: bool, server_ip: str = "127
     # The pack ships difficulty=3 (hard); runs are played on easy unless MB_DIFFICULTY says otherwise.
     wanted = {"server-ip": server_ip, "server-port": "25575", "online-mode": "false", "white-list": "false", "enable-rcon": "false",
               "difficulty": os.environ.get("MB_DIFFICULTY", "1")}
+    if PACK == "vanilla": wanted |= {"level-type": "DEFAULT", "motd": "ModdedBench vanilla 1.7.10"}  # the pack's world type (rwg) is a mod's
     if max_players is not None: wanted["max-players"] = str(max_players)  # offline mode admits any name: the contained server has room for its one player only
     seen: set[str] = set()
     out = []
