@@ -102,6 +102,12 @@ NIGHT =[("Zombie", 10, 0, 1, -3), ("Zombie", 12, 0, 1, 3), ("Skeleton", 16, 0, 1
 FORT = [(BRICK, (-10, 0, -24), (37, 7, -2)), (BRICK, (-10, 0, 2), (37, 7, 23)), (BRICK, (-10, 0, -1), (-3, 7, 1)), (BRICK, (-2, 4, -1), (21, 7, 1)),
         ("minecraft:air", (22, 0, -7), (34, 7, 7)), (BRICK, (35, 0, -7), (37, 7, 7)), *sunk("minecraft:lava", 29, 3, 34, 6)]
 PACK = dict(pack=True, weapon_slot=SWORD)
+# An enderman teleports onto the first floor under a spot up to 32 off each way and 32 up or down, and an angry one far off
+# hops back 16 at a time the same way. From the box in the sky that is the real ground 90 blocks under (or the roof), and it
+# never gets back. A box 64 across and 40 high, centred on where they stand, over 32 blocks of floor, keeps every landing on
+# the box's floor as open ground would: a spot under the floor is in stone, and the game tries again.
+TELEPORTS = dict(arena=dict(x=X0 - 20, z=Z0 - 32, width=64, depth=64, height=40),
+                 ground=[(BRICK, (-20, top - 7, -32), (43, top, 31)) for top in (-2, -10, -18, -26)])
 BURNING = [("minecraft:netherrack", (-2, -1, -2), (2, -1, 2)), ("minecraft:fire", (-2, 0, -2), (2, 0, 2))]
 # mobs: (registry name, blocks ahead, blocks up, count, blocks to the side?, spread?): a group lies along the side axis.
 # fight: mb_fight's arguments; named adds the first mob's entity_id, pack is swarm=True or, --one-by-one, a fight a mob.
@@ -116,7 +122,7 @@ CASES: dict[str, dict] = {
     "melee_spider": dict(mobs=[("Spider", 8, 0, 1)], fight=dict(named=True, weapon_slot=SWORD)),
     "melee_cave_spider": dict(mobs=[("CaveSpider", 8, 0, 1)], fight=dict(named=True, weapon_slot=SWORD)),
     "melee_creeper": dict(mobs=[("Creeper", 8, 0, 1)], fight=dict(named=True, weapon_slot=SWORD)),
-    "melee_enderman": dict(mobs=[("Enderman", 8, 0, 1)], fight=dict(named=True, weapon_slot=SWORD)),
+    "melee_enderman": dict(TELEPORTS, mobs=[("Enderman", 8, 0, 1)], fight=dict(named=True, weapon_slot=SWORD)),
     "melee_blaze": dict(mobs=[("Blaze", 10, 0, 1)], fight=dict(named=True, weapon_slot=SWORD)),
     "hold_zombie": dict(mobs=[("Zombie", 12, 0, 1)], fight=dict(hold=True, weapon_slot=SWORD)),
     "swarm_zombies": dict(mobs=[("Zombie", 12, 0, 3)], fight=dict(swarm=True, weapon_slot=SWORD)),
@@ -175,7 +181,7 @@ CASES: dict[str, dict] = {
     # The same, the model saying what counts as hostile, since it can see the pigmen.
     "bystander_pigmen_named": dict(mobs=[("Zombie", 10, 0, 3, 0, 4)], spare=[("PigZombie", 6, 0, 2, 0, 6)], fight=dict(PACK, hostile=[{"type": "Zombie"}])),
     # An enderman wandering by a pack, hostiles named: fight the pack without looking it in the face.
-    "bystander_enderman": dict(mobs=[("Zombie", 9, 0, 2, 0, 4), ("Skeleton", 14, 0, 1)], spare=[("Enderman", 6, 0, 1, -5)],
+    "bystander_enderman": dict(TELEPORTS, mobs=[("Zombie", 9, 0, 2, 0, 4), ("Skeleton", 14, 0, 1)], spare=[("Enderman", 6, 0, 1, -5)],
                                fight=dict(PACK, hostile=[{"type": "Zombie"}, {"type": "Skeleton"}])),
     # A walled yard, open above: wait in the middle and hit the spiders as they come over the wall and drop; the zombie comes by the door.
     "spider_yard": dict(ground=[(STONE, (-5, 0, -5), (5, 3, 5)), (AIR, (-4, 0, -4), (4, 3, 4)), (AIR, (5, 0, 0), (5, 1, 0))],
@@ -199,18 +205,19 @@ CASES: dict[str, dict] = {
     "tower_archers_bow": dict(ground=tower(12, -5) + tower(12, 5), mobs=[("Skeleton", 12, 4, 1, -5), ("Skeleton", 12, 4, 1, 5), ("Zombie", 7, 0, 2, 0, 3)],
                               fight=dict(named=True, weapon_slot=BOW, ranged={"meleeSlot": SWORD}), then=dict(weapon_slot=BOW, ranged={"meleeSlot": SWORD})),
     # Endermen to fight, angry from the start: one straight ahead at pitch 0 is in the look cone (body centre within 1-0.025/d),
-    # so the settle before the fight angers it. No skeleton near one and no water: either would teleport it out of the box.
+    # so the settle before the fight angers it. No skeleton near one and no water: either would teleport it. All in the
+    # TELEPORTS box, where a teleport lands on the floor.
     # One angry enderman, open floor: 40 health is 5 critical hits; it hits 1.8 through iron on Easy, and melee never teleports it.
-    "enderman_angry": dict(mobs=[("Enderman", 12, 0, 1)], settle=.6, fight=dict(named=True, weapon_slot=SWORD)),
+    "enderman_angry": dict(TELEPORTS, mobs=[("Enderman", 12, 0, 1)], settle=.6, fight=dict(named=True, weapon_slot=SWORD)),
     # The same on Normal: 2.8 a hit through iron, so a 5-hit kill costs 8 to 14 of 20.
-    "enderman_angry_normal": dict(mobs=[("Enderman", 12, 0, 1)], settle=.6, fight=dict(named=True, weapon_slot=SWORD), difficulty=2),
+    "enderman_angry_normal": dict(TELEPORTS, mobs=[("Enderman", 12, 0, 1)], settle=.6, fight=dict(named=True, weapon_slot=SWORD), difficulty=2),
     # One angry, one neutral off to the side: fight the angry one and keep your eyes off the other.
-    "enderman_pair": dict(mobs=[("Enderman", 12, 0, 1)], spare=[("Enderman", 6, 0, 1, -8)], settle=.6, fight=dict(named=True, weapon_slot=SWORD)),
+    "enderman_pair": dict(TELEPORTS, mobs=[("Enderman", 12, 0, 1)], spare=[("Enderman", 6, 0, 1, -8)], settle=.6, fight=dict(named=True, weapon_slot=SWORD)),
     # An angry enderman with two zombies and a spider: a night pack, the enderman the hardest of it; one at a time as each comes.
-    "enderman_pack": dict(mobs=[("Enderman", 12, 0, 1), ("Zombie", 8, 0, 2, 0, 6), ("Spider", 10, 0, 1, 5)], settle=.6, fight=PACK),
+    "enderman_pack": dict(TELEPORTS, mobs=[("Enderman", 12, 0, 1), ("Zombie", 8, 0, 2, 0, 6), ("Spider", 10, 0, 1, 5)], settle=.6, fight=PACK),
     # Two angry on Normal, the player two blocks under a two-high roof it has stood under on purpose: a 2.9-tall enderman cannot
     # come under, and from the edge its reach (2) falls short where a sword's (3) does not.
-    "enderman_shelter_normal": dict(at=(-2, 0, 0), ground=[(STONE, (-6, 0, -3), (0, 2, 3)), (AIR, (-5, 0, -2), (0, 1, 2))],
+    "enderman_shelter_normal": dict(TELEPORTS, at=(-2, 0, 0), ground=TELEPORTS["ground"] + [(STONE, (-6, 0, -3), (0, 2, 3)), (AIR, (-5, 0, -2), (0, 1, 2))],
                                     mobs=[("Enderman", 10, 0, 1), ("Enderman", 14, 0, 1)], settle=.6, fight=dict(hold=True, weapon_slot=SWORD), difficulty=2),
 }
 TOLD = ("state", "reason", "phase", "ticks", "attacks", "criticalHits", "kills", "shots", "hitsObserved", "adjustments", "failure", "movedFromStart", "leash", "pausedBy", "suspendedJobId", "hostileBy", "wentOff", "passedOver", "taken")
