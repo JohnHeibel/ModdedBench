@@ -362,9 +362,10 @@ def mb_time(method: str = "status", params: dict | None = None, timeout_s: float
     is for work you do by hand under water. Conditions pause globally and report a reason. A threshold
     pauses once as the value crosses it, and again only after it has recovered above it, so you can
     act out of the danger without disabling the guard: for air, mb_process goal {type:"breathable"}.
-    A burn is one event as well: once it has paused (burning, or healthDrop at its first tick),
-    its own ticks do not pause healthDrop again until the fire is out; anything else that hurts
-    while you are alight does (lava, standing in fire, a hit). status.edges lists the drops beside you
+    Harm that lasts is one event as well: once a kind of hurt that nothing dealt (a burn, a
+    poison, a hot item, whatever the pack has) has paused healthDrop (a burn: or burning), its
+    later ticks do not pause it again until that kind has stopped for 5 seconds; a new kind of
+    hurt, or a hit by anything, does (lava while you are alight, a mob). status.edges lists the drops beside you
     that would hurt, as you would see them: toward (a compass heading), blocks (how far the floor you
     stand on reaches that way, up to 3; a plain hit throws you about 2), drop, onto (what you would land
     on or in), burns, overLowWall. Two things happen by themselves, as for a player at the keyboard:

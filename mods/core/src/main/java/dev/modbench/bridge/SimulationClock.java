@@ -22,8 +22,12 @@ public final class SimulationClock {
     private Float lastHealth;
     private JsonObject vitals; // the player as the guards last saw it: a pause ends the tick before the client is sent the hit that caused it
     private final boolean[] inDanger = new boolean[4]; // health, air, burning, food: already reported, not yet recovered
-    private boolean burnReported; // this burn has paused once: its own later ticks are not news to healthDrop until the fire is out
-    private boolean burnTick, otherHurt; // since the last observation: the burn's own tick hurt, and anything else did
+    /** A kind of hurt that keeps coming with no attacker (a burn, a poison, whatever the pack has) is news to healthDrop
+     *  once: reported, it is kept here with the tick it last hurt, and is news again once it has stopped this long. */
+    private static final int LASTS = 100;
+    private final java.util.Map<String,Long> lasting = new java.util.HashMap<>();
+    private final java.util.Set<String> hurtBy = new java.util.HashSet<>(); // since the last observation: the kinds with no attacker
+    private boolean newHurt; // since the last observation: a hit by something, or a kind that is not lasting
     private String reason = "startup";
     private final ArrayDeque<JsonObject> events = new ArrayDeque<>();
 
@@ -63,26 +67,33 @@ public final class SimulationClock {
      * Thresholds and burning pause once, as the value crosses into danger, and re-arm only when it has recovered:
      * a guard that re-paused every tick while air stayed low would leave no ticks to swim out with. Only the guard
      * that paused counts as reported: a value in danger under another pause (a step's end, another guard) pauses in its turn.
-     * A burn is one event too: once it has paused (burning, or healthDrop at its first tick), its own ticks (damage type
-     * onFire, the game's fire timer in every mod) do not pause healthDrop again until the fire is out. Anything else that
-     * hurts while alight does: lava, standing in fire, a hit. Dragon run 3 fell into lava while alight and was not told.
+     * Harm that lasts is one event too. A kind of hurt with no attacker (by damage type: a burn, a poison, a hot item in
+     * hand, whatever the pack adds), once it has paused healthDrop, does not pause it again until it has stopped for LASTS
+     * ticks. The burning guard's pause reports the burn's own ticks (onFire, the game's fire timer). A new kind, or a hit
+     * by anything, is news: dragon run 3 fell into lava while alight and was not told. Pausing on every tick of a burn made
+     * the model switch healthDrop off (dragon run 2, fortress trials 4 and 7).
      */
     public void observe(float health, int air, int food, boolean onFire) {
         boolean lowHealth=healthBelow>=0 && health<=healthBelow, lowAir=airBelow>=0 && air<=airBelow;
         boolean lowFood=foodBelow>=0 && food<=foodBelow, fire=burning && onFire;
         if(!paused) {
-            if(healthDrop && !fighting() && lastHealth!=null && health<lastHealth && !(burnTick && !otherHurt && onFire && burnReported)) { pause("health_dropped"); inDanger[0]=lowHealth; burnReported=onFire; } // the hit reports the health it left
+            if(healthDrop && !fighting() && lastHealth!=null && health<lastHealth && (newHurt || hurtBy.isEmpty())) { pause("health_dropped"); inDanger[0]=lowHealth; for(var k:hurtBy) lasting.put(k,simulationTicks); } // the hit reports the health it left
             else if(lowHealth && !inDanger[0]) { pause("health_threshold"); inDanger[0]=true; }
             else if(lowAir && !inDanger[1]) { pause("air_threshold"); inDanger[1]=true; }
-            else if(fire && !fighting() && !inDanger[2]) { pause("burning"); inDanger[2]=true; burnReported=true; } // still alight when the fight ends: it pauses then
+            else if(fire && !fighting() && !inDanger[2]) { pause("burning"); inDanger[2]=true; lasting.put("onFire",simulationTicks); } // still alight when the fight ends: it pauses then
             else if(lowFood && !inDanger[3]) { pause("food_threshold"); inDanger[3]=true; }
         }
-        inDanger[0]&=lowHealth; inDanger[1]&=lowAir; inDanger[2]&=fire; inDanger[3]&=lowFood; burnReported&=onFire; burnTick=otherHurt=false;
+        inDanger[0]&=lowHealth; inDanger[1]&=lowAir; inDanger[2]&=fire; inDanger[3]&=lowFood; hurtBy.clear(); newHurt=false;
         lastHealth=health;
         if(vitals==null || vitals.get("health").getAsFloat()!=health || vitals.get("food").getAsInt()!=food) vitals=Json.object("health",health,"food",food);
     }
-    /** A hurt the server saw, by damage type, before the observation that shows the health it took. */
-    public void hurt(String damageType) { if("onFire".equals(damageType)) burnTick=true; else otherHurt=true; }
+    /** A hurt the server saw, by damage type and whether something dealt it, before the observation that shows the health it took. */
+    public void hurt(String damageType, boolean attacker) {
+        if(attacker) { newHurt=true; return; }
+        Long last=lasting.get(damageType);
+        if(last!=null && simulationTicks-last<=LASTS) lasting.put(damageType,simulationTicks); else newHurt=true;
+        hurtBy.add(damageType);
+    }
     public double threatWithin() { return threatWithin; }
     /**
      * Mobs that are after the player right now, as the server knows them: [{key,...what a player would perceive}].
@@ -122,7 +133,7 @@ public final class SimulationClock {
         double tw=Json.number(p,"threatWithin",threatWithin,-1,32);
         healthDrop=hd; actionFailed=af; pauseOnDisconnect=disconnect; healthBelow=hb; airBelow=ab;
         foodBelow=fb; burning=fire; threatWithin=tw; knownThreats.clear();
-        lastHealth=null; java.util.Arrays.fill(inDanger,false); burnReported=false;
+        lastHealth=null; java.util.Arrays.fill(inDanger,false);
         if(threatWithin<0) threats=new com.google.gson.JsonArray(); // the host stops looking for threats: none it listed before is still known to be one
     }
     /**

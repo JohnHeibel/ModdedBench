@@ -260,31 +260,31 @@ public class SimulationClockTest {
     }
 
     @Test
-    public void aBurnPausesHealthDropOnceUntilTheFireIsOut() {
+    public void aBurnPausesHealthDropOnce() {
         SimulationClock clock = new SimulationClock(() -> 0L);
         clock.configure(Json.object("healthDrop", true));
         clock.observe(20.0F, 300, 20, true);
-        clock.hurt("onFire");
+        clock.hurt("onFire",false);
         clock.observe(19.0F, 300, 20, true); // The burn's first tick is news.
         assertEquals("health_dropped", clock.status().get("reason").getAsString());
         clock.resume();
         clock.observe(19.0F, 300, 20, true);
-        clock.hurt("onFire");
+        clock.hurt("onFire",false);
         clock.observe(18.0F, 300, 20, true);
-        clock.hurt("onFire");
+        clock.hurt("onFire",false);
         clock.observe(17.0F, 300, 20, true); // Its later ticks are not.
         assertFalse(clock.paused());
-        clock.hurt("lava");
+        clock.hurt("lava",false);
         clock.observe(13.0F, 300, 20, true); // Lava while still alight is: dragon run 3 fell into it unpaused.
         assertEquals("health_dropped", clock.status().get("reason").getAsString());
         clock.resume();
         clock.observe(13.0F, 300, 20, true);
-        clock.hurt("onFire");clock.hurt("mob");
+        clock.hurt("onFire",false);clock.hurt("mob",true);
         clock.observe(10.0F, 300, 20, true); // So is a hit in the same tick as a burn tick.
         assertEquals("health_dropped", clock.status().get("reason").getAsString());
         clock.resume();
         clock.observe(17.0F, 300, 20, false);
-        clock.observe(16.0F, 300, 20, false); // The fire is out: a loss is news again.
+        clock.observe(16.0F, 300, 20, false); // A loss that no lasting hurt explains is news.
         assertEquals("health_dropped", clock.status().get("reason").getAsString());
         clock.resume();
         clock.configure(Json.object("healthDrop", true, "burning", true));
@@ -292,8 +292,44 @@ public class SimulationClockTest {
         assertEquals("burning", clock.status().get("reason").getAsString());
         clock.resume();
         clock.observe(16.0F, 300, 20, true);
-        clock.hurt("onFire");
+        clock.hurt("onFire",false);
         clock.observe(15.0F, 300, 20, true); // ...so its first tick does not pause again.
+        assertFalse(clock.paused());
+    }
+
+    @Test
+    public void lastingHarmOfAnyKindPausesOnceUntilItStops() {
+        SimulationClock clock = new SimulationClock(() -> 0L);
+        clock.configure(Json.object("healthDrop", true));
+        clock.observe(20.0F, 300, 20, false);
+        clock.hurt("magic",false); clock.tickFinished();
+        clock.observe(19.0F, 300, 20, false); // A poison's first tick is news.
+        assertEquals("health_dropped", clock.status().get("reason").getAsString());
+        clock.resume();
+        clock.observe(19.0F, 300, 20, false);
+        for(int t=0;t<25;t++) clock.tickFinished();
+        clock.hurt("magic",false);
+        clock.observe(18.0F, 300, 20, false); // Its later ticks are not.
+        assertFalse(clock.paused());
+        clock.hurt("someMod.heat",false);
+        clock.observe(17.0F, 300, 20, false); // Another kind, whatever its name, is.
+        assertEquals("health_dropped", clock.status().get("reason").getAsString());
+        clock.resume();
+        clock.observe(17.0F, 300, 20, false);
+        clock.hurt("magic",true);
+        clock.observe(16.0F, 300, 20, false); // A hit by something always is, even of a lasting kind.
+        assertEquals("health_dropped", clock.status().get("reason").getAsString());
+        clock.resume();
+        clock.observe(16.0F, 300, 20, false);
+        for(int t=0;t<101;t++) clock.tickFinished();
+        clock.hurt("magic",false);
+        clock.observe(15.0F, 300, 20, false); // Stopped for over 5 seconds: news again.
+        assertEquals("health_dropped", clock.status().get("reason").getAsString());
+        clock.resume();
+        clock.configure(Json.object("healthDrop", true, "burning", true));
+        clock.observe(15.0F, 300, 20, false);
+        clock.hurt("magic",false);
+        clock.observe(14.0F, 300, 20, false); // Turning the guards over does not make it news again.
         assertFalse(clock.paused());
     }
 

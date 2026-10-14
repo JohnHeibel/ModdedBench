@@ -71,8 +71,8 @@ public final class ServerClock implements ClockHooks.Driver, PauseCoordinator.Ho
     /** The damage type of the agent's own hurt exists on the server only; a player learns it from what hit them and the death message. */
     @cpw.mods.fml.common.eventhandler.SubscribeEvent public void hurt(net.minecraftforge.event.entity.living.LivingHurtEvent event) {
         if(client==null||event.entityLiving!=client.playerEntity) return;
-        clock.hurt(event.source.getDamageType());
         var by=event.source.getEntity();
+        clock.hurt(event.source.getDamageType(),by!=null);
         send(Json.object("type","hurt","damageType",event.source.getDamageType(),"amount",event.ammount,
             "by",by==null?"":by instanceof net.minecraft.entity.player.EntityPlayer?"player":String.valueOf(net.minecraft.entity.EntityList.getEntityString(by))));
     }

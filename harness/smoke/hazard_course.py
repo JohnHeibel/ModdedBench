@@ -18,6 +18,8 @@ the combat course's box, guards off, the world running.
              arrow the bow spent a shot the fight told (a draw let go as the step began would fly unaimed)
   ledge_bow  a bow duel on that platform with a skeleton 13 off, the edge behind: its arrows throw the player toward the
              lava. Won when the player never leaves the platform's top and every arrow spent was a shot told.
+  lasting_harm  healthDrop on, a poison for 6 seconds, then a wither: harm that lasts is one event, so each pauses the world
+             once however often it hurts (each pause is resumed at once). Won when each made exactly one pause and 2+ hurts.
 
     MB_CLIENT_INSTANCE=<instance>/.minecraft bash harness/smoke/mbtest.sh harness/smoke/hazard_course.py [--case NAME ...] [--trials 3]
 
@@ -50,7 +52,30 @@ CASES = {
     "ledge_over": dict(ground=LEDGE, at=(-2.15, UP, 0), mobs=[("Zombie", 6, UP, 1)], probe=True),
     "fire_bow": dict(ground=FIRE, light=LIGHT, mobs=[("Zombie", 20, 0, 1)], fight=dict(weapon_slot=cc.BOW, ranged=True, duration_ticks=160)),
     "ledge_bow": dict(ground=LEDGE, at=(-.9, UP, 0), mobs=[("Skeleton", 12, UP, 1)], fight=dict(weapon_slot=cc.BOW, ranged=True, duration_ticks=300)),
+    "lasting_harm": dict(ground=[], lasting=[("poison", 6), ("wither", 6)]),
 }
+
+
+def lasting(s, c, row: dict, harms) -> dict:
+    """Each harm given afresh for its seconds with healthDrop on: the pauses it made, and how often it hurt."""
+    c.call("time.configure", **{**cc.OFF, "healthDrop": True})
+    for effect, seconds in harms:
+        last = s.call(cc.FIX + ".status")["player"]["health"]
+        s.call(cc.FIX + ".reset", health=last, effects=cc.SIGHT + [{"id": effect, "seconds": seconds}])
+        pauses = hurts = 0; t0 = time.time()
+        while time.time() - t0 < seconds + 1:
+            state = c.call("time.status")["state"]
+            if state.get("paused"):
+                pauses += state.get("reason") == "health_dropped"
+                c.call("time.resume")
+            health = s.call(cc.FIX + ".status")["player"]["health"]
+            hurts += health < last; last = health
+            time.sleep(.1)
+        row[effect] = {"pauses": pauses, "hurts": hurts}
+    c.call("time.configure", **cc.OFF)
+    if c.call("time.status")["state"].get("paused"): c.call("time.resume")
+    row["won"] = all(row[e]["pauses"] == 1 and row[e]["hurts"] >= 2 for e, _ in harms)
+    return row
 
 
 def trial(s, c, name: str) -> dict:
@@ -70,6 +95,7 @@ def trial(s, c, name: str) -> dict:
     s.call(cc.FIX + ".reset", empty=True, armor=cc.ARMOR, stacks=cc.STACKS, at=at, yaw=-90, effects=cc.SIGHT)
     s.call(cc.FIX + ".clear"); time.sleep(.5)
     row = {"case": name, "start": at}
+    if "lasting" in case: return lasting(s, c, row, case["lasting"])
     if name == "ledge_hit": row["edges"] = c.call("time.status")["state"].get("edges")
     mobs = [m for mob, ahead, up, count in case.get("mobs", [])
             for m in s.call(cc.FIX + ".summon", type=mob, x=cc.START[0] + ahead, y=cc.FLOOR + up, z=cc.START[2], count=count)["summoned"]]
