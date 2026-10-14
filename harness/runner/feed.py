@@ -267,7 +267,8 @@ class Feed:
                 why = result.get("error") if isinstance(result, dict) and isinstance(result.get("error"), dict) else {}
                 why = "" if not failed else ": bad arguments" if why.get("code") == "bad_request" else ": " + str(why.get("code") or "failed").replace("_", " ")
                 text = line(tool, e.get("args"), result)
-                self.add("fail" if failed or isinstance(result, dict) and result.get("stopped") else "tool", text and text + why, tool=tool)
+                # A script cut short says why in "stopped"; mb_stop's {"stopped": true} is a stop that worked.
+                self.add("fail" if failed or isinstance(result, dict) and isinstance(result.get("stopped"), str) else "tool", text and text + why, tool=tool)
             for f in (result.get("reflexes") or []) if isinstance(result, dict) else []:  # a script the model armed acted without it: shown, as its other acts are
                 if isinstance(f, dict) and f.get("reflex") and not f.get("skipped"):
                     self.add("mark", f"its reflex {f['reflex']} answered a pause ({str(f.get('when')).replace('_', ' ')})" + ("" if f.get("world") == "running" else ", and left the world paused"))
