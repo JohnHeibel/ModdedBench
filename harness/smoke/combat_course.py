@@ -342,7 +342,8 @@ class Combat(Course):
                    arrowsSpent=item(before, ARROWS).get("count", 0) - item(after, ARROWS).get("count", 0),
                    healthLost=round(before["player"]["health"] - after["player"]["health"], 1), died=after["player"]["dead"], wallS=round(wall, 1),
                    crowdedS=round(sum(.2 for _, me, _, around, *_ in watch.trace if sum(math.dist(me, at) <= 3 for _, at, _ in around) >= 2), 1),
-                   difficulty=self.difficulty if "difficulty" in case else None, watchError=watch.error)
+                   difficulty=self.difficulty if "difficulty" in case else None, watchError=watch.error,
+                   lineBlockedAt=(receipt.get("target") or {}).get("lineBlockedAt"))
         if spared: row["provoked"] = sum(watch.spared[m["uuid"]] < m["health"] for m in spared)   # struck, or hit by anything: not left alone
         self.traces.setdefault(name, []).append(watch.trace); self.looks.setdefault(name, []).append(watch.looks)
         if self.args.guards: row["pauses"] = pauses
