@@ -187,7 +187,7 @@ def _answer(k: Kernel, box: dict, met: dict, method: str | None = None, params: 
     try:
         if reason.startswith("interrupt:"):  # the watch's latch would refuse the script's first action, and this script is the answer to that watch
             for event_id in k._call("interrupt.status", timeout=5).get("latched") or []: k._call("interrupt.ack", eventId=event_id, timeout=5)
-        out, me = _run(box, name, r, {"reason": reason, "tick": tick, "threats": clock.get("threats") or [], "work": work})
+        out, me = _run(box, name, r, {"reason": reason, "tick": tick, "threats": clock.get("threats") or [], "edges": clock.get("edges") or [], "work": work})
         after = _clock(k)
         entry["ticks"] = max(0, int(after.get("simulationTicks") or tick) - tick)
         if out.get("result") is not None: entry["result"] = tasks._brief(out["result"], 600)
@@ -327,7 +327,7 @@ def mb_reflex(name: str | None = None, when: str | list[str] | None = None, do: 
     interrupt:<reason> for an mb_interrupt watch of yours whose effects include pause. A list
     answers several. One reason has one reflex.
     do is Python defining main(event), with every mb_* tool and log(text) in scope, as in mb_run.
-    event is {reason, tick, threats, work}; work is the call the pause met ({call, how, jobId}),
+    event is {reason, tick, threats, edges, work} (edges as in mb_time status); work is the call the pause met ({call, how, jobId}),
     or None when no call of yours was running. The script starts in the paused world. Its first
     action lets time run, for at most max_ticks (default 200) in all; resume= and time resume or
     step are refused inside it. It asks no model: what happens is what you wrote.

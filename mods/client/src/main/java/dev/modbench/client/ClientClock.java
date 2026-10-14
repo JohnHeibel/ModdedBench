@@ -45,9 +45,16 @@ public final class ClientClock implements ClockHooks.Driver {
 
     public ClientClock(ClientRuntime runtime) { this.runtime=runtime; }
     public boolean isPaused() { return paused; }
+    /** The server's last state as sent, without what status() adds from the client's world. */
+    JsonObject serverState() { return state; }
     String pauseReason() {return Json.string(state,"reason","requested_pause");}
     public JsonObject status() {
-        JsonObject out=Json.object("available",supported,"state",state,"clientPaused",paused,
+        JsonObject seen=state;
+        if(mc.thePlayer!=null&&mc.theWorld!=null) { // the server's state, and the drops beside the player as the client sees them (Edges)
+            seen=new JsonObject();for(var entry:state.entrySet()) seen.add(entry.getKey(),entry.getValue());
+            seen.add("edges",Edges.near(mc.theWorld,mc.thePlayer));
+        }
+        JsonObject out=Json.object("available",supported,"state",seen,"clientPaused",paused,
             "clientSimulationTicks",runtime.tick(),"agentAttached",agent!=null && agent.connected,"presentation",presentation.status(),"planWhilePaused",planHold.status());
         return out;
     }

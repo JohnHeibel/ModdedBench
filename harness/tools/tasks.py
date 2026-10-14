@@ -184,7 +184,8 @@ def start(code: str, args: dict | None, name: str | None, on_fail: str | None, m
     clock = k.call("time.status", timeout=5).get("state") or {}
     if clock.get("paused"):
         if not clock.get("held") and not waited_out(clock.get("reason")):  # a guard's stop the model may not have seen yet
-            raise BridgeError("time_paused", f"a guard stopped the world ({clock.get('reason')}; threats: {json.dumps(clock.get('threats') or [])}). "
+            raise BridgeError("time_paused", f"a guard stopped the world ({clock.get('reason')}; threats: {json.dumps(clock.get('threats') or [])}"
+                              + (f"; edges: {json.dumps(clock['edges'])}" if clock.get("edges") else "") + "). "
                               "A background task does not lift a guard's stop: look, make safe, then start it", "mb_run")
         record = {}; k._resume_for(record); out["resumedWorld"] = record  # as resume=True does; an operator hold refuses it
     task_id = uuid.uuid4().hex[:8]

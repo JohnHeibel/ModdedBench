@@ -88,7 +88,7 @@ def mb_status() -> Any:
     out = dict(out, brief=f"Your standing brief is {brief if os.path.isfile(brief) else 'PROMPT.md at the repository root'}. If you cannot recall its mission and rules, re-read it now.")
     try:
         clock = k.call("time.status", timeout=5).get("state", {})
-        out["clock"] = {key: clock.get(key) for key in ("mode", "paused", "reason", "held", "heldBy", "simulationTicks", "threats") if key in clock}
+        out["clock"] = {key: clock.get(key) for key in ("mode", "paused", "reason", "held", "heldBy", "simulationTicks", "threats", "edges") if key in clock and (key != "edges" or clock[key])}
         out["goal"] = notes.goal(k)
         out.update(notes.where(k))
         free = k.call("obs.inventory", detail="counts", timeout=5).get("emptySlots")
@@ -364,7 +364,15 @@ def mb_time(method: str = "status", params: dict | None = None, timeout_s: float
     act out of the danger without disabling the guard: for air, mb_process goal {type:"breathable"}.
     A burn is one event as well: once it has paused (burning, or healthDrop at its first tick),
     its own ticks do not pause healthDrop again until the fire is out; anything else that hurts
-    while you are alight does (lava, standing in fire, a hit). Baritone terminal failures signal actionFailed automatically;
+    while you are alight does (lava, standing in fire, a hit). status.edges lists the drops beside you
+    that would hurt, as you would see them: toward (a compass heading), blocks (how far the floor you
+    stand on reaches that way, up to 3; a plain hit throws you about 2), drop, onto (what you would land
+    on or in), burns, overLowWall. Two things happen by themselves, as for a player at the keyboard:
+    standing in what burns, you step out of it to the nearest place that does not, and a hit that
+    throws you toward a drop of 4 or more is held against: you turn from it and run against the throw,
+    crouch while sliding on as you land, then walk on until that drop is over 2 blocks off. Either takes the controls: a job or held input it takes them from ends with reason
+    stepped_out_of_fire or held_against_a_hit. A fight does both itself and goes on.
+    Baritone terminal failures signal actionFailed automatically;
     agent-written tools can call report_failure to signal their own failures.
     pauseOnDisconnect defaults true; set false for a planned
     client restart with continued server production, then restore it after reconnect.

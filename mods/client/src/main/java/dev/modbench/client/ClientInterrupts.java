@@ -15,7 +15,7 @@ final class ClientInterrupts {
     private final Set<String> latched=new LinkedHashSet<>();
     ClientInterrupts(ClientRuntime runtime) {this.runtime=runtime;}
     JsonObject context() {
-        var mc=Minecraft.getMinecraft();var state=runtime.clock.status().getAsJsonObject("state");
+        var mc=Minecraft.getMinecraft();var state=runtime.clock.serverState();
         return Json.object("worldId",state.get("worldId"),"dimension",mc.theWorld==null?null:mc.theWorld.provider.dimensionId,
             "bridgeId",runtime.bridgeId(),"worldEpoch",runtime.worldEpoch());
     }

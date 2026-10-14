@@ -317,7 +317,7 @@ class Kernel:
     def _resume_for(self, record: dict) -> None:
         """Resume the world for a resume=True call and wait until the client runs ticks again."""
         clock = self.call("time.status", timeout=5).get("state", {})
-        record.update(pausedBy=clock.get("reason"), threats=clock.get("threats") or [])
+        record.update(pausedBy=clock.get("reason"), threats=clock.get("threats") or [], **({"edges": clock["edges"]} if clock.get("edges") else {}))
         self.call("time.resume", timeout=10, ticks=int(record.get("ticks") or 0))  # an operator hold refuses this, and the call fails with that error
         until = time.monotonic() + 5
         while self.call("time.status", timeout=5).get("clientPaused") and time.monotonic() < until:
