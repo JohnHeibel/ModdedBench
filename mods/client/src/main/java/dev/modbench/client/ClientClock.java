@@ -39,6 +39,8 @@ public final class ClientClock implements ClockHooks.Driver {
     /** The action whose _resume armed the credit tick, and the thread that admitted it. */
     private Request armed;
     private Thread armedThread;
+    /** The control owner's operation when the action was admitted: an owner newer than this took the controls after. */
+    private long armedControls;
     final PausedFrame presentation=new PausedFrame(this);
     private final SmoothView view=new SmoothView();
     private final PlanHold planHold=new PlanHold();
@@ -95,6 +97,7 @@ public final class ClientClock implements ClockHooks.Driver {
         if(Json.bool(state,"held",false)) throw new IllegalArgumentException(PauseCoordinator.heldRefusal(Json.string(state,"heldBy","operator")));
         if(!"paused".equals(Json.string(state,"mode",""))) throw new IllegalArgumentException("pause has not settled; inspect time.status before resuming");
         agent=r.session;armed=r;armedThread=Thread.currentThread();resuming=creditTick=true;resumeSent=false;resumeTicks=ticks;extended=0;
+        armedControls=dev.modbench.api.ControlRegistry.controls().arbiter().current().operationId();
         JsonObject record=Json.object("pausedBy",pauseReason(),"threats",state.has("threats")?state.get("threats"):new com.google.gson.JsonArray());
         if(ticks>0) record.addProperty("ticks",ticks);
         r.resumed=record;
@@ -103,9 +106,15 @@ public final class ClientClock implements ClockHooks.Driver {
      * The action that asked for the resume ended in an error before the resume was sent: refused outright, or failed
      * on its own first tick (outcomes are collected at the end of that tick, ahead of the resume). It did nothing, so
      * the resume is withdrawn and the world stays paused; a step would otherwise run its ticks with the body idle.
+     * Unless what ended it took the controls on that tick and holds them still (a reflex: Baritone's hazard guard, its
+     * hold against a hit frozen mid-throw by the hit's own pause): the body is not idle, and the resume goes ahead so it
+     * can finish. Withdrawn, the world stayed paused with the hold unfinished, and it ended every action after it the
+     * same way (fortress trial 8).
      */
     void failed(Request r) {
         if(r!=armed || !resuming || resumeSent || Thread.currentThread()!=armedThread) return;
+        var owner=dev.modbench.api.ControlRegistry.controls().arbiter().current();
+        if(owner.active() && owner.operationId()>armedControls) { r.resumed.addProperty("controlsTakenBy",owner.label());return; }
         resuming=creditTick=false;creditRan=0;armed=null;planHold.reset();
         r.resumed.addProperty("stayedPaused",true);
     }

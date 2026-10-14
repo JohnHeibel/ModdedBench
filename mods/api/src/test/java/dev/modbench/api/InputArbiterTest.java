@@ -107,6 +107,12 @@ public class InputArbiterTest {
         assertEquals("preempted", first.endedWhy());
         second.close();
         assertNull("its owner closed it: nothing was taken", second.endedWhy());
+
+        String[] seen = new String[1];
+        InputArbiter.Lease held = arbiter.acquire("held", reason -> seen[0] = reason + ":" + arbiter.current().label());
+        arbiter.acquire("reflex", ignored -> { }, "held_against_a_hit");
+        assertEquals("told why, once the taker holds the controls", "held_against_a_hit:reflex", seen[0]);
+        assertEquals("held_against_a_hit", held.endedWhy());
     }
 
     private static Set<Integer> keys(Integer... values) {

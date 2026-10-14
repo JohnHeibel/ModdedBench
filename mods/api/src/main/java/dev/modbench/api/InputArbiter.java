@@ -60,7 +60,14 @@ public final class InputArbiter {
     }
 
     /** Acquires ownership, revoking and releasing the previous owner first. */
-    public Lease acquire(String label, Consumer<String> onRevoked) {
+    public Lease acquire(String label, Consumer<String> onRevoked) { return acquire(label, onRevoked, "preempted"); }
+
+    /**
+     * The same, telling the previous owner why (as revoke does) instead of "preempted". It is told once the new owner
+     * holds the controls, so what it answers can see who took them.
+     */
+    public Lease acquire(String label, Consumer<String> onRevoked, String reason) {
+        Objects.requireNonNull(reason, "reason");
         Objects.requireNonNull(label, "label");
         Objects.requireNonNull(onRevoked, "onRevoked");
         if (label.trim().isEmpty()) throw new IllegalArgumentException("label must not be blank");
@@ -76,7 +83,7 @@ public final class InputArbiter {
         }
         // Release before notifying.  A reentrant callback may safely take ownership.
         applyKeysOrRevoke(next, Collections.<Integer>emptySet());
-        if (previous != null) notifyRevoked(previous, "preempted");
+        if (previous != null) notifyRevoked(previous, reason);
         return next;
     }
 

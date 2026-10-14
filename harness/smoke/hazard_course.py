@@ -12,6 +12,9 @@ the combat course's box, guards off, the world running.
              unheld player about 2 blocks, so off it; held against, about 1. Won when the throw lands on the platform and
              the player has walked back 1.5 blocks or more from the edge within 1.5 seconds. time.status must list the
              edge behind (west, onto lava, burns).
+  ledge_paused the same with healthDrop on: the hit pauses the world mid-throw, with the hold on. An action (a 10-tick
+             crouch) is then sent with resume, as the model would (fortress trial 8): the hold takes the controls from
+             it on its first tick. Won when the world runs on, so the hold can finish, and the throw lands as in ledge_hit.
   ledge_over the same at the very edge: thrown over it. Once the feet are a block below the platform's top an action
              starts (a 10-tick crouch); won when it is not cancelled by the hold, which can no longer bring the player back
   fire_bow   a bow fight at a zombie 20 off, fire lit under the player mid-draw: out of it within 2 seconds, and every
@@ -49,6 +52,7 @@ CASES = {
     "fire_goto": dict(ground=FIRE, light=LIGHT, goto=(12, 0, 0)),
     "fire_hold": dict(ground=FIRE, light=LIGHT, hold=["sneak"]),
     "ledge_hit": dict(ground=LEDGE, at=(-.9, UP, 0), mobs=[("Zombie", 6, UP, 1)]),
+    "ledge_paused": dict(ground=LEDGE, at=(-.9, UP, 0), mobs=[("Zombie", 6, UP, 1)], paused=True),
     "ledge_over": dict(ground=LEDGE, at=(-2.15, UP, 0), mobs=[("Zombie", 6, UP, 1)], probe=True),
     "fire_bow": dict(ground=FIRE, light=LIGHT, mobs=[("Zombie", 20, 0, 1)], fight=dict(weapon_slot=cc.BOW, ranged=True, duration_ticks=160)),
     "ledge_bow": dict(ground=LEDGE, at=(-.9, UP, 0), mobs=[("Skeleton", 12, UP, 1)], fight=dict(weapon_slot=cc.BOW, ranged=True, duration_ticks=300)),
@@ -97,6 +101,7 @@ def trial(s, c, name: str) -> dict:
     row = {"case": name, "start": at}
     if "lasting" in case: return lasting(s, c, row, case["lasting"])
     if name == "ledge_hit": row["edges"] = c.call("time.status")["state"].get("edges")
+    if case.get("paused"): c.call("time.configure", **{**cc.OFF, "healthDrop": True})
     mobs = [m for mob, ahead, up, count in case.get("mobs", [])
             for m in s.call(cc.FIX + ".summon", type=mob, x=cc.START[0] + ahead, y=cc.FLOOR + up, z=cc.START[2], count=count)["summoned"]]
     bow = lambda: next((i.get("meta", 0) for i in s.call(cc.FIX + ".status")["player"]["inventory"] if i["slot"] == cc.BOW), 0)
@@ -120,7 +125,14 @@ def trial(s, c, name: str) -> dict:
         samples.append([round(time.time() - t0, 1), round(x, 2), round(y, 2), round(z, 2), p["health"], p["dead"]])
         if first_hit is None and p["health"] < health0:
             first_hit = time.time()
-            if name in ("ledge_hit", "ledge_over"): s.call(cc.FIX + ".clear")
+            if name in ("ledge_hit", "ledge_over", "ledge_paused"): s.call(cc.FIX + ".clear")
+        if case.get("paused") and first_hit and "act" not in job and (state := c.call("time.status")["state"]).get("paused"):
+            job["pausedBy"] = state.get("reason")
+            try: job["act"] = c.call("act.input", keys=["sneak"], ticks=10, _resume=True)
+            except BridgeError as e: job["act"] = {"error": str(e)}
+            time.sleep(.3); state = c.call("time.status")["state"]
+            job["after"] = state.get("reason") if state.get("paused") else "running"
+            c.call("time.configure", **cc.OFF); first_hit = time.time()   # judged from here on as ledge_hit is
         if case.get("probe") and "probe" not in job and y < cc.FLOOR + UP - 1:
             job["probe"] = None
             def probe():
@@ -158,6 +170,9 @@ def trial(s, c, name: str) -> dict:
         after = samples[first:] if first else []
         landed = bool(after) and min(r[2] for r in after) >= top - .01 and any(r[2] <= top + .01 for r in after[1:])
         back = after[-1][1] if landed else None
+        if case.get("paused"):
+            row.update(pausedBy=job.get("pausedBy"), act=str(job.get("act"))[:300], after=job.get("after"))
+            landed = landed and job.get("after") == "running"
         row.update(won=landed and back - edge >= 1.5, hit=first is not None, thrown=round(at[0] - min(r[1] for r in after), 2) if after else None,
                    landed=landed, backFromEdge=round(back - edge, 2) if back is not None else None, died=end[5])
     if "fight" in case:

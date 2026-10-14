@@ -291,6 +291,8 @@ class Kernel:
                 msg += " (or call the tool again with resume=True: it resumes the world and acts in one step)"
             if isinstance(asked, dict) and asked.get("stayedPaused"):
                 msg += " (the action ended at once, so the world was not resumed: it is still paused)"
+            elif isinstance(asked, dict) and asked.get("controlsTakenBy"):
+                msg += f" (on the action's first tick {asked['controlsTakenBy']} took the controls, which it keeps until it lets go; the world resumed as asked)"
             raise BridgeError((r.error or {}).get("code", "?"), msg, method, r.raw)
         return r.data
 
