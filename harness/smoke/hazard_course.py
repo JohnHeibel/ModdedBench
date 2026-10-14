@@ -12,6 +12,12 @@ the combat course's box, guards off, the world running.
              unheld player about 2 blocks, so off it; held against, about 1. Won when the throw lands on the platform and
              the player has walked back 1.5 blocks or more from the edge within 1.5 seconds. time.status must list the
              edge behind (west, onto lava, burns).
+  ledge_over the same at the very edge: thrown over it. Once the feet are a block below the platform's top an action
+             starts (a 10-tick crouch); won when it is not cancelled by the hold, which can no longer bring the player back
+  fire_bow   a bow fight at a zombie 20 off, fire lit under the player mid-draw: out of it within 2 seconds, and every
+             arrow the bow spent a shot the fight told (a draw let go as the step began would fly unaimed)
+  ledge_bow  a bow duel on that platform with a skeleton 13 off, the edge behind: its arrows throw the player toward the
+             lava. Won when the player never leaves the platform's top and every arrow spent was a shot told.
 
     MB_CLIENT_INSTANCE=<instance>/.minecraft bash harness/smoke/mbtest.sh harness/smoke/hazard_course.py [--case NAME ...] [--trials 3]
 
@@ -41,6 +47,9 @@ CASES = {
     "fire_goto": dict(ground=FIRE, light=LIGHT, goto=(12, 0, 0)),
     "fire_hold": dict(ground=FIRE, light=LIGHT, hold=["sneak"]),
     "ledge_hit": dict(ground=LEDGE, at=(-.9, UP, 0), mobs=[("Zombie", 6, UP, 1)]),
+    "ledge_over": dict(ground=LEDGE, at=(-2.15, UP, 0), mobs=[("Zombie", 6, UP, 1)], probe=True),
+    "fire_bow": dict(ground=FIRE, light=LIGHT, mobs=[("Zombie", 20, 0, 1)], fight=dict(weapon_slot=cc.BOW, ranged=True, duration_ticks=160)),
+    "ledge_bow": dict(ground=LEDGE, at=(-.9, UP, 0), mobs=[("Skeleton", 12, UP, 1)], fight=dict(weapon_slot=cc.BOW, ranged=True, duration_ticks=300)),
 }
 
 
@@ -62,13 +71,15 @@ def trial(s, c, name: str) -> dict:
     s.call(cc.FIX + ".clear"); time.sleep(.5)
     row = {"case": name, "start": at}
     if name == "ledge_hit": row["edges"] = c.call("time.status")["state"].get("edges")
-    for mob, ahead, up, count in case.get("mobs", []):
-        s.call(cc.FIX + ".summon", type=mob, x=cc.START[0] + ahead, y=cc.FLOOR + up, z=cc.START[2], count=count)
-    job = {}
-    if "goto" in case or "hold" in case:  # the call answers when the job ends: on its own thread, with the server watched meanwhile
+    mobs = [m for mob, ahead, up, count in case.get("mobs", [])
+            for m in s.call(cc.FIX + ".summon", type=mob, x=cc.START[0] + ahead, y=cc.FLOOR + up, z=cc.START[2], count=count)["summoned"]]
+    bow = lambda: next((i.get("meta", 0) for i in s.call(cc.FIX + ".status")["player"]["inventory"] if i["slot"] == cc.BOW), 0)
+    worn, job = bow(), {}
+    if "goto" in case or "hold" in case or "fight" in case:  # the call answers when the job ends: on its own thread, with the server watched meanwhile
         def run():
             try:
-                if "goto" in case:
+                if "fight" in case: job["answer"] = cc.told(lambda: cc.work.mb_fight(entity_id=mobs[0]["entityId"], **case["fight"], timeout_s=60))
+                elif "goto" in case:
                     dx, dy, dz = case["goto"]
                     job["answer"] = c.call("nav.goto", x=cc.X0 + dx, y=cc.FLOOR + dy, z=cc.Z0 + dz, timeoutTicks=400)
                 else: job["answer"] = c.call("act.input", keys=case["hold"], ticks=100)
@@ -77,14 +88,20 @@ def trial(s, c, name: str) -> dict:
     for boxes in cc.batches(case.get("light", [])): s.call(cc.FIX + ".fill", boxes=boxes)
     samples, first_hit, health0 = [], None, None
     t0 = time.time()
-    while time.time() - t0 < (12 if name == "ledge_hit" else 4):
+    while time.time() - t0 < (12 if name.startswith("ledge") else 4):
         p = s.call(cc.FIX + ".status", radius=4)["player"]
         x, y, z = p["pos"]; health0 = p["health"] if health0 is None else health0
         samples.append([round(time.time() - t0, 1), round(x, 2), round(y, 2), round(z, 2), p["health"], p["dead"]])
         if first_hit is None and p["health"] < health0:
             first_hit = time.time()
-            if name == "ledge_hit": s.call(cc.FIX + ".clear")
-        if first_hit and time.time() - first_hit > 1.5: break
+            if name in ("ledge_hit", "ledge_over"): s.call(cc.FIX + ".clear")
+        if case.get("probe") and "probe" not in job and y < cc.FLOOR + UP - 1:
+            job["probe"] = None
+            def probe():
+                try: job["probe"] = c.call("act.input", keys=["sneak"], ticks=10)
+                except BridgeError as e: job["probe"] = {"error": str(e)}
+            threading.Thread(target=probe, daemon=True).start()
+        if first_hit and time.time() - first_hit > 1.5 and "fight" not in case: break
         if p["dead"]: break
         time.sleep(.1)
     end = samples[-1]
@@ -94,11 +111,21 @@ def trial(s, c, name: str) -> dict:
         left = next((t for t, x, y, z, h, d in samples if not (abs(int(x // 1) - cc.X0) <= 1 and abs(int(z // 1) - cc.Z0) <= 1)), None)
         row.update(won=out_of_fire and not end[5], outAfterS=left, healthLost=round(samples[0][4] - min(r[4] for r in samples), 1))
         row["won"] = row["won"] and left is not None and left <= 2
-        if "goto" in case or "hold" in case:
+        if "goto" in case or "hold" in case or "fight" in case:
             until = time.monotonic() + 10
             while "answer" not in job and time.monotonic() < until: time.sleep(.1)
             row["job"] = str(job.get("answer"))[:300]
             if "hold" in case: row["won"] = row["won"] and "stepped_out_of_fire" in row["job"]
+    elif case.get("probe"):
+        until = time.monotonic() + 5
+        while job.get("probe") is None and "probe" in job and time.monotonic() < until: time.sleep(.1)
+        answer = str(job.get("probe"))[:300]
+        row.update(won="probe" in job and job["probe"] is not None and "held_against_a_hit" not in answer and "error" not in answer, probe=answer,
+                   lowestY=min(r[2] for r in samples), died=end[5])
+    elif "fight" in case:
+        until = time.monotonic() + 15
+        while "answer" not in job and time.monotonic() < until: time.sleep(.1)
+        row.update(won=min(r[2] for r in samples) >= cc.FLOOR + UP - .01 and not end[5], lowestY=min(r[2] for r in samples), died=end[5])
     else:
         top, edge = cc.FLOOR + UP, cc.X0 - 2   # the platform's top; the edge's block (its west face at x = edge)
         first = next((i for i in range(1, len(samples)) if samples[i][4] < samples[i - 1][4]), None)
@@ -107,6 +134,10 @@ def trial(s, c, name: str) -> dict:
         back = after[-1][1] if landed else None
         row.update(won=landed and back - edge >= 1.5, hit=first is not None, thrown=round(at[0] - min(r[1] for r in after), 2) if after else None,
                    landed=landed, backFromEdge=round(back - edge, 2) if back is not None else None, died=end[5])
+    if "fight" in case:
+        receipt = job.get("answer") or {}
+        row.update(fight={k: receipt.get(k) for k in ("state", "reason", "shots", "heldAgainstThrows") if receipt.get(k) is not None}, bowWear=bow() - worn)
+        row["won"] = row["won"] and receipt.get("shots", 0) == row["bowWear"]   # an arrow the fight never told of flew unaimed
     s.call(cc.FIX + ".clear")
     row["samples"] = samples
     return row
@@ -117,6 +148,7 @@ def main():
     ap.add_argument("--case", action="append", choices=sorted(CASES)); ap.add_argument("--trials", type=int, default=3)
     a = ap.parse_args()
     s, c = mc.server_kernel(120), mc.Kernel(timeout=60)
+    mc.mbtool.set_kernel_factory(lambda: c)   # mb_fight acts through this session
     s.call(cc.FIX + ".rules", rules=cc.RULES, difficulty=1)
     rows = []
     for name in a.case or list(CASES):
