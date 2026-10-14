@@ -35,7 +35,10 @@ KIT = [("iron_sword", 1), ("bow", 1), ("iron_pickaxe", 1), ("iron_shovel", 1), (
 SIGHT = [{"id": "nightVision", "seconds": 100000}]
 RULES = {"doMobSpawning": False, "mobGriefing": True, "naturalRegeneration": True, "keepInventory": False}
 
-# arena: the box (x, z its corner); blocks: [id, (x, y, z), spawns?] with y from the floor; at: the player's start, yaw its facing.
+FORTRESS_KIT = [item for item in KIT if item[0] != "water_bucket"]  # as one comes to the Nether: water boils there
+NB, FENCE = "minecraft:nether_brick", "minecraft:nether_brick_fence"
+# arena: the box (x, z its corner); boxes: [id, (x, y, z), (x, y, z), spawns?] with y from the floor, filled in order;
+# mobs: [registry name, (x, y, z), count?]; kit: the inventory, KIT if none; at: the player's start, yaw its facing.
 SCENES = {
     "blaze": dict(
         task="Farm 8 blaze rods",
@@ -44,8 +47,38 @@ SCENES = {
               "and torches. No other player is in the world.",
         goal=("minecraft:blaze_rod", 8),
         arena=dict(x=1024, z=1024, width=25, depth=25, height=10),
-        blocks=[("minecraft:mob_spawner", (1036, 0, 1036), "Blaze")],
+        boxes=[("minecraft:mob_spawner", (1036, 0, 1036), (1036, 0, 1036), "Blaze")],
         at=(1027.5, 0, 1036.5), yaw=-90, difficulty=1),
+    # A fortress bridge and its blaze spawner as the game builds them (the Straight piece and the Throne), over a lava sea
+    # 15 blocks down, with a gap of open air between the start and the bridge: where the dragon runs lost their footing.
+    "fortress": dict(
+        task="Farm 8 blaze rods",
+        about="You are in a closed box in the sky, 64 blocks square and 40 high, built as a piece of a Nether fortress: a "
+              "lava sea fills its floor. You stand on a netherrack outcrop 15 blocks above the lava, facing east. Eight blocks "
+              "east of its edge, across open air over the lava, a nether-brick bridge 5 wide with low walls on both sides runs "
+              "19 blocks east to a stepped platform with a blaze spawner on it. A netherrack cliff rises along the north wall. "
+              "Two ghasts fly in the box and two zombie pigmen stand on the bridge. You have iron armour on, and in your "
+              "inventory weapons, tools, blocks, food and torches. No other player is in the world.",
+        goal=("minecraft:blaze_rod", 8),
+        arena=dict(x=1004, z=992, width=64, depth=64, height=40),
+        boxes=[("minecraft:lava", (1004, 0, 992), (1067, 1, 1055)),
+               ("minecraft:netherrack", (1004, 2, 992), (1067, 30, 999)),              # the cliff
+               ("minecraft:netherrack", (1004, 2, 1017), (1010, 16, 1029)),            # the outcrop
+               (NB, (1019, 2, 1021), (1021, 14, 1025)), (NB, (1035, 2, 1021), (1037, 14, 1025)),  # the bridge's piers
+               (NB, (1019, 15, 1021), (1037, 16, 1025)),                                # its deck
+               (NB, (1019, 17, 1021), (1037, 17, 1021)), (NB, (1019, 17, 1025), (1037, 17, 1025)),  # its walls
+               (NB, (1038, 2, 1020), (1046, 14, 1026)),                                 # the throne's footing
+               (NB, (1038, 15, 1021), (1045, 16, 1025)), (NB, (1039, 17, 1021), (1045, 17, 1025)),
+               (NB, (1040, 18, 1021), (1045, 18, 1025)), (NB, (1041, 19, 1021), (1045, 19, 1025)),  # its steps
+               (NB, (1038, 17, 1021), (1040, 19, 1021)), (NB, (1038, 17, 1025), (1040, 19, 1025)),
+               (NB, (1040, 20, 1021), (1041, 20, 1021)), (NB, (1040, 20, 1025), (1041, 20, 1025)),
+               (NB, (1041, 20, 1020), (1046, 20, 1020)), (NB, (1041, 20, 1026), (1046, 20, 1026)), (NB, (1046, 20, 1021), (1046, 20, 1025)),
+               (FENCE, (1041, 21, 1021), (1041, 21, 1021)), (FENCE, (1041, 21, 1025), (1041, 21, 1025)),
+               (FENCE, (1041, 21, 1020), (1046, 21, 1020)), (FENCE, (1041, 21, 1026), (1046, 21, 1026)),
+               (FENCE, (1046, 21, 1021), (1046, 22, 1025)), (FENCE, (1046, 23, 1022), (1046, 23, 1024)),
+               ("minecraft:mob_spawner", (1043, 20, 1023), (1043, 20, 1023), "Blaze")],
+        mobs=[("Ghast", (1030, 30, 1040)), ("Ghast", (1050, 28, 1005)), ("PigZombie", (1027.5, 17, 1022.5)), ("PigZombie", (1031.5, 17, 1023.5))],
+        kit=FORTRESS_KIT, at=(1008.5, 17, 1023.5), yaw=-90, difficulty=1),
 }
 
 
@@ -88,12 +121,14 @@ def setup(server, name: str) -> dict:
     server.call(FIX + ".clear")
     server.call(FIX + ".rules", rules=RULES, difficulty=scene["difficulty"])
     server.call(FIX + ".arena", **scene["arena"])
-    for block, (x, y, z), *spawns in scene["blocks"]:
-        server.call(FIX + ".fill", boxes=[{"id": block, "from": [x, FLOOR + y, z], "to": [x, FLOOR + y, z], **({"spawns": spawns[0]} if spawns else {})}])
+    for block, (x, y, z), (x2, y2, z2), *spawns in scene["boxes"]:  # one call a box: the largest is under the fixture's cap
+        server.call(FIX + ".fill", boxes=[{"id": block, "from": [x, FLOOR + y, z], "to": [x2, FLOOR + y2, z2], **({"spawns": spawns[0]} if spawns else {})}])
     x, y, z = scene["at"]
-    stacks = [{"slot": i, "id": f"minecraft:{item}", "count": count} for i, (item, count) in enumerate(KIT)]
+    stacks = [{"slot": i, "id": f"minecraft:{item}", "count": count} for i, (item, count) in enumerate(scene.get("kit", KIT))]
     server.call(FIX + ".reset", empty=True, armor=ARMOR, stacks=stacks, at=[x, FLOOR + y, z], yaw=scene["yaw"], effects=SIGHT)
     server.call(FIX + ".clear")
+    for kind, (x, y, z), *count in scene.get("mobs", []):
+        server.call(FIX + ".summon", type=kind, x=x, y=FLOOR + y, z=z, count=count[0] if count else 1)
     return server.call(FIX + ".status", radius=40)["player"]
 
 
@@ -103,7 +138,7 @@ def watch(server, name: str, minutes: float) -> dict:
     ev = {"scene": name, "task": scene["task"], "started": time.strftime("%Y-%m-%dT%H:%M:%S"), "samples": []}
     start, low, deaths, was_dead = time.time(), 20.0, 0, False
     while time.time() - start < minutes * 60:
-        s = server.call(FIX + ".status", radius=40)
+        s = server.call(FIX + ".status", radius=64)
         p = s["player"]; held = sum(i["count"] for i in p["inventory"] if i["id"] == item)
         kinds: dict[str, int] = {}
         for e in s["entities"]:

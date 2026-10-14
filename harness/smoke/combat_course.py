@@ -55,7 +55,8 @@ FLOOR = 176
 START = (ARENA["x"] + 10.5, FLOOR, ARENA["z"] + 24.5)   # facing +x, 37 blocks of floor ahead
 SWORD, BOW, ARROWS = 0, 1, 9
 ARMOR = [{"slot": i, "id": f"minecraft:iron_{part}"} for i, part in enumerate(("boots", "leggings", "chestplate", "helmet"))]
-STACKS = [{"slot": SWORD, "id": "minecraft:iron_sword"}, {"slot": BOW, "id": "minecraft:bow"}, {"slot": ARROWS, "id": "minecraft:arrow", "count": 64}]
+STACKS = [{"slot": SWORD, "id": "minecraft:iron_sword"}, {"slot": BOW, "id": "minecraft:bow"}, {"slot": ARROWS, "id": "minecraft:arrow", "count": 64},
+          {"slot": 2, "id": "minecraft:cobblestone", "count": 64}]   # for a fight that may build its way
 RULES = {"doMobSpawning": False, "mobGriefing": False, "naturalRegeneration": False, "keepInventory": True}
 SIGHT = [{"id": "nightVision", "seconds": 100000}]   # the owner's call: every scene seen as in daylight; the mobs' own light rules still apply
 GUARDS = dict(healthDrop=True, healthBelow=8, burning=True, threatWithin=12, actionFailed=True)
@@ -148,6 +149,8 @@ CASES: dict[str, dict] = {
     "ground_fortress": dict(arena=dict(height=8), ground=FORT, mobs=[("Blaze", 27, 2, 3, 0, 4)], fight=PACK),
     "ground_low_cave": dict(arena=dict(height=4), ground=[(STONE, (-10, 2, -24), (37, 3, 23))],
                             mobs=[("CaveSpider", 8, 0, 2, 0, 3), ("Zombie", 12, 0, 1, 3), ("Spider", 10, 0, 1, -4)], fight=PACK),
+    # a cliff 3 high across the whole arena with a skeleton on top: the way up is built, with blocks in hand, and the swing is with the sword
+    "climb_place": dict(ground=[(STONE, (6, 0, -24), (20, 2, 23))], mobs=[("Skeleton", 10, 3, 1)], fight=dict(named=True, weapon_slot=SWORD, allow_place=True)),
     "ground_ledge": dict(ground=[(STONE, (12, 0, -6), (17, 2, 6)), (STONE, (10, 0, -1), (10, 0, 1)), (STONE, (11, 0, -1), (11, 1, 1))],
                          mobs=[("Skeleton", 15, 3, 2, 0, 6), ("Zombie", 7, 0, 1, 2)], fight=PACK),
     "ground_lava_trench": dict(ground=sunk("minecraft:lava", 5, -10, 6, -1) + sunk("minecraft:lava", 5, 1, 6, 10),
@@ -224,7 +227,7 @@ CASES: dict[str, dict] = {
     "enderman_shelter_normal": dict(TELEPORTS, at=(-2, 0, 0), ground=TELEPORTS["ground"] + [(STONE, (-6, 0, -3), (0, 2, 3)), (AIR, (-5, 0, -2), (0, 1, 2))],
                                     mobs=[("Enderman", 10, 0, 1), ("Enderman", 14, 0, 1)], settle=.6, fight=dict(hold=True, weapon_slot=SWORD), difficulty=2),
 }
-TOLD = ("state", "reason", "phase", "ticks", "attacks", "criticalHits", "kills", "shots", "hitsObserved", "adjustments", "failure", "movedFromStart", "leash", "pausedBy", "suspendedJobId", "hostileBy", "wentOff", "passedOver", "taken")
+TOLD = ("state", "reason", "phase", "ticks", "attacks", "criticalHits", "runningHits", "kills", "shots", "hitsObserved", "adjustments", "failure", "movedFromStart", "leash", "pausedBy", "suspendedJobId", "hostileBy", "wentOff", "passedOver", "taken")
 
 
 class Combat(Course):
