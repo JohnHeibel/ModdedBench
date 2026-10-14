@@ -102,6 +102,7 @@ NIGHT =[("Zombie", 10, 0, 1, -3), ("Zombie", 12, 0, 1, 3), ("Skeleton", 16, 0, 1
 FORT = [(BRICK, (-10, 0, -24), (37, 7, -2)), (BRICK, (-10, 0, 2), (37, 7, 23)), (BRICK, (-10, 0, -1), (-3, 7, 1)), (BRICK, (-2, 4, -1), (21, 7, 1)),
         ("minecraft:air", (22, 0, -7), (34, 7, 7)), (BRICK, (35, 0, -7), (37, 7, 7)), *sunk("minecraft:lava", 29, 3, 34, 6)]
 PACK = dict(pack=True, weapon_slot=SWORD)
+BURNING = [("minecraft:netherrack", (-2, -1, -2), (2, -1, 2)), ("minecraft:fire", (-2, 0, -2), (2, 0, 2))]
 # mobs: (registry name, blocks ahead, blocks up, count, blocks to the side?, spread?): a group lies along the side axis.
 # fight: mb_fight's arguments; named adds the first mob's entity_id, pack is swarm=True or, --one-by-one, a fight a mob.
 # ground: (block, (ahead, up, side), (ahead, up, side), meta?) boxes from the start block, corners included, placed in order; arena: the box's size.
@@ -181,6 +182,11 @@ CASES: dict[str, dict] = {
                         mobs=[("Spider", -8, 0, 1), ("Spider", 1, 0, 1, 10), ("Spider", 1, 0, 1, -10), ("Zombie", 11, 0, 1)], fight=PACK),
     # Lava a block and a half behind: step forward to meet them, so a knockback lands on floor.
     "lava_behind": dict(ground=sunk(LAVA, -4, -10, -2, 10), mobs=[("Zombie", 8, 0, 3, 0, 3), ("Spider", 10, 0, 1, 5)], fight=PACK),
+    # Started in a burning patch (fire on netherrack never goes out) with zombies coming: step off it and fight on clean floor.
+    "fire_floor": dict(ground=BURNING, mobs=[("Zombie", 8, 0, 3, 0, 3)], fight=PACK),
+    # Blazes, shot at from a burning patch, as the blaze run's model did (swarm, hold, the bow, the sword for whatever closes).
+    "fire_blazes": dict(ground=BURNING, mobs=[("Blaze", 12, 1, 2, 0, 4)],
+                        fight=dict(swarm=True, hold=True, weapon_slot=BOW, ranged={"meleeSlot": SWORD, "minRange": 0, "maxRange": 24})),
     # A 3-wide dead end with a creeper behind two zombies: go forward to the open end, or hit the creeper first (4 hits, each a knockback).
     "dead_end_creeper": dict(ground=[(STONE, (-2, 0, -2), (14, 2, 2)), (AIR, (-1, 0, -1), (14, 2, 1))], mobs=[("Zombie", 8, 0, 2, 0, 2), ("Creeper", 12, 0, 1)], fight=PACK),
     # On a 3-wide causeway 6 up: face them along it, so knockback is along it; a fall costs 3 and the fight goes on below.
@@ -298,7 +304,8 @@ class Combat(Course):
             if each: receipts, pauses = self.pack(watch, kwargs, most)
             else:
                 receipt, pauses = self.fight(kwargs); receipts = [receipt]
-                if case.get("then") and receipt.get("state") != "succeeded":   # the receipt read, whoever is left is taken on one at a time
+                # the receipt read, whoever is left is taken on one at a time (a named fight succeeds on its own mob alone)
+                if case.get("then") and (receipt.get("state") != "succeeded" or case["fight"].get("named")):
                     more, asked = self.pack(watch, {**case["then"], **({"aim_height": self.args.aim_height} if self.args.aim_height is not None else {})}, most)
                     receipts += more; pauses += asked
             wall = time.monotonic() - started

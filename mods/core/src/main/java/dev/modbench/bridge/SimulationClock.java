@@ -22,6 +22,7 @@ public final class SimulationClock {
     private Float lastHealth;
     private JsonObject vitals; // the player as the guards last saw it: a pause ends the tick before the client is sent the hit that caused it
     private final boolean[] inDanger = new boolean[4]; // health, air, burning, food: already reported, not yet recovered
+    private boolean burnReported; // this burn has paused once: its later ticks are not news to healthDrop until the fire is out
     private String reason = "startup";
     private final ArrayDeque<JsonObject> events = new ArrayDeque<>();
 
@@ -61,18 +62,20 @@ public final class SimulationClock {
      * Thresholds and burning pause once, as the value crosses into danger, and re-arm only when it has recovered:
      * a guard that re-paused every tick while air stayed low would leave no ticks to swim out with. Only the guard
      * that paused counts as reported: a value in danger under another pause (a step's end, another guard) pauses in its turn.
+     * A burn is one event too: once it has paused (burning, or healthDrop at its first tick), the health it goes on taking
+     * does not pause healthDrop again until the fire is out; the health floor still does.
      */
     public void observe(float health, int air, int food, boolean onFire) {
         boolean lowHealth=healthBelow>=0 && health<=healthBelow, lowAir=airBelow>=0 && air<=airBelow;
         boolean lowFood=foodBelow>=0 && food<=foodBelow, fire=burning && onFire;
         if(!paused) {
-            if(healthDrop && !fighting() && lastHealth!=null && health<lastHealth) { pause("health_dropped"); inDanger[0]=lowHealth; } // the hit reports the health it left
+            if(healthDrop && !fighting() && lastHealth!=null && health<lastHealth && !(onFire && burnReported)) { pause("health_dropped"); inDanger[0]=lowHealth; burnReported=onFire; } // the hit reports the health it left
             else if(lowHealth && !inDanger[0]) { pause("health_threshold"); inDanger[0]=true; }
             else if(lowAir && !inDanger[1]) { pause("air_threshold"); inDanger[1]=true; }
-            else if(fire && !fighting() && !inDanger[2]) { pause("burning"); inDanger[2]=true; } // still alight when the fight ends: it pauses then
+            else if(fire && !fighting() && !inDanger[2]) { pause("burning"); inDanger[2]=true; burnReported=true; } // still alight when the fight ends: it pauses then
             else if(lowFood && !inDanger[3]) { pause("food_threshold"); inDanger[3]=true; }
         }
-        inDanger[0]&=lowHealth; inDanger[1]&=lowAir; inDanger[2]&=fire; inDanger[3]&=lowFood;
+        inDanger[0]&=lowHealth; inDanger[1]&=lowAir; inDanger[2]&=fire; inDanger[3]&=lowFood; burnReported&=onFire;
         lastHealth=health;
         if(vitals==null || vitals.get("health").getAsFloat()!=health || vitals.get("food").getAsInt()!=food) vitals=Json.object("health",health,"food",food);
     }
@@ -115,7 +118,7 @@ public final class SimulationClock {
         double tw=Json.number(p,"threatWithin",threatWithin,-1,32);
         healthDrop=hd; actionFailed=af; pauseOnDisconnect=disconnect; healthBelow=hb; airBelow=ab;
         foodBelow=fb; burning=fire; threatWithin=tw; knownThreats.clear();
-        lastHealth=null; java.util.Arrays.fill(inDanger,false);
+        lastHealth=null; java.util.Arrays.fill(inDanger,false); burnReported=false;
         if(threatWithin<0) threats=new com.google.gson.JsonArray(); // the host stops looking for threats: none it listed before is still known to be one
     }
     /**

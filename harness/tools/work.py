@@ -176,7 +176,8 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = Fal
     weapon_slot is the hotbar slot to fight with (default: whatever is in hand). leash is how far
     the fight may draw you from where you started (default: 16 blocks more than the mob's distance
     when the fight took it up; the result says the leash in force); bail_health is the health at which it stops;
-    max_attackers is how many hostile mobs may be within 4 blocks (default: as many as were in
+    max_attackers is how many hostile mobs within 4 blocks may be at you at once, one queued behind a
+    nearer one not counted (default: as many as were in
     sight within 16 blocks when the fight began, and at least 2). aim_height is where on the
     target your crosshair rests, from its feet (0) to its top (1): a swing lands on whatever is in
     reach wherever you look, so by default a melee fight looks low (0.2); a shot goes where you
@@ -202,13 +203,16 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = Fal
     and leads a moving target. After each fight fit_ballistics (this file: yours to improve)
     turns the shots into numbers kept per weapon name in notes/ballistics.json, so a new
     weapon's first fight is its calibration.
-    It closes only until it has a line of sight within maxRange, and steps back inside minRange
+    It closes only until it has a clear shot within maxRange (the mob in sight and the simulated
+    arc to it clear of blocks; phase no_clear_shot when it is seen but the arc is blocked, as over
+    the lip of cover), and steps back inside minRange
     when the ground behind is safe. With the mob in sight and three seconds of closing that get
     no nearer, it shoots from where it stands (adjustments shows the maxRange it took). A shot
-    already drawn is never dropped unaimed: it is shot from where you stand, or with the target out
-    of sight held a second and then let down unfired, as it is when the target dies first. A mob
-    within 3.5 blocks ends the ranged fight (hostile_in_melee_range) unless
-    ranged={meleeSlot: n} names the hotbar slot of a melee weapon to finish with.
+    already drawn is never dropped unaimed: it is shot from where you stand, or with no clear shot
+    held a second and then let down unfired, as it is when the target dies first. A mob
+    in sight within 3.5 blocks ends the ranged fight (hostile_in_melee_range) unless
+    ranged={meleeSlot: n} names the hotbar slot of a melee weapon to meet it with; a second after
+    none is that close, the launcher is back in hand.
     ranged={drawTicks, reloadTicks, minRange:6, maxRange:20 (at most 96), clickAfterLoad, speed,
     gravity, drag} overrides what it has learned; the result reports shots, hitsObserved and
     ballistics.
