@@ -687,8 +687,9 @@ the same goes for a real sword and a ranged weapon.
 
 Most fights are avoidable. Mobs spawn where block light is 7 or less:
 `mb_obs light` lists those spots around you, so torch a cave before you mine in
-it and torch the base until the list is empty under its roof. `mb_settings` set
-`avoidance` true makes every path cost more near hostile mobs and spawners.
+it and torch the base until the list is empty under its roof. The route rules
+`mobs` and `spawners` (`mb_route_rules`, off at first) make every path cost
+more near monsters and spawners.
 
 **Enclose the heart of your base completely.** Light only stops mobs spawning
 inside; it does nothing about the ones that spawn outside and walk in. Every GTNH player
@@ -799,7 +800,10 @@ ice, silverfish stone). Entries are "modid:name" or "modid:name:meta";
 (GregTech ores and machines keep their kind there). `mb_fight(target=...)`
 fights any entity you name, and `hostile` is yours to redefine. When a
 block keeps coinciding with damage or slowness in `symptoms`, add it to
-`hazards`.
+`hazards`. Route rules are yours too, with `mb_route_rules`: named tests on the
+cell a move ends in (an area, a dimension, a drop beside it, open sky above,
+blocks or mobs near) that make it cost more, or forbid it. Change them at any
+time, also while a job walks; `pathRules.routes` shows which ones decided.
 
 **Stuck.** If the same approach has failed twice, stop repeating it. Change
 one variable: the tool, the target, the route, the recipe, the time of day, or
@@ -1313,6 +1317,7 @@ and list what is loaded, with load errors.
 | `mb_fight` | Fight one mob as a job, the way mb_mine mines: you choose the mob and the limits, it does the footwork |
 | `mb_process` | Run one bounded source process: goal, explore, get_to_block, or farm |
 | `mb_settings` | Read, atomically set, or reset pinned source settings while the source engine is idle |
+| `mb_route_rules` | Read or change the path search's route rules: what a cell costs on top of the move into it |
 | `mb_cache` | Inspect or administer the source terrain cache; cached cells are approximate evidence |
 | `mb_mine` | Run bounded native quantity mining and return its terminal receipt |
 | `mb_build_preview` | Read-only: what mb_build would find and need for the same plan |

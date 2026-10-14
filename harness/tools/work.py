@@ -397,6 +397,42 @@ def mb_settings(operation: str = "get", query: str = "", values: dict | None = N
     return out
 
 
+@tool(rung=1, lane=lambda kw: "read" if kw.get("operation", "get") == "get" else "act", coverage=["machine"])
+def mb_route_rules(operation: str = "get", rules: list[dict] | None = None, names: list[str] | None = None) -> Any:
+    """Read or change the path search's route rules: what a cell costs on top of the move into it.
+
+    A rule is {name, where, factor, add, never, enabled}. A move into a cell that every test in where
+    matches costs (cost + add) x factor, or cannot be made at all (never). factor is 0.1..1000 (below 1
+    prefers the cell); add is 0..1000 ticks (a block walked is about 4.6). The adds of all matching rules
+    add up and their factors multiply. Tests, of the cell the feet end in ({} matches every cell):
+      dimension: N | box: {min:[x,y,z], max:[x,y,z]} | sphere: {center:[x,y,z], radius}
+      near_entities: {match:[selectors {entityId,uuid,type,name,class}], radius 1..64}: where they were as the search began
+      near_blocks: {match:["modid:name[:meta]"], radius 1..64}: among loaded tile entities (spawners, machines, chests)
+      beside_blocks: {match:["modid:name[:meta]"], within 1..2}: such a block within that many cells of the feet or head
+      drop: {depth 1..64, within 1..2}: an open cell beside it at the feet with a fall of depth or more, or lava, below
+      open_above: N: nothing above the head for N cells
+      submerged: true|false: the head ends under water | current_to_harm: true|false: that water pushes toward harm
+    Built in (defaults): mobs (near class net.minecraft.entity.monster.IMob within 8, factor 1.5, off), spawners
+    (near minecraft:mob_spawner within 16, factor 2, off), underwater (submerged, add 4, on), current_to_harm (add 20, on).
+    set(rules) adds or changes rules by name (the fields given replace, the rest stay; a new rule needs where);
+    remove(names) removes yours; reset(names, or none for all) puts built-ins back. At most 64 rules, names a-z0-9_.
+    A change applies at once, also while paused or while a job walks (its path is planned again); a search uses the
+    rules as they were when it began. Rules last until the client restarts. The answer has the rules, applied (how often
+    each changed a cost in searches since the last job began, which a job's receipt shows as pathRules.routes) and
+    the other settings that shape a route (changed with mb_settings while idle).
+    """
+    if operation not in {"get", "set", "remove", "reset"}:
+        raise ValueError("operation must be get, set, remove or reset")
+    if operation == "set" and not rules:
+        raise ValueError("set requires rules")
+    if operation == "remove" and not names:
+        raise ValueError("remove requires names")
+    params: dict[str, Any] = {"operation": operation}
+    if rules is not None: params["rules"] = rules
+    if names is not None: params["names"] = names
+    return kernel().call("nav.route_rules", **params)
+
+
 @tool(rung=1, lane=lambda kw: "read" if kw.get("operation", "status") in ("status", "block", "locations", "result") else "act", coverage=["machine"])
 def mb_cache(operation: str = "status", pos: list[int] | None = None, range: int = 2,
              block: str | None = None, meta: int | None = None, limit: int = 64,

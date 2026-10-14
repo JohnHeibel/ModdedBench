@@ -44,6 +44,8 @@ public interface Navigation {
     Map<String, Object> inspectTerrain(int x, int y, int z);
     Map<String, Object> status();
     default Map<String,Object> settings(Map<String,Object> params){throw new UnsupportedOperationException("source settings unavailable");}
+    /** The path search's route rules: named cell tests with the cost each adds; read and changed at any time. */
+    default Map<String,Object> routeRules(Map<String,Object> params){throw new UnsupportedOperationException("route rules unavailable");}
     /**
      * Game thread, once a frame while the world is paused and no client tick runs: computation only. The provider answers
      * what its path search asked of the game thread, and a job that has not had its first tick may do that tick's planning.

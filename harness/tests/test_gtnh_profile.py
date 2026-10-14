@@ -29,7 +29,7 @@ TOOLS = {
     "mb_act", "mb_call", "mb_cost", "mb_gui", "mb_keys", "mb_map", "mb_methods", "mb_obs", "mb_screenshot", "mb_status", "mb_stop", "mb_time",
     "mb_recipe_status", "mb_item_search", "mb_item_info", "mb_recipes", "mb_fluid_search", "mb_recipe_handlers", "mb_recipe_view", "mb_recipe_inspect",
     "mb_memory", "mb_route", "mb_inventory", "mb_find", "mb_transfer", "mb_click_slot", "mb_notes", "mb_note_new", "mb_note_append",
-    "mb_follow", "mb_fight", "mb_view", "mb_process", "mb_settings", "mb_cache",
+    "mb_follow", "mb_fight", "mb_view", "mb_process", "mb_settings", "mb_route_rules", "mb_cache",
     "mb_mine", "mb_build_preview", "mb_build", "mb_copy",
     "mb_schematic_import", "mb_schematic_build", "mb_scan", "mb_work_status",
     "mb_work_resume", "mb_build_pause", "mb_build_materials", "mb_quest_status", "mb_quest_sync", "mb_quest_search", "mb_quest_lines",
@@ -175,13 +175,13 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual({lanes[n] for n in ("mb_obs", "mb_inventory", "mb_notes", "mb_item_search", "mb_status", "mb_build_preview")}, {"read"})
         self.assertEqual({lanes[n] for n in ("mb_stop", "mb_build_pause", "mb_interrupt", "mb_reflex")}, {"control"})
         self.assertEqual({lanes[n] for n in ("mb_build", "mb_mine", "mb_route", "mb_transfer", "mb_note_new", "mb_note_append")}, {"act"})
-        self.assertTrue(all(callable(lanes[n]) for n in ("mb_call", "mb_time", "mb_gui", "mb_copy", "mb_settings")))
+        self.assertTrue(all(callable(lanes[n]) for n in ("mb_call", "mb_time", "mb_gui", "mb_copy", "mb_settings", "mb_route_rules")))
         registered = srv._tool_manager._tools["mb_obs"]
         self.assertEqual(registered.meta["moddedbench"]["lane"], "read")
         self.assertTrue(registered.annotations.readOnlyHint)
         self.assertFalse(srv._tool_manager._tools["mb_build"].annotations.readOnlyHint)
         status = srv._tool_manager._tools["mb_tools_status"].fn()
-        self.assertEqual(sum(len(m["tools"]) for m in status["modules"]), 66)
+        self.assertEqual(sum(len(m["tools"]) for m in status["modules"]), 67)
         json.dumps(status)
 
     def test_worker_picks_pool_from_lane_metadata(self):
@@ -565,6 +565,15 @@ class GTNHProfileTests(unittest.TestCase):
         with self.assertRaises(ValueError): tools.mb_process("goal")
         with self.assertRaises(ValueError): tools.mb_cache("locations")
         with self.assertRaises(ValueError): tools.mb_settings("set")
+        edges = {"name": "edges", "where": {"drop": {"depth": 4}}, "factor": 10}
+        tools.mb_route_rules("set", rules=[edges])
+        self.assertEqual(fake.calls[-1], ("nav.route_rules", {"operation": "set", "rules": [edges]}))
+        tools.mb_route_rules("remove", names=["edges"])
+        self.assertEqual(fake.calls[-1], ("nav.route_rules", {"operation": "remove", "names": ["edges"]}))
+        tools.mb_route_rules()
+        self.assertEqual(fake.calls[-1], ("nav.route_rules", {"operation": "get"}))
+        for bad in ({"operation": "set"}, {"operation": "remove"}, {"operation": "add", "rules": [edges]}):
+            with self.assertRaises(ValueError): tools.mb_route_rules(**bad)
 
     def test_recipe_view_and_inspect_keep_images_and_query_metadata_through_server(self):
         srv = self.loaded()

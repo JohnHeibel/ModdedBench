@@ -247,6 +247,7 @@ public final class ClientRuntime extends BridgeRuntime {
             return null;
         });
         register("nav.settings","Source settings {operation:get|set|reset,query,values,save}; typed values or source syntax, atomic edits while idle. Optional declarations do not promise runtime support.","interaction",r->navigation().settings(Json.GSON.fromJson(r.params,Map.class)));
+        register("nav.route_rules","Route rules {operation:get|set|remove|reset,rules:[{name,where,factor,add,never,enabled}],names}: a move into a cell matching a rule's where costs (cost+add)×factor, or is refused (never). Any time; a change re-plans the path being walked.","interaction",r->navigation().routeRules(Json.GSON.fromJson(r.params,Map.class)));
         register("nav.build_pause","Pause active construction and release controls; retains jobId for nav.resume. Server time continues.","interaction",r->navigation().pauseBuild());
         register("nav.build_materials","Approximate placeable native inventory states; final state depends on native placement callbacks","read",r->navigation().buildMaterials());
         register("nav.cache","Source terrain cache {operation:status|block(pos)|repack(range)|save|reload|locations(block,meta?,limit,regionDistanceSquared)|result(id)}. Disk operations return an id to poll. Cached states are approximate and need native verification.","interaction",r->navigation().cache(Json.GSON.fromJson(r.params,Map.class)));
@@ -642,7 +643,7 @@ public final class ClientRuntime extends BridgeRuntime {
             clock.resumeFor(r,resume.getAsJsonPrimitive().isBoolean()?0:Json.integer(Json.object("t",resume),"t",0,0,72000));
         boolean heldEnded=m.equals("nav.resume")&&(suspendedEnd!=null&&suspendedId!=null&&suspendedId.equals(Json.string(r.params,"jobId",""))||interactions.ended(Json.string(r.params,"jobId",""))); // only collects an outcome
         if(clock.refusesActions()&&!heldEnded&&(m.startsWith("act.")&&!Set.of("act.stop","act.look").contains(m)
-            ||m.startsWith("nav.")&&!Set.of("nav.settings","nav.cache").contains(m)||m.startsWith("quest.")))
+            ||m.startsWith("nav.")&&!Set.of("nav.settings","nav.route_rules","nav.cache").contains(m)||m.startsWith("quest.")))
             throw clock.refusal("starting simulation actions");
     }
 

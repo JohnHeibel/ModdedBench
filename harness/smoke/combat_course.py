@@ -255,8 +255,13 @@ class Combat(Course):
         self.previous_rules = {k: was["rules"][k] == "true" for k in RULES}
         self.difficulty = self.evidence["difficulty"] = self.s.call(FIX + ".rules", rules=RULES)["difficulty"]
         mc.baseline(self.c)
-        # A run that switched avoidance on leaves it saved in the client: the course measures the default unless asked.
-        self.c.call("nav.settings", operation="set" if self.args.avoidance else "reset", values={"avoidance": True if self.args.avoidance else None}, save=False)
+        # Route rules last as long as the client: the course measures the built-in ones as they start, unless asked for
+        # mobs and spawners on (what the avoidance setting was).
+        mine = [r["name"] for r in self.c.call("nav.route_rules", operation="get")["rules"] if not r["builtin"]]
+        if mine: self.c.call("nav.route_rules", operation="remove", names=mine)
+        self.c.call("nav.route_rules", operation="reset")
+        if self.args.avoidance:
+            self.c.call("nav.route_rules", operation="set", rules=[{"name": "mobs", "enabled": True}, {"name": "spawners", "enabled": True}])
         rows = self.c.call("nav.settings", operation="get")["settings"]
         self.evidence["settings"] = {r["name"]: r["value"] for r in rows if r.get("value") != r.get("default")}
         print("difficulty:", self.evidence["difficulty"], "non-default settings:", self.evidence["settings"] or "none", flush=True)
@@ -479,7 +484,7 @@ def main():
     ap.add_argument("--case", action="append")
     ap.add_argument("--trials", type=int, default=3)
     ap.add_argument("--guards", action="store_true", help="fight under a run's guards, from the threat pause")
-    ap.add_argument("--avoidance", action="store_true", help="with the avoidance setting on, as the brief suggests")
+    ap.add_argument("--avoidance", action="store_true", help="with the route rules mobs and spawners on (the old avoidance setting)")
     ap.add_argument("--aim-height", type=float, help="every fight's aim_height, in place of the tool's default")
     ap.add_argument("--one-by-one", action="store_true", help="fight each pack with one named mb_fight a mob, in place of swarm=True")
     ap.add_argument("--keep", action="store_true", help="leave the box standing")
