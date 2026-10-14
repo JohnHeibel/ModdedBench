@@ -363,7 +363,8 @@ def mb_time(method: str = "status", params: dict | None = None, timeout_s: float
     pauses once as the value crosses it, and again only after it has recovered above it, so you can
     act out of the danger without disabling the guard: for air, mb_process goal {type:"breathable"}.
     A burn is one event as well: once it has paused (burning, or healthDrop at its first tick),
-    the health it goes on taking does not pause healthDrop again until the fire is out. Baritone terminal failures signal actionFailed automatically;
+    its own ticks do not pause healthDrop again until the fire is out; anything else that hurts
+    while you are alight does (lava, standing in fire, a hit). Baritone terminal failures signal actionFailed automatically;
     agent-written tools can call report_failure to signal their own failures.
     pauseOnDisconnect defaults true; set false for a planned
     client restart with continued server production, then restore it after reconnect.

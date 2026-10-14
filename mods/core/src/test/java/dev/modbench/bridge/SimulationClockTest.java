@@ -253,7 +253,7 @@ public class SimulationClockTest {
         clock.observe(20.0F, 70, 20, true);
         assertFalse(clock.paused());
         clock.observe(6.0F, 70, 20, true); // A hit that takes health under its floor is one event, reported once.
-        assertEquals("health_threshold", clock.status().get("reason").getAsString()); // still alight: the floor reports it
+        assertEquals("health_dropped", clock.status().get("reason").getAsString()); // not the burn's own tick: news
         clock.resume();
         clock.observe(6.0F, 70, 20, true);
         assertFalse(clock.paused());
@@ -264,13 +264,25 @@ public class SimulationClockTest {
         SimulationClock clock = new SimulationClock(() -> 0L);
         clock.configure(Json.object("healthDrop", true));
         clock.observe(20.0F, 300, 20, true);
+        clock.hurt("onFire");
         clock.observe(19.0F, 300, 20, true); // The burn's first tick is news.
         assertEquals("health_dropped", clock.status().get("reason").getAsString());
         clock.resume();
         clock.observe(19.0F, 300, 20, true);
+        clock.hurt("onFire");
         clock.observe(18.0F, 300, 20, true);
+        clock.hurt("onFire");
         clock.observe(17.0F, 300, 20, true); // Its later ticks are not.
         assertFalse(clock.paused());
+        clock.hurt("lava");
+        clock.observe(13.0F, 300, 20, true); // Lava while still alight is: dragon run 3 fell into it unpaused.
+        assertEquals("health_dropped", clock.status().get("reason").getAsString());
+        clock.resume();
+        clock.observe(13.0F, 300, 20, true);
+        clock.hurt("onFire");clock.hurt("mob");
+        clock.observe(10.0F, 300, 20, true); // So is a hit in the same tick as a burn tick.
+        assertEquals("health_dropped", clock.status().get("reason").getAsString());
+        clock.resume();
         clock.observe(17.0F, 300, 20, false);
         clock.observe(16.0F, 300, 20, false); // The fire is out: a loss is news again.
         assertEquals("health_dropped", clock.status().get("reason").getAsString());
@@ -280,6 +292,7 @@ public class SimulationClockTest {
         assertEquals("burning", clock.status().get("reason").getAsString());
         clock.resume();
         clock.observe(16.0F, 300, 20, true);
+        clock.hurt("onFire");
         clock.observe(15.0F, 300, 20, true); // ...so its first tick does not pause again.
         assertFalse(clock.paused());
     }

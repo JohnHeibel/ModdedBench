@@ -22,7 +22,8 @@ public final class SimulationClock {
     private Float lastHealth;
     private JsonObject vitals; // the player as the guards last saw it: a pause ends the tick before the client is sent the hit that caused it
     private final boolean[] inDanger = new boolean[4]; // health, air, burning, food: already reported, not yet recovered
-    private boolean burnReported; // this burn has paused once: its later ticks are not news to healthDrop until the fire is out
+    private boolean burnReported; // this burn has paused once: its own later ticks are not news to healthDrop until the fire is out
+    private boolean burnTick, otherHurt; // since the last observation: the burn's own tick hurt, and anything else did
     private String reason = "startup";
     private final ArrayDeque<JsonObject> events = new ArrayDeque<>();
 
@@ -62,23 +63,26 @@ public final class SimulationClock {
      * Thresholds and burning pause once, as the value crosses into danger, and re-arm only when it has recovered:
      * a guard that re-paused every tick while air stayed low would leave no ticks to swim out with. Only the guard
      * that paused counts as reported: a value in danger under another pause (a step's end, another guard) pauses in its turn.
-     * A burn is one event too: once it has paused (burning, or healthDrop at its first tick), the health it goes on taking
-     * does not pause healthDrop again until the fire is out; the health floor still does.
+     * A burn is one event too: once it has paused (burning, or healthDrop at its first tick), its own ticks (damage type
+     * onFire, the game's fire timer in every mod) do not pause healthDrop again until the fire is out. Anything else that
+     * hurts while alight does: lava, standing in fire, a hit. Dragon run 3 fell into lava while alight and was not told.
      */
     public void observe(float health, int air, int food, boolean onFire) {
         boolean lowHealth=healthBelow>=0 && health<=healthBelow, lowAir=airBelow>=0 && air<=airBelow;
         boolean lowFood=foodBelow>=0 && food<=foodBelow, fire=burning && onFire;
         if(!paused) {
-            if(healthDrop && !fighting() && lastHealth!=null && health<lastHealth && !(onFire && burnReported)) { pause("health_dropped"); inDanger[0]=lowHealth; burnReported=onFire; } // the hit reports the health it left
+            if(healthDrop && !fighting() && lastHealth!=null && health<lastHealth && !(burnTick && !otherHurt && onFire && burnReported)) { pause("health_dropped"); inDanger[0]=lowHealth; burnReported=onFire; } // the hit reports the health it left
             else if(lowHealth && !inDanger[0]) { pause("health_threshold"); inDanger[0]=true; }
             else if(lowAir && !inDanger[1]) { pause("air_threshold"); inDanger[1]=true; }
             else if(fire && !fighting() && !inDanger[2]) { pause("burning"); inDanger[2]=true; burnReported=true; } // still alight when the fight ends: it pauses then
             else if(lowFood && !inDanger[3]) { pause("food_threshold"); inDanger[3]=true; }
         }
-        inDanger[0]&=lowHealth; inDanger[1]&=lowAir; inDanger[2]&=fire; inDanger[3]&=lowFood; burnReported&=onFire;
+        inDanger[0]&=lowHealth; inDanger[1]&=lowAir; inDanger[2]&=fire; inDanger[3]&=lowFood; burnReported&=onFire; burnTick=otherHurt=false;
         lastHealth=health;
         if(vitals==null || vitals.get("health").getAsFloat()!=health || vitals.get("food").getAsInt()!=food) vitals=Json.object("health",health,"food",food);
     }
+    /** A hurt the server saw, by damage type, before the observation that shows the health it took. */
+    public void hurt(String damageType) { if("onFire".equals(damageType)) burnTick=true; else otherHurt=true; }
     public double threatWithin() { return threatWithin; }
     /**
      * Mobs that are after the player right now, as the server knows them: [{key,...what a player would perceive}].
