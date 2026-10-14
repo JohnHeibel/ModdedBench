@@ -132,6 +132,10 @@ CASES: dict[str, dict] = {
     "ranged_blaze": dict(mobs=[("Blaze", 16, 0, 1)], fight=dict(named=True, weapon_slot=BOW, ranged=True)),
     "ranged_ghast": dict(mobs=[("Ghast", 24, 8, 1)], fight=dict(named=True, weapon_slot=BOW, ranged=True)),
     "ranged_crystal": dict(mobs=[("EnderCrystal", 20, 6, 1)], fight=dict(named=True, weapon_slot=BOW, ranged=True)),
+    # a firing slit: a wall 6 ahead with a gap one high at your feet; the mob just behind it (it cannot see you, so it stays)
+    # shows its legs through the gap, not its eyes
+    "ranged_slit": dict(ground=[(STONE, (6, 0, -24), (6, 19, 23)), ("minecraft:air", (6, 0, -2), (6, 0, 2))], mobs=[("Zombie", 8, 0, 1)],
+                        fight=dict(named=True, hold=True, weapon_slot=BOW, ranged={"meleeSlot": SWORD})),
     # packs, in the open
     "pack_night": dict(mobs=NIGHT, fight=PACK),
     "pack_creeper_inside": dict(mobs=[("Zombie", 10, 0, 3, 0, 3), ("Creeper", 11, 0, 1, 1.5)], fight=PACK),
