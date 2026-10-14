@@ -137,6 +137,9 @@ CASES: dict[str, dict] = {
     # shows its legs through the gap, not its eyes
     "ranged_slit": dict(ground=[(STONE, (6, 0, -24), (6, 19, 23)), ("minecraft:air", (6, 0, -2), (6, 0, 2))], mobs=[("Zombie", 8, 0, 1)],
                         fight=dict(named=True, hold=True, weapon_slot=BOW, ranged={"meleeSlot": SWORD})),
+    # A crowd of neutral mobs across the line to the target: a shot into one would turn it, and its kind, on you.
+    "ranged_past_bystander": dict(mobs=[("Blaze", 14, 0, 1)], spare=[("PigZombie", 6, 0, 5, 0, .8)],
+                                  fight=dict(named=True, hold=True, weapon_slot=BOW, ranged={"meleeSlot": SWORD})),
     # packs, in the open
     "pack_night": dict(mobs=NIGHT, fight=PACK),
     "pack_creeper_inside": dict(mobs=[("Zombie", 10, 0, 3, 0, 3), ("Creeper", 11, 0, 1, 1.5)], fight=PACK),
@@ -346,7 +349,7 @@ class Combat(Course):
                    healthLost=round(before["player"]["health"] - after["player"]["health"], 1), died=after["player"]["dead"], wallS=round(wall, 1),
                    crowdedS=round(sum(.2 for _, me, _, around, *_ in watch.trace if sum(math.dist(me, at) <= 3 for _, at, _ in around) >= 2), 1),
                    difficulty=self.difficulty if "difficulty" in case else None, watchError=watch.error,
-                   lineBlockedAt=(receipt.get("target") or {}).get("lineBlockedAt"))
+                   lineBlockedAt=(receipt.get("target") or {}).get("lineBlockedAt"), shotBlockedBy=(receipt.get("target") or {}).get("shotBlockedBy"))
         if spared: row["provoked"] = sum(watch.spared[m["uuid"]] < m["health"] for m in spared)   # struck, or hit by anything: not left alone
         self.traces.setdefault(name, []).append(watch.trace); self.looks.setdefault(name, []).append(watch.looks)
         if self.args.guards: row["pauses"] = pauses
