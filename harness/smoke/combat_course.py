@@ -132,6 +132,8 @@ CASES: dict[str, dict] = {
     "ranged_skeleton": dict(mobs=[("Skeleton", 16, 0, 1)], fight=dict(named=True, weapon_slot=BOW, ranged=True)),
     "ranged_blaze": dict(mobs=[("Blaze", 16, 0, 1)], fight=dict(named=True, weapon_slot=BOW, ranged=True)),
     "ranged_ghast": dict(mobs=[("Ghast", 24, 8, 1)], fight=dict(named=True, weapon_slot=BOW, ranged=True)),
+    # A ghast across a wider arena, 52 blocks off: a long shot at a mob that drifts, with its fireballs on the line of fire.
+    "ranged_ghast_far": dict(arena=dict(width=64, height=24), mobs=[("Ghast", 50, 14, 1)], fight=dict(named=True, weapon_slot=BOW, ranged={"maxRange": 64})),
     "ranged_crystal": dict(mobs=[("EnderCrystal", 20, 6, 1)], fight=dict(named=True, weapon_slot=BOW, ranged=True)),
     # a firing slit: a wall 6 ahead with a gap one high at your feet; the mob just behind it (it cannot see you, so it stays)
     # shows its legs through the gap, not its eyes

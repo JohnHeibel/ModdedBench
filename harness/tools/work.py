@@ -204,7 +204,7 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = Fal
     turns the shots into numbers kept per weapon name in notes/ballistics.json, so a new
     weapon's first fight is its calibration.
     It closes only until it has a clear shot within maxRange (the mob's eyes or an aiming point in sight and the simulated
-    arc to it clear of blocks and of anything else the shot would strike first; phase no_clear_shot
+    arc to it clear of blocks and of anything else alive the shot would strike first; phase no_clear_shot
     when it is seen but the arc is blocked, as over the lip of cover or past another mob; in either
     phase the receipt's target.lineBlockedAt names the first block on the straight line from your
     eye to the aiming point, and target.shotBlockedBy what the arc would strike instead), and steps back inside minRange
