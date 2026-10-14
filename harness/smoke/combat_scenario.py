@@ -14,7 +14,8 @@ agent cannot reach (the server bridge listens on the server's own loopback). On 
 
 watch reads the server every 5 seconds (goal items held, health, deaths, the mobs in the box) into
 .runtime/evidence/combat-scenario-<name>.json and returns when the goal is held, at the first death, or at the cap.
-Natural spawning is off, so the box holds what the scene makes; health regenerates as in any game.
+Natural spawning is off, so the box holds what the scene makes; health regenerates as in any game. setup leaves the
+world paused (the guard clock's pause): the run starts when the model first lets it run.
 """
 from __future__ import annotations
 
@@ -73,6 +74,17 @@ def brief(name: str) -> str:
 
 def setup(server, name: str) -> dict:
     scene = SCENES[name]
+    from kernel import BridgeError, Kernel
+    client, until = Kernel(timeout=120), time.monotonic() + 20
+    client.call("time.configure", healthDrop=False, healthBelow=-1, airBelow=-1, foodBelow=-1, burning=False, threatWithin=-1,
+                actionFailed=False, pauseOnDisconnect=False)  # no guard of a run before this one; the model sets its own
+    if client.call("time.status")["state"].get("paused"): client.call("time.resume")
+    while server.call(FIX + ".status")["player"]["dead"]:  # a body left dead (a course's last scene) respawns first
+        if time.monotonic() > until: raise RuntimeError("the player did not respawn")
+        try: client.call("gui.button", index=0)  # the death screen's Respawn
+        except BridgeError: pass
+        time.sleep(1)
+    client.call("time.pause")  # the scene is handed over still: the model looks before anything in it moves
     server.call(FIX + ".clear")
     server.call(FIX + ".rules", rules=RULES, difficulty=scene["difficulty"])
     server.call(FIX + ".arena", **scene["arena"])
