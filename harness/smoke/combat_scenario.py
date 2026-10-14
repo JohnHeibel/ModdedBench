@@ -129,6 +129,8 @@ def setup(server, name: str) -> dict:
     server.call(FIX + ".clear")
     for kind, (x, y, z), *count in scene.get("mobs", []):
         server.call(FIX + ".summon", type=kind, x=x, y=FLOOR + y, z=z, count=count[0] if count else 1)
+    # A paused world sends the client no block changes: two ticks, or the model's first look shows the last trial's blocks.
+    client.call("time.step", ticks=2)
     return server.call(FIX + ".status", radius=40)["player"]
 
 
