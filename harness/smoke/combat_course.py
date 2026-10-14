@@ -132,6 +132,9 @@ CASES: dict[str, dict] = {
     "ranged_skeleton": dict(mobs=[("Skeleton", 16, 0, 1)], fight=dict(named=True, weapon_slot=BOW, ranged=True)),
     "ranged_blaze": dict(mobs=[("Blaze", 16, 0, 1)], fight=dict(named=True, weapon_slot=BOW, ranged=True)),
     "ranged_ghast": dict(mobs=[("Ghast", 24, 8, 1)], fight=dict(named=True, weapon_slot=BOW, ranged=True)),
+    # A bow fight that runs out mid-draw (a draw is 20 ticks), then goes on: one that ends with the bow drawn must not loose it unaimed.
+    "ranged_cut_short": dict(mobs=[("Zombie", 18, 0, 1)], fight=dict(named=True, weapon_slot=BOW, ranged=True, duration_ticks=12),
+                             then=dict(weapon_slot=BOW, ranged=True)),
     # A ghast across a wider arena, 52 blocks off: a long shot at a mob that drifts, with its fireballs on the line of fire.
     "ranged_ghast_far": dict(arena=dict(width=64, height=24), mobs=[("Ghast", 50, 14, 1)], fight=dict(named=True, weapon_slot=BOW, ranged={"maxRange": 64})),
     "ranged_crystal": dict(mobs=[("EnderCrystal", 20, 6, 1)], fight=dict(named=True, weapon_slot=BOW, ranged=True)),
@@ -232,7 +235,7 @@ CASES: dict[str, dict] = {
     "enderman_shelter_normal": dict(TELEPORTS, at=(-2, 0, 0), ground=TELEPORTS["ground"] + [(STONE, (-6, 0, -3), (0, 2, 3)), (AIR, (-5, 0, -2), (0, 1, 2))],
                                     mobs=[("Enderman", 10, 0, 1), ("Enderman", 14, 0, 1)], settle=.6, fight=dict(hold=True, weapon_slot=SWORD), difficulty=2),
 }
-TOLD = ("state", "reason", "phase", "ticks", "attacks", "criticalHits", "runningHits", "kills", "shots", "hitsObserved", "adjustments", "failure", "movedFromStart", "leash", "pausedBy", "suspendedJobId", "hostileBy", "wentOff", "passedOver", "taken")
+TOLD = ("state", "reason", "phase", "ticks", "attacks", "criticalHits", "runningHits", "kills", "shots", "hitsObserved", "adjustments", "failure", "movedFromStart", "leash", "pausedBy", "suspendedJobId", "hostileBy", "wentOff", "passedOver", "heldAgainstThrows", "struckAside", "taken")
 
 
 class Combat(Course):
