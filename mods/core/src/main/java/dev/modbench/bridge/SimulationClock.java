@@ -16,9 +16,11 @@ public final class SimulationClock {
     private int airBelow = -1, foodBelow = -1;
     private double healthBelow = -1, threatWithin = -1;
     private long fightUntil = -1; private double fightRadius; // a fight job the model started: its hits and its mobs are not news
+    private int[] engaged; // while it runs, the mobs after the player, as the host last found them
     private final java.util.Map<String,Long> knownThreats = new java.util.HashMap<>(); // key -> tick last seen
     private com.google.gson.JsonArray threats = new com.google.gson.JsonArray();
     private Float lastHealth;
+    private JsonObject vitals; // the player as the guards last saw it: a pause ends the tick before the client is sent the hit that caused it
     private final boolean[] inDanger = new boolean[4]; // health, air, burning, food: already reported, not yet recovered
     private String reason = "startup";
     private final ArrayDeque<JsonObject> events = new ArrayDeque<>();
@@ -67,11 +69,12 @@ public final class SimulationClock {
             if(healthDrop && !fighting() && lastHealth!=null && health<lastHealth) { pause("health_dropped"); inDanger[0]=lowHealth; } // the hit reports the health it left
             else if(lowHealth && !inDanger[0]) { pause("health_threshold"); inDanger[0]=true; }
             else if(lowAir && !inDanger[1]) { pause("air_threshold"); inDanger[1]=true; }
-            else if(fire && !inDanger[2]) { pause("burning"); inDanger[2]=true; }
+            else if(fire && !fighting() && !inDanger[2]) { pause("burning"); inDanger[2]=true; } // still alight when the fight ends: it pauses then
             else if(lowFood && !inDanger[3]) { pause("food_threshold"); inDanger[3]=true; }
         }
         inDanger[0]&=lowHealth; inDanger[1]&=lowAir; inDanger[2]&=fire; inDanger[3]&=lowFood;
         lastHealth=health;
+        if(vitals==null || vitals.get("health").getAsFloat()!=health || vitals.get("food").getAsInt()!=food) vitals=Json.object("health",health,"food",food);
     }
     public double threatWithin() { return threatWithin; }
     /**
@@ -82,11 +85,14 @@ public final class SimulationClock {
     /** The mob a fight job was sent after is expected to notice the player: not news for as long as a fight can last. */
     public void expectThreat(int entityId) { knownThreats.put(String.valueOf(entityId), simulationTicks+6000); knownThreats.put(entityId+"!", simulationTicks+6000); }
     /**
-     * A fight job runs for at most `ticks`: until it ends, taking a hit does not pause (healthDrop), and neither does a mob
-     * taking the player as its target within `radius` blocks, which is the fight the model chose. Every other guard stays
-     * armed: health, air, burning and food thresholds, a creeper starting to swell, and threats beyond the radius. 0 ends it.
+     * A fight job runs for at most `ticks`: until it ends, taking a hit does not pause (healthDrop), nor does being set
+     * alight (burning: what the fight costs is health, which its own limits count), nor a mob taking the player as its
+     * target within `radius` blocks, which is the fight the model chose. Every other guard stays armed: health, air and
+     * food thresholds, a creeper starting to swell, and threats beyond the radius. 0 ends it.
      */
-    public void fight(int ticks, double radius) { fightUntil = ticks > 0 ? simulationTicks + ticks : -1; fightRadius = radius; lastHealth = null; }
+    public void fight(int ticks, double radius) { fightUntil = ticks > 0 ? simulationTicks + ticks : -1; fightRadius = radius; lastHealth = null; engaged = null; }
+    /** While a fight runs, the mobs after the player (the host's word: a client cannot see whom a mob targets); true when that changed, to be sent at once. */
+    public boolean engaged(int[] now) { boolean changed = !java.util.Arrays.equals(engaged, now); engaged = now; return changed; }
     public boolean fighting() { return simulationTicks < fightUntil; }
     public void threats(com.google.gson.JsonArray now) {
         boolean fresh = false; knownThreats.values().removeIf(seen -> simulationTicks - seen > 200);
@@ -138,7 +144,7 @@ public final class SimulationClock {
         return Json.object("mode", paused?"paused":"realtime", "paused",paused,
             "simulationTicks",simulationTicks,"reason",reason,
             "wallMs",(now-started)/1_000_000L,"pausedMs",(pausedNanos+(paused?now-changed:0))/1_000_000L,
-            "conditions",conditions(),"threats",threats,"events",events,
-            "fight",fighting()?Json.object("untilTick",fightUntil,"radius",fightRadius):null);
+            "conditions",conditions(),"threats",threats,"events",events,"vitals",vitals,
+            "fight",fighting()?Json.object("untilTick",fightUntil,"radius",fightRadius,"engaged",engaged):null);
     }
 }

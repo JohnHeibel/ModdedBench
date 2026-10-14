@@ -133,90 +133,143 @@ def mb_follow(target: dict, duration_ticks: int = 1200, radius: int = 2,
 
 
 @tool(rung=1, coverage=["combat"])
-def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = False, leash: float = 16, bail_health: float = 8,
-             max_attackers: int = 2, max_health_loss: float = 10, max_growth: int = 3, weapon_slot: int | None = None, duration_ticks: int = 600,
+def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = False, leash: float | None = None, bail_health: float = 8,
+             max_attackers: int | None = None, max_health_loss: float = 10, max_growth: int = 3, weapon_slot: int | None = None, duration_ticks: int = 600,
              crit: bool | None = None, block: bool | None = None, ranged: dict | bool | None = None,
              timeout_s: float = 60.0, target: dict | None = None, hostile: list[dict] | None = None,
-             allow_break: bool = False, allow_place: bool = False) -> Any:
+             allow_break: bool = False, allow_place: bool = False, aim_height: float | None = None,
+             keep_away: list[dict] | None = None) -> Any:
     """Fight one mob as a job, the way mb_mine mines: you choose the mob and the limits, it does the footwork.
 
     entity_id comes from mb_obs entities or the clock's threats. It paths to the mob (never breaking
     or placing), and in reach blocks with a sword between swings and times each swing to land while
-    falling, a critical hit at the fastest rate the game counts. It backs away from a creeper it is
-    fighting while that creeper swells. hold=True never moves: it hits the chosen mob, or with no
-    entity_id the nearest hostile in sight, whenever one comes into reach, and succeeds once none is
-    in sight. Against more than one melee mob, first stand where only one can reach you (a doorway,
-    a one-wide tunnel, a pillar two blocks up) and use hold; pursuing one mob of a group walks you
-    into the others. It never chooses to chase a different mob.
-    swarm=True is for many small mobs at once (silverfish, a spawner): it stands like hold but
-    always swings at whichever hostile is nearest in reach, never stops as outnumbered, and
-    defaults crit and block off so every swing lands at the weapon's full rate. It takes no
+    falling, a critical hit at the fastest rate the game counts; a mob coming at you is hit the
+    moment it is in reach instead. A swing lands on a mob in sight, or on one unseen within 3
+    blocks with nothing between your eye and where you aim on it (legs under a low roof).
+    keep_away [selectors] names mobs it keeps away from, and so does any kind it sees go off
+    beside you (gone from the world with health left as you took a hit): the receipt's wentOff,
+    kept in notes/keep_away.json and passed to every fight after. One of those is fought at arm's
+    length: struck as it comes into reach and backed away from while the next swing gathers; one
+    that stands still within 4 blocks is run from, onto somewhere to stand, until it is 8 blocks
+    off or comes at you again (struck where it is when there is nowhere to go). An entity made of parts is
+    hit on the part nearest you. A mob coming at you is met where you stand, not walked to, and a
+    hostile that has come at you and stands in reach while the mob you chose does not is struck
+    where it stands, not walked past. hold=True never moves: it
+    hits the chosen mob, or with no entity_id the nearest hostile in sight within 16 blocks,
+    whenever one comes into reach, and succeeds once none is in sight. It never chooses to chase
+    a different mob.
+    swarm=True is for many mobs at once (a pack, a spawner): it fights whichever hostile is
+    nearest (one of a kind kept away from within 6 blocks first), going to it (with hold=True too
+    it stands), never stops as outnumbered, passes over one it cannot get at (3 seconds beside it
+    out of reach, or 5 without a hit since it took it up; passedOver counts them), defaults crit
+    and block off so every swing lands at the weapon's full rate, fails cannot_reach_target when
+    only passed-over ones are left, and succeeds (reason clear, naming any left out of sight) once
+    none is in sight within
+    16 blocks and none of those within 32 when it began is in sight or within 16. It takes no
     entity_id or target.
-    While a fight runs, being hit does not trip the healthDrop guard, and a mob taking you as its
-    target within 4 blocks (8 with hold or swarm) does not trip threat: that is the fight you
-    chose. Every other guard (health, air, burning, food, a swelling creeper, a threat farther
-    out) still pauses the world and ends the fight.
+    While a fight runs, being hit does not trip the healthDrop guard, being set alight does not
+    trip burning, and a mob taking you as its target within 4 blocks (8 with hold or swarm) does
+    not trip threat: that is the fight you chose, and its own limits count the health it costs.
+    Every other guard (low health, air, food, a swelling creeper, a threat farther out) still
+    pauses the world. The fight is then held, not lost: the call returns state suspended with
+    pausedBy and a suspendedJobId, and mb_work_resume(job_id, resume=True) carries on with it.
     weapon_slot is the hotbar slot to fight with (default: whatever is in hand). leash is how far
-    from where you started the mob may be before the job stops chasing; bail_health is the health
-    at which it stops; max_attackers is how many hostile mobs may be within 4 blocks.
+    the fight may draw you from where you started (default: 16 blocks more than the mob's distance
+    when the fight took it up; the result says the leash in force); bail_health is the health at which it stops;
+    max_attackers is how many hostile mobs may be within 4 blocks (default: as many as were in
+    sight within 16 blocks when the fight began, and at least 2). aim_height is where on the
+    target your crosshair rests, from its feet (0) to its top (1): a swing lands on whatever is in
+    reach wherever you look, so by default a melee fight looks low (0.2); a shot goes where you
+    look (default 0.6).
     It also stops while it is going badly, with health left to act on: max_health_loss is how
-    much health this fight may cost (health_lost), and max_growth how many more hostiles may be
-    in sight within 8 blocks than when it began (swarm_growing: more are arriving than you kill).
-    Both hold in swarm mode. The call blocks until the fight ends, so these limits and a short
-    duration_ticks are where you get to change your mind: fight in short spans and decide again
-    from each receipt whether to go on, retreat, pillar up or wall in.
+    much health this fight may cost (health_lost), and max_growth how many hostiles that were
+    not within 32 blocks when it began may come within 8 (swarm_growing: more are arriving;
+    what one of the fight leaves where it dies, such as a slime's halves, is part of it).
+    Both hold in swarm mode. The call blocks until the fight ends, so these limits and
+    duration_ticks are where you get to change your mind.
     It stops, as a failure that the actionFailed guard turns into a pause, the moment the fight
-    gets worse than the one you chose: health_at_bail_line, health_lost, swarm_growing, outnumbered, creeper_swelling (a
-    different creeper), target_beyond_leash, target_lost, cannot_reach_target, duration_elapsed.
+    gets worse than the one you chose: health_at_bail_line, health_lost, swarm_growing, outnumbered,
+    beyond_leash, target_gone (it left the world with
+    health left: it exploded, despawned or went out of sight range), target_lost,
+    cannot_reach_target (10 seconds without a hit, or 3 seconds beside a mob that stays above or
+    below your reach), duration_elapsed.
     ranged=True fights with whatever launcher or throwable is in weapon_slot, and knows no
     weapon by name: it holds use and releases; if nothing flies it clicks (a crossbow loads,
     then fires); if still nothing it winds longer, and after three tries ends with
-    no_projectile_fired (no ammunition?). It watches its own projectile to measure speed,
-    gravity and drag, aims by simulating that flight and leads a moving target. After each
-    fight fit_ballistics (this file: yours to improve) turns the shots into numbers kept per
-    weapon name in notes/ballistics.json, so a new weapon's first fight is its calibration.
-    It closes only until it has a line of sight within maxRange and steps back inside
-    minRange when the ground behind is safe. A mob within 3.5 blocks ends the ranged fight
-    (hostile_in_melee_range) unless ranged={meleeSlot: n} names the hotbar slot of a melee
-    weapon to finish with. ranged={drawTicks, reloadTicks, minRange:6,
-    maxRange:20, clickAfterLoad, speed, gravity, drag} overrides what it has learned; the
-    result reports shots, hitsObserved and ballistics.
-    The result lists hostilesInSight: decide again from there (fight the next, retreat, eat, wall
-    in). Arrows are not blocked by chasing: close on a skeleton along cover, or break line of sight.
+    no_projectile_fired (no ammunition?). A shot is a new entity flying away from you after the
+    release or click, or failing that the weapon wearing or a throwable leaving your hand. It
+    watches its own projectile to measure speed, gravity and drag, aims by simulating that flight
+    and leads a moving target. After each fight fit_ballistics (this file: yours to improve)
+    turns the shots into numbers kept per weapon name in notes/ballistics.json, so a new
+    weapon's first fight is its calibration.
+    It closes only until it has a line of sight within maxRange, and steps back inside minRange
+    when the ground behind is safe. With the mob in sight and three seconds of closing that get
+    no nearer, it shoots from where it stands (adjustments shows the maxRange it took). A shot
+    already drawn is never dropped unaimed: it is shot from where you stand, or with the target out
+    of sight held a second and then let down unfired, as it is when the target dies first. A mob
+    within 3.5 blocks ends the ranged fight (hostile_in_melee_range) unless
+    ranged={meleeSlot: n} names the hotbar slot of a melee weapon to finish with.
+    ranged={drawTicks, reloadTicks, minRange:6, maxRange:20 (at most 96), clickAfterLoad, speed,
+    gravity, drag} overrides what it has learned; the result reports shots, hitsObserved and
+    ballistics.
+    The result lists hostilesInSight (who is left) and movedFromStart.
     target {entityId|uuid|type|name|class} names any entity instead of entity_id (class matches
-    superclasses and interfaces). hostile [selectors, same form] is what counts as hostile for hold
-    and max_attackers (default [{class:"net.minecraft.entity.monster.IMob"}]); it never refuses a
-    target. allow_break / allow_place let the approach dig or pillar. The receipt shows jobSettings
+    superclasses and interfaces). hostile [selectors, same form] is what counts as hostile for
+    hold, swarm and max_attackers. By default that is what is after you: a mob whose target you
+    are or that hurt you last, as the server says, or one this fight hit. A monster (IMob) steadily
+    coming at you of its own going is after you, and one out of your sight is taken to be until it
+    shows otherwise; one in sight that is neither is
+    minding its own business and left alone. The receipt's hostileBy says which applied (with no
+    word from the server, the monster rule alone). It never refuses a target. allow_break / allow_place let the approach dig or pillar. The receipt shows jobSettings
     (settings forced for the job, restored after), hostileRule, target class/hostile/health, and for
-    ranged fights adjustments and shotEntities (a shot is any new non-living entity flying away from you).
+    ranged fights adjustments and shotEntities.
     """
     if entity_id is None and target is None and not hold and not swarm:
         raise ValueError("entity_id or target is required unless hold=True or swarm=True")
     if swarm and (entity_id is not None or target is not None):
         raise ValueError("swarm fights whatever is in reach: pass no entity_id or target")
-    params = {"hold": hold, "leash": leash, "bailHealth": bail_health, "maxAttackers": max_attackers,
+    params = {"hold": hold, "bailHealth": bail_health,
               "maxHealthLoss": max_health_loss, "maxGrowth": max_growth,
               "durationTicks": duration_ticks, "crit": not swarm if crit is None else crit,
               "block": not swarm if block is None else block}
     if entity_id is not None: params["entityId"] = entity_id
+    if max_attackers is not None: params["maxAttackers"] = max_attackers
     if swarm: params["swarm"] = True
     if weapon_slot is not None: params["weaponSlot"] = weapon_slot
     if target is not None: params["target"] = target
     if hostile is not None: params["hostile"] = hostile
     if allow_break: params["allowBreak"] = True
     if allow_place: params["allowPlace"] = True
-    if not ranged: return notes.tracked("nav.fight", timeout_s, **params)
+    if aim_height is not None: params["aimHeight"] = aim_height
+    if leash is not None: params["leash"] = leash
+    kept_book = notes.notes_dir() / "keep_away.json"  # kinds seen to go off beside you: yours to read and correct
+    kept = json.loads(kept_book.read_text()) if kept_book.is_file() else []
+    keep = [*({"type": kind} for kind in kept), *(keep_away or [])]
+    if keep: params["keepAway"] = keep
+    if not ranged: return _keep_went_off(kept_book, kept, lambda: notes.tracked("nav.fight", timeout_s, **params))
     book = notes.notes_dir() / "ballistics.json"  # what each weapon has taught so far: yours to read and correct
     known = json.loads(book.read_text()) if book.is_file() else {}
     held = kernel().call("obs.inventory")["main"][weapon_slot if weapon_slot is not None else kernel().call("obs.player")["selectedSlot"]].get("stack") or {}
     weapon = f"{held.get('id')}|{held.get('name')}"
     params["ranged"] = {**known.get(weapon, {}), **(ranged if isinstance(ranged, dict) else {})}
-    try: result = notes.tracked("nav.fight", timeout_s, **params)
+    try: result = _keep_went_off(kept_book, kept, lambda: notes.tracked("nav.fight", timeout_s, **params))
     except BridgeError as error: result = ((error.reply or {}).get("error") or {}).get("receipt") or {}; raise
     finally:
         learned = fit_ballistics(known.get(weapon, {}), result if isinstance(result, dict) else {})
         if learned: known[weapon] = learned; book.parent.mkdir(parents=True, exist_ok=True); book.write_text(json.dumps(known, indent=1))
     return result
+
+
+def _keep_went_off(book, kept: list, fight) -> Any:
+    """The kinds a fight saw go off beside you are kept away from in every fight after."""
+    result = {}
+    try:
+        result = fight(); return result
+    except BridgeError as error:
+        result = ((error.reply or {}).get("error") or {}).get("receipt") or {}; raise
+    finally:
+        new = [kind for kind in (result.get("wentOff") or []) if kind not in kept] if isinstance(result, dict) else []
+        if new: book.parent.mkdir(parents=True, exist_ok=True); book.write_text(json.dumps(kept + new, indent=1))
 
 
 def fit_ballistics(before: dict, receipt: dict) -> dict | None:
@@ -880,9 +933,12 @@ def mb_work_status(job_id: str) -> Any:
 def mb_work_resume(job_id: str, options: dict | None = None) -> Any:
     """Resume a durable blocked/interrupted mining or build job, or wait again on a suspended one.
 
-    A job whose step ended returns state "suspended" with a suspendedJobId. A suspended job of any kind (mine, build, goto, process, fight) is held where it stopped,
-    break progress and path kept, and runs on whenever the world runs; this call waits on it
-    as it is, and returns at once with its outcome if it already finished. resume=N steps it.
+    A job whose step ended, or that a guard's pause met (pausedBy names the guard), returns state
+    "suspended" with a suspendedJobId. A suspended job of any kind (mine, build, goto, process, fight), or
+    a single action a guard met in progress (eating), is held where it stopped, break progress and path
+    kept, and runs on whenever the world runs; this call waits on it as it is, and returns at once with
+    its outcome if it already finished. resume=True carries on with it, resume=N steps it. Any new
+    action ends a held job.
 
     Options may supply a fresh timeoutTicks (the job's own budget when not given) and explicit per-attempt permissions,
     including overrideProtection, a stallTicks for this session, and (mining) retry: true to

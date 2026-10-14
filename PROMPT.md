@@ -193,12 +193,14 @@ Key facts about the runtime:
   first resumed tick. `resume=N` instead runs N ticks (20 a second) with the
   action and pauses again, and `mb_time` `step` runs N ticks with no action:
   use them when a fraction of a second matters, such as a fight, a fall or a
-  timed click. A job still running when its step ends is not lost: the call
-  returns `suspended` with a `suspendedJobId`, the job is held where it stopped
-  and runs on whenever the world runs, and `mb_work_resume(job_id=...,
-  resume=N)` waits on it again. A guard pause or any new action ends it. A guard
-  that fires during the action pauses the world again, as it should. A hold
-  (`held` in the status) is never lifted.
+  timed click. A job still running when its step ends, or when a guard pauses
+  the world, is not lost: the call returns `suspended` with a `suspendedJobId`
+  (and `pausedBy`, the guard), the job is held where it stopped and runs on
+  whenever the world runs, and `mb_work_resume(job_id=..., resume=True)`, or
+  `resume=N`, waits on it again. So is a single action a guard met in
+  progress, such as eating. Any new action ends it. A guard that fires during
+  the action pauses the world again, as it should. A hold (`held` in the
+  status) is never lifted.
 - **When to pause.** Pause when ticks matter: a fight, a threat, an edge or a
   liquid, a precise or timed action, a machine step that can go wrong (water
   into a boiler that may be dry and hot). When you are safe inside your walled
@@ -643,33 +645,32 @@ decide, act with the minimum override (temporarily disable only the guard that
 would immediately re-trigger, for one bounded action), verify, restore the
 guard, resume.
 
+A guard's pause waits for you. `mb_reflex` is the answer written ahead of
+time: a script of yours, armed for one pause reason, that runs the moment
+that pause happens and then lets the work in flight carry on. Nothing is
+armed until you arm it, it does only what its script says, and every firing
+comes back on your next tool result. What it does not handle (the script
+fails, another guard trips inside it, its limits are spent) leaves the world
+paused for you, as with no reflex. `mb_status` lists the ones you have armed.
+
 A `threat` pause is the early one: a mob has just taken you as its target and
 has not hurt you yet. The clock's `threats` (in `mb_status` and `mb_time`) list
 every mob after you, with distance, line of sight, and whether it shoots. The
-world is stopped, so decide before you resume: fight, leave, or put a block
-between you, and do it with `resume=True` on that call (`mb_fight(...,
-resume=True)`). `mb_fight` fights one mob you name and stops the moment the fight
-gets worse than the one you chose. It will not pick a second mob for you.
-While a fight runs, its hits and the mobs it engages do not trip `healthDrop`
-or `threat`; every other guard still pauses and ends it, so there is no guard
-to switch off before fighting. The call holds you until the fight ends, so
+world is stopped, so decide before you resume, and act with `resume=True` on
+that call (`mb_fight(..., resume=True)`). `mb_fight` fights one mob you name and
+stops the moment the fight gets worse than the one you chose.
+While a fight runs, its hits, the mobs it engages and being set alight do not
+trip `healthDrop`, `threat` or `burning`; every other guard still pauses the
+world and holds the fight for `mb_work_resume`, so there is no guard to switch
+off before fighting. The call holds you until the fight ends, so
 its limits are where you change your mind: it stops with health left when the
 fight has cost `max_health_loss` or more mobs are arriving than you kill
-(`swarm_growing`). Fight in short spans (`duration_ticks`) and decide again
-from each receipt.
+(`swarm_growing`).
 With `ranged=True` it uses whatever bow, crossbow or throwable is in the slot you
-name, and learns that weapon from its own shots: what shoots at you, and what
-explodes, is better killed from a distance.
-Against several, do not chase: get to where only one can reach you (a doorway, a
-one-wide tunnel, two blocks up a pillar) and use `mb_fight(hold=True)`; against
-a swarm of small ones (silverfish), `mb_fight(swarm=True)` hits whichever is
-nearest in reach and does not stop for being outnumbered. Kill
-what shoots first or break its line of sight; a creeper is fought in the open,
-never in your base. Eating, crafting or opening a GUI with a threat listed is
-refused by default: the refusal names the threats and its override
-(`despiteThreat`), and passing it is your call. When you leave a fight, leave TO somewhere: know where
-you will retreat to before you start work in a place, and retreat there, not
-toward your machines.
+name, and learns that weapon from its own shots.
+Eating, crafting or opening a GUI with a threat listed is refused by default:
+the refusal names the threats and its override (`despiteThreat`), and passing
+it is your call.
 
 Armour is infrastructure. Every hit in this pack lands harder than vanilla, and
 the best armour your current metal allows roughly halves it. The moment you
@@ -1168,7 +1169,7 @@ shipped: once you start editing tools, `mb_tools_status` (what is loaded) and
 | Use a GUI neither `mb_craft` nor `mb_move_items` can drive | `mb_act` (use_block) to open it, `mb_inventory(container=True)` | `mb_transfer`, `mb_click_slot`, `mb_gui`; if no tool can drive it, that is a missing primitive: write one |
 | Complete a quest | `mb_quest_detect` | `mb_quest_select_choice`, `mb_quest_claim`, then observe the quest and your inventory |
 | Wait for something | `mb_interrupt` (add a watch with a deadline) | `mb_wait`; `mb_interrupt_events` to replay what you missed |
-| Deal with a hostile mob | the clock's `threats`, `mb_obs` entities | `mb_fight` (one named mob, `hold=True` at a chokepoint, `swarm=True` for many small ones); `mb_process` goal `run_away` to leave |
+| Deal with a hostile mob | the clock's `threats`, `mb_obs` entities | `mb_fight`; `mb_process` goal `run_away` to leave |
 | Stop something now | `mb_stop`, `mb_build_pause`, `mb_task(cancel=True)` for a background task | `mb_time` pause when you need to think |
 | Remember something | `mb_note_new`; from then on the note is a file you edit | `mb_goal` for where you are; `mb_memory` for waypoints, routes, protected regions |
 | Learn how the pack works | `mb_wiki_search` | `mb_wiki_read`, then a topic note |
@@ -1269,6 +1270,12 @@ and list what is loaded, with load errors.
 | `mb_recipe_handlers` | Discover all native NEI categories, including custom diagrams, magic and bee handlers, and their machine catalysts |
 | `mb_recipe_view` | Open and capture an exact native NEI recipe page from mb_recipes |
 | `mb_recipe_inspect` | Inspect the open native NEI page at logical GUI coordinates and capture it |
+
+**`harness/tools/reflexes.py`**: Reflexes: a script the model arms ahead of time, run the moment a guard pauses the world, and the mb_reflex tool.
+
+| Tool | What it does |
+| --- | --- |
+| `mb_reflex` | Arm a reflex: a script of yours that runs the moment a guard pauses the world, in place of the world waiting for you |
 
 **`harness/tools/scripts.py`**: Disposable scripts: one call that chains many tool calls, for a chore that is not worth a decision per step.
 

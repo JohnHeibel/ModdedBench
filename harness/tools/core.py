@@ -78,8 +78,9 @@ def mb_status() -> Any:
 
     Call it at the start of every session and after every compaction: it is the heartbeat.
     Also, when there are any: body (your running background task), finished (tasks whose result
-    you have not been handed yet) and pausedMining (mining jobs paused with targets still known:
-    job, vein or at, left, gained, minutesAgo; mb_work_resume continues one).
+    you have not been handed yet), pausedMining (mining jobs paused with targets still known:
+    job, vein or at, left, gained, minutesAgo; mb_work_resume continues one) and armedReflexes
+    (the reflexes you have armed, and the pauses they answer: mb_reflex).
     """
     k, brief = kernel(), os.environ.get("MB_BRIEF", "")
     out = k.call("sys.capabilities")
@@ -104,8 +105,8 @@ def mb_status() -> Any:
         out["cost"] = mb_cost(hours=2, top=6)
     except Exception as e:
         out["cost"] = {"unavailable": str(e)}
-    from mbtools_gtnh import tasks, work
-    extra = {"body": tasks.body(tasks.live()), "finished": tasks.deliver(), "pausedMining": work.paused_mining()}
+    from mbtools_gtnh import reflexes, tasks, work
+    extra = {"body": tasks.body(tasks.live()), "finished": tasks.deliver(), "pausedMining": work.paused_mining(), "armedReflexes": reflexes.armed()}
     out.update({key: value for key, value in extra.items() if value})
     return notes.attach(out, notes.surface(k, reason="session", radius=32))
 
@@ -340,7 +341,9 @@ def mb_time(method: str = "status", params: dict | None = None, timeout_s: float
     step {ticks:N} (1..72000) runs exactly N server ticks and pauses again with reason
     step; the reply comes once that pause has settled and its lastStep says how many ticks
     ran and what ended the step (a guard can end it early). A job still running at the step's
-    end is suspended and reports it; step or resume to go on. A single action (a click, a
+    end is suspended and reports it; step or resume to go on. A guard's pause holds the job or
+    the use in flight the same way (state suspended, pausedBy): mb_work_resume carries on with
+    it, any new action ends it. A single action (a click, a
     selection, a held input) is never cut short by a step: the world steps on until it answers,
     and resumedWorld.extendedTicks says by how much.
     Any acting tool takes resume=N to step N ticks with its action starting on the first,

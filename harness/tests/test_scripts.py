@@ -93,6 +93,26 @@ class ScriptInterruptTests(unittest.TestCase):
         self.assertEqual(out['result'], 1)
         self.assertEqual(out['interrupted'], {'tool': 'craft', 'error': 'screen changed'})
 
+    def test_a_job_a_guard_left_held_stops_the_script_and_names_the_job(self):
+        calls = []
+
+        def walk():
+            calls.append('walk')
+            return {'state': 'suspended', 'pausedBy': 'healthBelow', 'suspendedJobId': 'j1', 'suspended': 'a guard paused the world (healthBelow) with this job unfinished'}
+
+        def nested():  # a tool that returns the job's receipt under a key of its own
+            return {'moved': {'state': 'suspended', 'pausedBy': 'threat', 'suspendedJobId': 'j2'}}
+        out = self.run_script('def main():\n try:\n  walk()\n except Exception:\n  pass\n walk()\n return "carried on"', walk=walk)
+        self.assertEqual((calls, out.get('result'), out['line']), (['walk'], None, 3))
+        self.assertEqual({k: out['interrupted'][k] for k in ('tool', 'pausedBy', 'suspendedJobId')}, {'tool': 'walk', 'pausedBy': 'healthBelow', 'suspendedJobId': 'j1'})
+        self.assertIn('world paused by a guard (healthBelow)', out['stopped'])
+        self.assertEqual(self.run_script('def main():\n nested()\n return 1', nested=nested)['interrupted']['suspendedJobId'], 'j2')
+
+    def test_a_job_a_step_left_held_does_not_stop_the_script(self):
+        def walk():
+            return {'state': 'suspended', 'suspendedJobId': 'j1'}
+        self.assertEqual(self.run_script('def main():\n return walk()["suspendedJobId"]', walk=walk), {'result': 'j1', 'log': []})
+
     def test_ordinary_errors_stay_catchable(self):
         def act():
             raise ValueError('no such item')

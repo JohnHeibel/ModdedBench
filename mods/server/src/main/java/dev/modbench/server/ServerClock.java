@@ -45,6 +45,7 @@ public final class ServerClock implements ClockHooks.Driver, PauseCoordinator.Ho
     }
     private NetHandlerPlayServer client;
     private long lastHeartbeat;
+    private boolean news; // who is after the player changed this tick: the client hears at once, not within the second
     /** The pause and the guards, kept in the world's folder so that a restarted server comes back as it stopped (SimulationClock.saved). */
     private final java.nio.file.Path stateFile;
     private JsonObject restored;
@@ -155,6 +156,28 @@ public final class ServerClock implements ClockHooks.Driver, PauseCoordinator.Ho
         if(!connected()) return;
         clock.observe(client.playerEntity.getHealth(),client.playerEntity.getAir(),client.playerEntity.getFoodStats().getFoodLevel(),client.playerEntity.isBurning());
         if(clock.threatWithin()>=0) clock.threats(threats(client.playerEntity,clock.threatWithin()));
+        if(clock.fighting()&&clock.engaged(engaged(client.playerEntity))) news=true;
+    }
+    /**
+     * The mobs within 32 blocks after the player, while a fight runs: those whose target it is, and the last to hurt it (a
+     * mob that keeps no target, a shooter). A player reads that off how a mob behaves; the client cannot see it.
+     */
+    private static final java.lang.reflect.Method TASKS=cpw.mods.fml.relauncher.ReflectionHelper.findMethod(net.minecraft.entity.EntityLivingBase.class,null,new String[]{"isAIEnabled","func_70650_aV"});
+    private static boolean tasks(net.minecraft.entity.EntityLiving mob) {try {return (Boolean)TASKS.invoke(mob);} catch(ReflectiveOperationException|RuntimeException unknown) {return true;}}
+    private static boolean after(net.minecraft.entity.EntityLiving mob,EntityPlayerMP player) {
+        return tasks(mob)?mob.getAttackTarget()==player:mob instanceof net.minecraft.entity.EntityCreature creature&&creature.getEntityToAttack()==player;
+    }
+    static int[] engaged(EntityPlayerMP player) {
+        java.util.TreeSet<Integer> out=new java.util.TreeSet<>();
+        for(Object value:player.worldObj.getEntitiesWithinAABB(net.minecraft.entity.EntityLiving.class,player.boundingBox.expand(32,32,32))) {
+            net.minecraft.entity.EntityLiving mob=(net.minecraft.entity.EntityLiving)value;
+            // The target its own AI acts on: the task list's when it runs one, else the older chase target. A mob can hold a target
+            // its AI never reads (a call for help sets one on every mob of the caller's class and its subclasses).
+            if(!mob.isDead&&mob.getHealth()>0&&after(mob,player)) out.add(mob.getEntityId());
+        }
+        net.minecraft.entity.EntityLivingBase last=player.getAITarget();
+        if(last!=null&&!last.isDead&&last!=player) out.add(last.getEntityId());
+        return out.stream().mapToInt(Integer::intValue).toArray();
     }
     /**
      * What a player at the keyboard would have noticed by ear and eye, which this player has neither of: a mob that has
@@ -166,7 +189,7 @@ public final class ServerClock implements ClockHooks.Driver, PauseCoordinator.Ho
         for(Object value:player.worldObj.getEntitiesWithinAABB(net.minecraft.entity.EntityLiving.class,player.boundingBox.expand(within*2,within*2,within*2))) {
             net.minecraft.entity.EntityLiving mob=(net.minecraft.entity.EntityLiving)value;
             if(mob.isDead||mob.getHealth()<=0) continue;
-            boolean after=mob.getAttackTarget()==player||mob instanceof net.minecraft.entity.EntityCreature creature&&creature.getEntityToAttack()==player;
+            boolean after=after(mob,player);
             if(!after) continue;
             double distance=mob.getDistanceToEntity(player);boolean sight=mob.canEntityBeSeen(player);
             if(distance>within&&!(sight&&distance<=within*2)) continue;
@@ -205,6 +228,6 @@ public final class ServerClock implements ClockHooks.Driver, PauseCoordinator.Ho
     }
     @Override public void after() {
         coordinator.after(this::observe);
-        coordinator.broadcast(false);
+        coordinator.broadcast(news);news=false;
     }
 }

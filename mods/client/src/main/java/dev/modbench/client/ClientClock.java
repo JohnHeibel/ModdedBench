@@ -199,8 +199,20 @@ public final class ClientClock implements ClockHooks.Driver {
             switch(Json.string(data,"type","")) {
                 case "state" -> {
                     state=data.getAsJsonObject("state");supported=true;
+                    if(state.has("fight")&&state.get("fight").isJsonObject()&&state.getAsJsonObject("fight").has("engaged")&&state.getAsJsonObject("fight").get("engaged").isJsonArray()) {
+                        com.google.gson.JsonArray a=state.getAsJsonObject("fight").getAsJsonArray("engaged");int[] ids=new int[a.size()];
+                        for(int k=0;k<ids.length;k++) ids[k]=a.get(k).getAsInt();
+                        dev.modbench.api.Engaged.set(ids);
+                    }
                     if(state.has("worldId")) dev.modbench.api.ControlRegistry.memory().bind(state.get("worldId").getAsString());
                     paused=state.get("paused").getAsBoolean();
+                    // A pause ends the server's tick before it sends this client that tick's hit, and no packet is read while paused:
+                    // the health the guard judged is put in place here, as the health packet would have.
+                    if(paused && mc.thePlayer!=null && state.has("vitals") && state.get("vitals").isJsonObject()) {
+                        JsonObject vitals=state.getAsJsonObject("vitals");float health=vitals.get("health").getAsFloat();
+                        if(health!=mc.thePlayer.getHealth()) mc.thePlayer.setPlayerSPHealth(health);
+                        mc.thePlayer.getFoodStats().setFoodLevel(vitals.get("food").getAsInt());
+                    }
                     int credit=0;
                     if(!paused) { if(resuming) credit=creditRan;resuming=creditTick=false;creditRan=0;extendRefused=false;planHold.reset(); }
                     JsonObject step=state.has("step")?state.getAsJsonObject("step"):null;

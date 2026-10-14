@@ -284,6 +284,9 @@ def fields(read: bool = False, folder: Path | None = None) -> dict:
     if st and read: out["bodyBusy"] = True
     done = deliver(folder)
     if done: out["finished"] = done
+    from mbtools_gtnh import reflexes  # here: reflexes imports this module
+    fired = reflexes.deliver()  # what the model's reflexes did since its last result
+    if fired: out["reflexes"] = fired
     return out
 
 

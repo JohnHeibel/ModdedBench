@@ -24,6 +24,7 @@ envfile="$(mktemp)"; trap 'rm -f "$envfile"' EXIT
   echo "MB_COMMIT=$(git -C "$repo" rev-parse --short HEAD)$(git -C "$repo" diff --quiet HEAD -- mods harness/tools || echo +)"
   echo "MODBENCH_NOTES_DIR=/tmp/mbtest-notes"
   echo "MODBENCH_INTERRUPTS_DIR=/tmp/mbtest-interrupts"
+  echo "MODBENCH_REFLEXES_FILE=/tmp/mbtest-reflexes.json"
   echo "NO_PROXY=127.0.0.1,localhost,host.docker.internal"
   echo "HTTP_PROXY="; echo "HTTPS_PROXY="; echo "PYTHONUNBUFFERED=1"
 } > "$envfile"

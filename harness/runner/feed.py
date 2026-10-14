@@ -268,6 +268,9 @@ class Feed:
                 why = "" if not failed else ": bad arguments" if why.get("code") == "bad_request" else ": " + str(why.get("code") or "failed").replace("_", " ")
                 text = line(tool, e.get("args"), result)
                 self.add("fail" if failed or isinstance(result, dict) and result.get("stopped") else "tool", text and text + why, tool=tool)
+            for f in (result.get("reflexes") or []) if isinstance(result, dict) else []:  # a script the model armed acted without it: shown, as its other acts are
+                if isinstance(f, dict) and f.get("reflex") and not f.get("skipped"):
+                    self.add("mark", f"its reflex {f['reflex']} answered a pause ({str(f.get('when')).replace('_', ' ')})" + ("" if f.get("world") == "running" else ", and left the world paused"))
             if not failed:
                 try: self.look(tool, e.get("args"), result, content)
                 except Exception: pass  # a pop-up is decoration: a shape it did not expect shows nothing

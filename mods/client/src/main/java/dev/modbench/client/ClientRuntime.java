@@ -224,6 +224,7 @@ public final class ClientRuntime extends BridgeRuntime {
         });
         for(String method:List.of("mine","build","resume")) register("nav."+method,"Owned, checkpointed "+method+" process; timeoutTicks<=72000. Mine: blocks/items selectors, quantity, bounds/radius, toolSlot (forces the tool in that slot). Build: cells (at most 4096) or selection, a cell may carry click {face,hit,look,sneak} and expect; uses (right clicks on standing blocks); origin, replaceExisting, allowBreak/allowPlace. Resume: jobId. A protected region refuses the job's path edits and a mine's targets inside it, never the cells a build names; overrideProtection:true lifts it for this attempt.","interaction",r->{
             requirePlayer();Navigation provider=navigation();Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");
+            if(method.equals("resume")&&interactions.resume(r,Json.string(r.params,"jobId","")))return null; // a held single action (an eat a guard paused)
             if(method.equals("resume")&&suspendedId!=null&&suspendedId.equals(Json.string(r.params,"jobId",""))) { // wait on the held job again, as it is
                 if(suspendedEnd!=null){Map<String,Object> end=suspendedEnd;suspendedId=null;suspendedEnd=null;answer(r,end,suspendedFailure);return null;}
                 navigationRequest=r;suspendedId=null;return null;
@@ -236,11 +237,11 @@ public final class ClientRuntime extends BridgeRuntime {
             requirePlayer();Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");controlsChanged("superseded");ControlRegistry.controls().focusForInput();
             navigationJob=navigation().follow(params);navigationRequest=r;return null;
         });
-        register("nav.fight","One fight as a job: {entityId (from obs.entities or time.status threats) or target:{entityId|uuid|type|name|class} (any entity, nearest match in sight), hostile:[selectors] (default [{class:net.minecraft.entity.monster.IMob}]; used for hold, maxAttackers and the report, never to refuse a target), allowBreak:false, allowPlace:false, hold:false, swarm:false, durationTicks:600 (<=6000), leash:16 blocks from where you stood, bailHealth:8, maxHealthLoss:10 (health lost in this fight), maxGrowth:3 (more hostiles in sight within 8 than at the start), maxAttackers:2, weaponSlot:0..8, crit:true, block:true, intervalTicks:10, ranged:{drawTicks,reloadTicks,minRange:6,maxRange:20,clickAfterLoad,speed,gravity,drag}}. ranged fights with the launcher or throwable in hand: usage is found by trying (hold and release, else click), ballistics are measured from its own shots and kept per weapon name; fails no_projectile_fired after three tries. Paths to the mob without breaking or placing, then in reach blocks with a sword and swings while falling for critical hits; backs away from its target creeper while it swells. hold:true never moves: it hits the named target, or with none the nearest match of the hostile rule in sight, when one comes into reach, and succeeds once none is in sight. swarm:true is hold that switches to whichever hostile is nearest in reach, never bails as outnumbered, and defaults crit and block off (no entityId or target). While a fight runs, being hit does not trip healthDrop and a mob taking you as its target within 4 blocks (8 for hold/swarm) does not trip threat; every other guard still pauses and ends it. Fails, which the actionFailed guard turns into a pause, on health_at_bail_line, health_lost, swarm_growing, outnumbered, creeper_swelling (another one), target_beyond_leash, target_lost, cannot_reach_target, duration_elapsed. Receipt: target {entityId,type,class,health (null when not living),hostile,distance}, hostileRule, jobSettings (the settings in force for this job, restored after), and for ranged adjustments (changes made to the given numbers, from->to) and shotEntities (classes seen as the shot).","interaction",r->{
+        register("nav.fight","One fight as a job: {entityId (from obs.entities or time.status threats) or target:{entityId|uuid|type|name|class} (any entity, nearest match in sight), hostile:[selectors] (default: what is after you, by the server's word (you are its target, or it hurt you last) or hit in this fight, and of the monster rule IMob any steadily coming at you of its own going (2 blocks in about 1.5 s) or out of sight; one in sight not after you is left alone; the monster rule alone with no word from the server; used for hold, swarm, maxAttackers and the report, never to refuse a target), keepAway:[selectors] (with the kinds seen to go off beside you in this fight, receipt wentOff), allowBreak:false, allowPlace:false, hold:false, swarm:false, durationTicks:600 (<=6000), leash (how far the fight may draw you from where you stood; default 16 more than the target's distance when the fight took it up), aimHeight (where on the target the crosshair rests, feet 0 to top 1; default .2 for a swing, .6 for a shot), bailHealth:8, maxHealthLoss:10 (health lost in this fight), maxGrowth:3 (more hostiles in sight within 8 than at the start), maxAttackers:2, weaponSlot:0..8, crit:true, block:true, intervalTicks:10, ranged:{drawTicks,reloadTicks,minRange:6,maxRange:20 (<=96),clickAfterLoad,speed,gravity,drag}}. ranged fights with the launcher or throwable in hand: usage is found by trying (hold and release, else click), a shot is a new entity flying away after that or else the weapon wearing or a throwable leaving the hand, ballistics are measured from its own shots and kept per weapon name; fails no_projectile_fired after three tries; in sight and no nearer after three seconds of closing, it shoots from where it stands; a shot already drawn is shot from where you stand or, out of sight or with the target dead, let down unfired. Paths to the mob without breaking or placing, then in reach blocks with a sword and swings while falling for critical hits, but hits a mob coming at it the moment it is in reach; a swing lands on a mob in sight or, unseen, within 3 blocks with nothing between the eye and the aim point; one kept away from is fought at arm's length (struck as it comes into reach, backed away from within 3.5 blocks while the next swing gathers), and one that stands still within 4 blocks is run from onto somewhere to stand until it is 8 blocks off or comes at you again (struck where it is with nowhere to go); an entity made of parts is hit on its nearest part. hold:true never moves: it hits the named target, or with none the nearest match of the hostile rule in sight within 16 blocks, when one comes into reach, and succeeds once none is in sight. swarm:true fights whichever hostile is nearest (one kept away from within 6 blocks first), going to it (standing with hold:true), passes over one it cannot get at (3 s beside it out of reach or 5 s without a hit; cannot_reach_target when only those are left), never bails as outnumbered, and defaults crit and block off (no entityId or target). While a fight runs, being hit does not trip healthDrop, being set alight does not trip burning, and a mob taking you as its target within 4 blocks (8 for hold/swarm) does not trip threat; every other guard still pauses the world and holds the fight (state suspended, nav.resume carries on). Fails, which the actionFailed guard turns into a pause, on health_at_bail_line, health_lost, swarm_growing, outnumbered, beyond_leash, target_gone (it left the world with health left), target_lost, cannot_reach_target, duration_elapsed. Receipt: target {entityId,type,class,health (null when not living),hostile,distance}, hostileRule, hostileBy, taken (each mob taken on and why it counted), wentOff, passedOver, jobSettings (the settings in force for this job, restored after), and for ranged adjustments (changes made to the given numbers, from->to) and shotEntities (classes seen as the shot).","interaction",r->{
             requirePlayer();Map<String,Object> params=Json.GSON.fromJson(r.params,Map.class);params.remove("_timeout_ms");controlsChanged("superseded");ControlRegistry.controls().focusForInput();
             navigationJob=fightJob=navigation().fight(params);navigationRequest=r;
             if(params.get("entityId") instanceof Number id)clock.expectThreat(id.intValue()); // the threat guard warns of mobs the model has not answered yet
-            // While it runs, its hits and the mobs it engages do not pause the world; every other guard still does.
+            // While it runs, its hits, its fire and the mobs it engages do not pause the world; every other guard still does.
             boolean standing=Boolean.TRUE.equals(params.get("hold"))||Boolean.TRUE.equals(params.get("swarm"));
             clock.fight(params.get("durationTicks") instanceof Number d?d.intValue():600,standing?8:4);
             return null;
@@ -521,19 +522,14 @@ public final class ClientRuntime extends BridgeRuntime {
             navigationRequest.fail("cancelled", waited?"the wait for this job ended before the job did; it is stopped where it stood":"navigation owner disconnected or cancelled",refused(navigationJob.status()));
             navigationRequest=null; navigationJob=null;
         }
-        if (navigationRequest != null && clock.endsWork() && !clock.guardPause()) suspendNavigation(); // a step ended: hold the job, answer the caller
-        if (navigationRequest == null && navigationJob != null && suspendedId != null && clock.guardPause()) { // a guard ends held work as it ends running work
-            navigationJob.cancel("world_paused: "+clock.pauseReason());suspendedEnd=refused(navigationJob.status());suspendedFailure=failure(suspendedEnd,false);navigationJob=null;
-        }
-        if (navigationRequest != null && clock.endsWork()) { // no tick will end this job: hand back what it did, now, with why
-            navigationJob.cancel("world_paused: "+clock.pauseReason());
-            navigationRequest.fail("cancelled",clock.endedWhy(),refused(navigationJob.status()));
-            navigationRequest=null; navigationJob=null;
-        }
-        boolean stepsOn=clock.endsWork() && (interactions.running() || ui.running() || control != null) && clock.extendStep(); // a step does not end inside a click or a held input
-        if (!stepsOn && clock.endsWork()) { // a guard's pause: no tick will finish a click in progress or a held input either
+        // A step ended or a guard paused the world: no tick will end this job, so its caller is answered now and the job is
+        // held as it stands. A guard asks for a decision; it does not throw away the work in hand.
+        if (navigationRequest != null && clock.endsWork()) suspendNavigation();
+        boolean busy=interactions.waited() || ui.running() || control != null; // a single action whose caller is waiting
+        boolean stepsOn=busy && clock.endsWork() && clock.extendStep(); // a step does not end inside a click or a held input
+        if (busy && !stepsOn && clock.endsWork()) { // a guard's pause: no tick will finish a click in progress or a held input either
             String why=clock.endedWhy();
-            interactions.cancel(why);
+            if (clock.guardPause()) interactions.hold(clock.pauseReason()); else interactions.cancel(why); // a use in progress (eating) is held like a job
             if (ui.running()) ui.cancel(why+"; a click already sent but not acknowledged may still apply when the world resumes: observe before retrying");
             if (control != null) {
                 Request held=control; release();
@@ -603,15 +599,22 @@ public final class ClientRuntime extends BridgeRuntime {
     static void answer(Request r,Map<String,Object> receipt,String failure) {
         if(failure==null) r.reply(receipt);else r.fail(failure,String.valueOf(receipt.get("reason")),receipt);
     }
-    /** A job's receipt with the clicks the harness refused it (protected regions, a held attack locked to its block). */
-    /** The step ended with work in hand: answer its caller with where it stands, and keep the job and its controls. */
+    /** A step's end or a guard's pause with work in hand: answer its caller with where it stands, and keep the job and its controls. */
     private void suspendNavigation() {
         Map<String,Object> receipt=new LinkedHashMap<>(refused(navigationJob.status()));
         suspendedId=receipt.get("jobId") instanceof String id?id:java.util.UUID.randomUUID().toString();suspendedEnd=null;
         receipt.put("state","suspended");receipt.put("suspendedJobId",suspendedId);
-        receipt.put("suspended","the step ended with this job unfinished: it is held where it stopped (break progress and path kept) and runs on whenever the world runs. mb_work_resume(job_id=suspendedJobId) waits on it again, with resume=N to step; a guard pause or any new action ends it");
+        if(clock.guardPause())receipt.put("pausedBy",clock.pauseReason());
+        receipt.put("suspended",suspended(clock.guardPause()?clock.pauseReason():null,"job"));
         navigationRequest.reply(receipt);navigationRequest=null;
     }
+    /** What the caller of held work is told: by a guard (its reason) or, with none, by the step's end. */
+    static String suspended(String guard,String what) {
+        String kept="it is held where it stopped ("+(what.equals("job")?"break progress and path kept":"as far as it got")+") and runs on whenever the world runs";
+        return guard==null?"the step ended with this "+what+" unfinished: "+kept+". mb_work_resume(job_id=suspendedJobId) waits on it again, with resume=N to step; any new action ends it"
+            :"a guard paused the world ("+guard+") with this "+what+" unfinished: "+kept+". Read mb_time status and decide: mb_work_resume(job_id=suspendedJobId, resume=True) carries on with it; any new action ends it";
+    }
+    /** A job's receipt with the clicks the harness refused it (protected regions, a held attack locked to its block). */
     private Map<String,Object> refused(Map<String,Object> status) {
         var refusals=ControlRegistry.memory().refusedSince(refusalMark);if(refusals.isEmpty()) return status;
         Map<String,Object> out=new LinkedHashMap<>(status);out.putAll(refusals);return out;
@@ -637,7 +640,7 @@ public final class ClientRuntime extends BridgeRuntime {
         String m=r.method;
         if(resume!=null&&!resume.isJsonNull()&&!(resume.getAsJsonPrimitive().isBoolean()&&!resume.getAsBoolean()))
             clock.resumeFor(r,resume.getAsJsonPrimitive().isBoolean()?0:Json.integer(Json.object("t",resume),"t",0,0,72000));
-        boolean heldEnded=m.equals("nav.resume")&&suspendedEnd!=null&&suspendedId!=null&&suspendedId.equals(Json.string(r.params,"jobId","")); // only collects an outcome
+        boolean heldEnded=m.equals("nav.resume")&&(suspendedEnd!=null&&suspendedId!=null&&suspendedId.equals(Json.string(r.params,"jobId",""))||interactions.ended(Json.string(r.params,"jobId",""))); // only collects an outcome
         if(clock.refusesActions()&&!heldEnded&&(m.startsWith("act.")&&!Set.of("act.stop","act.look").contains(m)
             ||m.startsWith("nav.")&&!Set.of("nav.settings","nav.cache").contains(m)||m.startsWith("quest.")))
             throw clock.refusal("starting simulation actions");

@@ -123,6 +123,7 @@ class Reply:
 
 class Kernel:
     body_gate: Callable[[Kernel, str], None] | None = None  # harness/tools/tasks.py: refuses a call that would move the body while a background task has it
+    around_action: Callable[[Kernel, str, float | None, dict], Any] | None = None  # harness/tools/reflexes.py: goes round each call, to answer a guard's pause with the reflex armed for it
 
     def __init__(self, url: str | None = None, token: str | None = None, timeout: float = 60.0,
                  on_event: Callable[[dict], None] | None = None, connect_retries: int = 1, retry_delay: float = 2.0,
@@ -263,6 +264,9 @@ class Kernel:
         return r
 
     def call(self, method: str, /, timeout: float | None = None, **params) -> Any:
+        return self._call(method, timeout, **params) if self.around_action is None else self.around_action(method, timeout, params)
+
+    def _call(self, method: str, /, timeout: float | None = None, **params) -> Any:
         wanted = resume_once.get()
         armed = wanted is not None and "resumed" not in wanted and not method.startswith("time.") and self._acts(method)
         if armed:

@@ -54,6 +54,17 @@ def _interrupt(error):
     return None
 
 
+def _held(result, depth=3):
+    """The receipt of work a guard's pause left held (state suspended, pausedBy), at or near the top of a tool's result."""
+    if isinstance(result, dict):
+        if result.get("state") == "suspended" and result.get("pausedBy"):
+            return result
+        result = result.values()
+    elif not isinstance(result, list):
+        return None
+    return next((found for found in (_held(v, depth - 1) for v in result if depth and isinstance(v, (dict, list))) if found), None)
+
+
 def _configures(name, args, kwargs):
     method = args[0] if args else kwargs.get("method")
     return isinstance(method, str) and (name, method) in {("mb_time", "configure"), ("mb_time", "time.configure"), ("mb_call", "time.configure")}
@@ -82,6 +93,11 @@ class _Watch:
                 raise ScriptInterrupted(str(error)) from error
             if isinstance(result, dict) and result.get("interrupted"):  # a nested mb_run
                 self.interrupted = self.interrupted or {"tool": name, **result["interrupted"]}
+            held = _held(result)
+            if held:  # a guard paused the world inside this tool: its work is held, and the script stops as at any guard pause
+                why = f"world paused by a guard ({held['pausedBy']}): {held.get('suspended') or 'the work in flight is held'}"
+                self.interrupted = self.interrupted or {"tool": name, "error": why[:1500], "pausedBy": held["pausedBy"], "suspendedJobId": held.get("suspendedJobId")}
+                raise ScriptInterrupted(why)
             return result
         return call
 
@@ -115,7 +131,8 @@ def mb_run(code: str | None = None, args: dict | None = None, name: str | None =
     the hour, when the base changes or a machine takes the job over. Do not collect or polish
     them; a chore you keep scripting is a production line you have not built yet.
     An interrupt, a paused world or a cancelled job stops the script even inside try/except, and
-    the result says which tool met it and what it was told (interrupted). Guard settings the
+    the result says which tool met it and what it was told (interrupted; with a guard's pause,
+    pausedBy and the suspendedJobId of the job it left held for mb_work_resume). Guard settings the
     script changed with time configure come back as guardsChanged {name: [before, after]};
     nothing is put back for you.
     Write steps as "make sure X holds" (check, then act), so that after an interruption you

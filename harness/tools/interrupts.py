@@ -442,6 +442,7 @@ def mb_wait(after: int | None = None, timeout_s: float = 600) -> Any:
     if the receipt says latched. gap=true means older events were dropped: check mb_interrupt status.
     Nothing you wait for happens in a paused world, so a wait never sits in one: paused when you call
     or paused while you wait (a guard), it returns at once with woke false and paused: the reason.
+    A pause one of your reflexes answers (mb_reflex) is waited through.
     """
     supervisor = get_supervisor()
     if after is None: after = getattr(supervisor, "waited", 0)  # kept on the journal's own supervisor: a cursor means nothing in another journal
@@ -454,5 +455,7 @@ def mb_wait(after: int | None = None, timeout_s: float = 600) -> Any:
         if woke or e["gap"] or time.monotonic() >= end: return out
         try: clock = kernel().call("time.status", timeout=5).get("state") or {}
         except Exception: clock = {}  # no bridge: the journal's transport events say so, and the wait goes on as before
-        if clock.get("paused"): return {**out, "paused": clock.get("reason")}
+        if clock.get("paused"):
+            from mbtools_gtnh import reflexes
+            if not reflexes.answers(clock): return {**out, "paused": clock.get("reason")}  # a pause a reflex is answering is not yours to answer yet
         wait = max(0, min(WAIT_SLICE, end - time.monotonic()))

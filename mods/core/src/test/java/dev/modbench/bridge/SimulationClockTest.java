@@ -58,6 +58,7 @@ public class SimulationClockTest {
         clock.observe(19.5F, 300);
         assertTrue(clock.paused());
         assertEquals("health_dropped", clock.status().get("reason").getAsString());
+        assertEquals(19.5F, clock.status().getAsJsonObject("vitals").get("health").getAsFloat(), 0F); // the health the guard judged: the client has not been sent it
 
         clock.resume();
         clock.observe(5.0F, 300);
@@ -145,6 +146,34 @@ public class SimulationClockTest {
         clock.observe(11.0F, 300);
         assertTrue(clock.paused());
         assertEquals("health_dropped", clock.status().get("reason").getAsString());
+    }
+
+    @Test
+    public void aFightOwnsBeingSetAlightUntilItEnds() {
+        SimulationClock clock = new SimulationClock(() -> 0L);
+        clock.configure(Json.object("burning", true, "healthBelow", 8.0));
+        clock.fight(100, 4);
+        clock.observe(20.0F, 300, 20, true); // Set alight by what it is fighting.
+        assertFalse(clock.paused());
+        clock.observe(7.0F, 300, 20, true); // The health floor still holds.
+        assertEquals("health_threshold", clock.status().get("reason").getAsString());
+
+        clock.resume();
+        clock.fight(0, 0); // The fight ended with the player still alight: that is news now.
+        clock.observe(7.0F, 300, 20, true);
+        assertEquals("burning", clock.status().get("reason").getAsString());
+    }
+
+    @Test
+    public void aFightCarriesWhoIsAfterThePlayerAndSaysWhenThatChanged() {
+        SimulationClock clock = new SimulationClock(() -> 0L);
+        assertTrue(clock.status().get("fight").isJsonNull());
+        clock.fight(100, 4);
+        assertTrue(clock.engaged(new int[]{7})); // The first word is news, to be sent at once.
+        assertFalse(clock.engaged(new int[]{7})); // The same again is not.
+        assertEquals(7, clock.status().getAsJsonObject("fight").getAsJsonArray("engaged").get(0).getAsInt());
+        clock.fight(100, 4); // A new fight starts knowing nothing.
+        assertTrue(clock.engaged(new int[]{7}));
     }
 
     @Test

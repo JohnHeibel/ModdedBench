@@ -46,6 +46,15 @@ final class DevFixtures {
         runtime.fixture("dev.replay.place","Teleport the only connected player to {x,y,z,yaw?,pitch?} in a cloned world; changes no blocks","privileged",r->replay.place(r.params));
         runtime.fixture("dev.replay.sustain","Fill the only connected player's health and food and, with {time:0..23999}, set the overworld's time of day; returns what they were","privileged",r->replay.sustain(r.params));
         runtime.fixture("dev.replay.status","The player as the server sees it, and block id/meta at {cells:[[x,y,z],...]} (<=64)","read",r->replay.status(r.params));
+        CombatFixture combat=new CombatFixture(server);
+        runtime.fixture("dev.combat.arena","A closed dark stone box in the sky {x?,z?,width?,depth?:16..64,height?:4..48,remove?}; any pack, not journalled","privileged",r->combat.arena(r.params));
+        runtime.fixture("dev.combat.fill","Fill {boxes:[{from:[x,y,z],to:[x,y,z],id,meta?,spawns?}]} (corners included, <=32768 cells) with blocks by registry name: ground for a scene, spawns sets a spawner's mob; no neighbour updates","privileged",r->combat.fill(r.params));
+        runtime.fixture("dev.combat.summon","Spawn {type (registry name),x,y,z,count?:1..16,spread?,health?} as a spawn egg would, kept from despawning","privileged",r->combat.summon(r.params));
+        runtime.fixture("dev.combat.status","The player (health, armour, inventory) and every other entity within {radius?} of them, as the server has them","read",r->combat.status(r.params));
+        runtime.fixture("dev.combat.clear","Remove every entity but players within {radius?} of the player","privileged",r->combat.clear(r.params));
+        runtime.fixture("dev.combat.reset","The living player made ready for a trial {health?,food?,empty?,armor?:[{slot,id,meta?}],stacks?:[{slot,id,meta?,count?}],at?:[x,y,z],yaw?,pitch?,effects?:[{id,seconds?,amplifier?}]}","privileged",r->combat.reset(r.params));
+        runtime.fixture("dev.combat.hurt","Plain damage to the player {amount:1..19}, armour ignored: a stimulus for a guard","privileged",r->combat.hurt(r.params));
+        runtime.fixture("dev.combat.rules","Set {rules?:{name:bool},difficulty?:1..3}; returns the game rules and the difficulty","privileged",r->combat.rules(r.params));
         WorkProcessFixture processes=new WorkProcessFixture(server);
         runtime.fixture("dev.work_process_fixture.create","Create journalled bounded mining/building course with native ToolBuilder loadout {width?:32..64,depth?:16..64,top?:185..200,bare?}; bare leaves the floor free of the built-in courses","privileged",r->processes.create(r.params));
         runtime.fixture("dev.work_process_fixture.position","Position development player {name:ore_line|selection|build|descend_start|descend_step_1|descend_step_2|descend_goal}","privileged",r->processes.position(Json.string(r.params,"name","ore_line")));

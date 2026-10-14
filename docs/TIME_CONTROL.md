@@ -60,8 +60,9 @@ the server for the same, as for the first tick of a resume-and-act, and again
 until the action answers (`ClientClock.extendStep`; `harness/smoke/step_course.py`
 is its test in the game); the action's own
 tick budget bounds it, and `resumedWorld.extendedTicks` says how many were
-added. Only a step's own pause is extended. A guard pause ends all of them and
-reports why; a pause the agent asked for leaves them waiting instead.
+added. Only a step's own pause is extended. A guard's pause ends a held input
+and a GUI click and reports why, and holds a use in progress (eating) as it
+holds a job (below); a pause the agent asked for leaves them waiting instead.
 
 ## Resume and act in one request
 
@@ -79,11 +80,18 @@ call's first acting request carries the directive, so a pause that comes later
 in the same call (a guard) stands, and a call whose resume lifted nothing says
 `resumeUnused`. A request the game thread refuses resumes nothing.
 
-A navigation job still running when its step ends is suspended, not cancelled:
-the request is answered with state `suspended` and a `suspendedJobId`, and the
-job keeps its controls, break progress and path, and runs on whenever the
+A navigation job still running when its step ends, or when a guard pauses the
+world, is suspended, not cancelled: the request is answered with state
+`suspended` and a `suspendedJobId` (and `pausedBy`, the guard's reason), and
+the job keeps its controls, break progress and path, and runs on whenever the
 world runs. `nav.resume {jobId: suspendedJobId}` waits on it again (or returns
-its outcome if it finished meanwhile). A guard pause or any new action ends it.
+its outcome if it finished meanwhile). Any new action ends it. A guard asks for
+a decision; it does not throw away the work in hand: an eat it met at tick 29
+of 32 is three ticks from done when the world resumes. A single use in
+progress (`act.eat`, `act.use_item`) is held and resumed the same way. Scripts
+(`mb_run`) and background tasks still stop at a guard's pause whatever they
+catch: a result that carries `pausedBy` ends the script, and its report names
+the held job (`harness/smoke/guard_hold.py` is the test in the game).
 
 Guards are set with `time.configure` and pause at a tick boundary. They never
 act.
@@ -101,8 +109,16 @@ A guard's
 reason stays the pause reason until the resume, whatever pauses after it; one
 that fires on a step's last tick ends the step and is its `endedBy`; and each
 threshold is reported by its own pause, once, until the value recovers. While a
-fight job runs, `healthDrop` and `threat` from mobs within its range (4 blocks,
-8 standing) stay quiet; the rest stay armed.
+fight job runs, `healthDrop`, `burning` and `threat` from mobs within its range
+(4 blocks, 8 standing) stay quiet: the fight's own limits count the health it
+costs, and a player still alight when it ends is paused for then. The rest
+stay armed.
+
+A pause ends the server's tick before the client has been sent that tick's
+damage, and a paused client reads no game packets. The clock's state therefore
+carries the health and food its guards judged (`vitals`), and the client puts
+them in place when a pause arrives, as the health packet would have:
+`obs.player` at a guard's pause shows the hit that caused it.
 
 A snapshot read while paused is responsive, not a transactionally frozen view
 of the client. The gate is a bounded development control: it does not claim
@@ -113,6 +129,47 @@ The paused maintenance path follows the pause-when-empty behaviour of the
 ServerUtilities build shipped with GTNH (chunk I/O completion, networking,
 pending server commands). ModdedBench adds explicit pause ownership, client
 coordination, deferred gameplay packets and the barriers below.
+
+## Reflexes
+
+A guard's pause hands the model a decision, and the world waits for it. A
+reflex (`mb_reflex`, `harness/tools/reflexes.py`) is that decision written
+beforehand: a script the model arms for one or more pause reasons. It is
+Python only; the mods know nothing of it.
+
+- **Who arms it.** Only the model. None ships armed and the harness never
+  edits one. They are kept in `MODBENCH_REFLEXES_FILE` (default
+  `.state/reflexes.json`) and listed by `mb_status` (`armedReflexes`).
+- **When it runs.** When the pause in force has one of its reasons: any guard
+  reason, or `interrupt:<reason>` for a watch of the model's own. A pause a
+  job waits out (a hold, a step's end, a requested pause) and a reflex's own
+  pause are never answered, and a pause is answered once. The call that met
+  the pause answers it, from inside `Kernel.call` (`Kernel.around_action`);
+  with no call in flight a watcher thread in the MCP server does, within
+  about a second, so a reflex also fires while the model is thinking.
+- **What it can do.** What the model's own scripts can: every `mb_*` tool. It
+  calls no model. Its first action steps the world for at most `max_ticks`;
+  `resume=` and `time.resume` / `time.step` are refused inside it.
+- **Afterwards.** `then="resume"` carries on. The held job is resumed
+  (`nav.resume`); if the script's own actions ended it, a journaled job (mine,
+  build) goes on from its journal and any other call is sent again. The tool
+  call that met the pause returns as if nothing had paused.
+- **Fallback.** The world is left paused, as with no reflex, when the script
+  raises, another pause begins inside it, its ticks run out, its `times` or
+  `every_ticks` limit applies, the call was cut short instead of held, or the
+  pause ended a background task. A pause a reflex leaves reads
+  `reflex:<name>` unless a guard's reason is already in force.
+- **Record.** Every firing is handed to the model once, as `reflexes` on its
+  next tool result, written to the call log (`caller: reflex:<name>`) and
+  shown on the stream overlay when that result arrives.
+
+Limits. A reflex does not run inside a background task's process: the pause
+ends the task, then the server's watcher answers it and leaves the world
+paused. A script that loops without calling a tool cannot be stopped. A call
+that was cut short is not sent again.
+
+Tests: `harness/tests/test_reflexes.py` against a fake clock, and in the game
+the `reflex_*` scenes of `harness/smoke/guard_hold.py`.
 
 ## Background-work barriers
 

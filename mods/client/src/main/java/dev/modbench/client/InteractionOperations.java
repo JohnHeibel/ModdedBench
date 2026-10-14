@@ -22,6 +22,8 @@ final class InteractionOperations {
     private final Map<Entity,String> handles=new WeakHashMap<>();
     private Job active;
     private JsonObject last=Json.object("state","idle");
+    /** How an action that a guard's pause had left without a caller ended: nav.resume collects it by its id. */
+    private String endedId,endedState,endedCode,endedReason;private JsonObject endedReceipt;
 
     String handle(Entity e) {return handles.computeIfAbsent(e,key->UUID.randomUUID().toString());}
     static boolean hostile(Entity e,EntityPlayer p) {
@@ -54,7 +56,7 @@ final class InteractionOperations {
     Object status() {return active==null?last:active.receipt("running",null);}
     void maintain() {
         Job job=active;if(job==null)return;
-        if(job.r.isDone()||job.r.expired()||!job.r.session.connected) job.finish("cancelled","request cancelled, expired or disconnected");
+        if(job.r!=null&&(job.r.isDone()||job.r.expired()||!job.r.session.connected)) job.finish("cancelled","request cancelled, expired or disconnected");
         else if(mc.theWorld!=job.world||mc.thePlayer!=job.player||mc.thePlayer.getHealth()<=0) job.finish("cancelled","player/world changed or died");
         else if(job.delivered&&job.ownUse&&!job.player.isUsingItem()) {
             // Server completion can arrive between ticks. Release before vanilla
@@ -65,6 +67,29 @@ final class InteractionOperations {
     void tick() {Job job=active;if(job!=null) try {job.tick();}catch(Refusal refused) {job.refuse(refused);}catch(Exception|LinkageError e) {job.finish("failed",e.toString());}}
     void cancel(String reason) {if(active!=null)active.finish("cancelled",reason);}
     boolean running() {return active!=null;}
+    /** An action whose caller is waiting for it; one held by a guard's pause has none. */
+    boolean waited() {return active!=null&&active.r!=null;}
+    /**
+     * A guard paused the world inside this action (an eat, a held use): its caller is answered with where it stands and the
+     * action is kept, its item still in use, to go on when the world runs. nav.resume with the id waits on it again; any
+     * new action ends it, as it ends a held job.
+     */
+    void hold(String guard) {
+        Job job=active;if(job==null||job.r==null)return;
+        if(job.heldId==null)job.heldId=UUID.randomUUID().toString();
+        JsonObject receipt=job.receipt("suspended",null);
+        receipt.addProperty("suspendedJobId",job.heldId);receipt.addProperty("pausedBy",guard);receipt.addProperty("suspended",ClientRuntime.suspended(guard,"action"));
+        Request waiter=job.r;job.r=null;waiter.reply(receipt);
+    }
+    /** nav.resume for a held action: waits on it again, or answers with how it ended meanwhile. False when the id is not one of these. */
+    boolean resume(Request r,String id) {
+        if(active!=null&&active.r==null&&id.equals(active.heldId)){active.r=r;return true;}
+        if(!ended(id))return false;
+        endedId=null;
+        if(endedState.equals("completed"))r.reply(endedReceipt);else r.fail(endedCode==null?endedState:endedCode,endedReason,endedReceipt);
+        return true;
+    }
+    boolean ended(String id) {return endedId!=null&&endedId.equals(id);}
     void itemUseFinished() {
         Job job=active;
         if(job==null||!job.delivered||!job.ownUse)return;
@@ -75,7 +100,7 @@ final class InteractionOperations {
     }
 
     private final class Job {
-        final Request r;final JsonObject p;final String kind;String code;
+        Request r;final JsonObject p;final String kind;String code,heldId;
         final net.minecraft.client.entity.EntityClientPlayerMP player=mc.thePlayer;
         final net.minecraft.client.multiplayer.WorldClient world=mc.theWorld;
         final int duration,settle,interval;final double range;
@@ -331,7 +356,8 @@ final class InteractionOperations {
             if(finished)return;finished=true;
             try {stopUse();}finally {if(lease!=null)lease.close();if(active==this)active=null;}
             last=receipt(state,reason);
-            if(state.equals("completed"))r.reply(last);else r.fail(code==null?state:code,reason,last);
+            if(r==null){endedId=heldId;endedState=state;endedCode=code;endedReason=reason;endedReceipt=last;} // held, with no caller: nav.resume collects it
+            else if(state.equals("completed"))r.reply(last);else r.fail(code==null?state:code,reason,last);
         }
     }
     /** Some modded mobs report NaN health; JSON has no NaN, and one such mob must not blind the whole observation. */

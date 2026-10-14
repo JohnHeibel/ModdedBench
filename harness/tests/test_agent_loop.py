@@ -213,13 +213,18 @@ class AgentLoopTests(unittest.TestCase):
         self.loop([{"events": [{"type": "turn.started"}, message("I will start with dirt."), call("mb_goal", {"subgoal": "get eight dirt"}, goal),
                                call("mb_craft", {"times": 2}, {"crafted": {"id": "minecraft:stick", "name": "Stick"}, "gained": 8}),
                                call("mb_scan", {"budget": 9}, {"ok": False}, "failed"), call("mb_quest_claim", {"quest_id": "q"}, {"accepted": True}),
-                               call("mb_made_up", {"x": 1}, "not a dict"), {"type": "item.started", "item": {"type": "mcp_tool_call", "tool": "mb_wait", "arguments": {}}},
+                               call("mb_made_up", {"x": 1}, "not a dict"),
+                               call("mb_made_up", {"x": 2}, {"reflexes": [{"reflex": "eat", "when": "health_threshold", "work": "carried_on", "world": "running"},
+                                                                          {"reflex": "eat", "when": "health_threshold", "skipped": "its times are spent"},
+                                                                          {"reflex": "flee", "when": "burning", "stopped": "KeyError", "world": "paused"}]}),
+                               {"type": "item.started", "item": {"type": "mcp_tool_call", "tool": "mb_wait", "arguments": {}}},
                                {"type": "turn.completed", "usage": {"input_tokens": 100, "cached_input_tokens": 60, "output_tokens": 7}}]}], max_turns=1)
         folder = self.repo / ".state" / "overlay"; live = json.loads((folder / "live.json").read_text())
         feed = [(x["kind"], x["text"]) for x in map(json.loads, (folder / "feed.jsonl").read_text(encoding="utf-8").splitlines())]
         self.assertEqual([("say", "I will start with dirt."), ("tool", "goal: get eight dirt"), ("tool", "crafted 8 × Stick"), ("fail", "looking for blocks: failed"),
-                          ("mark", "quest claimed: Your First Night"), ("tool", "made up 1")], feed)
-        self.assertEqual((goal, "ended", 1, 5, 1, 1, 107), (live["goal"], live["status"]["state"], live["stats"]["turns"], live["stats"]["calls"], live["stats"]["failed"],
+                          ("mark", "quest claimed: Your First Night"), ("tool", "made up 1"), ("tool", "made up 2"),
+                          ("mark", "its reflex eat answered a pause (health threshold)"), ("mark", "its reflex flee answered a pause (burning), and left the world paused")], feed)
+        self.assertEqual((goal, "ended", 1, 6, 1, 1, 107), (live["goal"], live["status"]["state"], live["stats"]["turns"], live["stats"]["calls"], live["stats"]["failed"],
                                                            live["stats"]["claims"], live["stats"]["tokens"]["input"] + live["stats"]["tokens"]["output"]))
 
     def test_look_tools_leave_pop_ups_for_the_stream_and_only_their_latest_images(self):

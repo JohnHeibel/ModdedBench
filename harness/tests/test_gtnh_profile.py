@@ -33,7 +33,7 @@ TOOLS = {
     "mb_mine", "mb_build_preview", "mb_build", "mb_copy",
     "mb_schematic_import", "mb_schematic_build", "mb_scan", "mb_work_status",
     "mb_work_resume", "mb_build_pause", "mb_build_materials", "mb_quest_status", "mb_quest_sync", "mb_quest_search", "mb_quest_lines",
-    "mb_quest_observe", "mb_quest_detect", "mb_quest_select_choice", "mb_quest_claim", "mb_task",
+    "mb_quest_observe", "mb_quest_detect", "mb_quest_select_choice", "mb_quest_claim", "mb_task", "mb_reflex",
 }
 
 
@@ -166,14 +166,14 @@ class GTNHProfileTests(unittest.TestCase):
     def test_tool_set_lanes_and_metadata(self):
         srv = self.loaded()
         self.assertEqual(set(srv.name_owner), TOOLS)
-        self.assertEqual(len(srv.modules), 10)
+        self.assertEqual(len(srv.modules), 11)
         self.assertEqual({os.path.basename(p) for p in srv.modules},
-                         {"core.py", "inventory.py", "work.py", "recipes_quests.py", "interrupts.py", "notes.py", "wiki.py", "scripts.py", "plan.py", "tasks.py"})
+                         {"core.py", "inventory.py", "work.py", "recipes_quests.py", "interrupts.py", "notes.py", "wiki.py", "scripts.py", "plan.py", "tasks.py", "reflexes.py"})
         for name in ("mb_selection", "mb_selection_build", "mb_coverage", "mb_load_inputs"):
             self.assertNotIn(name, srv.name_owner)
         lanes = {n: tm.tools[n]["lane"] for tm in srv.modules.values() for n in tm.tools}
         self.assertEqual({lanes[n] for n in ("mb_obs", "mb_inventory", "mb_notes", "mb_item_search", "mb_status", "mb_build_preview")}, {"read"})
-        self.assertEqual({lanes[n] for n in ("mb_stop", "mb_build_pause", "mb_interrupt")}, {"control"})
+        self.assertEqual({lanes[n] for n in ("mb_stop", "mb_build_pause", "mb_interrupt", "mb_reflex")}, {"control"})
         self.assertEqual({lanes[n] for n in ("mb_build", "mb_mine", "mb_route", "mb_transfer", "mb_note_new", "mb_note_append")}, {"act"})
         self.assertTrue(all(callable(lanes[n]) for n in ("mb_call", "mb_time", "mb_gui", "mb_copy", "mb_settings")))
         registered = srv._tool_manager._tools["mb_obs"]
@@ -181,7 +181,7 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertTrue(registered.annotations.readOnlyHint)
         self.assertFalse(srv._tool_manager._tools["mb_build"].annotations.readOnlyHint)
         status = srv._tool_manager._tools["mb_tools_status"].fn()
-        self.assertEqual(sum(len(m["tools"]) for m in status["modules"]), 65)
+        self.assertEqual(sum(len(m["tools"]) for m in status["modules"]), 66)
         json.dumps(status)
 
     def test_worker_picks_pool_from_lane_metadata(self):
@@ -464,6 +464,18 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual((settled["complete"], settled["receipt"]["reason"]), (True, "already_complete"))
         with self.assertRaises(ValueError): work.mb_build_preview()
 
+    def test_a_kind_seen_to_go_off_beside_you_is_kept_away_from_in_every_fight_after(self):
+        tools = module_with(self.loaded(), "mb_fight")
+        notes_dir = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, notes_dir, True)
+        self.enterContext(patch.dict(os.environ, {"MODBENCH_NOTES_DIR": notes_dir}))
+        fake = self.use(FakeKernel(lambda method, params: {"state": "succeeded", "wentOff": ["Creeper"]}))
+        tools.mb_fight(7, timeout_s=20)
+        self.assertNotIn("keepAway", fake.last("nav.fight")[1])
+        self.assertEqual(json.loads((Path(notes_dir) / "keep_away.json").read_text()), ["Creeper"])
+        tools.mb_fight(8, keep_away=[{"class": "x.Y"}], timeout_s=20)  # the book's kinds, then the model's own
+        self.assertEqual(fake.last("nav.fight")[1]["keepAway"], [{"type": "Creeper"}, {"class": "x.Y"}])
+        self.assertEqual(json.loads((Path(notes_dir) / "keep_away.json").read_text()), ["Creeper"])  # kept once
+
     def test_source_process_settings_follow_and_cache_wrappers_validate_and_forward(self):
         tools = module_with(self.loaded(), "mb_follow")
         fake = self.use(FakeKernel(lambda method, params: {"method": method, **params}))
@@ -480,8 +492,10 @@ class GTNHProfileTests(unittest.TestCase):
             "durationTicks":40,"radius":3,"offsetDistance":2.5,"offsetDirection":90,
             "allowBreak":False,"allowPlace":False,"overrideProtection":False}))
         tools.mb_fight(7, weapon_slot=0, timeout_s=20)
-        self.assertEqual(fake.last("nav.fight"), ("nav.fight", {"timeout":20, "hold":False, "leash":16, "bailHealth":8,
-            "maxAttackers":2, "maxHealthLoss":10, "maxGrowth":3, "durationTicks":600, "crit":True, "block":True, "entityId":7, "weaponSlot":0}))
+        self.assertEqual(fake.last("nav.fight"), ("nav.fight", {"timeout":20, "hold":False, "bailHealth":8,
+            "maxHealthLoss":10, "maxGrowth":3, "durationTicks":600, "crit":True, "block":True, "entityId":7, "weaponSlot":0}))
+        tools.mb_fight(7, leash=24, timeout_s=20)  # a leash is sent only when given: the job's own default depends on the weapon
+        self.assertEqual(fake.last("nav.fight")[1]["leash"], 24)
         with self.assertRaises(ValueError): tools.mb_fight()
         sent = fake.last("nav.fight")[1]
         self.assertNotIn("allowBreak", sent)
