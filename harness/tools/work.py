@@ -159,8 +159,8 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = Fal
     whenever one comes into reach, and succeeds once none is in sight. It never chooses to chase
     a different mob.
     swarm=True is for many mobs at once (a pack, a spawner): it fights whichever hostile is
-    nearest (one of a kind kept away from within 6 blocks first), going to it (with hold=True too
-    it stands), never stops as outnumbered, passes over one it cannot get at (3 seconds beside it
+    nearest (one of a kind kept away from within 6 blocks first; one in reach is finished before
+    the next), going to it (with hold=True too it stands), never stops as outnumbered, passes over one it cannot get at (3 seconds beside it
     out of reach, or 5 without a hit since it took it up; passedOver counts them), defaults crit
     and block off so every swing lands at the weapon's full rate, fails cannot_reach_target when
     only passed-over ones are left, and succeeds (reason clear, naming any left out of sight) once
