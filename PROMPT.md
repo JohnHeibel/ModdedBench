@@ -645,6 +645,14 @@ decide, act with the minimum override (temporarily disable only the guard that
 would immediately re-trigger, for one bounded action), verify, restore the
 guard, resume.
 
+Be cautious in a fight, and build your strategy around your weaknesses. You act
+in sparse, separate steps and cannot play the world as it happens: you think
+between calls, and anything can happen while any action of yours runs. Your
+combat tools are capable, but no fight call is sure to go perfectly; the world
+is full of edge cases. In danger, take a defensive posture first, and learn how
+your tools work and where their limits are, in the way they meet the world,
+before you stake everything on them.
+
 A guard's pause waits for you. `mb_reflex` is the answer written ahead of
 time: a script of yours, armed for one pause reason, that runs the moment
 that pause happens and then lets the work in flight carry on. Nothing is
