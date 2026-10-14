@@ -594,7 +594,7 @@ public final class ClientRuntime extends BridgeRuntime {
     /** The error code a finished job answers under, null for a plain reply: the same whether its caller waited or collects it later. */
     static String failure(Map<String,Object> receipt,boolean succeeded) {
         if(succeeded||"paused".equals(receipt.get("state"))) return null;
-        return "cancelled".equals(receipt.get("state"))?"cancelled":"build".equals(receipt.get("action"))?"build_failed":"path_failed";
+        return "cancelled".equals(receipt.get("state"))?"cancelled":"build".equals(receipt.get("action"))?"build_failed":"fight".equals(receipt.get("action"))?"fight_failed":"path_failed";
     }
     static void answer(Request r,Map<String,Object> receipt,String failure) {
         if(failure==null) r.reply(receipt);else r.fail(failure,String.valueOf(receipt.get("reason")),receipt);

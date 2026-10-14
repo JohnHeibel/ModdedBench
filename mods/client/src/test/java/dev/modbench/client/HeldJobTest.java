@@ -33,6 +33,7 @@ public class HeldJobTest {
         assertEquals("path_failed",error.get("code").getAsString());assertEquals("no_path",error.get("msg").getAsString());
         assertEquals("j-1",error.getAsJsonObject("receipt").get("jobId").getAsString());
         assertEquals("build_failed",collect(Map.of("action","build","state","failed","reason","missing_materials"),false).getAsJsonObject("error").get("code").getAsString());
+        assertEquals("fight_failed",collect(Map.of("action","fight","state","failed","reason","health_lost: 5.0 of 16.0 lost in this fight"),false).getAsJsonObject("error").get("code").getAsString());
     }
     @Test public void aHeldJobAGuardEndedIsCancelledAndOneThatSucceededOrPausedIsAReply() {
         assertEquals("cancelled",collect(Map.of("action","goto","state","cancelled","reason","world_paused: health_dropped"),false).getAsJsonObject("error").get("code").getAsString());
