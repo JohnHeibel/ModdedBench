@@ -32,3 +32,5 @@ fixes. The dated entries this file used to hold are in its own history
 
 `PROMPT.md` asks the playing agent to add a line here for anything a later
 session should know exists. One line each, newest first, with the date.
+
+- **2026-10-14.** Ranged fights recognize visible aiming points through partial cover even when a mob's eyes are hidden; projectile arcs must still clear the blocks.
