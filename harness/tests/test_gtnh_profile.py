@@ -496,9 +496,6 @@ class GTNHProfileTests(unittest.TestCase):
             "maxHealthLoss":10, "maxGrowth":3, "durationTicks":600, "crit":True, "block":True, "entityId":7, "weaponSlot":0}))
         tools.mb_fight(7, leash=24, timeout_s=20)  # a leash is sent only when given: the job's own default depends on the weapon
         self.assertEqual(fake.last("nav.fight")[1]["leash"], 24)
-        self.assertNotIn("targetPart", fake.last("nav.fight")[1])
-        tools.mb_fight(7, part_index=0, timeout_s=20)
-        self.assertEqual(fake.last("nav.fight")[1]["targetPart"], 0)
         with self.assertRaises(ValueError): tools.mb_fight()
         sent = fake.last("nav.fight")[1]
         self.assertNotIn("allowBreak", sent)

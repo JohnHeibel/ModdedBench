@@ -33,7 +33,7 @@ fixes. The dated entries this file used to hold are in its own history
 `PROMPT.md` asks the playing agent to add a line here for anything a later
 session should know exists. One line each, newest first, with the date.
 
-- **2026-10-15.** Native entity observations expose multipart indices and bounds; fights accept targetPart (mb_fight part_index) to aim at a chosen part. Non-finite observed coordinates are null instead of breaking the whole entity list. This handles visible parts with different hit responses while preserving parent targeting by default.
+- **2026-10-15.** Non-finite observed coordinates are null instead of breaking the whole entity list.
 - **2026-10-15.** Melee fights navigate toward nearby targets on ledges instead of waiting before trying a path; their follow radius now brings the player within one block of the target.
 - **2026-10-15.** Automatic hazard escape yields to explicit input and interactions, so a blocked escape step cannot cancel a player's bucket or movement recovery.
 - **2026-10-14.** Ranged fights recognize visible aiming points through partial cover even when a mob's eyes are hidden; projectile arcs must still clear the blocks.

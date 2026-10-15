@@ -138,7 +138,7 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = Fal
              crit: bool | None = None, block: bool | None = None, ranged: dict | bool | None = None,
              timeout_s: float = 60.0, target: dict | None = None, hostile: list[dict] | None = None,
              allow_break: bool = False, allow_place: bool = False, aim_height: float | None = None,
-             keep_away: list[dict] | None = None, part_index: int | None = None) -> Any:
+             keep_away: list[dict] | None = None) -> Any:
     """Fight one mob as a job, the way mb_mine mines: you choose the mob and the limits, it does the footwork.
 
     entity_id comes from mb_obs entities or the clock's threats. It paths to the mob (never breaking
@@ -229,8 +229,6 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = Fal
     word from the server, the monster rule alone). It never refuses a target. allow_break / allow_place let the approach dig or pillar. The receipt shows jobSettings
     (settings forced for the job, restored after), hostileRule, target class/hostile/health, and for
     ranged fights adjustments and shotEntities.
-    part_index selects a native multipart entity part by its index in obs.entities.parts for
-    melee reach and ranged aim; omitted preserves the nearest melee part and parent ranged aim.
     """
     if entity_id is None and target is None and not hold and not swarm:
         raise ValueError("entity_id or target is required unless hold=True or swarm=True")
@@ -249,7 +247,6 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = Fal
     if allow_break: params["allowBreak"] = True
     if allow_place: params["allowPlace"] = True
     if aim_height is not None: params["aimHeight"] = aim_height
-    if part_index is not None: params["targetPart"] = part_index
     if leash is not None: params["leash"] = leash
     kept_book = notes.notes_dir() / "keep_away.json"  # kinds seen to go off beside you: yours to read and correct
     kept = json.loads(kept_book.read_text()) if kept_book.is_file() else []

@@ -35,17 +35,8 @@ final class InteractionOperations {
             "distance",e.getDistanceToEntity(mc.thePlayer),"visible",mc.thePlayer.canEntityBeSeen(e),"hostile",hostile(e,mc.thePlayer),"dead",e.isDead);
         if(e instanceof EntityLivingBase living) {out.addProperty("health",finite(living.getHealth()));out.addProperty("maxHealth",finite(living.getMaxHealth()));out.addProperty("hurtTime",living.hurtTime);}
         if(e instanceof net.minecraft.entity.item.EntityItem drop) out.add("stack",Stacks.json(drop.getEntityItem()));
-        Entity[] parts=e.getParts();
-        if(parts!=null&&parts.length>0){JsonArray rows=new JsonArray();
-            for(int i=0;i<parts.length;i++){Entity p=parts[i];if(p==null)continue;var b=p.boundingBox;
-                rows.add(Json.object("index",i,"entityId",p.getEntityId(),"name",p.getCommandSenderName(),
-                    "pos",Json.array(coordinate(p.posX),coordinate(b.minY),coordinate(p.posZ)),
-                    "bounds",Json.object("min",Json.array(coordinate(b.minX),coordinate(b.minY),coordinate(b.minZ)),
-                        "max",Json.array(coordinate(b.maxX),coordinate(b.maxY),coordinate(b.maxZ)))));}
-            out.add("parts",rows);}
         return out;
     }
-    private static Double coordinate(double value){return Double.isFinite(value)?value:null;}
     JsonObject entities(JsonObject params) {
         if(mc.thePlayer==null||mc.theWorld==null) throw new IllegalArgumentException("player is not in a world");
         double radius=Json.number(params,"radius",32,1,128);int limit=Json.integer(params,"limit",128,1,256);
@@ -371,4 +362,6 @@ final class InteractionOperations {
     }
     /** Some modded mobs report NaN health; JSON has no NaN, and one such mob must not blind the whole observation. */
     private static float finite(float value){return Float.isNaN(value)||Float.isInfinite(value)?0:value;}
+    /** A position the game has made NaN (dragon run 5) is null, not an error that loses the whole entity list. */
+    private static Double coordinate(double value){return Double.isFinite(value)?value:null;}
 }
