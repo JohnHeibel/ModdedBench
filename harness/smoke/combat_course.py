@@ -59,8 +59,7 @@ STACKS = [{"slot": SWORD, "id": "minecraft:iron_sword"}, {"slot": BOW, "id": "mi
           {"slot": 2, "id": "minecraft:cobblestone", "count": 64}]   # for a fight that may build its way
 RULES = {"doMobSpawning": False, "mobGriefing": False, "naturalRegeneration": False, "keepInventory": True}
 SIGHT = [{"id": "nightVision", "seconds": 100000}]   # the owner's call: every scene seen as in daylight; the mobs' own light rules still apply
-GUARDS = dict(healthDrop=True, healthBelow=8, burning=True, threatWithin=12, actionFailed=True)
-OFF = dict(healthDrop=False, healthBelow=-1, airBelow=-1, foodBelow=-1, burning=False, threatWithin=-1, actionFailed=False, pauseOnDisconnect=False)
+GUARDS = [mc.rule("health_drop"), mc.rule("health_below", 8), mc.rule("burning"), mc.rule("hostile_within", 12), mc.rule("action_failed")]  # --guards
 X0, Z0 = int(START[0]), int(START[2])   # the block the player starts on: ground is placed from it, up 0 the first air
 STONE, BRICK, AIR, LAVA, DOOR = "minecraft:cobblestone", "minecraft:nether_brick", "minecraft:air", "minecraft:lava", "minecraft:wooden_door"
 
@@ -249,7 +248,7 @@ class Combat(Course):
 
     def setup(self):
         self.ensure_world()
-        self.previous_clock = self.c.call("time.status")["state"].get("conditions")
+        self.clock_rules = self.c.call("time.rules")["rules"]
         self.quiet()
         was = self.s.call(FIX + ".rules")
         self.previous_rules = {k: was["rules"][k] == "true" for k in RULES}
@@ -272,13 +271,13 @@ class Combat(Course):
                      lambda: None if self.args.keep else self.s.call(FIX + ".arena", **ARENA, remove=True),
                      lambda: None if self.args.keep else self.s.call(FIX + ".fill", boxes=[{"id": "minecraft:air", "from": [ARENA["x"] - 1, FLOOR - 4, ARENA["z"] - 1],
                                                                                             "to": [ARENA["x"] + ARENA["width"], FLOOR - 2, ARENA["z"] + ARENA["depth"]]}]),
-                     lambda: self.c.call("time.configure", **{**(self.previous_clock or {}), "pauseOnDisconnect": False})):
+                     lambda: mc.put_back(self.c, self.clock_rules)):
             try: step()
             except Exception as e: self.evidence.setdefault("teardownErrors", []).append(str(e))
 
     def quiet(self):
-        """No guards, the world running, nothing in hand: between trials nothing may pause or hold the body."""
-        self.c.call("time.configure", **OFF)
+        """No rules, the world running, nothing in hand: between trials nothing may pause or hold the body."""
+        mc.quiet(self.c)
         if self.c.call("time.status")["state"].get("paused"): self.c.call("time.resume")
         try: self.c.call("act.stop")
         except BridgeError: pass
@@ -321,8 +320,8 @@ class Combat(Course):
         if case["fight"].get("named"): kwargs["entity_id"] = mobs[0]["entityId"]
         if self.args.aim_height is not None: kwargs["aim_height"] = self.args.aim_height
         if self.args.guards:
-            self.c.call("time.configure", **GUARDS)
-            until = time.monotonic() + 2                    # the threat pause the model fights from, if the mob has noticed
+            self.c.call("time.rules", replace=GUARDS)
+            until = time.monotonic() + 2                    # the hostile_within pause the model fights from, if the mob has noticed
             while time.monotonic() < until and not self.c.call("time.status")["state"].get("paused"): time.sleep(.05)
         before = self.s.call(FIX + ".status", radius=160)
         watch = Watch(self.s, mobs, spared, case.get("later", [])); watch.start()   # the server session is the watch's until it ends

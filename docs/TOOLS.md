@@ -22,7 +22,8 @@ are skipped) is a tool module, re-imported when any file there changes.
 | `inventory.py` | Containers, slots, item moves, crafting; `ContainerSession`, the helper for model-written procedures |
 | `work.py` | Navigation, mining, building, fighting, schematics and copy, scans, engine settings |
 | `recipes_quests.py` | NEI recipes and Better Questing |
-| `interrupts.py` | Watches that wake the model, `mb_wait` |
+| `reflexes.py` | Rules (`mb_reflex`) and `mb_wait` |
+| `interrupts.py` | The supervisor of the model's own checks; their old names `mb_interrupt`, `mb_interrupt_events` |
 | `notes.py` | World notes and the goal stack |
 | `plan.py` | `mb_view`: the drawing, one format to look at a place, plan in it and build from |
 | `scripts.py` | `mb_run`: a model-written script that chains tool calls as one call |
@@ -216,18 +217,26 @@ Quest actions only send Better Questing's normal packets and return
 `serverAcknowledged: false`. A claim needs a valid choice for every choice
 reward.
 
-## Interrupts: watches that wake the model
+## Rules: what to watch for, and what to do
 
-A watch (`mb_interrupt`) is declarative (`queries`, `condition`, `effects`,
-`prompt`) or a Python file with `evaluate(context)`; effects are `notify`,
-`cancel`, `pause`. `mb_wait` blocks (1 to 900 s) until an event needs the
-model, and a chat-style agent calls it instead of ending its turn.
-`mb_interrupt_events` replays the event journal after a cursor.
+A rule (`mb_reflex`) is `when` plus `do`. `when` is a kind the server checks
+every tick (`health_drop`, `health_below`, `air_below`, `food_below`,
+`burning`, `hostile_within`, `action_failed`, most with a level) or a check of
+the model's own; `do` is `ask` (freeze the world for the model), `tell` (no
+freeze; handed over on the next tool result) or a Python script that answers
+the freeze. A new world starts with six `ask` rules; [TIME_CONTROL.md](TIME_CONTROL.md#rules)
+has the defaults and the details. `mb_wait` blocks (1 to 900 s) until
+something needs the model, and a chat-style agent calls it instead of ending
+its turn.
 
-Fires are retried with the same event id and the watch is re-armed if the
-bridge cannot be reached; watches survive reconnects, and armed or undelivered
-watches are persisted next to the journal and re-armed after an MCP server
-restart. While a latch is set, the next acting call is refused
+A check is declarative (`queries`, `condition`, `effects`, `prompt`) or a
+Python file with `evaluate(context)`; effects are `notify`, `cancel`, `pause`,
+and follow `do`. `mb_interrupt` (add, remove, reload, status, ack) is the
+checks' old name, and `mb_interrupt_events` replays their journal after a
+cursor. Fires are retried with the same event id and the check is re-armed if
+the bridge cannot be reached; checks survive reconnects, and armed or
+undelivered checks are persisted next to the journal and re-armed after an MCP
+server restart. While a latch is set, the next acting call is refused
 (`interrupt_latched: ...`) with each latched event's reason and prompt; that
 refusal delivers them and releases the latch, so the call after it runs.
 `harness/tools/_examples/` holds a custom-predicate example.
@@ -244,15 +253,18 @@ refusal delivers them and releases the latch, so the call after it runs.
 - Operators: `all`, `any`, `not`, `eq`/`ne`/`lt`/`lte`/`gt`/`gte`, `exists`,
   `changed`/`increased`/`decreased`, and `any`/`all` over a collection.
   Operands are `[path, literal]`; a missing observation is a fault, not false.
-  Also `consecutive`, `edge`, `cooldown` (seconds), `oneShot` (default true).
-- At most 64 watches, polled about every 100 ms through `obs.batch` (16
-  watchable reads). The guards in `mb_time` are faster for fixed emergencies.
+  Also `consecutive`, `edge`, `cooldown` (seconds), `oneShot` (default true
+  under `mb_interrupt`; a check set by `mb_reflex` is not one-shot and crosses
+  on its edge).
+- At most 64 checks, polled about every 100 ms through `obs.batch` (16
+  watchable reads). The kinds are checked every tick by the server and freeze
+  on the crossing tick: faster for fixed emergencies.
 - A custom file's `evaluate(context)` has `context.values`, `context.read`,
   `context.previous`, `context.state`, and may return
   `context.prompt(text, **observations)` to hand the decision to the model
-  (8,192 characters, payload 64 KiB). Watch files are trusted, not sandboxed.
+  (8,192 characters, payload 64 KiB). Check files are trusted, not sandboxed.
 - `cancel` and `pause` latch further actions until `ack`, which neither
-  resumes time nor retries anything. Re-arm a one-shot watch after recovery.
+  resumes time nor retries anything. Set a one-shot check again after recovery.
 - The journal is SQLite under `.state/interrupts` (`MODBENCH_INTERRUPTS_DIR`).
 
 ## World notes

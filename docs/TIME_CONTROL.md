@@ -23,9 +23,9 @@ A `backup` or `compaction` hold whose file is older than 20 minutes
 server removes the file and the world runs again. The operator's hold never
 expires.
 
-The pause, its reason and the guards are kept in `modbench-clock.json` in the
-world's folder and written when they change. A server that restarts reads it:
-the guards are armed at once and the pause is applied, under its saved reason,
+The pause, its reason and the rules (below) are kept in `modbench-clock.json`
+in the world's folder and written when they change. A server that restarts reads
+it: the rules watch at once and the pause is applied, under its saved reason,
 after the 20 warm-up ticks every start runs. A hold's pause is not saved; the
 hold file restores it. Not tested in the game.
 
@@ -37,7 +37,7 @@ hold file restores it. Not tested in the game.
 | Client simulation | The client gates its own simulation ticks while the server is paused. |
 | Still live | Networking, keepalives, bridge requests, reconnect negotiation, chunk delivery, observations, screenshots, NEI inspection. |
 | Gameplay packets | Deferred, then released in per-connection order at the network stage of the first resumed tick, after world updates. |
-| Actions | `act.*` and `gui.*` actions are rejected before any input unless they carry `_resume`; the refusal (`time_paused`) names the pause's reason, and says so when a guard made it. A running action can still be stopped. |
+| Actions | `act.*` and `gui.*` actions are rejected before any input unless they carry `_resume`; the refusal (`time_paused`) names the pause's reason, and says so when a rule made it. A running action can still be stopped. |
 
 ## Stepping
 
@@ -45,7 +45,7 @@ hold file restores it. Not tested in the game.
 pauses with reason `step`. It replies once that pause has settled, like
 `time.pause`. `time.resume {ticks:N}` does the same but replies at once. The
 state carries `step {id, ticks, remaining}` while stepping and `lastStep {id,
-ticks, ran, endedBy, clientTicks}` after: `endedBy` is `step`, a guard's reason,
+ticks, ran, endedBy, clientTicks}` after: `endedBy` is `step`, a rule's reason,
 or `superseded` when another pause or resume ended it. The fixture windows are
 steps that end with `fixture_checkpoint`.
 
@@ -60,7 +60,7 @@ the server for the same, as for the first tick of a resume-and-act, and again
 until the action answers (`ClientClock.extendStep`; `harness/smoke/step_course.py`
 is its test in the game); the action's own
 tick budget bounds it, and `resumedWorld.extendedTicks` says how many were
-added. Only a step's own pause is extended. A guard's pause ends a held input
+added. Only a step's own pause is extended. A rule's pause ends a held input
 and a GUI click and reports why, and holds a use in progress (eating) as it
 holds a job (below); a pause the agent asked for leaves them waiting instead.
 
@@ -77,48 +77,31 @@ it lifted). The client refuses up front when the pause is unsettled or held; if
 the server still refuses, the action ends with `resume_refused` and the world
 stays paused. Tools expose this as `resume=True` or `resume=N`: only the tool
 call's first acting request carries the directive, so a pause that comes later
-in the same call (a guard) stands, and a call whose resume lifted nothing says
+in the same call (a rule's) stands, and a call whose resume lifted nothing says
 `resumeUnused`. A request the game thread refuses resumes nothing.
 
-A navigation job still running when its step ends, or when a guard pauses the
+A navigation job still running when its step ends, or when a rule pauses the
 world, is suspended, not cancelled: the request is answered with state
-`suspended` and a `suspendedJobId` (and `pausedBy`, the guard's reason), and
+`suspended` and a `suspendedJobId` (and `pausedBy`, the rule's reason), and
 the job keeps its controls, break progress and path, and runs on whenever the
 world runs. `nav.resume {jobId: suspendedJobId}` waits on it again (or returns
-its outcome if it finished meanwhile). Any new action ends it. A guard asks for
+its outcome if it finished meanwhile). Any new action ends it. A rule asks for
 a decision; it does not throw away the work in hand: an eat it met at tick 29
 of 32 is three ticks from done when the world resumes. A single use in
 progress (`act.eat`, `act.use_item`) is held and resumed the same way. Scripts
-(`mb_run`) and background tasks still stop at a guard's pause whatever they
+(`mb_run`) and background tasks still stop at a rule's pause whatever they
 catch: a result that carries `pausedBy` ends the script, and its report names
 the held job (`harness/smoke/guard_hold.py` is the test in the game).
 
-Guards are set with `time.configure` and pause at a tick boundary. They never
-act.
-
-| Guard | Pauses when |
-| --- | --- |
-| `healthDrop` (boolean) | the player loses health |
-| `healthBelow`, `airBelow`, `foodBelow` (number, -1 off) | the value crosses the threshold |
-| `burning` (boolean) | the player is on fire |
-| `threatWithin` (blocks, at most 32, -1 off) | a mob takes the player as its target within N blocks (2N with line of sight) or a creeper starts to swell; reason `threat`, once per mob |
-| `actionFailed` (boolean) | a caller sends `time.report_failure` |
-| `pauseOnDisconnect` (boolean, on by default) | the client disconnects |
-
-A guard's
-reason stays the pause reason until the resume, whatever pauses after it; one
-that fires on a step's last tick ends the step and is its `endedBy`; and each
-threshold is reported by its own pause, once, until the value recovers. While a
-fight job runs, `healthDrop`, `burning` and `threat` from mobs within its range
-(4 blocks, 8 standing) stay quiet: the fight's own limits count the health it
-costs, and a player still alight when it ends is paused for then. The rest
-stay armed.
+Danger pauses the world through the rules (below), at a tick boundary.
+`time.configure` takes one setting, `pauseOnDisconnect` (on by default): pause
+when the client or the agent's session goes.
 
 A pause ends the server's tick before the client has been sent that tick's
 damage, and a paused client reads no game packets. The clock's state therefore
-carries the health and food its guards judged (`vitals`), and the client puts
+carries the health and food its rules judged (`vitals`), and the client puts
 them in place when a pause arrives, as the health packet would have:
-`obs.player` at a guard's pause shows the hit that caused it.
+`obs.player` at a rule's pause shows the hit that caused it.
 
 A snapshot read while paused is responsive, not a transactionally frozen view
 of the client. The gate is a bounded development control: it does not claim
@@ -130,46 +113,117 @@ ServerUtilities build shipped with GTNH (chunk I/O completion, networking,
 pending server commands). ModdedBench adds explicit pause ownership, client
 coordination, deferred gameplay packets and the barriers below.
 
-## Reflexes
+## Rules
 
-A guard's pause hands the model a decision, and the world waits for it. A
-reflex (`mb_reflex`, `harness/tools/reflexes.py`) is that decision written
-beforehand: a script the model arms for one or more pause reasons. It is
-Python only; the mods know nothing of it.
+A rule is the model's own standing order: what to watch for (`when`) and what
+to do when it crosses (`do`). One tool sets, lists and removes them:
+`mb_reflex` (`harness/tools/reflexes.py`). The mods know no mob or item names.
 
-- **Who arms it.** Only the model. None ships armed and the harness never
-  edits one. They are kept in `MODBENCH_REFLEXES_FILE` (default
-  `.state/reflexes.json`) and listed by `mb_status` (`armedReflexes`).
-- **When it runs.** When the pause in force has one of its reasons: any guard
-  reason, or `interrupt:<reason>` for a watch of the model's own. A pause a
-  job waits out (a hold, a step's end, a requested pause) and a reflex's own
-  pause are never answered, and a pause is answered once. The call that met
-  the pause answers it, from inside `Kernel.call` (`Kernel.around_action`);
+**When.** One of the kinds the server checks every tick (`SimulationClock`,
+`time.rules`):
+
+| Kind | Crosses when |
+| --- | --- |
+| `health_drop` | the player loses health |
+| `health_below`, `air_below`, `food_below` (level) | the value falls to the level |
+| `burning` | the player is on fire |
+| `hostile_within` (level: blocks, at most 32) | a mob takes the player as its target within the level (twice that in line of sight), or a creeper starts to swell; once per mob |
+| `action_failed` | a caller sends `time.report_failure`; Baritone's terminal failures do |
+
+Or a check of the model's own on any read: a `condition` over watchable reads,
+or a Python `file` whose `evaluate(context)` decides
+(`harness/tools/interrupts.py`). Its supervisor runs in the MCP server, polls
+every 0.1 s and journals to SQLite under `MODBENCH_INTERRUPTS_DIR` (default
+`.state/interrupts`), so checks outlive a restart too.
+
+A new world starts with `health_drop`, `health_below 8`, `air_below 180`,
+`food_below 6`, `burning` and `hostile_within 12`, each named for its kind and
+each `ask` (`SimulationClock.defaults()`); the model edits or removes any of
+them. A kind may have several rules at different levels (at most 64 rules).
+
+**Do.**
+
+- `ask` freezes the world on the crossing tick for the model. The pause reason
+  is the kind, or `kind:name` when the name differs; a check's is
+  `interrupt:<reason>` (its name unless it gives a `reason`).
+- `tell` leaves the world running. The crossing is handed to the model once,
+  on its next tool result (`reflexes`), and wakes `mb_wait`.
+- A Python script (`def main(event)`) answers the freeze in the model's place
+  (below).
+
+A level rule crosses once, as the value reaches it, and again only after the
+value has recovered. A rule given again unchanged keeps that; a changed one
+starts afresh. Rules crossing on one tick make one freeze: the first in the
+table names it and the others are in its event's `with`. A rule's reason stays
+the pause reason until the resume, whatever pauses after it; one that crosses
+on a step's last tick ends the step and is its `endedBy`. A value that crosses
+under a pause no rule made is reported once the world runs.
+
+Harm that lasts is one crossing. A kind of hurt that nothing dealt (by damage
+type: a burn, a poison, whatever the pack has), once it has crossed
+`health_drop`, crosses it again only after it has stopped for 100 ticks; a hit
+by anything, or a new kind of hurt, crosses at once. While a fight job runs,
+`health_drop`, `burning`, and `hostile_within` for mobs within its range (4
+blocks, 8 standing) do not cross, by kind whatever the rule is named: the
+fight's own limits count the health it costs, and a player still alight when
+it ends crosses then. Every other rule still crosses.
+
+**Checks.** A check also takes the supervisor's options: `effects` (`notify`,
+`cancel`, `pause`), `latch`, `oneShot`, `edge`, `consecutive`, `cooldown`
+(seconds), `timeout_s`, `operationScope`, `reason`, `prompt`. `ask` and a script
+mean `pause` is among the effects; `tell` means it is not. `cancel` stops the
+running job. A latched crossing refuses the next acting call
+(`interrupt_latched`, which delivers it) or waits for `interrupt.ack`; a check
+whose script answers it is acknowledged first. A check set through `mb_reflex`
+is not one-shot and crosses on its edge, like the kinds, unless it says
+otherwise. Setting it again re-reads its file and watches again. A check that
+faults, stalls or meets another world stops and is reported once. `mb_interrupt`
+(add, remove, reload, status, ack) and `mb_interrupt_events` are the checks'
+old names and work on the same checks; `mb_wait(after, timeout_s)` blocks until
+the journal has an event for the model, a rule tells, a script reports, or a
+freeze no script answers comes, and returns the journal's events and its
+`cursor`. A background task cannot set or wait on checks.
+
+**Scripts.**
+
+- **When it runs.** When the freeze in force is its rule's. The call that met
+  the freeze answers it, from inside `Kernel.call` (`Kernel.around_action`);
   with no call in flight a watcher thread in the MCP server does, within
-  about a second, so a reflex also fires while the model is thinking.
-- **What it can do.** What the model's own scripts can: every `mb_*` tool. It
-  calls no model. Its first action steps the world for at most `max_ticks`;
-  `resume=` and `time.resume` / `time.step` are refused inside it.
-- **Afterwards.** `then="resume"` carries on. The held job is resumed
-  (`nav.resume`); if the script's own actions ended it, a journaled job (mine,
-  build) goes on from its journal and any other call is sent again. The tool
-  call that met the pause returns as if nothing had paused.
-- **Fallback.** The world is left paused, as with no reflex, when the script
-  raises, another pause begins inside it, its ticks run out, its `times` or
-  `every_ticks` limit applies, the call was cut short instead of held, or the
-  pause ended a background task. A pause a reflex leaves reads
-  `reflex:<name>` unless a guard's reason is already in force.
+  about a tenth of a second, so a script also runs while the model is
+  thinking. A freeze is answered once, and one made of several rules is left
+  for the model.
+- **What it can do.** What the model's own scripts can: every `mb_*` tool,
+  `mb_reflex` included. It calls no model. Its first action steps the world for
+  at most `max_ticks` (default 200); `resume=` and `time.resume` /
+  `time.step` are refused inside it.
+- **Afterwards.** `then="resume"` (the default) carries on. The held job is
+  resumed (`nav.resume`); if the script's own actions ended it, a journaled job
+  (mine, build) goes on from its journal and any other call is sent again. The
+  tool call that met the pause returns as if nothing had paused.
+- **Fallback.** The world is left frozen for the model, as with `ask`, when the
+  script raises, another pause begins inside it, its ticks run out, its `times`
+  or `every_ticks` limit applies, the call was cut short instead of held, or
+  the pause ended a background task. A pause a script leaves reads
+  `reflex:<name>` unless a rule's reason is already in force.
 - **Record.** Every firing is handed to the model once, as `reflexes` on its
-  next tool result, written to the call log (`caller: reflex:<name>`) and
-  shown on the stream overlay when that result arrives.
+  next tool result, written to the call log (`caller: reflex`) and shown on the
+  stream overlay when that result arrives. Firing counts and undelivered reports
+  are kept in `MODBENCH_REFLEXES_FILE` (default `.state/reflexes.json`).
 
-Limits. A reflex does not run inside a background task's process: the pause
-ends the task, then the server's watcher answers it and leaves the world
-paused. A script that loops without calling a tool cannot be stopped. A call
-that was cut short is not sent again.
+A background task's rule changes are put back when it ends (`rulesRestored`,
+`rulesChanged`). A script does not run inside a background task's process: the
+pause ends the task, then the watcher answers it. A script that loops without
+calling a tool cannot be stopped. A call that was cut short is not sent again.
 
-Tests: `harness/tests/test_reflexes.py` against a fake clock, and in the game
-the `reflex_*` scenes of `harness/smoke/guard_hold.py`.
+`mb_time configure` still takes the old guard keys (`healthDrop`, `burning`,
+`actionFailed`: booleans; `healthBelow`, `airBelow`, `foodBelow`,
+`threatWithin`: levels, -1 for off), each setting or removing the rule named
+for its kind, and `mb_time status` reads them back as `conditions`. The bridge's
+own `time.configure` refuses them.
+
+Tests: `SimulationClockTest`, `harness/tests/test_reflexes.py` and
+`test_gtnh_interrupts.py` against fakes, and in the game the `reflex_*` scenes
+of `harness/smoke/guard_hold.py` (not yet run with rules).
 
 ## Background-work barriers
 

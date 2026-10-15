@@ -1,19 +1,22 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
-"""Composable, process-local interrupt watches for the GTNH bridge, and the mb_interrupt tools.
+"""Checks: the model's own rules on any read (mb_reflex, reflexes.py), polled here; and mb_interrupt, their old name.
 
-``add`` accepts either ``queries`` plus a declarative ``condition``, or a Python ``file`` whose
+A check accepts either ``queries`` plus a declarative ``condition``, or a Python ``file`` whose
 ``evaluate(context)`` returns bool or ``{"match": bool, "payload": {...}}``. Conditions address
 observation data with ``alias.path`` (``items[0].count`` is also accepted). They are deliberately
 small and read-only: all/any/not, eq/ne/lt/lte/gt/gte, exists, changed/increased/decreased, and
-collection any/all are supported.
+collection any/all are supported. What a crossing does is its ``effects`` (notify, cancel, pause), sent as
+``interrupt.fire``: the client stops the job (cancel), pauses the world with reason ``interrupt:<reason>`` (pause) and
+latches new actions until ack or one refused action delivers the event.
 
 The supervisor polls on its own thread and lives in ``mbtool.state["interrupts"]``. It holds the
 kernel *factory*, so a bridge reconnect keeps every watch; transport failures pause polling with
 backoff instead of disarming. Armed and undelivered watch specs are also kept in the journal's
 SQLite file, so ``get_supervisor`` re-arms them after an MCP server restart. ``interrupt.fire`` is retried with the same eventId (the client is
 idempotent by eventId) and a watch whose fire keeps failing is re-armed, never dropped. When this
-module is reloaded the supervisor is re-created from those persisted specs.
+module is reloaded the supervisor is re-created from those persisted specs. Each journal event is also handed to
+``on_event`` (reflexes.py turns tells and faults into reports on the model's next tool result).
 """
 from __future__ import annotations
 import asyncio, copy, json, math, os, sqlite3, threading, time, uuid
@@ -28,7 +31,6 @@ from mbtools_gtnh.core import methods_map
 _OPS = {"eq": lambda a,b:a==b, "ne":lambda a,b:a!=b, "lt":lambda a,b:a<b,
         "lte":lambda a,b:a<=b, "gt":lambda a,b:a>b, "gte":lambda a,b:a>=b}
 DEFAULT_DIR = Path(__file__).resolve().parents[2] / ".state" / "interrupts"
-WAIT_SLICE = 5.0  # seconds between mb_wait's looks at the clock
 TRANSPORT = (ConnectionError, TimeoutError)
 
 def _wakes_runner(event):
@@ -112,6 +114,7 @@ class Watch:
     previous: dict = field(default_factory=dict); context: dict | None = None; operation_id: int | None = None
     hits: int = 0; last_fire: float = 0; running: bool = False; callable: Any = None
     dispatches: set = field(default_factory=set); reacting: bool = False; pending_event: str | None = None
+    fault: str | None = None
 
 class InterruptSupervisor:
     """Autonomous polling. ``kernel`` is a Kernel or a zero-argument factory returning the live one."""
@@ -122,6 +125,7 @@ class InterruptSupervisor:
         self.retained, self.poll_s, self.read_timeout_s = retained, poll_s, read_timeout_s
         self.fire_retries, self.fire_backoff_s = fire_retries, fire_backoff_s
         self.lock = threading.RLock(); self.changed = threading.Condition(self.lock); self.watches: dict[str, Watch] = {}
+        self.on_event = None  # (kind, name, data) after each journal event, outside the lock
         self._methods_cache = None; self._methods_kernel = None
         self._down = None; self._retry_at = 0.0; self._backoff = 0.0
         root = Path(path or os.environ.get("MODBENCH_INTERRUPTS_DIR", DEFAULT_DIR)); root.mkdir(parents=True, exist_ok=True)
@@ -145,6 +149,10 @@ class InterruptSupervisor:
             if self._closed: return
             self.db.execute("insert into events(ts,kind,name,data) values(?,?,?,?)", (time.time(),kind,name,json.dumps(data,default=str)))
             self.db.execute("delete from events where id <= (select max(id)-? from events)",(self.retained,)); self.db.commit(); self.changed.notify_all()
+            hook = self.on_event
+        if hook is not None:
+            try: hook(kind, name, data)
+            except Exception: pass  # whoever listens must not stop the watches
     def _save(self, w, pending=None):
         """Persist an armed or undelivered watch and forget any other. The journal event that follows every transition commits."""
         with self.lock:
@@ -204,7 +212,7 @@ class InterruptSupervisor:
             if "file" in spec: w.callable=self._load(w)
             if old: old.armed=False; old.generation+=1 # invalidate an in-flight custom callable
             self.watches[name]=w; self._save(w)
-        self._event("armed",name,spec={k:v for k,v in spec.items() if k != "file"}); return self.status(name)
+        self._event("armed",name,spec={k:v for k,v in spec.items() if k not in ("file","do")}); return self.status(name)
     def remove(self,name):
         with self.lock:
             w=self.watches.pop(name,None)
@@ -219,7 +227,8 @@ class InterruptSupervisor:
             w.generation+=1; w.running=False; w.reacting=False; w.dispatches.clear(); w.state={}; w.callable=new # old worker has an old state reference and cannot commit
         self._event("reloaded",name); return self.status(name)
     def _status(self,w):
-        return {"name":w.name,"armed":w.armed,"running":w.running,"state":dict(w.state),"context":w.context,"operationId":w.operation_id,"pendingEvent":w.pending_event}
+        return {"name":w.name,"armed":w.armed,"running":w.running,"state":dict(w.state),"context":w.context,"operationId":w.operation_id,"pendingEvent":w.pending_event,
+                **({"fault":w.fault} if w.fault else {})}
     def list(self):
         with self.lock: return [self._status(w) for w in self.watches.values()]
     def status(self,name=None):
@@ -230,10 +239,11 @@ class InterruptSupervisor:
     def specs(self):
         """Live watch specs, for re-arming into another supervisor."""
         with self.lock: return {w.name: copy.deepcopy(w.spec) for w in self.watches.values() if w.armed or w.pending_event}
-    def events(self,after=0,limit=100,wait_s=0):
+    def events(self,after=0,limit=100,wait_s=0,also=None):
+        """``also``, if given, is asked too while waiting: true ends the wait (reflexes.py's reports; notify ``changed`` to have it asked)."""
         with self.changed:
             if self._closed: raise RuntimeError("interrupt supervisor closed")
-            if wait_s: self.changed.wait_for(lambda: self._closed or self.db.execute("select 1 from events where id>?",(after,)).fetchone(), wait_s)
+            if wait_s: self.changed.wait_for(lambda: self._closed or (also is not None and also()) or self.db.execute("select 1 from events where id>?",(after,)).fetchone(), wait_s)
             if self._closed: raise RuntimeError("interrupt supervisor closed")
             first=self.db.execute("select min(id) from events").fetchone()[0]; gap=bool(first and after and after < first-1)
             rows=self.db.execute("select id,ts,kind,name,data from events where id>? order by id limit ?",(max(after, first-1 if gap else after),limit)).fetchall()
@@ -308,7 +318,7 @@ class InterruptSupervisor:
         """Observation/predicate faults are terminal: false must never hide them."""
         with self.lock:
             if self.watches.get(w.name) is not w or not w.armed: return
-            w.armed=False; w.generation+=1; self._save(w)
+            w.armed=False; w.generation+=1; w.fault=str(error)[:600]; self._save(w)
         self._event("fault",w.name,error=str(error)); self._event("disarmed",w.name,reason="fault")
     def _outage(self,error):
         """Transport failures pause polling with backoff (<=10 s) and keep every watch armed."""
@@ -338,7 +348,7 @@ class InterruptSupervisor:
             if w.running:
                 if time.monotonic()-w.state.get("_started",time.monotonic()) >= float(w.spec.get("timeout_s",5)):
                     with self.lock:
-                        if w.running: w.armed=False; w.generation+=1; self._save(w); self._event("stalled",w.name,timeout_s=w.spec.get("timeout_s",5)); self._event("disarmed",w.name,reason="worker_timeout")
+                        if w.running: w.armed=False; w.generation+=1; w.fault="evaluate ran past its timeout_s"; self._save(w); self._event("stalled",w.name,timeout_s=w.spec.get("timeout_s",5)); self._event("disarmed",w.name,reason="worker_timeout")
                 continue
             try:
                 for q in w.spec.get("queries",{}).values():
@@ -378,14 +388,16 @@ class InterruptSupervisor:
         with self.lock: self.db.commit(); self.db.close()
 
 
-def get_supervisor(path=None):
+def get_supervisor(path=None, on_event=None):
     """The process-wide supervisor in mbtool.state; re-created with the persisted watches after a reload or restart."""
-    if state.get("task"): raise ValueError("interrupt watches belong to your own session, not to a background task: arm them and wait on them outside the script")
+    if state.get("task"): raise ValueError("checks belong to your own session, not to a background task: set them and wait on them outside the script")
     sup = state.get("interrupts")
-    if sup is not None and type(sup) is InterruptSupervisor and not sup._closed: return sup
-    if sup is not None: sup.close()
-    fresh = state["interrupts"] = InterruptSupervisor(kernel, path); fresh.restore()
-    return fresh
+    if sup is None or type(sup) is not InterruptSupervisor or sup._closed:
+        if sup is not None: sup.close()
+        sup = state["interrupts"] = InterruptSupervisor(kernel, path)
+        sup.on_event = on_event; sup.restore()
+    elif on_event is not None: sup.on_event = on_event
+    return sup
 
 def close_supervisor():
     sup = state.pop("interrupts", None)
@@ -395,21 +407,13 @@ mbtool.on_shutdown["interrupts"] = close_supervisor
 
 @tool(lane="control", coverage=["meta"])
 def mb_interrupt(operation: str, name: str = "", spec: dict | None = None, replace: bool = False, event_id: str = "") -> Any:
-    """Manage autonomous interrupts: add, remove, reload, status, ack. Add spec:
-    queries={alias:{method,params}}, condition={'lt':['player.health',8]},
-    effects=['notify','cancel','pause'] (independently selectable). Compose all/any/not,
-    comparisons, changed/increased/decreased and collections. Or file='/absolute/path.py'
-    defining evaluate(context), using context.values, context.read(method, **params)
-    and context.state to compose arbitrary read primitives. Default oneShot=true;
-    A spec prompt='...' or conditional return context.prompt('...', **observations)
-    requests a new model decision through the interrupt journal. The external runner
-    exposes modelPrompts; an MCP host blocks in mb_wait to be woken. No inline inference.
-    supports edge, consecutive, cooldown, timeout_s, operationScope and latch.
-    Runs while the model thinks. Read events to learn triggers/faults. Cancel/pause
-    latch new actions until ack(event_id) or until one action is refused with the events
-    (that refusal delivers them and releases the latch); ack does not resume time. Faults disarm;
-    transport outages and failed deliveries do not (fire is retried, then re-armed).
-    Python edits reload without client restart; failed reload retains previous code.
+    """The old name for checks (mb_reflex), kept for scripts written against it: add, remove, reload, status, ack.
+
+    add takes spec as an mb_reflex check takes when, with these defaults: effects ['notify'],
+    oneShot true, edge false; replace=True replaces one of that name. reload re-reads a file
+    check's code (a failed reload keeps the old). status returns {supervisor: {watches, transport}
+    or one watch, client: interrupt.status (latched eventIds, receipts)}. ack(event_id) clears
+    one latch without resuming time. Every check, made here or by mb_reflex, is in both.
     """
     if operation == "ack":
         return kernel().call("interrupt.ack", eventId=event_id)
@@ -423,39 +427,9 @@ def mb_interrupt(operation: str, name: str = "", spec: dict | None = None, repla
 
 @tool(lane="read", coverage=["meta"])
 def mb_interrupt_events(after: int = 0, limit: int = 100, wait_s: float = 0) -> Any:
-    """Replay durable interrupt events after a cursor; non-consuming, gap reported.
-    Optional bounded long-poll (0..30 seconds) waits without advancing world time.
+    """Replay the checks' journal after a cursor (armed, triggered with data.eventId and data.payload,
+    fault, disarmed, ...); non-consuming, gap reported. wait_s (0..30) long-polls without advancing world time.
     """
     if after < 0 or not 1 <= limit <= 1000 or not 0 <= wait_s <= 30:
         raise ValueError("after>=0, limit 1..1000, wait_s 0..30 required")
     return get_supervisor().events(after, limit, wait_s)
-
-
-@tool(lane="read", coverage=["meta"])
-def mb_wait(after: int | None = None, timeout_s: float = 600) -> Any:
-    """Block until an interrupt needs you (trigger, fault, stall, failed delivery, context change)
-    or timeout_s (1..900) passes. Call this instead of ending your turn
-    whenever you are only waiting for machines or jobs: a finished turn cannot be woken.
-    Returns {woke, cursor, events, gap}. Without after it goes on from the cursor your last wait returned;
-    0 replays retained history. On wake read
-    events[].data.payload.modelPrompt, observe, then mb_interrupt('ack', event_id=data.eventId)
-    if the receipt says latched. gap=true means older events were dropped: check mb_interrupt status.
-    Nothing you wait for happens in a paused world, so a wait never sits in one: paused when you call
-    or paused while you wait (a guard), it returns at once with woke false and paused: the reason.
-    A pause one of your reflexes answers (mb_reflex) is waited through.
-    """
-    supervisor = get_supervisor()
-    if after is None: after = getattr(supervisor, "waited", 0)  # kept on the journal's own supervisor: a cursor means nothing in another journal
-    if after < 0 or not 1 <= timeout_s <= 900: raise ValueError("after>=0, timeout_s 1..900 required")
-    end = time.monotonic() + timeout_s; wait = 0  # the first look does not wait: the world may be paused already
-    while True:
-        e = supervisor.events(after, 1000, wait); after = supervisor.waited = e["cursor"]
-        woke = [x for x in e["events"] if _wakes_runner(x)]
-        out = {"woke": bool(woke or e["gap"]), "cursor": after, "events": woke, "gap": e["gap"]}
-        if woke or e["gap"] or time.monotonic() >= end: return out
-        try: clock = kernel().call("time.status", timeout=5).get("state") or {}
-        except Exception: clock = {}  # no bridge: the journal's transport events say so, and the wait goes on as before
-        if clock.get("paused"):
-            from mbtools_gtnh import reflexes
-            if not reflexes.answers(clock): return {**out, "paused": clock.get("reason")}  # a pause a reflex is answering is not yours to answer yet
-        wait = max(0, min(WAIT_SLICE, end - time.monotonic()))

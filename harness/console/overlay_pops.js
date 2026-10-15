@@ -335,10 +335,11 @@ function pops(list, now) {
 }
 
 /* the banner: why the world stands still, in words, with the specifics */
+// A rule's pause is its kind, or kind:name for a rule the agent named itself; a check of its own is interrupt:<reason>.
 const PLAIN = {requested_pause: null, step: ["STEPPING", "step", "letting the world run a few ticks at a time"],
-  threat: null, health_dropped: null, health_threshold: null, air_threshold: ["LOW AIR", "bad", "its air ran low"], burning: ["BURNING", "bad", "it caught fire"],
+  air_below: ["LOW AIR", "bad", "its air ran low"], burning: ["BURNING", "bad", "it caught fire"],
   // The clock is read through the client, so a disconnect reason seen here is one already over: the world waits for the agent to resume it.
-  food_threshold: ["HUNGRY", "warn", "its food ran low"], agent_disconnected: ["PAUSED", "dim", "still paused from a dropped agent connection; it resumes when ready"],
+  food_below: ["HUNGRY", "warn", "its food ran low"], agent_disconnected: ["PAUSED", "dim", "still paused from a dropped agent connection; it resumes when ready"],
   client_disconnected: ["PAUSED", "dim", "still paused from the game restart; the agent resumes when ready"], client_unresponsive: ["PAUSED", "dim", "still paused from a game stall; the agent resumes when ready"],
   action_failed: ["ACTION FAILED", "warn", "an action failed, so the world stopped"], operator_hold: ["OPERATOR HOLD", "dim", "paused by the operator"]};
 const mob = t => pretty(t).replace(/^(entity|SpecialMobs|mob) /i, "").replace(/([a-z])([A-Z])/g, "$1 $2");
@@ -355,14 +356,14 @@ function banner(d) {
   else if (["between_turns", "backing_off"].includes(st.state)) chip = ["RECONNECTING", "dim", st.state === "backing_off" ? "the last turn failed; it starts again shortly" : "between turns; the agent picks up where it left off"];
   else if (!c.paused) chip = null;  // nothing to cover: the game draws its strip only while paused
   else {
-    const r = String(c.reason || ""), th = c.threat;
+    const r = String(c.reason || ""), th = c.threat, kind = r.split(":")[0];
     if (r === "requested_pause") chip = ["THINKING", "key", `world paused for ${secs(d.now - (st.since || d.now))}` + (last ? " · after: " + last.text : "")];
-    else if (r === "threat" && th) chip = ["THREAT", "bad", `${mob(th.type)} ${Math.round(th.distance)}m away` + (th.swelling ? ", about to explode" : th.ranged ? ", it shoots" : "")];
-    else if (r === "threat") chip = ["THREAT", "bad", "a hostile mob came close"];
-    else if (r === "health_dropped") chip = ["HIT", "bad", "it took damage" + hp];
-    else if (r === "health_threshold") chip = ["LOW HEALTH", "bad", "health below its guard" + hp];
-    else if (r.startsWith("interrupt:")) chip = ["ITS OWN WATCH", "key", "stopped by its own watch: " + r.slice(10).replace(/_/g, " ")];
-    else chip = PLAIN[r] || ["PAUSED", "dim", r.replace(/_/g, " ")];
+    else if (kind === "hostile_within" && th) chip = ["THREAT", "bad", `${mob(th.type)} ${Math.round(th.distance)}m away` + (th.swelling ? ", about to explode" : th.ranged ? ", it shoots" : "")];
+    else if (kind === "hostile_within") chip = ["THREAT", "bad", "a hostile mob came close"];
+    else if (kind === "health_drop") chip = ["HIT", "bad", "it took damage" + hp];
+    else if (kind === "health_below") chip = ["LOW HEALTH", "bad", "health below its rule" + hp];
+    else if (kind === "interrupt") chip = ["ITS OWN RULE", "key", "stopped by its own rule: " + r.slice(10).replace(/_/g, " ")];
+    else chip = PLAIN[kind] || ["PAUSED", "dim", r.replace(/_/g, " ")];
     if (c.stepping && r !== "step") chip = PLAIN.step;
     if (c.player && c.player.health <= 0) chip = ["DEAD", "bad", "it died; respawning comes next"];
   }

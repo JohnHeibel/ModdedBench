@@ -21,17 +21,24 @@ from kernel import BridgeError, Kernel, Reply, resume_once  # noqa: E402
 from mbtools_gtnh import core, interrupts, scripts, tasks, work  # noqa: E402
 
 
+HEALTH_BELOW = {"name": "health_below", "kind": "health_below", "level": 8}
+
+
 class FakeKernel:
-    """The calls a task's bookkeeping makes, recorded; the clock and the open screen are plain dicts."""
-    def __init__(self, paused=False, conditions=None, views=None):
-        self.calls, self.clock = [], {"paused": paused, "conditions": dict(conditions or {"healthDrop": 4})}
+    """The calls a task's bookkeeping makes, recorded; the clock, its rules and the open screen are plain dicts."""
+    def __init__(self, paused=False, rules=None, views=None):
+        self.calls, self.clock = [], {"paused": paused}
+        self.rules = {r["name"]: dict(r) for r in rules or [HEALTH_BELOW]}
         self.views = list(views or [{"open": False}])
 
     def call(self, method, timeout=None, **params):
         self.calls.append((method, params))
         if method == "time.status": return {"state": json.loads(json.dumps(self.clock))}
         if method == "time.pause": self.clock["paused"] = True
-        if method == "time.configure": self.clock["conditions"].update(params)
+        if method == "time.rules":
+            for r in params.get("set", []): self.rules[r["name"]] = dict(r)
+            for n in params.get("remove", []): self.rules.pop(n, None)
+            return {"rules": json.loads(json.dumps(list(self.rules.values())))}
         if method == "obs.container": return self.views.pop(0) if len(self.views) > 1 else self.views[0]
         return {}
 
@@ -159,10 +166,10 @@ class BodyLockTests(TaskTestCase):
         self.assertRaisesRegex(ValueError, "background task", interrupts.get_supervisor)
         self.assertEqual(tasks.deliver(), [])  # only the model's own process hands results over
 
-    def test_start_does_not_lift_a_guard_stop(self):
-        self.k.clock.update(paused=True, reason="health_dropped", threats=[{"type": "Zombie", "distance": 1.1}])
-        self.k._resume_for = lambda record: self.fail("a guard's stop was lifted")
-        with mock.patch.object(tasks.subprocess, "Popen") as popen, self.assertRaisesRegex(BridgeError, "health_dropped.*Zombie"):
+    def test_start_does_not_lift_a_rules_freeze(self):
+        self.k.clock.update(paused=True, reason="health_drop", threats=[{"type": "Zombie", "distance": 1.1}])
+        self.k._resume_for = lambda record: self.fail("a rule's freeze was lifted")
+        with mock.patch.object(tasks.subprocess, "Popen") as popen, self.assertRaisesRegex(BridgeError, "health_drop.*Zombie"):
             tasks.start("def main(): pass", None, None, None, 5)
         popen.assert_not_called()
 
@@ -211,11 +218,11 @@ class DeliveryTests(TaskTestCase):
 
 class CrashTests(TaskTestCase):
     def test_a_running_task_whose_process_died_is_crashed_and_on_fail_pauses(self):
-        self.put("t1", live=False, pid=dead_pid(), on_fail="pause", guards={"healthDrop": 8})
+        self.put("t1", live=False, pid=dead_pid(), on_fail="pause", rules={"health_below": HEALTH_BELOW, "eat": None})
         [f] = tasks.fields()["finished"]
-        self.assertEqual((f["state"], f["ended"], f["paused"], f["guardsRestored"]), ("crashed", "crash", True, True))
+        self.assertEqual((f["state"], f["ended"], f["paused"], f["rulesRestored"]), ("crashed", "crash", True, True))
         self.assertIn(("time.pause", {"reason": "background_task_crashed"}), self.k.calls)
-        self.assertIn(("time.configure", {"healthDrop": 8}), self.k.calls)
+        self.assertIn(("time.rules", {"set": [HEALTH_BELOW], "remove": ["eat"]}), self.k.calls)  # the one it added goes
 
     def test_a_crash_without_on_fail_never_pauses(self):
         self.put("t1", live=False, pid=dead_pid())
@@ -284,7 +291,7 @@ class CancelTests(TaskTestCase):
     def test_a_task_that_will_not_stop_is_killed_and_the_body_given_back_without_a_pause(self):
         proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
         self.addCleanup(lambda: (proc.kill(), proc.wait()))
-        self.put("t1", pid=proc.pid, on_fail="pause", guards={"healthDrop": 8})
+        self.put("t1", pid=proc.pid, on_fail="pause", rules={"health_below": HEALTH_BELOW})
         self.k.views = [{"open": True, "cursor": {"id": "x", "count": 3}, "windowId": 4, "epoch": 2,
                          "slots": [{"i": 9, "kind": "main", "ordinary": True}, {"i": 0, "kind": "machine", "ordinary": True}]},
                         {"open": True, "cursor": None}]
@@ -295,7 +302,7 @@ class CancelTests(TaskTestCase):
         names = self.k.methods()
         self.assertEqual([m for m in names if m.startswith(("act.", "gui."))], ["act.stop", "gui.return_cursor", "gui.close"])
         self.assertEqual(dict(self.k.calls)["gui.return_cursor"]["destinations"], [9])
-        self.assertIn(("time.configure", {"healthDrop": 8}), self.k.calls)  # guards back
+        self.assertIn(("time.rules", {"set": [HEALTH_BELOW], "remove": []}), self.k.calls)  # its rules back
         self.assertNotIn("time.pause", names)  # a cancel never pauses
 
     def test_a_held_stack_is_never_dropped_by_closing(self):
@@ -375,12 +382,12 @@ class RunnerTests(TaskTestCase):
         self.assertIn("no ore here", st["error"])
         self.assertTrue(st["paused"])
 
-    def test_a_guard_stop_ends_the_task_whatever_it_catches_and_on_fail_pauses(self):
+    def test_a_rules_freeze_ends_the_task_whatever_it_catches_and_on_fail_pauses(self):
         def act(): raise BridgeError("bad_request", "interrupt_latched: 1 delivered", "act.input")
         self.k.clock.update(paused=True, reason="interrupt:low")
         st = self.run_task("def main():\n for _ in range(3):\n  try: act()\n  except BaseException: pass\n return 'carried on'",
                            {"act": act}, on_fail="pause")
-        self.assertEqual((st["state"], st["ended"], st["interrupted"]["tool"], st["interrupted"]["pausedBy"]), ("interrupted", "guard", "act", "interrupt:low"))
+        self.assertEqual((st["state"], st["ended"], st["interrupted"]["tool"], st["interrupted"]["pausedBy"]), ("interrupted", "rule", "act", "interrupt:low"))
         self.assertEqual(sum(c["tool"] == "act" for c in self.calls()), 1)  # no second call after the stop
         self.assertTrue(st["paused"])
 
@@ -392,34 +399,35 @@ class RunnerTests(TaskTestCase):
 
 
 class FinishTests(TaskTestCase):
-    def test_guards_the_script_changed_are_put_back(self):
-        tasks.TASK.update(self.put("t1", guards={"healthDrop": 4}))
-        self.k.clock["conditions"]["healthDrop"] = 10
+    def test_rules_the_script_changed_are_put_back(self):
+        tasks.TASK.update(self.put("t1", rules={"health_below": HEALTH_BELOW, "eat": None, "burning": {"name": "burning", "kind": "burning"}}))
+        self.k.rules.update(health_below={**HEALTH_BELOW, "level": 10}, eat={"name": "eat", "kind": "food_below", "level": 16})
+        self.k.rules["burning"] = {"name": "burning", "kind": "burning"}  # this one it put back itself
         st = tasks.finish(self.k, {"result": 1, "log": []}, None)
-        self.assertEqual((st["state"], st["guardsChanged"], st["guardsRestored"]), ("done", {"healthDrop": [4, 10]}, True))
-        self.assertEqual(self.k.clock["conditions"]["healthDrop"], 4)
+        self.assertEqual((st["state"], st["rulesChanged"], st["rulesRestored"]), ("done", ["eat", "health_below"], True))
+        self.assertEqual(self.k.rules, {"health_below": HEALTH_BELOW, "burning": {"name": "burning", "kind": "burning"}})
 
-    def test_guards_the_script_put_back_itself_are_left_alone(self):
-        tasks.TASK.update(self.put("t1", guards={"healthDrop": 4}))
+    def test_rules_the_script_put_back_itself_are_left_alone(self):
+        tasks.TASK.update(self.put("t1", rules={"health_below": HEALTH_BELOW}))
         st = tasks.finish(self.k, {"result": 1, "log": []}, None)
-        self.assertNotIn("guards", st); self.assertIsNone(st.get("guardsChanged"))
-        self.assertNotIn("time.configure", self.k.methods())
+        self.assertNotIn("rules", st); self.assertIsNone(st.get("rulesChanged"))
+        self.assertEqual([p for m, p in self.k.calls if m == "time.rules"], [{}])  # read, never changed
 
     def test_an_interrupted_task_says_what_actually_stopped_it(self):
         out = {"stopped": "BridgeError: cancelled", "line": 2, "log": [], "interrupted": {"tool": "mb_goto", "error": "cancelled: superseded by act.stop"}}
         tasks.TASK.update(self.put("t1"))
-        st = tasks.finish(self.k, dict(out), None)  # the world runs: no guard, its job was cancelled
+        st = tasks.finish(self.k, dict(out), None)  # the world runs: no rule, its job was cancelled
         self.assertEqual((st["state"], st["ended"]), ("interrupted", "cancelled")); self.assertNotIn("pausedBy", st["interrupted"])
         self.k.clock.update(paused=True, reason="requested_pause")
-        st = tasks.finish(self.k, dict(out), None)  # a pause, but not a guard's
+        st = tasks.finish(self.k, dict(out), None)  # a pause, but not a rule's
         self.assertEqual((st["ended"], st["interrupted"]["pausedBy"]), ("cancelled", "requested_pause"))
-        for hold in ("operator_hold", "backup_hold"):  # a hold is nobody's guard, the backup's no more than the operator's
+        for hold in ("operator_hold", "backup_hold"):  # a hold is nobody's rule, the backup's no more than the operator's
             self.k.clock.update(paused=True, reason=hold)
             self.assertEqual(tasks.finish(self.k, dict(out), None)["ended"], "cancelled")
-        self.k.clock.update(paused=True, reason="health_dropped")
+        self.k.clock.update(paused=True, reason="health_drop")
         st = tasks.finish(self.k, dict(out), None)
-        self.assertEqual((st["ended"], st["interrupted"]["pausedBy"]), ("guard", "health_dropped"))
-        self.assertEqual(tasks.finish(None, dict(out), None)["ended"], "cancelled")  # no bridge: no guard is claimed
+        self.assertEqual((st["ended"], st["interrupted"]["pausedBy"]), ("rule", "health_drop"))
+        self.assertEqual(tasks.finish(None, dict(out), None)["ended"], "cancelled")  # no bridge: no rule is claimed
 
     def test_a_script_pause_ends_the_task_as_paused_by_script(self):
         tasks.TASK.update(self.put("t1", on_fail="pause", pausedByScript=True))
@@ -450,17 +458,30 @@ class TaskKernelTests(TaskTestCase):
         finally: resume_once.reset(token)
         self.assertEqual(seen, [])
 
-    def test_a_pause_ends_the_task_and_configure_remembers_the_first_values(self):
+    def relayed(self):
+        """The model's MCP server, up and relaying the task's time requests to a fake clock."""
+        server, stop = FakeKernel(rules=[HEALTH_BELOW, {"name": "hostile_within", "kind": "hostile_within", "level": 12}]), threading.Event()
+        relay = threading.Thread(target=tasks.relay, args=(self.dir, lambda: server, stop), daemon=True); relay.start()
+        self.addCleanup(lambda: (stop.set(), relay.join(5)))
+        for _ in range(50):
+            if (self.dir / "relay.json").exists(): break
+            time.sleep(0.05)
+        return server
+
+    def test_a_pause_ends_the_task_and_a_rule_change_remembers_the_first_rules(self):
         tasks.TASK.update(self.put("t1"))
-        k, seen = self.kernel(lambda m, p: {"state": {"conditions": {"healthDrop": 4, "threatWithin": 8}}} if m == "time.status" else {})
-        k.call("time.configure", healthDrop=10)
-        k.call("time.configure", healthDrop=12, threatWithin=0)
-        self.assertEqual(tasks.TASK["guards"], {"healthDrop": 4, "threatWithin": 8})
-        self.assertEqual(tasks.load("t1")["guards"], {"healthDrop": 4, "threatWithin": 8})  # saved, in case the process dies
+        server = self.relayed()
+        k, seen = self.kernel(lambda m, p: {})
+        k.call("time.rules", set=[{**HEALTH_BELOW, "level": 10}])
+        k.call("time.rules", set=[{**HEALTH_BELOW, "level": 12}, {"name": "eat", "kind": "food_below", "level": 16}], remove=["hostile_within"])
+        first = {"health_below": HEALTH_BELOW, "eat": None, "hostile_within": {"name": "hostile_within", "kind": "hostile_within", "level": 12}}
+        self.assertEqual(tasks.TASK["rules"], first)  # None: one it added
+        self.assertEqual(tasks.load("t1")["rules"], first)  # saved, in case the process dies
         with self.assertRaises(tasks.ScriptPaused):
             k.call("time.pause", reason="think")
-        self.assertEqual([m for m, _ in seen], ["time.status", "time.status"])  # no server up: nothing sent from this session
-        self.assertTrue(tasks._halt and tasks.TASK["pausedByScript"] and tasks.TASK["relayPending"])
+        self.assertEqual(seen, [])  # all through the server: nothing sent from this session
+        self.assertEqual([m for m, _ in server.calls], ["time.rules", "time.rules", "time.rules", "time.rules", "time.pause"])
+        self.assertTrue(tasks._halt and tasks.TASK["pausedByScript"])
         traced = tasks._traced("mb_obs", lambda: 1)
         self.assertRaises(scripts.ScriptInterrupted, traced)  # nothing more after the pause
 
@@ -478,8 +499,8 @@ class TaskKernelTests(TaskTestCase):
             self.assertEqual(k.call("act.input", keys=[]), {"ok": 1})
         self.assertEqual(sent, ["act.input", "act.input"])
 
-    def test_a_guard_pause_is_not_waited_out(self):
-        k, _ = self.kernel(lambda m, p: {"state": {"paused": True, "reason": "healthDrop"}} if m == "time.status"
+    def test_a_rules_pause_is_not_waited_out(self):
+        k, _ = self.kernel(lambda m, p: {"state": {"paused": True, "reason": "health_drop"}} if m == "time.status"
                            else BridgeError("bad_request", "time_paused: the world is paused", m))
         with self.assertRaisesRegex(BridgeError, "time_paused"):
             k.call("act.input")
@@ -498,18 +519,13 @@ class TaskKernelTests(TaskTestCase):
         calling = threading.Thread(target=tool, args=("act.input",), daemon=True); calling.start(); calling.join(5)
         self.assertIsInstance(caught[1], scripts.ScriptInterrupted); self.assertEqual(seen, [])
         reading = threading.Thread(target=tool, args=("time.status",), daemon=True); reading.start(); reading.join(5)
-        self.assertEqual((len(caught), [m for m, _ in seen]), (2, ["time.status"])); del seen[:]  # the script's report still reads the clock (guardsChanged)
+        self.assertEqual((len(caught), [m for m, _ in seen]), (2, ["time.status"])); del seen[:]  # the script's report still reads the clock
         k.call("act.stop")  # handing the body back and the task's last word are the main thread's, and still go
         self.assertEqual([m for m, _ in seen], ["act.stop"])
 
     def test_time_commands_go_through_the_server_relay(self):
         tasks.TASK.update(task="t1", state="done")  # the task's last word: a pause here does not end anything
-        server, stop = FakeKernel(), threading.Event()
-        relay = threading.Thread(target=tasks.relay, args=(self.dir, lambda: server, stop), daemon=True); relay.start()
-        self.addCleanup(lambda: (stop.set(), relay.join(5)))
-        for _ in range(50):
-            if (self.dir / "relay.json").exists(): break
-            time.sleep(0.05)
+        server = self.relayed()
         k, direct = self.kernel(lambda m, p: {})
         k.call("time.pause", reason="background_task_failed")
         self.assertIn(("time.pause", {"reason": "background_task_failed"}), server.calls)
@@ -521,13 +537,13 @@ class TaskKernelTests(TaskTestCase):
         self.assertEqual(list(self.dir.glob("*.req")) + list(self.dir.glob("*.rep")) + list(self.dir.glob("*.run")), [])
 
     def test_with_no_server_up_time_requests_wait_for_one_and_are_never_sent_by_the_task(self):
-        tasks.TASK.update(self.put("t1", on_fail="pause", guards={"healthDrop": 4}))
+        tasks.TASK.update(self.put("t1", on_fail="pause", rules={"health_below": HEALTH_BELOW}))
         (self.dir / "relay.json").write_text(json.dumps({"pid": dead_pid()}), encoding="utf-8")
-        k, direct = self.kernel(lambda m, p: {"state": {"paused": False, "conditions": {"healthDrop": 9}}} if m == "time.status" else {})
+        k, direct = self.kernel(lambda m, p: {"state": {"paused": False}} if m == "time.status" else {})
         with mock.patch.object(tasks, "kernel", lambda: k):
             st = tasks.finish(k, {"stopped": "ValueError: x", "line": 1, "log": []}, None)
-        self.assertEqual((st["state"], st["paused"], st["guardsRestored"], st["relayPending"]), ("failed", "pending", "pending", True))
-        self.assertNotIn("time.pause", [m for m, _ in direct]); self.assertNotIn("time.configure", [m for m, _ in direct])
+        self.assertEqual((st["state"], st["paused"], st["rulesRestored"], st["relayPending"]), ("failed", "pending", "pending", True))
+        self.assertEqual([m for m, _ in direct], ["time.status"])  # the rules unread, the pause unsent: only a read from this session
         self.assertTrue(tasks.entry(st)["relayPending"])
         self.assertEqual(len(list(self.dir.glob("*.req"))), 2)
         server, stop = FakeKernel(), threading.Event()  # the server starts: it sends them, oldest first, and nobody waits for a reply
@@ -537,7 +553,7 @@ class TaskKernelTests(TaskTestCase):
             if len(server.calls) >= 2: break
             time.sleep(0.05)
         time.sleep(0.2)
-        self.assertEqual(server.calls, [("time.configure", {"healthDrop": 4}), ("time.pause", {"reason": "background_task_failed"})])
+        self.assertEqual(server.calls, [("time.rules", {"set": [HEALTH_BELOW], "remove": []}), ("time.pause", {"reason": "background_task_failed"})])
         self.assertEqual([p.suffix for p in self.dir.iterdir() if p.suffix in (".req", ".rep", ".run")], [])
 
 

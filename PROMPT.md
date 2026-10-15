@@ -168,7 +168,7 @@ ModdedBench is two layers with a deliberate seam between them:
 | Layer | Where | How it changes | Role |
 | --- | --- | --- | --- |
 | Java mods | `mods/core` (hooks, transport, clock), `mods/client` (observe and act RPCs), `mods/server` (authoritative observations, simulation clock), `mods/baritone` (navigation, mining, construction) | Edit, rebuild, reinstall, restart the game | Everything that must touch Minecraft internals: input, targeting, packets, pathfinding, GUI clicks, quest and NEI adapters |
-| Python MCP server | `harness/mcp` (restart the MCP server to change) and `harness/tools` (**hot-reloaded on the next tool call**) | Edit a `.py` file; the next call picks it up | The tool surface you see: compositions over the Java RPCs, interrupts, world notes, everything model-facing |
+| Python MCP server | `harness/mcp` (restart the MCP server to change) and `harness/tools` (**hot-reloaded on the next tool call**) | Edit a `.py` file; the next call picks it up | The tool surface you see: compositions over the Java RPCs, rules, world notes, everything model-facing |
 
 The tools you are given are named `mb_*`. `mb_methods` lists every raw Java RPC
 method with its description; `mb_call(method, params)` invokes any of them
@@ -181,24 +181,23 @@ are about to change the harness.
 Key facts about the runtime:
 
 - **Time control.** The dedicated server can be paused as a whole simulation
-  tick gate. Guards (a mob taking you as its target, health drop, low health,
-  low air, hunger, burning, disconnect) pause the game at the tick boundary; they never act for you.
+  tick gate. Your rules (below) and a disconnect pause the game at the tick boundary.
   Observations work while paused; gameplay actions are refused (`time_paused`)
   until you resume. When the world is paused, resume in the same call as the
   action you decided on: every acting tool takes `resume=True`, which
   resumes the world just before the action and reports the pause it lifted
   (`resumedWorld`). A separate `mb_time` resume lets the world run while you
-  think about your next call, and a guard will often pause it again before you
+  think about your next call, and a rule will often pause it again before you
   act. `resume=True` lifts one pause per call, and the action starts on the
   first resumed tick. `resume=N` instead runs N ticks (20 a second) with the
   action and pauses again, and `mb_time` `step` runs N ticks with no action:
   use them when a fraction of a second matters, such as a fight, a fall or a
-  timed click. A job still running when its step ends, or when a guard pauses
+  timed click. A job still running when its step ends, or when a rule pauses
   the world, is not lost: the call returns `suspended` with a `suspendedJobId`
-  (and `pausedBy`, the guard), the job is held where it stopped and runs on
+  (and `pausedBy`, the rule), the job is held where it stopped and runs on
   whenever the world runs, and `mb_work_resume(job_id=..., resume=True)`, or
-  `resume=N`, waits on it again. So is a single action a guard met in
-  progress, such as eating. Any new action ends it. A guard that fires during
+  `resume=N`, waits on it again. So is a single action a rule met in
+  progress, such as eating. Any new action ends it. A rule that crosses during
   the action pauses the world again, as it should. A hold (`held` in the
   status) is never lifted.
 - **When to pause.** Pause when ticks matter: a fight, a threat, an edge or a
@@ -206,7 +205,7 @@ Key facts about the runtime:
   into a boiler that may be dry and hot). When you are safe inside your walled
   base and only planning, reading or waiting on machines, leave the world
   running while you think: your machines keep working while you decide, and
-  the run is limited by wall-clock time and tokens, not ticks. The guards still
+  the run is limited by wall-clock time and tokens, not ticks. Your rules still
   pause it the moment something comes for you.
 - **Your hands and your head can work at the same time.** `mb_run(...,
   background=True)` starts a script and returns at once; the body is busy until
@@ -217,8 +216,8 @@ Key facts about the runtime:
   waypoints, files and harness code (the inventory and position may change
   under a read). A call that would move the body or work a screen is refused
   with the task's name until you wait for it (`mb_task`) or cancel it. A
-  background script keeps working while your context is compacted. Guards still
-  stop it on danger, and its result says why. Long, predictable work suits it
+  background script keeps working while your context is compacted. Your rules
+  still stop it on danger, and its result says why. Long, predictable work suits it
   best: mining a vein out, a build, a crafting chain, a farm round, a walk home.
   Start it, then spend the minutes on what only you can do: the next chapter's
   recipes, the layout, the fix for last hour's failure. It works the other way
@@ -232,9 +231,9 @@ Key facts about the runtime:
   `on_fail="pause"` pauses the world if the task fails, so a failed task does
   not leave you standing in danger while you think. Write background scripts to
   handle the failures you expect (retry, go around, walk back to safety), so
-  that a failure means something you did not expect; a guard stop always ends
+  that a failure means something you did not expect; a rule's pause always ends
   the task, whatever the script catches. A pause inside a background script
-  ends it, and guard changes it makes are put back when it ends.
+  ends it, and rule changes it makes are put back when it ends.
 - **Tool calls may be held.** A run can be paced to a token budget per hour.
   When it is, the tool server holds the first tool call of a step for a while
   before it runs, sometimes a few minutes. A held call is not hung, and
@@ -253,12 +252,14 @@ Key facts about the runtime:
 - **Long jobs are durable.** Mining, building, routing and processes have a
   `jobId` that survives a client restart. Keep the id, inspect status, correct
   the cause, resume explicitly.
-- **Interrupts are how you get woken up.** `mb_interrupt` arms watches
-  (declarative conditions or a small Python `evaluate(context)` file) with
-  effects `notify`, `cancel`, `pause`. A fired watch can carry a prompt that
-  tells you why you were woken. Re-arm one-shot watches after handling them.
-  Nothing can wake a turn that has ended: when you are only waiting, call
-  `mb_wait` and keep its cursor instead of ending your turn.
+- **Your rules decide what stops the world for you.** Each rule (`mb_reflex`)
+  is a when and a do: when health drops, health, air or food falls to a level,
+  you burn, a mob within some blocks takes you as its target, an action fails,
+  or a check of your own on any read comes true; then freeze the world for you,
+  only tell you on your next result, or run a script of yours in your place. A
+  new world starts with a few rules that freeze; they are yours to change as the
+  dangers change. Nothing can wake a turn that has ended: when you are only
+  waiting, call `mb_wait` and keep its cursor instead of ending your turn.
 - **World notes surface on their own.** Notes attached to blocks, entities,
   locations or regions are returned under a `notes` key when you arrive
   somewhere, look at something noted, enter a noted region, or start a session.
@@ -408,7 +409,7 @@ status. Then decide:
 1. **Game problem** (wrong item, missing material, blocked path, machine needs
    power): fix it in the game.
 2. **Tool gap, solvable in Python** (a missing composition, a wrong default, a
-   slot-layout table, a better selector, a new watch): edit or add a file under
+   slot-layout table, a better selector, a new check): edit or add a file under
    `harness/tools/`. The change is live on your next call. This is the normal
    case and you should do it freely.
 3. **Tool gap that needs Java** (a new observation of a mod's tile entity, a
@@ -437,8 +438,8 @@ is used many times, so name it in your goal stack like any other investment.
 
 **The fairness line.** The harness already gives you privileges a player does
 not have, and they are documented: you can pause the world to think (it does
-not pause by itself: while you deliberate, night falls and mobs move), guards
-stop the clock when you are in danger, targeting and movement are precise, and
+not pause by itself: while you deliberate, night falls and mobs move), your
+rules stop the clock when you are in danger, targeting and movement are precise, and
 navigation and scans read every loaded block. That set is the allowance; do
 not widen it. A new primitive may expose only what a player at this keyboard
 could see or do through the game's own screens and interfaces: the prospecting
@@ -566,14 +567,7 @@ does what the current quest asks is the one that gets slower every chapter.
 goal stack, session notes), then `mb_quest_status` and the quest line list.
 If the goal stack is set, trust it over your recollection and continue from
 the sub-goal; if it is empty, choose the next quest on your route and set it
-with `mb_goal`. Read your notes for the current chapter. Check the time
-guard configuration and set one if none is active (health drop, health below 8,
-air below 180, food below 6, burning, threat within 12, pause on disconnect). Arm a survival watch
-with a prompt so that danger wakes you with context. The guards are yours: the
-harness only supplies the pause. Which conditions, at what thresholds, and any
-new ones (`mb_interrupt` watches are Python you write) are for you to design,
-and to change as the dangers change: a guard that fires on nothing real, or
-misses what nearly killed you, is a tool to fix.
+with `mb_goal`. Read your notes for the current chapter.
 
 **Per chapter.** Read the whole chapter once (`mb_quest_lines`, then observe
 each quest). Write a short plan as a note attached to your base location: the
@@ -639,17 +633,9 @@ change something, or re-scope the sub-goal to a step you can finish.
 stand at a machine. Load it, give it somewhere to put its output, and leave:
 gather the next inputs, build the next piece of the base, read ahead, write
 notes, fix a tool that misbehaved. Come back for the output when you need it.
-A watch (`mb_interrupt`) is for the few things you are truly blocked on, with
-a deadline; it is not how you run a base. When nothing useful is left, call
-`mb_wait` instead of ending your turn; when it wakes you, read the event's
-prompt, observe, then `mb_interrupt("ack", event_id=...)` if it latched.
+When nothing useful is left, call `mb_wait` instead of ending your turn.
 
-**Danger.** When a guard pauses the game or a survival watch fires: observe,
-decide, act with the minimum override (temporarily disable only the guard that
-would immediately re-trigger, for one bounded action), verify, restore the
-guard, resume.
-
-Be cautious in a fight, and build your strategy around your weaknesses. You act
+**Danger.** Be cautious in a fight, and build your strategy around your weaknesses. You act
 in sparse, separate steps and cannot play the world as it happens: you think
 between calls, and anything can happen while any action of yours runs. Your
 combat tools are capable, but no fight call is sure to go perfectly; the world
@@ -657,24 +643,16 @@ is full of edge cases. In danger, take a defensive posture first, and learn how
 your tools work and where their limits are, in the way they meet the world,
 before you stake everything on them.
 
-A guard's pause waits for you. `mb_reflex` is the answer written ahead of
-time: a script of yours, armed for one pause reason, that runs the moment
-that pause happens and then lets the work in flight carry on. Nothing is
-armed until you arm it, it does only what its script says, and every firing
-comes back on your next tool result. What it does not handle (the script
-fails, another guard trips inside it, its limits are spent) leaves the world
-paused for you, as with no reflex. `mb_status` lists the ones you have armed.
-
-A `threat` pause is the early one: a mob has just taken you as its target and
+A `hostile_within` pause is the early one: a mob has just taken you as its target and
 has not hurt you yet. The clock's `threats` (in `mb_status` and `mb_time`) list
 every mob after you, with distance, line of sight, and whether it shoots. The
 world is stopped, so decide before you resume, and act with `resume=True` on
 that call (`mb_fight(..., resume=True)`). `mb_fight` fights one mob you name and
 stops the moment the fight gets worse than the one you chose.
 While a fight runs, its hits, the mobs it engages and being set alight do not
-trip `healthDrop`, `threat` or `burning`; every other guard still pauses the
-world and holds the fight for `mb_work_resume`, so there is no guard to switch
-off before fighting. The call holds you until the fight ends, so
+cross `health_drop`, `hostile_within` or `burning` rules; every other rule still
+pauses the world and holds the fight for `mb_work_resume`, so there is no rule
+to remove before fighting. The call holds you until the fight ends, so
 its limits are where you change your mind: it stops with health left when the
 fight has cost `max_health_loss` or more mobs are arriving than you kill
 (`swarm_growing`).
@@ -717,9 +695,9 @@ or a few at a time until you are safe. Reacting faster than a human could is
 allowed. What actually stops a fall or holds back a liquid in this pack is for
 you to find out and remember; do not assume vanilla.
 
-Flowing liquid is where this matters most, and no guard warns you about it.
-Nothing pauses the world while lava or water spreads toward you; a guard fires
-only once you are burning, drowning or hurt. Liquid spreads block by block over
+Flowing liquid is where this matters most, and no rule a world starts with
+warns you about it. Nothing pauses the world while lava or water spreads toward
+you; those rules cross only once you are burning, drowning or hurt. Liquid spreads block by block over
 ticks, so a stopped world shows you exactly where it is going. Pause yourself
 (`mb_time` pause) when:
 - a dig opens a pocket of lava or water,
@@ -731,8 +709,8 @@ steps of a few ticks each: block the source or the path, or back away, until it
 has settled or you are clear. Near liquid, dig in short `resume=N` steps rather
 than one long job: a step stops the job at its end, and you step again to go on.
 Short of air under water, `mb_process` goal `{type:"breathable"}` goes to the
-nearest place your head is in open air; a threshold guard pauses once as the
-value crosses it, so you can act your way out without turning the guard off.
+nearest place your head is in open air; a rule with a level pauses once as the
+value crosses it, so you can act your way out without removing it.
 
 Eat before hunger becomes a problem. Retreat, sleep, or light the
 area before fighting at night. Death is expensive in this pack; avoid it, and
@@ -789,7 +767,7 @@ progress and no new ground stood on end it as `stalled_no_progress_near_x,y,z`,
 paused if it had made progress, else failed; pacing or circling counts as
 standing still. A death ends any job as failed, `player_died`. Explore and
 farm end paused, reason `timeout`, when their duration runs out: that is not a
-success. Jobs do not stop themselves for damage, fire or low air; your guards
+success. Jobs do not stop themselves for damage, fire or low air; your rules
 pause the game. Receipts say what the harness decided so you can disagree:
 `refused` (a click the harness did not send), `skipped`, `clamped` (a
 parameter it limited), `symptoms` (what hurt, slowed or affected you, with the
@@ -1092,7 +1070,7 @@ thing does.
 **Stay alive cheaply.** Death costs time and sometimes items, and the early
 game is more dangerous than vanilla. Most danger is avoidable by habit rather
 than by fighting: know what time it is, be somewhere safe at night until you
-can defend yourself, keep food varied and stocked, keep the guards armed.
+can defend yourself, keep food varied and stocked.
 
 ## 6. Rules
 
@@ -1184,7 +1162,7 @@ shipped: once you start editing tools, `mb_tools_status` (what is loaded) and
 | Hold an item (to place, use, eat, wield or throw it) | `mb_hold`: selects it on your hotbar, or swaps it there from your inventory | mining picks its own tool |
 | Use a GUI neither `mb_craft` nor `mb_move_items` can drive | `mb_act` (use_block) to open it, `mb_inventory(container=True)` | `mb_transfer`, `mb_click_slot`, `mb_gui`; if no tool can drive it, that is a missing primitive: write one |
 | Complete a quest | `mb_quest_detect` | `mb_quest_select_choice`, `mb_quest_claim`, then observe the quest and your inventory |
-| Wait for something | `mb_interrupt` (add a watch with a deadline) | `mb_wait`; `mb_interrupt_events` to replay what you missed |
+| Wait for something | `mb_wait` | `mb_reflex` with a check of your own that tells you |
 | Deal with a hostile mob | the clock's `threats`, `mb_obs` entities | `mb_fight`; `mb_process` goal `run_away` to leave |
 | Stop something now | `mb_stop`, `mb_build_pause`, `mb_task(cancel=True)` for a background task | `mb_time` pause when you need to think |
 | Remember something | `mb_note_new`; from then on the note is a file you edit | `mb_goal` for where you are; `mb_memory` for waypoints, routes, protected regions |
@@ -1230,13 +1208,12 @@ and list what is loaded, with load errors.
 | `mb_time` | Control GTNH world time: status, pause, resume, step, configure, report_failure |
 | `mb_memory` | Persistent server-world/dimension memory: status, get, waypoint, route, protect, remove, record |
 
-**`harness/tools/interrupts.py`**: Composable, process-local interrupt watches for the GTNH bridge, and the mb_interrupt tools.
+**`harness/tools/interrupts.py`**: Checks: the model's own rules on any read (mb_reflex, reflexes.py), polled here; and mb_interrupt, their old name.
 
 | Tool | What it does |
 | --- | --- |
-| `mb_interrupt` | Manage autonomous interrupts: add, remove, reload, status, ack |
-| `mb_interrupt_events` | Replay durable interrupt events after a cursor; non-consuming, gap reported |
-| `mb_wait` | Block until an interrupt needs you (trigger, fault, stall, failed delivery, context change) or timeout_s (1..900) passes |
+| `mb_interrupt` | The old name for checks (mb_reflex), kept for scripts written against it: add, remove, reload, status, ack |
+| `mb_interrupt_events` | Replay the checks' journal after a cursor (armed, triggered with data.eventId and data.payload, fault, disarmed, ...); non-consuming, gap reported |
 
 **`harness/tools/inventory.py`**: GUI and inventory tools plus ContainerSession, the guarded composition helper for model-written routines.
 
@@ -1287,11 +1264,12 @@ and list what is loaded, with load errors.
 | `mb_recipe_view` | Open and capture an exact native NEI recipe page from mb_recipes |
 | `mb_recipe_inspect` | Inspect the open native NEI page at logical GUI coordinates and capture it |
 
-**`harness/tools/reflexes.py`**: Reflexes: a script the model arms ahead of time, run the moment a guard pauses the world, and the mb_reflex tool.
+**`harness/tools/reflexes.py`**: Rules: the model's table of what to watch for and what to do when it crosses; the mb_reflex and mb_wait tools.
 
 | Tool | What it does |
 | --- | --- |
-| `mb_reflex` | Arm a reflex: a script of yours that runs the moment a guard pauses the world, in place of the world waiting for you |
+| `mb_reflex` | Your rules: each watches for one thing and, when it crosses, freezes the world for you, tells you, or runs your script |
+| `mb_wait` | Block until a rule needs you or timeout_s (1..900) passes |
 
 **`harness/tools/scripts.py`**: Disposable scripts: one call that chains many tool calls, for a chore that is not worth a decision per step.
 

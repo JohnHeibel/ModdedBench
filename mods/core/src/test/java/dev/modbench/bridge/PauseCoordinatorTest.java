@@ -104,7 +104,7 @@ public class PauseCoordinatorTest {
         Fixture f=new Fixture();
         f.coordinator.hold("backup");assertFalse(f.coordinator.before());
         assertTrue(SimulationClock.waitedOut(f.coordinator.status().get("reason").getAsString()));
-        assertFalse(SimulationClock.waitedOut("health_dropped"));
+        assertFalse(SimulationClock.waitedOut("health_drop"));
         f.coordinator.hold((String)null);
         assertTrue(f.coordinator.before());
     }
@@ -278,28 +278,29 @@ public class PauseCoordinatorTest {
     }
 
     @Test
-    public void aGuardEndsAStepEarlyAndIsRecorded() {
+    public void aRuleEndsAStepEarlyAndIsRecorded() {
         Fixture f=new Fixture();settlePause(f);
         f.coordinator.command("time.resume",Json.object("ticks",10),f.replies::add);
         assertEquals("resume with ticks replies at once",1,f.replies.size());
         assertEquals(3,run(f,3));
-        f.clock.pause("threat");
+        f.clock.pause("hostile_within");
         assertFalse(f.coordinator.before());
         JsonObject last=f.coordinator.status().getAsJsonObject("lastStep");
-        assertEquals(3,last.get("ran").getAsInt());assertEquals("threat",last.get("endedBy").getAsString());
+        assertEquals(3,last.get("ran").getAsInt());assertEquals("hostile_within",last.get("endedBy").getAsString());
     }
 
     @Test
-    public void aGuardOnAStepsLastTickEndsTheStepAndIsItsReason() {
+    public void aRuleOnAStepsLastTickEndsTheStepAndIsItsReason() {
         Fixture f=new Fixture();settlePause(f);
-        f.clock.configure(Json.object("airBelow",100));
+        f.coordinator.command("time.rules",Json.object("set",Json.array(Json.object("name","air_below","kind","air_below","level",100))),f.replies::add);
+        assertEquals(100,f.replies.remove(f.replies.size()-1).getAsJsonArray("rules").get(2).getAsJsonObject().get("level").getAsInt()); // replaced in its place
         f.coordinator.command("time.resume",Json.object("ticks",3),f.replies::add);
         int[] air={300,300,90};
         for(int tick=0;tick<3;tick++) { int now=air[tick];assertTrue(f.coordinator.before());f.coordinator.after(()->f.clock.observe(20.0F,now)); }
-        assertEquals("air_threshold",f.clock.reason());
+        assertEquals("air_below",f.clock.reason());
         assertFalse(f.coordinator.before());
         JsonObject last=f.coordinator.status().getAsJsonObject("lastStep");
-        assertEquals(3,last.get("ran").getAsInt());assertEquals("air_threshold",last.get("endedBy").getAsString());
+        assertEquals(3,last.get("ran").getAsInt());assertEquals("air_below",last.get("endedBy").getAsString());
     }
 
     @Test

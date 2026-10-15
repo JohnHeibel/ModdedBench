@@ -74,18 +74,19 @@ public final class ClientClock implements ClockHooks.Driver {
     /** A fight job started (ticks>0, its mobs within radius) or ended (0): see SimulationClock.fight. */
     public void fight(int ticks, double radius) { if(supported) send(Json.object("type","fight","ticks",ticks,"radius",radius)); }
     /**
-     * Paused by anything that wants the model's attention: a guard, a failed action, or one of its own interrupt watches
-     * (interrupt:NAME). Any reason not listed as waited out counts, so a new guard ends work without being added here.
+     * Paused by anything that wants the model's attention: a rule (kind or kind:name), a check of the model's own
+     * (interrupt:reason), a rule's script that handed back (reflex:name). Any reason not listed as waited out counts, so a
+     * new one ends work without being added here.
      */
     boolean guardPause() { return paused && !SimulationClock.waitedOut(pauseReason()); }
-    /** Paused where no tick will finish running work: by a guard, or at the end of a step. */
+    /** Paused where no tick will finish running work: by a rule, or at the end of a step. */
     boolean endsWork() { return !resuming && (guardPause() || paused && "step".equals(pauseReason())); }
     /** Paused for the purpose of refusing actions: false once an action has asked to resume. */
     boolean refusesActions() { return paused && !resuming; }
     /** Why a paused world refuses an action, with the pause's reason: a guard's pause is one to look at, not to resume through. */
     Refusal refusal(String what) { return refusal(pauseReason(),what); }
     static Refusal refusal(String reason,String what) { return new Refusal("time_paused",SimulationClock.waitedOut(reason)?"paused by "+reason+"; resume before "+what
-        :"world paused by a guard ("+reason+"): read mb_time status, decide, resume"); }
+        :"world paused by a rule ("+reason+"): read mb_time status, decide, resume"); }
     /**
      * Admits an action that carries _resume while the world is paused: true (resume) or N (step N ticks). The same
      * checks the server makes are made here first, so a refusal fails the call before anything runs.
@@ -151,7 +152,7 @@ public final class ClientClock implements ClockHooks.Driver {
     }
     /** What a busy single action does at a pause: cancel (not a step's pause, or nobody to step for), wait (the pause has not settled), extend. */
     static String stepEnd(boolean stepPause,boolean settled,boolean canStep) { return !stepPause || !canStep?"cancel":settled?"extend":"wait"; }
-    String endedWhy() { return guardPause()?"world paused by a guard ("+pauseReason()+"): read mb_time status, decide, resume"
+    String endedWhy() { return guardPause()?"world paused by a rule ("+pauseReason()+"): read mb_time status, decide, resume"
         :"the step ended and the world paused: step or resume to continue"; }
     void interruptPause(Request original,JsonObject receipt,String reason) {
         Request pause=new Request(new com.google.gson.JsonPrimitive("interrupt-pause-"+java.util.UUID.randomUUID()),"time.pause",

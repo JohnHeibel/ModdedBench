@@ -382,6 +382,7 @@ def main() -> int:
             print(f"ERROR\n{srv.error}")
         return 1 if srv.error else 0
     mbtool.CALL_LOG = os.environ.setdefault("MB_CALL_LOG", mbtool.RUN_CALL_LOG)  # this is the run: its calls are logged
+    os.environ.setdefault("MODBENCH_REFLEX_WATCH", "1")  # the model's own server answers its rules while it thinks (reflexes.py)
     tasks = sys.modules.get(mbtool.PACKAGE + ".tasks")
     if tasks:  # a background task's time commands go out on this server's session, the one that owns time
         threading.Thread(target=tasks.relay, name="mb-task-clock", daemon=True).start()

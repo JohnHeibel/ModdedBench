@@ -30,7 +30,7 @@ IDS = {"gt.blockores": "GregTech ore", "gt.blockmachines": "GregTech machine", "
 SAID = {  # bridge method -> what a viewer reads; a method that is absent is shown with its underscores as spaces
     "eat": "eating", "use_block": "using a block", "use_item": "using the held item", "select_hotbar": "changing the held item", "attack": "attacking", "drop": "dropping items",
     "close": "closing the menu", "open_inventory": "opening the inventory", "click_slot": "in a menu: moving items",
-    "pause": "paused the world to think", "resume": "let the world run again", "configure": "setting its survival guards", "status": "",
+    "pause": "paused the world to think", "resume": "let the world run again", "configure": "setting its rules", "status": "",
     "protect": "marking an area as its own", "waypoint": "saving a waypoint"}
 def _said(method, prefix=""):
     method = str(method or ""); return SAID[method] if method in SAID else prefix + method.replace("_", " ")
@@ -59,7 +59,8 @@ LINES = {  # tool -> line from (arguments, result); anything absent gets the gen
     "mb_quest_claim": lambda a, r: "claimed a quest", "mb_quest_detect": lambda a, r: "handing in a quest",
     "mb_quest_observe": lambda a, r: "reading a quest: " + str(r.get("title") or r.get("name") or ""), "mb_quest_lines": lambda a, r: "reading the quest book",
     "mb_quest_search": lambda a, r: "quest search: " + str(a.get("query")),
-    "mb_wait": lambda a, r: "waiting on the base" + (": woke" if r.get("woke") else ""), "mb_interrupt": lambda a, r: ("set a watch: " if a.get("operation") == "add" else f"watch {a.get('operation')}: ") + str(a.get("name", "")),
+    "mb_wait": lambda a, r: "waiting on the base" + (": woke" if r.get("woke") else ""), "mb_interrupt": lambda a, r: ("set a check: " if a.get("operation") == "add" else f"check {a.get('operation')}: ") + str(a.get("name", "")),
+    "mb_reflex": lambda a, r: ("dropped rule " if a.get("remove") else "rule: " if a.get("when") or a.get("do") else "reading its rules ") + str(a.get("name") or ""),
     "mb_run": lambda a, r: "script" + (f" {a['name']}" if a.get("name") else "") + (": stopped, " + str(r["stopped"])[:80] if r.get("stopped") else ""),
     "mb_wiki_search": lambda a, r: "wiki search: " + str(a.get("query")), "mb_wiki_read": lambda a, r: "wiki: " + str(a.get("title")),
     "mb_obs": lambda a, r: "looking around", "mb_gui": lambda a, r: _said(a.get("method"), "in a menu: "), "mb_click_slot": lambda a, r: "in a menu: moving " + _name(a.get("expected") or {"id": "items"}),

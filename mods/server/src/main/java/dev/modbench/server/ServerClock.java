@@ -45,8 +45,8 @@ public final class ServerClock implements ClockHooks.Driver, PauseCoordinator.Ho
     }
     private NetHandlerPlayServer client;
     private long lastHeartbeat;
-    private boolean news; // who is after the player changed this tick: the client hears at once, not within the second
-    /** The pause and the guards, kept in the world's folder so that a restarted server comes back as it stopped (SimulationClock.saved). */
+    private boolean news; // who is after the player changed this tick, or a rule told: the client hears at once, not within the second
+    /** The pause and the rules, kept in the world's folder so that a restarted server comes back as it stopped (SimulationClock.saved). */
     private final java.nio.file.Path stateFile;
     private JsonObject restored;
     private String savedState;
@@ -55,7 +55,7 @@ public final class ServerClock implements ClockHooks.Driver, PauseCoordinator.Ho
         this.server=server;this.runtime=runtime;net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(this);
         stateFile=new java.io.File(server.worldServers[0].getSaveHandler().getWorldDirectory(),"modbench-clock.json").toPath();
         try { if(java.nio.file.Files.exists(stateFile)) { restored=Json.GSON.fromJson(new String(java.nio.file.Files.readAllBytes(stateFile),StandardCharsets.UTF_8),JsonObject.class);clock.restore(restored); } }
-        catch(java.io.IOException|RuntimeException unreadable) { restored=null;warn("saved clock state could not be read; starting unpaused with no guards: "+unreadable); }
+        catch(java.io.IOException|RuntimeException unreadable) { restored=null;warn("saved clock state could not be read; starting unpaused with the default rules: "+unreadable); }
     }
     /** Writes the clock's state when it changed, whole or not at all. Not before a restored pause is applied: the file still holds it. */
     private void save() {
@@ -124,7 +124,7 @@ public final class ServerClock implements ClockHooks.Driver, PauseCoordinator.Ho
                             case "paused" -> coordinator.clientPaused(data.get("generation").getAsLong(),
                                 data.has("step")?data.get("step").getAsLong():-1,data.has("stepTicks")?data.get("stepTicks").getAsInt():-1);
                             case "agent_lost" -> { if(clock.pauseOnDisconnect()) clock.pause("agent_disconnected"); }
-                            case "action_failed" -> { if(clock.actionFailed()) clock.pause("action_failed"); }
+                            case "action_failed" -> clock.failed();
                             case "expect_threat" -> clock.expectThreat(data.get("entityId").getAsInt());
                             case "fight" -> clock.fight(data.get("ticks").getAsInt(),Math.max(0,Math.min(16,data.get("radius").getAsDouble())));
                             case "entity_observation" -> {
@@ -156,8 +156,9 @@ public final class ServerClock implements ClockHooks.Driver, PauseCoordinator.Ho
     private void observe() {
         if(!connected()) return;
         clock.observe(client.playerEntity.getHealth(),client.playerEntity.getAir(),client.playerEntity.getFoodStats().getFoodLevel(),client.playerEntity.isBurning());
-        if(clock.threatWithin()>=0) clock.threats(threats(client.playerEntity,clock.threatWithin()));
+        if(clock.reach()>=0) clock.threats(threats(client.playerEntity,clock.reach()));
         if(clock.fighting()&&clock.engaged(engaged(client.playerEntity))) news=true;
+        if(clock.news()) news=true; // a rule told something: the client hears at once
     }
     /**
      * The mobs within 32 blocks after the player, while a fight runs: those whose target it is, and the last to hurt it (a

@@ -319,7 +319,7 @@ class Console:
             near = min(clock.get("threats") or [], key=lambda t: t.get("distance") or 99, default=None)
             why = {k: clock.get(k) for k in ("paused", "reason", "held", "stepping")}; why["backup"] = backup; why["compacting"] = compacting
             if near: why["threat"] = {"type": near.get("type"), "distance": near.get("distance"), "ranged": near.get("ranged"), "swelling": near.get("swelling")}
-            if clock.get("paused") and str(clock.get("reason")) in ("health_dropped", "health_threshold", "air_threshold", "food_threshold", "burning"):
+            if clock.get("paused") and str(clock.get("reason")).split(":")[0] in ("health_drop", "health_below", "air_below", "food_below", "burning"):  # a rule's kind, or kind:name
                 try: why["player"] = {k: v for k, v in self.call("obs.player").items() if k in ("health", "food", "air", "burning")}
                 except Exception: pass
         try: pops = json.loads((OVERLAY / "pops.json").read_text(encoding="utf-8"))

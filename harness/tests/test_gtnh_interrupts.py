@@ -1,13 +1,14 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
-"""Offline interrupt supervisor regressions; no bridge or game is required."""
+"""Offline regressions of the checks' supervisor (mb_reflex checks, mb_interrupt); no bridge or game is required."""
 from __future__ import annotations
-import asyncio, sys, tempfile, threading, time, unittest, unittest.mock
+import asyncio, os, sys, tempfile, threading, time, unittest, unittest.mock
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "mcp"))
 import importlib
 import mbtool
-from mbtools_gtnh.interrupts import InterruptSupervisor, get_supervisor, close_supervisor, mb_wait
+from mbtools_gtnh.interrupts import InterruptSupervisor, get_supervisor, close_supervisor
+from mbtools_gtnh.reflexes import mb_wait
 
 class FakeKernel:
     def __init__(self): self.value=0; self.context={"worldId":"w","dimension":0,"bridgeId":"b","worldEpoch":1}; self.fires=[]; self.errors={}; self.methods={"obs.x":{"effect":"read","watchable":True}}; self.clock={"paused":False}
@@ -65,6 +66,12 @@ class InterruptTests(unittest.TestCase):
         end=time.monotonic()+5  # an upper bound for a loaded machine; a fire that comes is seen within milliseconds
         while len(self.k.fires)<n and time.monotonic()<end: time.sleep(.005)
         self.assertEqual(n,len(self.k.fires))
+    def waiting(self):
+        """mb_wait with this test's kernel, and the reports it also wakes on kept in this test's folder."""
+        self.s.close(); self.k.close=lambda: None; self.k.connected=True
+        mbtool.drop_kernel(); mbtool.state["kernel"]=self.k; mbtool.state.pop("reflexes",None)
+        env=unittest.mock.patch.dict(os.environ,{"MODBENCH_REFLEXES_FILE":str(Path(self.tmp.name)/"reflexes.json"),"MODBENCH_REFLEX_WATCH":"0"}); env.start()
+        self.addCleanup(env.stop); self.addCleanup(mbtool.state.pop,"reflexes",None)
     def wait_kind(self,sup,kind):
         end=time.monotonic()+2
         while time.monotonic()<end and kind not in [e["kind"] for e in sup.events(0)["events"]]: time.sleep(.005)
@@ -269,8 +276,7 @@ class InterruptTests(unittest.TestCase):
         self.assertEqual({"kept"},set(self.s.specs()))  # a delivered one-shot stays disarmed
 
     def test_mb_wait_wakes_skips_noise_times_out_and_validates(self):
-        self.s.close(); self.k.close=lambda: None; self.k.connected=True
-        mbtool.drop_kernel(); mbtool.state["kernel"]=self.k
+        self.waiting()
         try:
             sup=get_supervisor(self.tmp.name)
             for bad in ({"after":-1},{"timeout_s":.5},{"timeout_s":901}):
@@ -290,8 +296,7 @@ class InterruptTests(unittest.TestCase):
         self.s=InterruptSupervisor(self.k,self.tmp.name,retained=3,poll_s=10)
 
     def test_mb_wait_does_not_sleep_through_a_paused_world(self):
-        self.s.close(); self.k.close=lambda: None; self.k.connected=True
-        mbtool.drop_kernel(); mbtool.state["kernel"]=self.k
+        self.waiting()
         try:
             sup=get_supervisor(self.tmp.name); short=unittest.mock.patch.dict(mb_wait.__globals__,WAIT_SLICE=.05)
             self.k.clock={"paused":True,"reason":"requested_pause"}
@@ -309,5 +314,19 @@ class InterruptTests(unittest.TestCase):
         finally:
             close_supervisor(); mbtool.state.pop("kernel",None)
         self.s=InterruptSupervisor(self.k,self.tmp.name,retained=3,poll_s=10)
+
+    def test_each_event_is_heard_outside_the_lock_and_a_fault_stays_on_the_watch(self):
+        heard=[]; self.s.on_event=lambda kind,name,data: heard.append((kind,name,self.s.lock._is_owned()))
+        self.s.add("bad",{"queries":{"x":{"method":"obs.x"}},"condition":{"changed":"x.absent"}}); self.s.poll()
+        self.assertEqual([("armed","bad",False),("fault","bad",False),("disarmed","bad",False)],heard)
+        self.assertIn("x.absent",self.s.status("bad")["fault"])
+        self.s.add("bad",{"queries":{"x":{"method":"obs.x"}},"condition":{"exists":"x.n"}},replace=True)  # set again: armed, and the fault is gone
+        self.assertNotIn("fault",self.s.status("bad"))
+        self.s.on_event=lambda *a: 1/0; self.s.remove("bad")  # a listener that fails stops nothing
+        self.assertEqual("disarmed",self.s.events(0)["events"][-1]["kind"])
+
+    def test_a_background_task_has_no_checks(self):
+        mbtool.state["task"]="t1"; self.addCleanup(mbtool.state.pop,"task",None)
+        with self.assertRaisesRegex(ValueError,"background task"): get_supervisor(self.tmp.name)
 
 if __name__ == "__main__": unittest.main()

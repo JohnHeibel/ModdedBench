@@ -259,6 +259,25 @@ def baseline(client):
     client.call("nav.settings", operation="reset", values={name: None for name in BASELINE}, save=False)
 
 
+def rule(kind: str, level: float | None = None) -> dict:
+    """A rule named for its kind, as a new world has them (time.rules)."""
+    return {"name": kind, "kind": kind, **({"level": level} if level is not None else {})}
+
+
+def quiet(client, *table) -> list:
+    """Only these rules (none: nothing pauses a course but its cases) and no pause on disconnect; returns the rules
+    there were, whole, for put_back."""
+    before = client.call("time.rules")["rules"]
+    client.call("time.rules", replace=list(table)); client.call("time.configure", pauseOnDisconnect=False)
+    return before
+
+
+def put_back(client, before) -> None:
+    """The rules quiet() found, back in place; pauseOnDisconnect stays off, as a course leaves it."""
+    if before is not None: client.call("time.rules", replace=before)
+    client.call("time.configure", pauseOnDisconnect=False)
+
+
 class Course:
     COST = "walk"   # which of tick_cost.LIMITS judges this suite's cases
 
@@ -299,9 +318,7 @@ class Course:
     def setup(self):
         self.ensure_world()
         state = self.c.call("time.status")["state"]
-        self.evidence["previousClock"] = state.get("conditions")
-        self.c.call("time.configure", healthDrop=False, healthBelow=-1, airBelow=-1, foodBelow=-1, burning=False,
-                    threatWithin=-1, actionFailed=False, pauseOnDisconnect=False)
+        self.evidence["previousRules"] = quiet(self.c)
         if state.get("paused"): self.c.call("time.resume")
         try: self.c.call("act.stop")
         except BridgeError: pass
@@ -324,7 +341,7 @@ class Course:
     def teardown(self):
         for step in (lambda: self.c.call("act.stop"),
                      lambda: self.s.call(FIX + ".restore") if not self.args.keep else None,
-                     lambda: self.c.call("time.configure", **{**(self.evidence.get("previousClock") or {}), "pauseOnDisconnect": False})):
+                     lambda: put_back(self.c, self.evidence.get("previousRules"))):
             try: step()
             except Exception as e: self.evidence.setdefault("teardownErrors", []).append(str(e))
 

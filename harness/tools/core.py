@@ -79,8 +79,8 @@ def mb_status() -> Any:
     Call it at the start of every session and after every compaction: it is the heartbeat.
     Also, when there are any: body (your running background task), finished (tasks whose result
     you have not been handed yet), pausedMining (mining jobs paused with targets still known:
-    job, vein or at, left, gained, minutesAgo; mb_work_resume continues one) and armedReflexes
-    (the reflexes you have armed, and the pauses they answer: mb_reflex).
+    job, vein or at, left, gained, minutesAgo; mb_work_resume continues one). rules is your
+    rules (mb_reflex) in a few words each: what each watches and what it does.
     """
     k, brief = kernel(), os.environ.get("MB_BRIEF", "")
     out = k.call("sys.capabilities")
@@ -106,7 +106,9 @@ def mb_status() -> Any:
     except Exception as e:
         out["cost"] = {"unavailable": str(e)}
     from mbtools_gtnh import reflexes, tasks, work
-    extra = {"body": tasks.body(tasks.live()), "finished": tasks.deliver(), "pausedMining": work.paused_mining(), "armedReflexes": reflexes.armed()}
+    try: ruled = reflexes.lines(k.call("time.status", timeout=5).get("state", {}))
+    except Exception as e: ruled = [f"unavailable: {e}"]
+    extra = {"body": tasks.body(tasks.live()), "finished": tasks.deliver(), "pausedMining": work.paused_mining(), "rules": ruled}
     out.update({key: value for key, value in extra.items() if value})
     return notes.attach(out, notes.surface(k, reason="session", radius=32))
 
@@ -268,7 +270,7 @@ class Refused(ValueError):
 
 
 def no_threat(what: str, k=None, despite: bool = False) -> None:
-    """Refuse something that ties the player's hands while the threat guard lists a mob that is after them; despite skips it."""
+    """Refuse something that ties the player's hands while status.threats lists a mob that is after them; despite skips it."""
     if despite: return
     try: threats = (k or kernel()).call("time.status", timeout=5).get("state", {}).get("threats") or []
     except Exception: return  # no clock, no opinion
@@ -328,6 +330,30 @@ def mb_stop() -> Any:
     return kernel().call("act.stop")
 
 
+GUARDS = {"healthDrop": "health_drop", "healthBelow": "health_below", "airBelow": "air_below", "foodBelow": "food_below",
+          "burning": "burning", "threatWithin": "hostile_within", "actionFailed": "action_failed"}  # configure's old guard keys, and the rule each names
+LEVELLED = ("healthBelow", "airBelow", "foodBelow", "threatWithin")
+
+
+def _guards(k, params: dict) -> dict:
+    """configure's old guard keys as a rule change: on, or a level, sets the rule named for the kind (its do kept); off or -1 removes it."""
+    table, change = {r["name"]: r for r in k.call("time.rules", timeout=10)["rules"]}, {"set": [], "remove": []}
+    for key, kind in GUARDS.items():
+        if key not in params: continue
+        v = params.pop(key)
+        if isinstance(v, bool) == (key in LEVELLED) or not isinstance(v, (int, float)):
+            raise ValueError(f"{key} is " + ("a number, -1 for off" if key in LEVELLED else "true or false"))
+        if v is False or v is not True and v < 0: change["remove"].append(kind)
+        else: change["set"].append({**table.get(kind, {}), "name": kind, "kind": kind, **({"level": v} if key in LEVELLED else {})})
+    return change
+
+
+def _conditions(state: dict) -> dict:
+    """The old guard settings, read off the rules named for their kinds."""
+    by = {r["name"]: r for r in state.get("rules") or []}
+    return {**{key: by.get(kind, {}).get("level", -1) if key in LEVELLED else kind in by for key, kind in GUARDS.items()}, "pauseOnDisconnect": state.get("pauseOnDisconnect")}
+
+
 @tool(lane=lambda kw: "read" if (kw.get("method") or "status").removeprefix("time.") == "status" else "control", coverage=["time"])
 def mb_time(method: str = "status", params: dict | None = None, timeout_s: float = 60.0) -> Any:
     """Control GTNH world time: status, pause, resume, step, configure, report_failure.
@@ -337,11 +363,12 @@ def mb_time(method: str = "status", params: dict | None = None, timeout_s: float
     Pause waits for coordinated client/server quiescence. Inspect status for pausing
     or pause_error; a timed-out pause leaves simulation gated. Resume explicitly
     before executing game actions. Screenshots, observations and cancellation remain
-    available during pause.
+    available during pause. Your rules (mb_reflex) pause it for danger; status.reason
+    names the rule that did, and status.rules lists them.
     step {ticks:N} (1..72000) runs exactly N server ticks and pauses again with reason
     step; the reply comes once that pause has settled and its lastStep says how many ticks
-    ran and what ended the step (a guard can end it early). A job still running at the step's
-    end is suspended and reports it; step or resume to go on. A guard's pause holds the job or
+    ran and what ended the step (a rule can end it early). A job still running at the step's
+    end is suspended and reports it; step or resume to go on. A rule's pause holds the job or
     the use in flight the same way (state suspended, pausedBy): mb_work_resume carries on with
     it, any new action ends it. A single action (a click, a
     selection, a held input) is never cut short by a step: the world steps on until it answers,
@@ -349,23 +376,14 @@ def mb_time(method: str = "status", params: dict | None = None, timeout_s: float
     Any acting tool takes resume=N to step N ticks with its action starting on the first,
     and resume=True to resume with it: one call, no tick lost between resume and action.
     The resume belongs to the call's first action only: a pause later in the same call (a
-    guard) stands, and a call whose resume lifted no pause says so (resumeUnused).
-    configure params: healthDrop, burning, actionFailed, pauseOnDisconnect are booleans;
-    healthBelow (health points), airBelow (air ticks, 300 is full) and foodBelow (food
-    points) are numeric thresholds, and -1 disables one. threatWithin N (blocks, at most 32)
-    pauses with reason threat the moment a mob takes you as its target within N blocks, or
-    2N with a clear line of sight, or a creeper starts to swell: once per mob, before it has
-    hurt you. status.threats lists every mob after you now: entityId, type, distance, pos,
-    lineOfSight, ranged, swelling, health. A usual set: {healthDrop:true,healthBelow:8,
-    foodBelow:6,burning:true,threatWithin:12,pauseOnDisconnect:true}; air falls 1 a tick under water
-    from 300; walks and mine jobs plan their own breath and surface by themselves, so an air threshold
-    is for work you do by hand under water. Conditions pause globally and report a reason. A threshold
-    pauses once as the value crosses it, and again only after it has recovered above it, so you can
-    act out of the danger without disabling the guard: for air, mb_process goal {type:"breathable"}.
-    Harm that lasts is one event as well: once a kind of hurt that nothing dealt (a burn, a
-    poison, a hot item, whatever the pack has) has paused healthDrop (a burn: or burning), its
-    later ticks do not pause it again until that kind has stopped for 5 seconds; a new kind of
-    hurt, or a hit by anything, does (lava while you are alight, a mob). status.edges lists the drops beside you
+    rule's) stands, and a call whose resume lifted no pause says so (resumeUnused).
+    status.threats lists every mob after you now: entityId, type, distance, pos, lineOfSight,
+    ranged, swelling, health. Air falls 1 a tick under water from 300; walks and mine jobs plan
+    their own breath and surface by themselves. Harm that lasts is one crossing: once a kind of
+    hurt that nothing dealt (a burn, a poison, a hot item, whatever the pack has) has crossed a
+    health_drop rule (a burn: or burning), its later ticks do not cross it again until that kind
+    has stopped for 5 seconds; a new kind of hurt, or a hit by anything, does (lava while you are
+    alight, a mob). status.edges lists the drops beside you
     that would hurt, as you would see them: toward (a compass heading), blocks (how far the floor you
     stand on reaches that way, up to 3; a plain hit throws you about 2), drop, onto (what you would land
     on or in), burns, overLowWall. Two things happen by themselves, as for a player at the keyboard:
@@ -373,22 +391,30 @@ def mb_time(method: str = "status", params: dict | None = None, timeout_s: float
     throws you toward a drop of 4 or more is held against: you turn from it and run against the throw,
     crouch while sliding on as you land, then walk on until that drop is over 2 blocks off. Either takes the controls: a job or held input it takes them from ends with reason
     stepped_out_of_fire or held_against_a_hit. A fight does both itself and goes on.
-    Baritone terminal failures signal actionFailed automatically;
+    Baritone terminal failures cross action_failed rules automatically;
     agent-written tools can call report_failure to signal their own failures.
-    pauseOnDisconnect defaults true; set false for a planned
+    configure {pauseOnDisconnect} defaults true; set false for a planned
     client restart with continued server production, then restore it after reconnect.
+    configure still takes the old guard keys (healthDrop, burning, actionFailed: booleans;
+    healthBelow, airBelow, foodBelow, threatWithin: levels, -1 for off): each sets or removes
+    the rule named for its kind, and status.conditions reads them back.
     A controlling session must stay connected; observation-only sessions do not own time.
     The reply keeps the three latest pause events; params {events:true} on status returns all 32.
     """
     name = method.removeprefix("time.")
     if name not in {"status", "pause", "resume", "step", "configure", "report_failure"}:
         raise ValueError("unknown time method")
-    params = dict(params or {}); every = params.pop("events", False)
+    params = dict(params or {}); every = params.pop("events", False); k = kernel()
+    if name == "configure":
+        change = _guards(k, params)
+        ruled = k.call("time.rules", timeout=10, **change) if change["set"] or change["remove"] else {}
+        return {**(k.call("time.configure", timeout=timeout_s, **params) if params or not ruled else {}), **ruled}
     if name == "step":  # 20 ticks a second when the server keeps up; the reply waits for the pause at the end
         timeout_s = max(timeout_s, int(params.get("ticks") or 0) / 10 + 30)
-    out = kernel().call(f"time.{name}", timeout=timeout_s, **params)
+    out = k.call(f"time.{name}", timeout=timeout_s, **params)
     state = out.get("state") if isinstance(out, dict) else None
     if not every and isinstance(state, dict) and len(state.get("events") or []) > 3: state["events"] = state["events"][-3:]
+    if name == "status" and isinstance(state, dict) and "rules" in state: state["conditions"] = _conditions(state)
     return out
 
 

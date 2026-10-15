@@ -25,7 +25,7 @@ before and do not remember it. Do this, in order, before anything else:
 Your memory is the notes, the goal stack, the quest book and this repository's git history, not
 your context. Anything you learn that you will need in ten hours goes into a note now.
 
-Never end a turn to wait for a machine, a job or a watch: call `mb_wait` and keep its cursor.
+Never end a turn to wait for a machine, a job or a rule: call `mb_wait` and keep its cursor.
 
 If what you were given is explicitly a check or an experiment rather than the mission, do what
 it says; the brief is then background, not your task.

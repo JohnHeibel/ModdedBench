@@ -37,7 +37,7 @@ TASKS = Path(os.environ.get("MB_TASKS_DIR") or Path(__file__).resolve().parents[
 RUNNER = Path(mbtool.__file__).resolve().parent / "task.py"
 ENDED = ("done", "failed", "cancelled", "crashed", "interrupted", "paused_by_script")
 FAILED = ("failed", "crashed", "interrupted")
-# Pauses a running job waits out (SimulationClock.waitedOut): a task waits them out too instead of ending. Any other reason is a guard's.
+# Pauses a running job waits out (SimulationClock.waitedOut): a task waits them out too instead of ending. Any other reason is a rule's.
 WAITED_OUT = {"requested_pause", "client_disconnected", "client_unresponsive", "agent_disconnected",
               "paused_packet_overflow", "clock_protocol_error", "step"}
 def waited_out(reason) -> bool: return reason in WAITED_OUT or str(reason).endswith("_hold")  # a hold's pause is named for its holder: operator_hold, backup_hold
@@ -144,7 +144,7 @@ def entry(st: dict) -> dict:
     """A finished task as the model is handed it: compact; mb_task(task=id) has everything."""
     out = {"task": st["task"], "name": st.get("name"), "state": st["state"], "ended": st.get("ended"),
            "ago": int(time.time() - st.get("endedAt", time.time()))}
-    for key in ("result", "error", "line", "source", "interrupted", "guardsChanged", "guardsRestored", "paused", "relayPending"):
+    for key in ("result", "error", "line", "source", "interrupted", "rulesChanged", "rulesRestored", "paused", "relayPending"):
         if st.get(key) is not None: out[key] = _brief(st[key]) if key == "result" else st[key]
     return out
 
@@ -183,10 +183,10 @@ def start(code: str, args: dict | None, name: str | None, on_fail: str | None, m
     out, k = {}, kernel()
     clock = k.call("time.status", timeout=5).get("state") or {}
     if clock.get("paused"):
-        if not clock.get("held") and not waited_out(clock.get("reason")):  # a guard's stop the model may not have seen yet
-            raise BridgeError("time_paused", f"a guard stopped the world ({clock.get('reason')}; threats: {json.dumps(clock.get('threats') or [])}"
+        if not clock.get("held") and not waited_out(clock.get("reason")):  # a rule's freeze the model may not have seen yet
+            raise BridgeError("time_paused", f"a rule froze the world ({clock.get('reason')}; threats: {json.dumps(clock.get('threats') or [])}"
                               + (f"; edges: {json.dumps(clock['edges'])}" if clock.get("edges") else "") + "). "
-                              "A background task does not lift a guard's stop: look, make safe, then start it", "mb_run")
+                              "A background task does not lift a rule's freeze: look, make safe, then start it", "mb_run")
         record = {}; k._resume_for(record); out["resumedWorld"] = record  # as resume=True does; an operator hold refuses it
     task_id = uuid.uuid4().hex[:8]
     TASKS.mkdir(parents=True, exist_ok=True); (TASKS / f"{task_id}.py").write_text(code, encoding="utf-8")
@@ -209,8 +209,8 @@ def refusal(st: dict | None) -> str:
 
 _releasing = threading.local()  # release() hands the body back, so its calls pass the gate
 # Game calls that change state but never the body: stopping, the transport's own, world-memory bookkeeping (a
-# region's protection is not here: changing it cancels the running job), and the model's own watches firing and
-# being acknowledged, which are what it armed them for while the task works. Route rules re-plan the task's walk
+# region's protection is not here: changing it cancels the running job), and the model's own checks firing and
+# being acknowledged, which are what it set them for while the task works. Route rules re-plan the task's walk
 # without stopping it.
 UNGATED = ("act.stop", "requests.cancel", "sys.methods", "memory.waypoint", "memory.route", "memory.record", "interrupt.fire", "interrupt.ack",
            "nav.route_rules")
@@ -237,11 +237,12 @@ Kernel.body_gate = gate
 
 
 def settle(st: dict, folder: Path | None = None) -> dict:
-    """What a task that ended without its own process doing it still owes: guards put back, on_fail's pause."""
+    """What a task that ended without its own process doing it still owes: rules put back, on_fail's pause."""
     k = kernel()
-    if st.get("guards") and st.get("guardsRestored") is None:
-        try: st["guardsRestored"] = "pending" if (k.call("time.configure", **st["guards"]) or {}).get("pending") else True
-        except Exception as e: st["guardsRestored"] = f"failed: {e}"[:200]
+    if st.get("rules") and st.get("rulesRestored") is None:
+        back = {"set": [r for r in st["rules"].values() if r], "remove": [n for n, r in st["rules"].items() if not r]}
+        try: st["rulesRestored"] = "pending" if (k.call("time.rules", **back) or {}).get("pending") else True
+        except Exception as e: st["rulesRestored"] = f"failed: {e}"[:200]
     if st.get("on_fail") == "pause" and st["state"] in FAILED and not st.get("paused"):
         st["paused"] = _pause(k, st["state"])
     save(st, folder); return st
@@ -288,7 +289,7 @@ def fields(read: bool = False, folder: Path | None = None) -> dict:
     done = deliver(folder)
     if done: out["finished"] = done
     from mbtools_gtnh import reflexes  # here: reflexes imports this module
-    fired = reflexes.deliver()  # what the model's reflexes did since its last result
+    fired = reflexes.deliver()  # what the model's rules told and did since its last result
     if fired: out["reflexes"] = fired
     return out
 
@@ -310,7 +311,7 @@ def release(k) -> None:
 
 
 def cancel_task(task_id: str, why: str = "cancelled", grace: float = 20.0, folder: Path | None = None) -> dict | None:
-    """Ends a task and gives the body back. Never pauses: the task stops its job, puts guards back and exits; if it does
+    """Ends a task and gives the body back. Never pauses: the task stops its job, puts its rules back and exits; if it does
     not within grace seconds it is killed and the same is done from here."""
     folder = folder or TASKS
     st = load(task_id, folder)
@@ -368,12 +369,18 @@ def relay(folder: Path | None = None, get_kernel=None, stop: threading.Event | N
 # ---- the task process ----
 
 TASK: dict = {}  # this process's task, once run() has it
-_halt: list = []  # why the script must not make another call: a guard stop, its pause, a cancel
+_halt: list = []  # why the script must not make another call: a rule's freeze, its pause, a cancel
+
+
+def _relayed() -> bool:
+    """Whether the model's MCP server is up to relay a task's time requests."""
+    try: return _alive(json.loads((TASKS / "relay.json").read_text(encoding="utf-8"))["pid"])
+    except (OSError, ValueError, KeyError): return False
 
 
 class TaskKernel(Kernel):
     """The task's own session. Time commands go through the model's server; resume and step are refused (a task never
-    lifts a guard pause); a pause the task did not cause and no guard made is waited out, then the refused call is sent again."""
+    lifts a rule's pause); a pause the task did not cause and no rule made is waited out, then the refused call is sent again."""
     body_gate = None  # the task is the body's owner
 
     def call(self, method, /, timeout=None, **params):
@@ -383,10 +390,13 @@ class TaskKernel(Kernel):
             raise ValueError("a background task never resumes or steps the world: lifting a pause is your decision, outside the task")
         if method.startswith("time.") and method != "time.status":
             running = TASK.get("state") == "running"  # the script's own call, not the task's last word
-            if method == "time.configure" and running:
-                before = (Kernel.call(self, "time.status", timeout=5).get("state") or {}).get("conditions") or {}
-                TASK["guards"] = {**{k: before[k] for k in params if k in before and not k.startswith("_")}, **TASK.get("guards", {})}
-                save(TASK)  # what to put back, even if this process dies
+            if method == "time.rules" and not params and not _relayed():  # a read waits for nobody: unknown
+                return {"pending": True, "note": "no MCP server is up to read the rules through"}
+            table = self.call("time.rules").get("rules") if method == "time.rules" and running and {"set", "remove", "replace"} & set(params) else None
+            if table is not None:  # a change: what to put back (None: a rule it added), saved even if this process dies
+                before = {r["name"]: r for r in table}
+                names = {r.get("name") for r in [*params.get("set", []), *params.get("replace", [])]} | set(params.get("remove", [])) | (set(before) if "replace" in params else set())
+                TASK["rules"] = {**{n: before.get(n) for n in names if isinstance(n, str)}, **TASK.get("rules", {})}; save(TASK)
             out = self._clock(method, timeout, params)
             if method == "time.pause" and running:
                 _halt.append("the script paused the world"); TASK["pausedByScript"] = True
@@ -405,9 +415,7 @@ class TaskKernel(Kernel):
             time.sleep(0.5)
 
     def _clock(self, method, timeout, params):
-        try: pid = json.loads((TASKS / "relay.json").read_text(encoding="utf-8"))["pid"]
-        except (OSError, ValueError, KeyError): pid = None
-        pending = not _alive(pid)  # never sent from this session: it would take the clock, and its exit would pause the world
+        pending = not _relayed()  # never sent from this session: it would take the clock, and its exit would pause the world
         name = TASKS / f"{time.time_ns()}-{TASK['task']}-{uuid.uuid4().hex[:4]}"
         name.with_suffix(".tmp").write_text(json.dumps({"method": method, "params": params, "timeout": timeout, "pending": pending}), encoding="utf-8")
         name.with_suffix(".tmp").replace(name.with_suffix(".req"))
@@ -482,7 +490,7 @@ def run(task_id: str) -> int:
 
 
 def finish(k, out: dict, why: str | None) -> dict:
-    """The task's last word: its state and result, guards put back, on_fail's pause, a line in the call log."""
+    """The task's last word: its state and result, rules put back, on_fail's pause, a line in the call log."""
     if why: state_ = "failed" if why == "time_limit" else "cancelled"
     elif TASK.get("pausedByScript"): state_ = "paused_by_script"
     elif out.get("interrupted"): state_ = "interrupted"
@@ -494,19 +502,21 @@ def finish(k, out: dict, why: str | None) -> dict:
     elif state_ in ("failed", "interrupted", "paused_by_script") and out.get("stopped"):
         TASK.update(error=out["stopped"], line=out.get("line"), source=out.get("source"))
     if state_ == "interrupted":
-        TASK["interrupted"] = dict(out["interrupted"])  # its error says what the tool met; a guard is named only when one paused the world
+        TASK["interrupted"] = dict(out["interrupted"])  # its error says what the tool met; a rule is named only when one paused the world
         try: clock = k.call("time.status", timeout=5).get("state") or {}
         except Exception: clock = {}
         if clock.get("paused"):
             TASK["interrupted"]["pausedBy"] = clock["reason"]
-            if not waited_out(clock["reason"]): TASK["ended"] = "guard"
-    if TASK.get("guards"):
+            if not waited_out(clock["reason"]): TASK["ended"] = "rule"
+    if TASK.get("rules"):
         try:
-            now = (k.call("time.status", timeout=5).get("state") or {}).get("conditions") or {}
-            TASK["guardsChanged"] = {g: [v, now.get(g)] for g, v in TASK["guards"].items() if now.get(g) != v} or None
-            if not TASK["guardsChanged"]: del TASK["guards"]  # the script put them back itself
+            table = k.call("time.rules", timeout=10)
+            if not table.get("pending"):  # unread with no MCP server up: all of them go back
+                now = {r["name"]: r for r in table.get("rules") or []}
+                TASK["rulesChanged"] = sorted(n for n, r in TASK["rules"].items() if now.get(n) != r) or None
+                if not TASK["rulesChanged"]: del TASK["rules"]  # the script put them back itself
         except Exception: pass
-    if TASK.get("guards") or state_ in FAILED:
+    if TASK.get("rules") or state_ in FAILED:
         try: settle(TASK)
         except Exception as e: TASK["paused"] = TASK.get("paused") or f"failed: {e}"[:200]
     save(TASK)
@@ -521,7 +531,7 @@ def mb_task(task: str | None = None, wait: float = 0, cancel: bool = False) -> A
 
     task defaults to the running one, else the newest. wait (seconds, at most 900) returns as soon as it ends.
     cancel=True ends it and gives the body back: its job stops, a stack held on the cursor goes back to your
-    inventory, an open screen closes, guard settings it changed are put back; the world is not paused. The
+    inventory, an open screen closes, rules it changed are put back; the world is not paused. The
     result is the whole status: state (running, done, failed, cancelled, crashed, interrupted, paused_by_script),
     ended (why), result or error with line, log, interrupted, paused (on_fail), and recent: your last few tasks.
     args are said back whole when small, else as {omitted, bytes, sha256, keys}: you wrote them.
@@ -536,7 +546,7 @@ def mb_task(task: str | None = None, wait: float = 0, cancel: bool = False) -> A
     if st["state"] in ENDED and not st.get("delivered") and not state.get("task"):
         if st["state"] == "crashed": st = settle(st)
         st["delivered"] = True; save(st)
-    out = {k: v for k, v in st.items() if k not in ("pid", "delivered", "guards", "pausedByScript")}
+    out = {k: v for k, v in st.items() if k not in ("pid", "delivered", "rules", "pausedByScript")}
     if "args" in out: out["args"] = _said(out["args"])
     if st["state"] == "running": out["for"] = _age(st)
     out["recent"] = [{"task": t["task"], "name": t.get("name"), "state": t["state"]} for t in every()[:5] if t["task"] != st["task"]]

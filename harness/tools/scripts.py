@@ -15,8 +15,8 @@ from kernel import call_resuming, resume_arg
 from mbtool import PACKAGE, kernel, resumable, tool
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
-# What an interrupt, a guard pause or a paused world says when it ends or refuses a tool's work.
-_INTERRUPTS = ("interrupt_latched", "time_paused", "world_paused", "world paused by a guard")
+# What an interrupt, a rule's pause or a paused world says when it ends or refuses a tool's work.
+_INTERRUPTS = ("interrupt_latched", "time_paused", "world_paused", "world paused by a rule")
 
 
 def _tools() -> dict:
@@ -44,7 +44,7 @@ class ScriptInterrupted(BaseException):
 
 
 def _interrupt(error):
-    """The interrupt, guard pause or cancellation behind error, through the errors it wraps, or None."""
+    """The interrupt, rule's pause or cancellation behind error, through the errors it wraps, or None."""
     for _ in range(8):
         if error is None:
             return None
@@ -55,7 +55,7 @@ def _interrupt(error):
 
 
 def _held(result, depth=3):
-    """The receipt of work a guard's pause left held (state suspended, pausedBy), at or near the top of a tool's result."""
+    """The receipt of work a rule's pause left held (state suspended, pausedBy), at or near the top of a tool's result."""
     if isinstance(result, dict):
         if result.get("state") == "suspended" and result.get("pausedBy"):
             return result
@@ -65,25 +65,30 @@ def _held(result, depth=3):
     return next((found for found in (_held(v, depth - 1) for v in result if depth and isinstance(v, (dict, list))) if found), None)
 
 
-def _configures(name, args, kwargs):
-    method = args[0] if args else kwargs.get("method")
-    return isinstance(method, str) and (name, method) in {("mb_time", "configure"), ("mb_time", "time.configure"), ("mb_call", "time.configure")}
+def _rule_call(name, args, kwargs):
+    """A call that may change the rules: mb_reflex or its old names (mb_interrupt, mb_time configure), or time.rules
+    through mb_call."""
+    first = args[0] if args else kwargs.get("method")
+    first = first.removeprefix("time.") if isinstance(first, str) else None
+    return name in ("mb_reflex", "mb_interrupt") or (name, first) in (("mb_call", "rules"), ("mb_time", "configure"))
 
 
-def _guards():
-    return (kernel().call("time.status", timeout=5).get("state") or {}).get("conditions") or {}
+def _rules():
+    """The rules, and the model's checks if any are set, by name."""
+    from mbtools_gtnh import reflexes  # here: reflexes imports this module
+    return {r["name"]: r for r in reflexes._standing({"rules": kernel().call("time.rules", timeout=10).get("rules")})}
 
 
 class _Watch:
-    """What the tools a script calls meet that the script must not hide: the first interrupt, and guard changes."""
+    """What the tools a script calls meet that the script must not hide: the first interrupt, and rule changes."""
     def __init__(self):
-        self.interrupted, self.guards = None, None
+        self.interrupted, self.rules = None, None
 
     def wrap(self, name, fn):
         @functools.wraps(fn)
         def call(*args, **kwargs):
-            if self.guards is None and _configures(name, args, kwargs):
-                self.guards = _guards()  # read once, before the script's first change
+            if self.rules is None and _rule_call(name, args, kwargs):
+                self.rules = _rules()  # read once, before the script's first change
             try:
                 result = fn(*args, **kwargs)
             except Exception as error:
@@ -94,8 +99,8 @@ class _Watch:
             if isinstance(result, dict) and result.get("interrupted"):  # a nested mb_run
                 self.interrupted = self.interrupted or {"tool": name, **result["interrupted"]}
             held = _held(result)
-            if held:  # a guard paused the world inside this tool: its work is held, and the script stops as at any guard pause
-                why = f"world paused by a guard ({held['pausedBy']}): {held.get('suspended') or 'the work in flight is held'}"
+            if held:  # a rule paused the world inside this tool: its work is held, and the script stops as at any rule's pause
+                why = f"world paused by a rule ({held['pausedBy']}): {held.get('suspended') or 'the work in flight is held'}"
                 self.interrupted = self.interrupted or {"tool": name, "error": why[:1500], "pausedBy": held["pausedBy"], "suspendedJobId": held.get("suspendedJobId")}
                 raise ScriptInterrupted(why)
             return result
@@ -104,15 +109,15 @@ class _Watch:
     def report(self, out):
         if self.interrupted:
             out["interrupted"] = self.interrupted
-        if self.guards is not None:
+        if self.rules is not None:
             try:
-                after = _guards()
+                after = _rules()
             except Exception as error:
-                out["guardsChanged"] = f"unread after the script: {error}"[:300]
+                out["rulesChanged"] = f"unread after the script: {error}"[:300]
                 return out
-            changed = {k: [self.guards.get(k), after.get(k)] for k in {*self.guards, *after} if self.guards.get(k) != after.get(k)}
+            changed = sorted(k for k in {*self.rules, *after} if self.rules.get(k) != after.get(k))
             if changed:
-                out["guardsChanged"] = changed
+                out["rulesChanged"] = changed
         return out
 
 
@@ -131,10 +136,9 @@ def mb_run(code: str | None = None, args: dict | None = None, name: str | None =
     the hour, when the base changes or a machine takes the job over. Do not collect or polish
     them; a chore you keep scripting is a production line you have not built yet.
     An interrupt, a paused world or a cancelled job stops the script even inside try/except, and
-    the result says which tool met it and what it was told (interrupted; with a guard's pause,
-    pausedBy and the suspendedJobId of the job it left held for mb_work_resume). Guard settings the
-    script changed with time configure come back as guardsChanged {name: [before, after]};
-    nothing is put back for you.
+    the result says which tool met it and what it was told (interrupted; with a rule's pause,
+    pausedBy and the suspendedJobId of the job it left held for mb_work_resume). Rules the script
+    changed (mb_reflex) come back as rulesChanged, their names; nothing is put back for you.
     Write steps as "make sure X holds" (check, then act), so that after an interruption you
     deal with the cause and can simply run it again. The first tool error stops the script:
     you get the error, the line, and what you logged, never a retry. A foreground run must finish
@@ -143,7 +147,7 @@ def mb_run(code: str | None = None, args: dict | None = None, name: str | None =
     saw instead of going round again. Try a new script on a small count before a large one.
 
     background=True starts the script in its own process and returns {task, started} at once;
-    it resumes a paused world first, except a guard's stop, which it refuses with the reason and
+    it resumes a paused world first, except a rule's freeze, which it refuses with the reason and
     the threats so that you look before anything moves. The body is busy until the task ends: a game call that would
     move the body is refused with body_busy; reads, notes, goals, files and anything else run (reads
     say bodyBusy: true), and every result carries body {task, name,
@@ -152,9 +156,9 @@ def mb_run(code: str | None = None, args: dict | None = None, name: str | None =
     result or error and line. mb_task waits for it or cancels it. minutes (default 20, at most
     60) is its limit; past it the task is stopped and counts as failed (time_limit). Inside a
     background script resume= and time resume/step are refused; a time pause ends the task
-    (paused_by_script); guard settings it configures are put back when it ends. A pause by you
-    or the operator is waited out; a guard's pause, an interrupt or a cancelled job ends it
-    (interrupted) whatever it catches: ended says guard when a guard paused the world
+    (paused_by_script); rules it changes are put back when it ends. A pause by you or the
+    operator is waited out; a rule's pause, an interrupt or a cancelled job ends it
+    (interrupted) whatever it catches: ended says rule when a rule paused the world
     (interrupted.pausedBy: which one), cancelled when none did.
     on_fail="pause" pauses the world if the task fails, crashes, is interrupted or runs
     out of minutes; a cancel or a success never pauses.

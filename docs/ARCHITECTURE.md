@@ -22,7 +22,7 @@ goes: **Java touches Minecraft; Python composes; the model decides.**
 | --- | --- | --- |
 | Class transformers, input arbitration and leases, GUI input hooks, websocket transport, simulation clock hooks | `mods/core` (the only coremod) | `dev.modbench.api.*` interfaces, `dev.modbench.control.*`, `dev.modbench.bridge.*` |
 | Game state, actions, GUI and inventory operations, NEI and Better Questing adapters, world memory | `mods/client` | `obs.*` (including `obs.find`, `obs.keys`), `act.*` (including `act.press_key`), `gui.*`, `nei.*`, `quest.*`, `memory.*`, `interrupt.*`, `sys.*` |
-| Authoritative tile, NBT, fluid, energy and Waila reads; whole-tick pause and guards; world identity | `mods/server` | `obs.tile`, `obs.nbt`, `obs.waila`, `time.*` |
+| Authoritative tile, NBT, fluid, energy and Waila reads; whole-tick pause and the rules' kinds; world identity | `mods/server` | `obs.tile`, `obs.nbt`, `obs.waila`, `time.*` |
 | Pathfinding, mining, construction, following, scanning, durable work journals | `mods/baritone` | `nav.*` for movement and work, `obs.scan`, `obs.terrain`, `obs.fluid`, `obs.tools` for its world reads (registered by the client through the `Navigation` interface in the API) |
 | Tool registration, hot reload, request lanes, cancellation | `harness/mcp` | `server.py`, `kernel.py`, `mbtool.py` |
 | Compositions over RPCs, observation predicates that wake the model, world notes | `harness/tools` | `mb_*` tools |
@@ -81,9 +81,11 @@ Python lanes use.
 
 An opt-in whole-simulation-tick gate on the dedicated server. `time.pause`
 stops complete server ticks; `time.resume` returns to real time; `time.step`
-runs exactly N server ticks and pauses again. Guards (`healthDrop`,
-`healthBelow`, `airBelow`, `foodBelow`, `burning`, `threatWithin`,
-`actionFailed`, `pauseOnDisconnect`) pause at the tick boundary and never act. While
+runs exactly N server ticks and pauses again. The model's rules (`time.rules`:
+`health_drop`, `health_below`, `air_below`, `food_below`, `burning`,
+`hostile_within`, `action_failed`, each at the model's own levels) are checked
+every tick and freeze the world on the crossing tick, or only tell; the server
+never acts on them. While
 paused, networking, keepalives, chunk delivery, observations and screenshots
 stay live; gameplay packets are deferred and released in order at the network
 stage of the first resumed tick. GregTech's background structure jobs pass
@@ -138,7 +140,8 @@ interrupts, time).
 `inventory.py` (GUI and inventory operations with postcondition polling,
 crafting), `work.py` (navigation, mining, construction, fighting, scanning,
 copy and schematic import, work journals), `recipes_quests.py` (NEI and Better
-Questing), `interrupts.py` (watches and the supervisor), `notes.py` (world
+Questing), `reflexes.py` (rules: `mb_reflex`, `mb_wait`), `interrupts.py` (the
+supervisor of the model's own checks), `notes.py` (world
 notes, their surfacing, the goal stack), `plan.py` (the drawing: one format to
 look at a place, plan in it and build from), `scripts.py` (`mb_run`: a
 model-written script that chains tool calls as one call), `tasks.py`
@@ -146,20 +149,31 @@ model-written script that chains tool calls as one call), `tasks.py`
 `wiki.py` (search and read of the offline GTNH wiki snapshot). The tool list
 itself is generated: see [TOOLS.md](TOOLS.md).
 
-### Interrupts
+### Rules
 
-A watch is a declarative condition or a small Python file with
-`evaluate(context)`. The supervisor polls the bridge's read methods, fires
-`interrupt.fire` with native effects (`notify`, `cancel`, `pause`) and an
-optional prompt for the model, retries with the same event id if the fire is
-not confirmed, and re-arms the watch rather than dropping it. Watch specs
-survive reconnects and, persisted in the journal's SQLite file, an MCP server
-restart. `mb_interrupt_events` is how a host learns it should give the model a new turn. A plain
-MCP connection cannot wake a model whose turn has ended, so a chat-style agent
-stays in its turn by blocking in `mb_wait`, which returns when an event needs
-it; an ended turn is restarted by an outer loop such as
-`harness/runner/agent_loop.py`. Without either, the event is kept and the
-native effects still happen.
+One table of named rules, each `when` plus `do`, behind one tool, `mb_reflex`
+(`reflexes.py`). `when` is a kind the server checks every tick
+(`SimulationClock`, `time.rules`; the table outlives a restart in
+`modbench-clock.json`) or a check of the model's own on any read. `do` is
+`ask` (freeze for the model), `tell` (no freeze; handed over on the next tool
+result) or a Python script that answers the freeze in the model's place, run by
+the MCP server round the call that met the freeze or by its watcher thread. A
+new world starts with six `ask` rules (`SimulationClock.defaults()`). The full
+behaviour is in [TIME_CONTROL.md](TIME_CONTROL.md#rules).
+
+A check is a declarative condition or a small Python file with
+`evaluate(context)`. Its supervisor (`interrupts.py`) polls the
+bridge's read methods, fires `interrupt.fire` with native effects (`notify`,
+`cancel`, `pause`) and an optional prompt for the model, retries with the same
+event id if the fire is not confirmed, and re-arms the check rather than
+dropping it. Checks survive reconnects and, persisted in the journal's SQLite
+file, an MCP server restart. `mb_interrupt` and `mb_interrupt_events` are the
+checks' old names. A plain MCP connection cannot wake a model whose turn has
+ended, so a chat-style agent stays in its turn by blocking in `mb_wait`, which
+returns when the journal has an event that needs it, a rule tells, a script
+reports or a freeze waits for it; an ended turn is restarted by an outer loop
+such as `harness/runner/agent_loop.py`. Without either, the event is kept and
+the native effects still happen.
 
 Every fire carries the expected bridge id, world id, dimension and world
 epoch, so a stale reaction fails before any effect, and event ids deduplicate

@@ -96,12 +96,12 @@ class Steps(bs.Shells):
         self.scene()
         for z in (2, 3): self.set_block((2, 4, z), STONE)
         self.wait(5); self.stand(self.at((2.5, 5, 2.5)))
-        self.c.call("time.configure", healthDrop=True)
+        self.c.call("time.rules", set=[{"name": "health_drop", "kind": "health_drop"}])
         try:
             row = self.act(2, "input", keys=["forward"], ticks=80)   # two blocks of ledge, then a five-block fall
         finally:
-            self.c.call("time.configure", healthDrop=False)
-        row["ok"] = "error" in row and "guard" in row["error"] and row["paused"] and row["reason"] not in ("step", None) and bool(row["extended"])
+            self.c.call("time.rules", remove=["health_drop"])
+        row["ok"] = "error" in row and "by a rule" in row["error"] and row["paused"] and row["reason"] not in ("step", None) and bool(row["extended"])
         self.c.call("time.resume")
         return row
 

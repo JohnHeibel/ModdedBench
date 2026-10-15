@@ -107,7 +107,8 @@ public final class PauseCoordinator {
             switch(method) {
                 case "time.status" -> { reply.accept(status());return; }
                 case "time.configure" -> clock.configure(params);
-                case "time.report_failure" -> { if(clock.actionFailed()) clock.pause("action_failed"); }
+                case "time.report_failure" -> clock.failed();
+                case "time.rules" -> { JsonObject table=clock.rules(params);broadcast(true);reply.accept(table);return; }
                 case "time.pause" -> {
                     String reason=Json.string(params,"reason","requested_pause");
                     if(reason.isBlank()||reason.length()>256) throw new IllegalArgumentException("pause reason must contain 1..256 characters");
@@ -244,7 +245,7 @@ public final class PauseCoordinator {
         simulating=true;return true;
     }
     public void after() { after(()->{}); }
-    /** observe looks at the host's guards before a step's own pause: one that fires on the step's last tick ends the step and is the reason. */
+    /** observe looks at the host's rules before a step's own pause: one that crosses on the step's last tick ends the step and is the reason. */
     public void after(Runnable observe) {
         simulating=false;clock.tickFinished();observe.run();
         if(stepTicks>0 && --stepTicks==0) { if(!clock.paused()) clock.pause(stepReason);endStep(clock.reason()); }

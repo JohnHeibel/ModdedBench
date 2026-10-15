@@ -1,27 +1,33 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
-"""Reflexes: a script the model arms ahead of time, run the moment a guard pauses the world, and the mb_reflex tool.
+"""Rules: the model's table of what to watch for and what to do when it crosses; the mb_reflex and mb_wait tools.
 
-A guard's pause hands the model a decision, and the model takes about a minute to give one. A reflex is that decision
-written beforehand: mb_reflex(name, when=<the pause's reason>, do=<a script>). Nothing is armed until the model arms it,
-a reflex calls no model and has only the tools the model has, and every firing is handed to the model on its next tool
-result (``reflexes``, through tasks.fields) and written to the call log.
+A rule watches one kind of danger at its level, checked every tick by the server (SimulationClock, time.rules: that table
+is the world's and outlives this process), or is a check of the model's own on any read, polled by interrupts.py's
+supervisor (kept in its journal, so it too outlives a restart; mb_interrupt is the checks' old name). When it crosses,
+the world freezes for the model; or the rule only tells, and the world runs on; or a script the model wrote ahead of time
+answers the freeze. A script calls no model and has only the tools the model has. What tells and scripts did, and what
+stopped a check, is handed to the model once, on its next tool result (``reflexes``, through tasks.fields), and wakes
+mb_wait, which also returns the checks' journal.
 
 ``around`` is Kernel.around_action: it goes round every acting game call of the model's own process. The call that meets
-a pause (its job held, its action refused or cut short) answers the pause there, so the tool that made the call, and any
-script above it, sees the work finish as if nothing had paused. With no call in flight the watcher thread answers it, so
-a reflex also fires while the model thinks. A pause is answered once (the clock numbers its pauses), and other threads'
-acting calls wait for a reflex that is running.
+a freeze a script answers (its job held, its action refused or cut short) runs the script there, so the tool that made
+the call, and any script above it, sees the work finish as if nothing had paused. With no call in flight the watcher
+thread answers it, so a script also runs while the model thinks. A freeze is answered once (the clock numbers its
+pauses), and other threads' acting calls wait for a script that is running. The watcher also turns the server's tells
+into reports. It runs in the model's own MCP server only (MODBENCH_REFLEX_WATCH=1, which server.main sets): tests and
+smokes call what it calls.
 
 The script runs in a stepped world: its first action resumes time for at most max_ticks. After it, then="resume" carries
 on with the work in flight: the held job is waited on again; if the script's own actions ended it, a checkpointed job
 (its receipt has a jobId: mine, build) goes on from its journal and any other call is sent again. Whatever cannot be
-carried on leaves the world paused, as with no reflex: the script failed or ran out of ticks, another pause began inside
-it, its limits are spent, the call was cut short instead of held, or the pause ended a background task.
+carried on leaves the world frozen for the model, as with no script: the script failed or ran out of ticks, another
+pause began inside it, rules crossed together, its limits are spent, the call was cut short instead of held, or the
+pause ended a background task.
 
-Armed reflexes, firings not yet delivered and the last pause answered are kept in MODBENCH_REFLEXES_FILE (default
-``.state/reflexes.json``); the live copy, its locks and the watcher live in ``mbtool.state["reflexes"]`` and so survive
-a reload of this module.
+Each script rule's firings, the reports not yet delivered, the last pause answered and the tells already heard are kept
+in MODBENCH_REFLEXES_FILE (default ``.state/reflexes.json``); the live copy, its locks and the watcher live in
+``mbtool.state["reflexes"]`` and so survive a reload of this module.
 """
 from __future__ import annotations
 
@@ -38,7 +44,13 @@ from typing import Any
 import mbtool
 from kernel import BridgeError, Kernel, refused, resume_once
 from mbtool import kernel, state, tool
-from mbtools_gtnh import scripts, tasks
+from mbtools_gtnh import interrupts, scripts, tasks
+
+SCRIPT = {"then": "resume", "times": None, "every_ticks": 40, "max_ticks": 200}  # a script rule's defaults
+ORDER = ("name", "kind", "level", "do", *SCRIPT)
+CHECK = {"oneShot": False, "edge": True}  # a check set here crosses as any rule does: as it comes to match, and again only after it has stopped
+WAIT_SLICE = 5.0  # seconds between mb_wait's own looks at the clock
+
 
 def _file() -> Path:
     return Path(os.environ.get("MODBENCH_REFLEXES_FILE") or Path(__file__).resolve().parents[2] / ".state" / "reflexes.json")  # tests point it elsewhere
@@ -51,16 +63,16 @@ def _box() -> dict:
     if box is None:
         try: saved = json.loads(_file().read_text(encoding="utf-8"))
         except (OSError, ValueError): saved = {}
-        box = state["reflexes"] = {"armed": saved.get("armed") or {}, "fired": saved.get("fired") or [], "answered": saved.get("answered"),
-                                   "lock": threading.RLock(), "running": threading.Lock(), "flight": 0, "stop": None,
-                                   "inside": contextvars.ContextVar("reflex_inside", default=None)}
+        box = state["reflexes"] = {"counts": saved.get("counts") or {}, "fired": saved.get("fired") or [], "answered": saved.get("answered"),
+                                   "heard": saved.get("heard"), "lock": threading.RLock(), "running": threading.Lock(), "flight": 0,
+                                   "noticed": None, "scripted": False, "stop": None, "inside": contextvars.ContextVar("reflex_inside", default=None)}
     return box
 
 
 def _save(box: dict) -> None:
     try:
         file = _file(); file.parent.mkdir(parents=True, exist_ok=True)
-        tmp = file.with_suffix(".tmp"); tmp.write_text(json.dumps({k: box[k] for k in ("armed", "fired", "answered")}), encoding="utf-8")
+        tmp = file.with_suffix(".tmp"); tmp.write_text(json.dumps({k: box[k] for k in ("counts", "fired", "answered", "heard")}), encoding="utf-8")
         tmp.replace(file)
     except OSError:
         pass  # the live copy still holds it; a restart would lose what this write carried
@@ -77,14 +89,71 @@ def _pause_id(clock: dict) -> list:
 
 
 def _guard(clock: dict) -> str | None:
-    """The reason of the pause in force if it is one a reflex may answer: not one a job waits out, not a reflex's own."""
+    """The reason of the pause in force if a rule's script may answer it: not one a job waits out, not a script's own."""
     reason = str(clock.get("reason"))
     return reason if clock.get("paused") and not tasks.waited_out(reason) and not reason.startswith("reflex:") else None
+
+
+def _reason(r: dict) -> str:
+    """A rule's pause reason: its kind, or kind:name when the name differs (SimulationClock.Rule.reason); a check's is the
+    client's interrupt:<its reason, default its name>."""
+    if r["kind"] == "check": return "interrupt:" + r["check"].get("reason", r["name"])
+    return r["kind"] if r["name"] == r["kind"] else f"{r['kind']}:{r['name']}"
+
+
+def _check(name: str, spec: dict) -> dict:
+    """A check as a rule: the supervisor's spec less the rule's own fields, and what it does (a script, or by its effects)."""
+    does = spec.get("do") or ("ask" if "pause" in spec.get("effects", ["notify"]) else "tell")
+    return {"name": name, "kind": "check", "check": {k: v for k, v in spec.items() if k not in ("do", *SCRIPT)}, "do": does,
+            **{k: spec[k] for k in SCRIPT if k in spec}}
+
+
+def _sup() -> interrupts.InterruptSupervisor:
+    return interrupts.get_supervisor(on_event=_noticed)  # made, with the checks a restart left, on first use; refused in a background task
+
+
+def _checks() -> list[dict]:
+    """The checks as rules; a background task has none (they are its model's own process's)."""
+    if state.get("task"): return []
+    sup = _sup()
+    with sup.lock: return [_check(n, w.spec) for n, w in sup.watches.items()]
+
+
+def _standing(clock: dict) -> list[dict]:
+    """The rules as the clock shows them, and the checks of a supervisor already made (none is made here)."""
+    sup = state.get("interrupts")
+    if sup is None or state.get("task"): return list(clock.get("rules") or [])
+    with sup.lock: return [*(clock.get("rules") or []), *(_check(n, w.spec) for n, w in sup.watches.items())]
+
+
+def _scripted(clock: dict, reason: str | None) -> str | None:
+    """The rule whose script answers a pause with this reason."""
+    return next((r["name"] for r in _standing(clock) if r.get("do") not in ("ask", "tell") and _reason(r) == reason), None)
+
+
+def _table(k: Kernel) -> list[dict]:
+    return k.call("time.rules", timeout=10).get("rules") or []  # call: a background task's kernel sends time control through the model's server
+
+
+def _rules(k: Kernel) -> list[dict]:
+    return [*_table(k), *_checks()]
+
+
+def _wake() -> None:
+    """mb_wait waits on the checks' journal: have it look again."""
+    sup = state.get("interrupts")
+    if sup is not None:
+        with sup.changed: sup.changed.notify_all()
 
 
 def _record(box: dict, entry: dict) -> None:
     with box["lock"]:
         box["fired"] = (box["fired"] + [entry])[-40:]; _save(box)
+    _wake()  # not under box's lock: the supervisor tells _noticed under its own
+
+
+def _watching() -> bool:
+    return os.environ.get("MODBENCH_REFLEX_WATCH") == "1" and not state.get("task")
 
 
 # ---- round each acting call ----
@@ -93,13 +162,14 @@ def around(k: Kernel, method: str, timeout: float | None, params: dict) -> Any:
     box = _box(); me = box["inside"].get()
     if me is not None:
         return _within(k, me, method, timeout, params)
-    if not box["armed"] or state.get("task") or method.startswith("time.") or method in tasks.UNGATED or not k._acts(method):
+    if state.get("task") or method.startswith(("time.", "interrupt.")) or method in tasks.UNGATED:
         return k._call(method, timeout, **params)
     _watch(box)
+    if not box["scripted"] or not k._acts(method): return k._call(method, timeout, **params)  # no script to run: nothing to go round
     spent = None
     try:
         while True:
-            with box["running"]: pass  # a reflex on another thread has the body: its actions come first
+            with box["running"]: pass  # a script on another thread has the body: its actions come first
             _flying(box, 1)
             try:
                 result = error = carry = None
@@ -120,7 +190,7 @@ def around(k: Kernel, method: str, timeout: float | None, params: dict) -> Any:
 
 
 Kernel.around_action = around
-tasks.TaskKernel.around_action = None  # a background task's pause ends the task; the reflex runs from the model's server once the body is free
+tasks.TaskKernel.around_action = None  # a background task's pause ends the task; the script runs from the model's server once the body is free
 
 
 def _flying(box: dict, by: int) -> None:
@@ -128,28 +198,28 @@ def _flying(box: dict, by: int) -> None:
 
 
 def _met(result: Any, error: BridgeError | None) -> dict | None:
-    """How a call met a guard's pause: its work held (the receipt), its action refused before it began, or cut short."""
+    """How a call met a rule's pause: its work held (the receipt), its action refused before it began, or cut short."""
     receipt = result if error is None else ((error.reply or {}).get("error") or {}).get("receipt")
     if isinstance(receipt, dict) and receipt.get("state") == "suspended" and receipt.get("pausedBy"):
         return {"how": "held", "receipt": receipt}
     if error is None: return None
-    if refused(error, "interrupt_latched") or refused(error, "time_paused") and "by a guard" in str(error.msg): return {"how": "refused"}
-    if error.code == "cancelled" and "world paused by a guard" in str(error.msg): return {"how": "cut"}
+    if refused(error, "interrupt_latched") or refused(error, "time_paused") and "by a rule" in str(error.msg): return {"how": "refused"}
+    if error.code == "cancelled" and "world paused by a rule" in str(error.msg): return {"how": "cut"}
     return None
 
 
 def _within(k: Kernel, me: dict, method: str, timeout: float | None, params: dict) -> Any:
-    """A game call from inside a reflex's script."""
+    """A game call from inside a rule's script."""
     if method in ("time.resume", "time.step") or resume_once.get() is not me["budget"]:
-        raise ValueError("a reflex runs inside its own tick budget (max_ticks): resume= and time resume or step are refused in it")
+        raise ValueError("a rule's script runs inside its own tick budget (max_ticks): resume= and time resume or step are refused in it")
     if time.monotonic() > me["deadline"]:
-        raise scripts.ScriptInterrupted("the reflex ran past its time limit")
+        raise scripts.ScriptInterrupted("the script ran past its time limit")
     if not method.startswith("time.") and method not in tasks.UNGATED and k._acts(method): me["acted"] = True
     return k._call(method, timeout, **params)
 
 
 def _logged(name: str):
-    """wrap for scripts.execute: each tool call a reflex makes goes in the call log, as a background task's do."""
+    """wrap for scripts.execute: each tool call a script makes goes in the call log, as a background task's do."""
     def wrap(tool_name, fn):
         def call(*args, **kwargs):
             method, started, error = args[0] if args and isinstance(args[0], str) else kwargs.get("method"), time.time(), None
@@ -164,28 +234,29 @@ def _logged(name: str):
 
 
 def _answer(k: Kernel, box: dict, met: dict, method: str | None = None, params: dict | None = None) -> tuple | None:
-    """With box["running"] held: runs the reflex armed for the pause in force, if nothing has answered that pause yet.
+    """With box["running"] held: runs the script of the rule whose freeze is in force, if nothing has answered it yet.
     Returns the call to send in place of the one that met the pause, or None where that call's own outcome stands."""
-    clock = _clock(k); reason = _guard(clock)
-    if reason is None: return None
+    clock = _clock(k); reason = _guard(clock); name = _scripted(clock, reason)
     pause, tick = _pause_id(clock), int(clock.get("simulationTicks") or 0)
     with box["lock"]:
-        name = next((n for n, r in box["armed"].items() if reason in r["when"]), None)
         if name is None or box["answered"] == pause: return None
-        box["answered"] = pause
-        r = box["armed"][name]; since = tick - r["lastTick"] if r.get("lastTick") is not None else None
-        skipped = ("its times are spent" if r.get("left") == 0 else
+        box["answered"] = pause; _save(box)
+    r = next((r for r in _rules(k) if r.get("name") == name), None)
+    if r is None: return None  # removed since the clock's last word
+    r = {**SCRIPT, **r}; entry = {"rule": name, "when": reason, "tick": tick}
+    with box["lock"]:
+        count = box["counts"].setdefault(name, {"fired": 0, "lastTick": None})
+        since, joined = tick - count["lastTick"] if count["lastTick"] is not None else None, ((clock.get("events") or [{}])[-1]).get("with")
+        skipped = (f"rules crossed together ({', '.join([reason, *joined])}): they wait for you" if joined else
+                   "its times are spent" if r["times"] and count["fired"] >= r["times"] else
                    f"it fired {since} ticks ago (every_ticks {r['every_ticks']})" if since is not None and 0 <= since < r["every_ticks"] else None)
-        if skipped:
-            _record(box, {"reflex": name, "when": reason, "tick": tick, "skipped": skipped}); return None
-        r["fired"] = r.get("fired", 0) + 1; r["lastTick"] = tick
-        if r.get("left"): r["left"] -= 1
-        _save(box); r = dict(r)
+        if not skipped: count["fired"] += 1; count["lastTick"] = tick; _save(box)
+    if skipped:
+        _record(box, {**entry, "skipped": skipped}); return None
     how, receipt = met["how"], met.get("receipt") or {}
     work = None if method is None else {"call": method, "how": how, **({"jobId": receipt.get("suspendedJobId")} if how == "held" else {})}
-    entry = {"reflex": name, "when": reason, "tick": tick}
     try:
-        if reason.startswith("interrupt:"):  # the watch's latch would refuse the script's first action, and this script is the answer to that watch
+        if r["kind"] == "check":  # its latch would refuse the script's first action, and this script is the answer to it
             for event_id in k._call("interrupt.status", timeout=5).get("latched") or []: k._call("interrupt.ack", eventId=event_id, timeout=5)
         out, me = _run(box, name, r, {"reason": reason, "tick": tick, "threats": clock.get("threats") or [], "edges": clock.get("edges") or [], "work": work})
         after = _clock(k)
@@ -215,7 +286,7 @@ def _answer(k: Kernel, box: dict, met: dict, method: str | None = None, params: 
             if send is not None:
                 send = (send[0], {**{a: b for a, b in send[1].items() if a != "_resume"}, **({"_resume": True} if after.get("paused") else {})})
         return send
-    except Exception as e:  # the bridge failed under the reflex itself: say so, and leave the call's own outcome standing
+    except Exception as e:  # the bridge failed under the script itself: say so, and leave the call's own outcome standing
         entry.update(stopped=f"{type(e).__name__}: {e}"[:600], world="unknown"); return None
     finally:
         _record(box, entry)
@@ -235,17 +306,46 @@ def _run(box: dict, name: str, r: dict, event: dict) -> tuple[dict, dict]:
 
 
 def _halt(k: Kernel, name: str, clock: dict) -> str:
-    """Leaves the world paused: a pause in force stands as it is; a running world, or one the script's step paused, is paused in the reflex's name."""
+    """Leaves the world paused: a pause in force stands as it is; a running world, or one the script's step paused, is paused in the rule's name."""
     if clock.get("paused") and clock.get("reason") != "step": return "paused"
     try: k._call("time.pause", reason=f"reflex:{name}", timeout=15); return "paused"
     except Exception as e: return f"pause failed: {e}"[:200]
 
 
-# ---- with no call in flight ----
+# ---- tells and checks ----
+
+def _news(box: dict, clock: dict) -> None:
+    """The server's tells (status.told) not heard yet become reports. The first look ever takes what is there as heard."""
+    told = clock.get("told")
+    if told is None: return
+    ids = [[t.get("sequence"), t.get("wallMs")] for t in told]
+    with box["lock"]:
+        if box["heard"] == ids: return
+        fresh = [t for t, i in zip(told, ids) if box["heard"] is not None and i not in box["heard"]]
+        box["heard"] = ids; _save(box)
+    for t in fresh: _record(box, {"told": t.get("rule"), "tick": t.get("tick")})
+
+
+def _noticed(kind: str, name: str, data: dict) -> None:
+    """The supervisor's word on a check, as a report: a crossing that does not freeze (a tell), or what stopped it
+    (a fault, a stall, a crossing never delivered, another world). A freeze says so itself."""
+    sup = state.get("interrupts"); w = sup.watches.get(name) if sup is not None else None
+    if kind == "triggered":
+        if w is None or "pause" in w.spec.get("effects", ["notify"]): return
+        entry = {"told": name, **({"payload": data["payload"]} if data.get("payload") else {})}
+    elif kind == "fault": entry = {"rule": name or None, "fault": str(data.get("error"))[:600]}
+    elif kind == "stalled": entry = {"rule": name, "fault": f"evaluate ran past its timeout_s ({data.get('timeout_s')})"}
+    elif kind == "reaction_error": entry = {"rule": name, "fault": f"its crossing was not delivered: {data.get('error')}"[:600]}
+    elif kind == "disarmed" and data.get("reason") == "context_changed": entry = {"rule": name, "fault": "the world, dimension or client changed: set it again"}
+    else: return
+    _record(_box(), entry)
+
+
+# ---- the watcher ----
 
 def _watch(box: dict) -> None:
-    """Starts the thread that answers a pause no call is there to meet; one a process, replaced when this module reloads."""
-    if state.get("task") or os.environ.get("MODBENCH_REFLEX_WATCH") == "0": return
+    """Starts the thread that answers a freeze no call is there to meet; one a process, replaced when this module reloads."""
+    if not _watching(): return
     with box["lock"]:
         if box["stop"] is not None and not box["stop"].is_set(): return
         box["stop"] = threading.Event()
@@ -253,26 +353,33 @@ def _watch(box: dict) -> None:
 
 
 def _loop(box: dict, stop: threading.Event) -> None:
-    seen = None  # [the pause, when it was first seen, whether a background task had the body]
-    while not stop.wait(0.1):
+    seen, every = None, 0.1  # seen: [the pause, when it was first seen, whether a background task had the body]
+    try: _sup()  # the checks a restart left watch again from here, not only once a tool asks for them
+    except Exception: pass
+    while not stop.wait(every):
         try:
-            clock = _clock(kernel()) if box["armed"] else {}
+            k = kernel(); clock = _clock(k)
+            _news(box, clock)
+            rules = _standing(clock); box["scripted"] = any(r.get("do") not in ("ask", "tell") for r in rules)
+            every = 0.1 if any(r.get("do") != "ask" for r in rules) else 1.0  # only freezes to ask about: nothing to do quickly
             reason, pause = _guard(clock), _pause_id(clock)
-            if reason is None or pause == box["answered"] or not any(reason in r["when"] for r in list(box["armed"].values())):
+            if clock.get("paused") and pause != box["noticed"]:  # a new pause: mb_wait looks again
+                box["noticed"] = pause; _wake()
+            if pause == box["answered"] or _scripted(clock, reason) is None:
                 seen = None; continue
             if seen is None or seen[0] != pause: seen = [pause, time.monotonic(), False]
             if box["flight"] and time.monotonic() - seen[1] < 1: continue  # the call in flight meets this pause itself
-            if tasks.held():  # a background task has the body, and a guard's pause ends it: the body is free once it has
+            if tasks.held():  # a background task has the body, and a rule's pause ends it: the body is free once it has
                 seen[2] = True; continue
             with box["running"]:
-                _answer(kernel(), box, {"how": "task_ended" if seen[2] else "none"})
+                _answer(k, box, {"how": "task_ended" if seen[2] else "none"})
         except Exception:
             stop.wait(1)  # no bridge, or a client restarting: the pause is still there when it is back
 
 
 def _stop() -> None:
     box = state.get("reflexes")
-    if box and box["stop"] is not None: box["stop"].set()
+    if box and box.get("stop") is not None: box["stop"].set()
 
 
 _stop()  # a reload: this module's watcher takes over on the next acting call
@@ -280,126 +387,183 @@ mbtool.on_shutdown["reflexes"] = _stop
 
 
 def answers(clock: dict) -> bool:
-    """Whether a reflex is about to answer the pause this clock shows (mb_wait goes on waiting through such a pause)."""
-    box, reason = _box(), _guard(clock)
-    if reason is None or state.get("task") or os.environ.get("MODBENCH_REFLEX_WATCH") == "0": return False
-    if _pause_id(clock) == box["answered"] or not any(reason in r["when"] for r in list(box["armed"].values())): return False
+    """Whether a script is about to answer the pause this clock shows (mb_wait goes on waiting through such a pause)."""
+    box = _box()
+    if not _watching() or _scripted(clock, _guard(clock)) is None: return False
+    if _pause_id(clock) == box["answered"]: return box["running"].locked()  # answered already, or being answered now
     _watch(box); return True
 
 
 def deliver(limit: int = 6) -> list[dict]:
-    """Each firing not yet handed to the model, oldest first, once; only in the model's own process."""
+    """Each report not yet handed to the model, oldest first, once; only in the model's own process."""
     if state.get("task"): return []
-    box = _box()
-    if box["armed"]: _watch(box)
+    box = _box(); _watch(box)
     with box["lock"]:
         if not box["fired"]: return []
         out, box["fired"] = box["fired"], []; _save(box)
     return out if len(out) <= limit else [{"older": len(out) - limit}] + out[-limit:]
 
 
-def armed() -> list[dict]:
-    """For mb_status: a reflex is a standing order, and the model must be able to find the ones it has forgotten."""
-    return [{"name": n, "when": r["when"], "then": r["then"]} for n, r in _box()["armed"].items()]
+def lines(clock: dict) -> list[str]:
+    """For mb_status: each rule in a few words, so a standing order the model has forgotten is found there."""
+    out = []
+    for r in [*(clock.get("rules") or []), *_checks()]:
+        when, does = _row(r)["when"], r.get("do", "ask") if r.get("do", "ask") in ("ask", "tell") else "script"
+        out.append(f"{when}: {does}" if r["name"] == r["kind"] else f"{r['name']} ({when}): {does}")
+    return out
 
 
-# ---- the tool ----
+# ---- the tools ----
 
-def _shown(name: str, r: dict, whole: bool = False) -> dict:
-    out = {"name": name, "when": r["when"], "then": r["then"], "times_left": r.get("left"), "every_ticks": r["every_ticks"],
-           "max_ticks": r["max_ticks"], "fired": r.get("fired", 0)}
-    return {**out, "do": r["do"]} if whole else {**out, "lines": len(r["do"].splitlines())}
+def _row(r: dict) -> dict:
+    """A rule as the list shows it, with its firings and, for a check that is not watching, why."""
+    does = r.get("do", "ask")
+    out = {"name": r["name"], "when": r["kind"] + (f" {r['level']:g}" if "level" in r else ""), "do": does if does in ("ask", "tell") else "script"}
+    fired = _box()["counts"].get(r["name"], {}).get("fired")
+    return {**out, **({"fired": fired} if fired else {}), **_off(r)}
+
+
+def _off(r: dict) -> dict:
+    """A check that is not watching: one that fired (oneShot), faulted, or met another world. Setting it again re-arms it."""
+    if r["kind"] != "check" or state.get("interrupts") is None: return {}
+    st = state["interrupts"].status(r["name"])
+    return {} if st["armed"] else {"armed": False, **({"fault": st["fault"]} if st.get("fault") else {})}
 
 
 @tool(lane="control", effect="privileged", coverage=["time"])
-def mb_reflex(name: str | None = None, when: str | list[str] | None = None, do: str | None = None, then: str | None = None,
+def mb_reflex(name: str | None = None, when: str | dict | None = None, do: str | None = None, then: str | None = None,
               times: int | None = None, every_ticks: int | None = None, max_ticks: int | None = None, remove: bool = False) -> Any:
-    """Arm a reflex: a script of yours that runs the moment a guard pauses the world, in place of the world waiting for you.
+    """Your rules: each watches for one thing and, when it crosses, freezes the world for you, tells you, or runs your script.
 
-    A guard's pause stops everything until you answer it. A reflex is your answer written ahead
-    of time. Nothing is armed until you arm it, and it does only what its script says.
-    mb_reflex(name, when=..., do=...) arms or replaces one; mb_reflex() lists them; mb_reflex(name)
-    shows one with its script; mb_reflex(name, remove=True) removes it; naming an armed one with
-    only the fields to change edits it. They are kept across restarts until you remove them.
-
-    when is the pause it answers, as mb_time status and pausedBy name it: health_dropped,
-    health_threshold, air_threshold, burning, food_threshold, threat, action_failed, or
-    interrupt:<reason> for an mb_interrupt watch of yours whose effects include pause. A list
-    answers several. One reason has one reflex.
-    do is Python defining main(event), with every mb_* tool and log(text) in scope, as in mb_run.
-    event is {reason, tick, threats, edges, work} (edges as in mb_time status); work is the call the pause met ({call, how, jobId}),
-    or None when no call of yours was running. The script starts in the paused world. Its first
-    action lets time run, for at most max_ticks (default 200) in all; resume= and time resume or
-    step are refused inside it. It asks no model: what happens is what you wrote.
-    then="resume" (default) puts things back as they were going when main returns. The job or
-    use the pause held carries on, and the call that was waiting for it returns as if nothing
-    had paused. If the script's own actions ended that job, a mine or build goes on from its
-    journal and any other call is sent again from the start (a fight's limits count from zero).
-    With no call running, time resumes. then="pause" leaves the world paused for you instead.
-    The world is also left paused, and the call returns what it would with no reflex, when the
-    script fails, when another pause begins inside it (a guard, or its own time pause: that is
-    how a script hands a case back to you), when it runs out of ticks, when the pause cut a call
-    short instead of holding it, or when the pause ended a background task. A pause a reflex
-    leaves standing reads reflex:<name> unless a guard's reason is already in place.
-    times is how many firings it has (default no limit; 0 lifts one); every_ticks (default 40)
-    is the least world time between two firings. A pause it lets stand for either says so.
-    Every firing comes back once, as reflexes on your next tool result: {reflex, when, tick,
-    ticks (the world time it took), result or stopped with line, log, work (carried_on,
-    restarted, sent, held, ended, not_started, cut, task_ended), world (running or paused)}, or
-    skipped with the reason.
+    mb_reflex() lists them; mb_reflex(name) shows one whole; mb_reflex(name, when=..., do=...) adds
+    or replaces one; naming one with only the fields to change edits it; remove=True deletes it.
+    They outlive restarts. A new world has health_drop, health_below 8, air_below 180, food_below 6,
+    burning and hostile_within 12, all asking you: change or delete any.
+    when is a kind, with its level after it where it has one: health_drop (any hit), health_below N,
+    air_below N (300 is full; under water it falls 1 a tick), food_below N, burning, hostile_within N
+    (a mob takes you as its target within N blocks, 2N in line of sight, or a creeper swells; once a
+    mob; mb_time status.threats lists them), action_failed (a job failed, or time report_failure).
+    These are checked every tick. Or a check of your own on any watchable read, polled every 0.1 s:
+    {queries: {alias: {method, params}}, condition}, where condition is one of all/any/not,
+    eq/ne/lt/lte/gt/gte [path, value], exists/changed/increased/decreased path, any_of/all_of
+    {path, where}; or {file, queries?}, a Python file defining evaluate(context) -> bool or {match,
+    payload, prompt?}, with context.values, previous, state, read(method, **params) and prompt(text,
+    **observations). A check also takes effects (notify, cancel: stop the job in flight, pause),
+    latch (default with cancel or pause: your next action is refused once with what it saw, or
+    mb_interrupt ack), oneShot (default false: off once it fires), edge (default true), consecutive,
+    cooldown, timeout_s, operationScope, reason (its pause reads interrupt:<reason, default name>)
+    and prompt. Setting a check again re-reads its file and re-arms it; a fault turns it off until
+    then. Several rules may share a kind at different levels. Each crosses once, and again only
+    after it has recovered.
+    do: "ask" (default) freezes the world on the crossing and leaves it to you; the pause reason is
+    the kind, or kind:name when the name differs, and rules crossing together freeze once. "tell"
+    lets the world run and tells you on your next tool result (reflexes), waking mb_wait. For a
+    check, do and "pause" in effects agree. Or Python defining main(event), with every mb_* tool
+    and log(text) in scope as in mb_run: your answer, written ahead of time, run at once in the
+    frozen world with no model asked. event is {reason, tick, threats, edges, work}, work being the
+    call the pause met ({call, how, jobId}) or None. Its first action lets time run, at most
+    max_ticks (default 200) in all; resume= and time resume or step are refused in it.
+    then="resume" (default) carries on with the work the pause held as if nothing had paused, or
+    resumes time with none; then="pause" leaves the world paused. It is left paused for you also
+    when the script fails, runs out of ticks, meets another pause, when rules crossed together, or
+    when the pause ended a background task (reason reflex:<name> if it had run on). times (default
+    no limit) caps its firings, every_ticks (default 40) spaces them. Each firing comes back once
+    in reflexes: {rule, when, tick, ticks, result or stopped with line, log, work, world}, or
+    skipped and why. While mb_fight runs, its own hits, burns and mobs cross no rule.
     """
-    box = _box()
-    with box["lock"]:
-        if name is None:
-            return {"armed": [_shown(n, r) for n, r in box["armed"].items()]}
-        if not re.fullmatch(r"[a-z][a-z0-9_]{0,48}", name): raise ValueError("name is lower_snake_case, at most 49 characters")
-        old = box["armed"].get(name)
-        if remove:
-            box["armed"].pop(name, None); _save(box)
-            return {"removed": old is not None, "armed": [_shown(n, r) for n, r in box["armed"].items()]}
-        if all(v is None for v in (when, do, then, times, every_ticks, max_ticks)):
-            if old is None: raise ValueError(f"no reflex is named {name}: arm it with when and do; armed: {sorted(box['armed'])}")
-            return _shown(name, old, whole=True)
-        if old is None and (when is None or do is None): raise ValueError("a new reflex needs when (the pause it answers) and do (its script)")
-        r = dict(old or {"then": "resume", "every_ticks": 40, "max_ticks": 200, "left": None, "fired": 0, "lastTick": None})
-        if when is not None: r["when"] = _reasons(box, name, when)
-        if do is not None: r["do"] = _script(do)
-        if then is not None:
-            if then not in ("resume", "pause"): raise ValueError('then is "resume" or "pause"')
-            r["then"] = then
-        if times is not None:
-            if not 0 <= times <= 100000: raise ValueError("times is 0 (no limit) to 100000")
-            r["left"] = times or None
-        if every_ticks is not None:
-            if not 0 <= every_ticks <= 72000: raise ValueError("every_ticks is 0..72000")
-            r["every_ticks"] = every_ticks
-        if max_ticks is not None:
-            if not 1 <= max_ticks <= 1200: raise ValueError("max_ticks is 1..1200")
-            r["max_ticks"] = max_ticks
-        box["armed"][name] = r; _save(box)
+    k, box = kernel(), _box()
+    rules = {r["name"]: r for r in _rules(k)}
+    if name is None:
+        return {"rules": [_row(r) for r in rules.values()]}
+    old = rules.get(name)
+    if old is None and (remove or when is None):
+        raise ValueError(f"no rule is named {name}" + ("" if remove else ": add it with when") + f"; rules: {sorted(rules)}")
+    if old is None and not re.fullmatch(r"[a-z][a-z0-9_]{0,48}", name): raise ValueError("name is lower_snake_case, at most 49 characters")
+    if remove:
+        if old["kind"] == "check": _sup().remove(name)
+        else: k.call("time.rules", remove=[name], timeout=10)
+    elif all(v is None for v in (when, do, then, times, every_ticks, max_ticks)):
+        return {**old, **{key: v for key, v in _row(old).items() if key in ("fired", "armed", "fault")}}
+    else:
+        spec = {k_: v for k_, v in (old or {"name": name}).items() if when is None or k_ not in ("kind", "level", "check")}
+        if when is not None: spec.update(_when(when))
+        given = when.get("effects") if isinstance(when, dict) else None
+        if do is not None: spec["do"] = do if do in ("ask", "tell") else _script(do)
+        elif given is not None and ("pause" in given) == (spec.get("do", "ask") == "tell"): spec["do"] = "ask" if "pause" in given else "tell"  # the effects given say what it does
+        does = spec.get("do", "ask")
+        if given is not None and ("pause" in given) == (does == "tell"):
+            raise ValueError(f'do and effects {given} disagree: "pause" in effects is what freezes the world, and a tell does not')
+        if does in ("ask", "tell"): spec = {k_: v for k_, v in spec.items() if k_ not in SCRIPT}
+        options = {"then": then, "times": times, "every_ticks": every_ticks, "max_ticks": max_ticks}
+        if any(v is not None for v in options.values()) and does in ("ask", "tell"):
+            raise ValueError("then, times, every_ticks and max_ticks are a script's: give do a script")
+        if then is not None and then not in ("resume", "pause"): raise ValueError('then is "resume" or "pause"')
+        for key, lo, hi in (("times", 0, 100000), ("every_ticks", 0, 72000), ("max_ticks", 1, 1200)):
+            if options[key] is not None and not lo <= options[key] <= hi: raise ValueError(f"{key} is {lo}..{hi}")
+        spec.update({key: v for key, v in options.items() if v is not None})
+        if spec.get("times") == 0: del spec["times"]  # 0 lifts the cap
+        if spec["kind"] == "check":
+            check = {**CHECK, **spec["check"]}
+            check["effects"] = [e for e in check.get("effects", []) if e != "pause"] + (["pause"] if does != "tell" else []) or ["notify"]
+            _sup().add(name, {**check, **({key: spec[key] for key in ("do", *SCRIPT) if key in spec} if does not in ("ask", "tell") else {})}, replace=True)
+            if old is not None and old["kind"] != "check": k.call("time.rules", remove=[name], timeout=10)
+        else:
+            k.call("time.rules", set=[{key: spec[key] for key in ORDER if key in spec}], timeout=10)
+            if old is not None and old["kind"] == "check": _sup().remove(name)
+    with box["lock"]: box["counts"].pop(name, None); _save(box)  # a rule set afresh counts its firings afresh
     _watch(box)
-    return {"armed": _shown(name, r)}
+    rules = _rules(k); rows = [_row(r) for r in rules]
+    box["scripted"] = any(r.get("do") not in ("ask", "tell") for r in rules)
+    return {"removed": name, "rules": rows} if remove else {"rule": next(r for r in rows if r["name"] == name)}
 
 
-def _reasons(box: dict, name: str, when: str | list[str]) -> list[str]:
-    asked = [when] if isinstance(when, str) else list(when)
-    if not asked or not all(isinstance(w, str) and 0 < len(w) <= 256 for w in asked): raise ValueError("when is a pause reason or a list of them")
-    try: settings = _clock(kernel()).get("conditions") or {}
-    except Exception: settings = {}  # no bridge now: the names are checked against what it says when there is one
-    for w in asked:
-        if tasks.waited_out(w) or w.startswith("reflex:") or w == "requested_resume":
-            raise ValueError(f"{w} is not a guard's pause: a reflex answers the pauses that hand you a decision")
-        if w in settings:
-            raise ValueError(f"{w} is a guard's setting; name the pause it makes, as mb_time status and pausedBy show it (health_threshold, not healthBelow)")
-        other = next((n for n, r in box["armed"].items() if n != name and w in r["when"]), None)
-        if other: raise ValueError(f"{w} already has the reflex {other}: one reason has one reflex; edit or remove that one")
-    return asked
+def _when(when: str | dict) -> dict:
+    if isinstance(when, dict):
+        if ("file" in when) == ("condition" in when): raise ValueError("a check has exactly one of file or condition")
+        return {"kind": "check", "check": when}  # the supervisor checks the rest as it arms it
+    parts = str(when).split()
+    if not 1 <= len(parts) <= 2: raise ValueError('when is a kind with its level after it ("air_below 120"), or a check {queries, condition} or {file}')
+    if len(parts) == 1: return {"kind": parts[0]}
+    try: level = float(parts[1])
+    except ValueError: raise ValueError(f"{parts[1]} is not a level: give a number after the kind") from None
+    return {"kind": parts[0], "level": int(level) if level.is_integer() else level}
 
 
 def _script(code: str) -> str:
     try: tree = ast.parse(code)
-    except SyntaxError as e: raise ValueError(f"do does not parse: {e}") from None
+    except SyntaxError as e: raise ValueError(f"do is ask, tell, or a script, and this one does not parse: {e}") from None
     main = next((n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "main"), None)
     if main is None or [a.arg for a in main.args.args] != ["event"] or main.args.posonlyargs:
-        raise ValueError("do defines main(event)")
+        raise ValueError("a script defines main(event)")
     return code
+
+
+@tool(lane="read", coverage=["meta"])
+def mb_wait(after: int | None = None, timeout_s: float = 600) -> Any:
+    """Block until a rule needs you or timeout_s (1..900) passes.
+
+    Call this instead of ending your turn whenever you are only waiting for machines or jobs: a
+    finished turn cannot be woken. It wakes (woke true) when a rule tells you something or a script
+    of yours fires (reflexes on its result says what), or when a check's journal has news: events
+    are those (triggered with data.eventId and data.payload, fault, stalled, a failed delivery,
+    another world), cursor is where the next wait goes on from (after; without it, from your last
+    wait's; 0 replays what is kept), gap whether older ones were dropped (mb_interrupt_events
+    replays the whole journal). Nothing you wait for happens in a paused world, so a wait never sits
+    in one: paused when you call or paused while you wait, it returns at once with paused: the
+    reason, unless a script of yours is answering that pause.
+    """
+    if (after is not None and after < 0) or not 1 <= timeout_s <= 900: raise ValueError("after>=0, timeout_s 1..900 required")
+    sup, box = _sup(), _box(); _watch(box)
+    if after is None: after = getattr(sup, "waited", 0)  # kept on the journal's own supervisor: a cursor means nothing in another journal
+    end, wait, noticed = time.monotonic() + timeout_s, 0, box["noticed"]  # the first look does not wait: the world may be paused already
+    while True:
+        e = sup.events(after, 1000, wait, also=lambda: bool(box["fired"]) or box["noticed"] != noticed); after = sup.waited = e["cursor"]
+        woke = [x for x in e["events"] if interrupts._wakes_runner(x)]
+        out = {"woke": bool(woke or e["gap"] or box["fired"]), "cursor": after, "events": woke, "gap": e["gap"]}
+        if out["woke"] or time.monotonic() >= end: return out
+        try: clock = kernel().call("time.status", timeout=5).get("state") or {}
+        except Exception: clock = {}  # no bridge now: wait on as in a running world
+        _news(box, clock); noticed = box["noticed"]
+        if box["fired"]: return {**out, "woke": True}
+        if clock.get("paused") and not answers(clock): return {**out, "paused": clock.get("reason")}
+        wait = max(0, min(WAIT_SLICE, end - time.monotonic()))

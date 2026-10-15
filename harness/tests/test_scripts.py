@@ -75,7 +75,7 @@ class ScriptInterruptTests(unittest.TestCase):
         with mock.patch.object(scripts, '_tools', return_value=tools):
             return scripts.mb_run(code=code)
 
-    def test_a_guard_refusal_cannot_be_swallowed_by_except_exception(self):
+    def test_a_latched_refusal_cannot_be_swallowed_by_except_exception(self):
         def act():
             raise BridgeError('bad_request', 'interrupt_latched: 1 delivered, this action was not started', 'act.input')
         out = self.run_script('def main():\n try:\n  act()\n except Exception:\n  return "carried on"', act=act)
@@ -86,26 +86,26 @@ class ScriptInterruptTests(unittest.TestCase):
     def test_a_wrapped_pause_still_counts_and_a_bare_except_is_reported(self):
         def craft():
             try:
-                raise BridgeError('cancelled', 'world paused by a guard (threat): read mb_time status, decide, resume', 'gui.click_slot')
+                raise BridgeError('cancelled', 'world paused by a rule (hostile_within): read mb_time status, decide, resume', 'gui.click_slot')
             except BridgeError as error:
                 raise RuntimeError('screen changed') from error
         out = self.run_script('def main():\n try:\n  craft()\n except:\n  pass\n return 1', craft=craft)
         self.assertEqual(out['result'], 1)
         self.assertEqual(out['interrupted'], {'tool': 'craft', 'error': 'screen changed'})
 
-    def test_a_job_a_guard_left_held_stops_the_script_and_names_the_job(self):
+    def test_a_job_a_rule_left_held_stops_the_script_and_names_the_job(self):
         calls = []
 
         def walk():
             calls.append('walk')
-            return {'state': 'suspended', 'pausedBy': 'healthBelow', 'suspendedJobId': 'j1', 'suspended': 'a guard paused the world (healthBelow) with this job unfinished'}
+            return {'state': 'suspended', 'pausedBy': 'health_below', 'suspendedJobId': 'j1', 'suspended': 'a rule paused the world (health_below) with this job unfinished'}
 
         def nested():  # a tool that returns the job's receipt under a key of its own
-            return {'moved': {'state': 'suspended', 'pausedBy': 'threat', 'suspendedJobId': 'j2'}}
+            return {'moved': {'state': 'suspended', 'pausedBy': 'hostile_within', 'suspendedJobId': 'j2'}}
         out = self.run_script('def main():\n try:\n  walk()\n except Exception:\n  pass\n walk()\n return "carried on"', walk=walk)
         self.assertEqual((calls, out.get('result'), out['line']), (['walk'], None, 3))
-        self.assertEqual({k: out['interrupted'][k] for k in ('tool', 'pausedBy', 'suspendedJobId')}, {'tool': 'walk', 'pausedBy': 'healthBelow', 'suspendedJobId': 'j1'})
-        self.assertIn('world paused by a guard (healthBelow)', out['stopped'])
+        self.assertEqual({k: out['interrupted'][k] for k in ('tool', 'pausedBy', 'suspendedJobId')}, {'tool': 'walk', 'pausedBy': 'health_below', 'suspendedJobId': 'j1'})
+        self.assertIn('world paused by a rule (health_below)', out['stopped'])
         self.assertEqual(self.run_script('def main():\n nested()\n return 1', nested=nested)['interrupted']['suspendedJobId'], 'j2')
 
     def test_a_job_a_step_left_held_does_not_stop_the_script(self):
@@ -120,19 +120,21 @@ class ScriptInterruptTests(unittest.TestCase):
         self.assertEqual(out, {'result': 'no such item', 'log': []})
 
 
-class GuardKernel:
+class RuleKernel:
+    """The clock's rule table and nothing else; reads of it counted."""
     def __init__(self):
-        self.conditions, self.reads = dict(healthDrop=True, airBelow=180, threatWithin=12), 0
+        self.rules, self.reads = {'health_drop': {'name': 'health_drop', 'kind': 'health_drop'}, 'air_below': {'name': 'air_below', 'kind': 'air_below', 'level': 180},
+                                  'hostile_within': {'name': 'hostile_within', 'kind': 'hostile_within', 'level': 12}}, 0
 
     def call(self, method, timeout=None, **p):
-        if method == 'time.status':
-            self.reads += 1
-            return {'state': {'conditions': dict(self.conditions)}}
-        self.conditions.update(p)
-        return {}
+        if method != 'time.rules': return {}
+        self.reads += not p
+        for r in p.get('set', []): self.rules[r['name']] = r
+        for n in p.get('remove', []): self.rules.pop(n, None)
+        return {'rules': list(self.rules.values())}
 
 
-class ScriptGuardTests(unittest.TestCase):
+class ScriptRuleTests(unittest.TestCase):
     def run_script(self, k, code):
         def mb_time(method='status', params=None):
             return k.call(f'time.{method}', **(params or {}))
@@ -142,22 +144,27 @@ class ScriptGuardTests(unittest.TestCase):
         with mock.patch.object(scripts, '_tools', return_value={'mb_time': mb_time, 'mb_call': mb_call}), mock.patch.object(scripts, 'kernel', lambda: k):
             return scripts.mb_run(code=code)
 
-    def test_guards_a_script_changed_are_reported_and_left_as_they_are(self):
-        k = GuardKernel()
-        out = self.run_script(k, 'def main():\n mb_time("configure", {"airBelow": -1})\n mb_call("time.configure", {"threatWithin": -1, "healthDrop": True})')
-        self.assertEqual(out['guardsChanged'], {'airBelow': [180, -1], 'threatWithin': [12, -1]})
-        self.assertEqual(k.conditions['airBelow'], -1)
+    def test_rules_a_script_changed_are_reported_and_left_as_they_are(self):
+        k = RuleKernel()
+        out = self.run_script(k, 'def main():\n mb_call("time.rules", {"remove": ["air_below"]})\n'
+                                 ' mb_call("time.rules", {"set": [{"name": "hostile_within", "kind": "hostile_within", "level": 12}, {"name": "eat", "kind": "food_below", "level": 16}]})')
+        self.assertEqual(out['rulesChanged'], ['air_below', 'eat'])
+        self.assertNotIn('air_below', k.rules)
 
-    def test_no_configure_no_read_and_a_restored_guard_is_not_reported(self):
-        k = GuardKernel()
-        self.assertNotIn('guardsChanged', self.run_script(k, 'def main():\n mb_time("status")'))
-        self.assertEqual(k.reads, 1)  # the script's own status call only
-        out = self.run_script(k, 'def main():\n mb_time("configure", {"airBelow": -1})\n mb_time("configure", {"airBelow": 180})')
-        self.assertNotIn('guardsChanged', out)
+    def test_no_change_no_read_and_a_rule_put_back_is_not_reported(self):
+        k = RuleKernel()
+        self.assertNotIn('rulesChanged', self.run_script(k, 'def main():\n mb_time("status")'))
+        self.assertEqual(k.reads, 0)
+        out = self.run_script(k, 'def main():\n mb_call("time.rules", {"remove": ["air_below"]})\n'
+                                 ' mb_call("time.rules", {"set": [{"name": "air_below", "kind": "air_below", "level": 180}]})')
+        self.assertNotIn('rulesChanged', out)
+        for name, args, changes in (('mb_reflex', (), True), ('mb_interrupt', ('add',), True), ('mb_time', ('configure', {'airBelow': -1}), True),
+                                    ('mb_time', ('status',), False), ('mb_hold', ({'id': 'x'},), False)):
+            self.assertEqual(scripts._rule_call(name, args, {}), changes, name)  # the old names change rules too
 
 
     def test_a_tool_called_with_a_dict_first_is_not_mistaken_for_a_configure(self):
-        k = GuardKernel()
+        k = RuleKernel()
         def mb_hold(item=None, slot=None):
             return {'held': item}
         with mock.patch.object(scripts, '_tools', return_value={'mb_hold': mb_hold}), mock.patch.object(scripts, 'kernel', lambda: k):

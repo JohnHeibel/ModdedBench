@@ -42,7 +42,8 @@ def main():
             raise AssertionError('interrupt did not fire: '+name+' '+str(sup.events()))
         def settled_player():time.sleep(.25);return call('obs.player')
         try:
-            call('time.configure',healthDrop=False,healthBelow=-1,airBelow=-1,actionFailed=False,pauseOnDisconnect=True)
+            call('time.rules',remove=[r['name'] for r in call('time.rules')['rules'] if r['kind'] in ('health_drop','health_below','air_below','action_failed')])
+            call('time.configure',pauseOnDisconnect=True)
             call('time.pause');s.call('dev.interaction_fixture.restore');time.sleep(.2)
             base=next(p for p in s.call('obs.players') if p['name']==USER);arena=s.call('dev.interaction_fixture.create');created=True
             call('time.resume');time.sleep(.5)

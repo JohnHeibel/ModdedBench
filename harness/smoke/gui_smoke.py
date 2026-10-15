@@ -75,7 +75,8 @@ def main():
                   and identity(sv.get('cursor'))==identity(v.get('cursor')), sv)
 
         try:
-            c.call('time.configure', healthDrop=False, healthBelow=-1, airBelow=-1, actionFailed=False, pauseOnDisconnect=True)
+            c.call('time.rules', remove=[r['name'] for r in c.call('time.rules')['rules'] if r['kind'] in ('health_drop', 'health_below', 'air_below', 'action_failed')])
+            c.call('time.configure', pauseOnDisconnect=True)
             c.call('time.pause')
             created=True
             evidence['fixture']=s.call('dev.gui_fixture.create')

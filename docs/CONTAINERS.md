@@ -285,7 +285,7 @@ Set `MB_COMPOSE_PROJECT=mbtest` to act on a test stack.
 Recording: an OBS Game Capture set to a specific window, matched on the window
 title, picks the client up again after a deploy restarts it; record to `.mkv`
 and split by time. With
-the `pauseOnDisconnect` guard set (`PROMPT.md` asks for it at session start)
+`pauseOnDisconnect` set (`mb_time configure`; on by default)
 the world is held while the client is down. The pack's Darkerer mod makes nights
 near-black on video; it only changes rendering, and its config is synced from the server on
 join, so a client-side edit does nothing: set `BRIGHT_NIGHTS=true` in

@@ -18,7 +18,7 @@ def main():
         evidence['checks'].append(name);print(name,flush=True)
     with Kernel(timeout=60) as c, Kernel(url=bridge_url('server')) as s:
         active=None
-        config=c.call('time.status')['state']
+        config=c.call('time.status')['state'];rules=c.call('time.rules')['rules']
         evidence['previousClock']=config
         def call(method,**params):
             try: result=c.call(method,**params)
@@ -27,7 +27,7 @@ def main():
             evidence['receipts'].append({'method':method,'result':result});return result
         try:
             call('act.stop');call('gui.close')
-            call('time.configure',healthDrop=False,healthBelow=-1,airBelow=-1,foodBelow=-1,burning=False,actionFailed=False,pauseOnDisconnect=False)
+            call('time.rules',remove=[r['name'] for r in rules if r['kind']!='hostile_within']);call('time.configure',pauseOnDisconnect=False)
             call('time.pause')
             s.call('dev.interaction_fixture.create');active='dev.interaction_fixture'
             s.call(active+'.stack',slot=0,id='minecraft:baked_potato',count=4)
@@ -90,7 +90,7 @@ def main():
                 call('act.stop');call('gui.close');call('time.pause')
                 if active:s.call(active+'.restore')
                 # The normal human handoff uses free-running time with no disconnect pause.
-                call('time.configure',**config['conditions'])
+                call('time.rules',replace=rules);call('time.configure',pauseOnDisconnect=config.get('pauseOnDisconnect',True))
                 if not config.get('paused',False):call('time.resume')
             finally:
                 out.parent.mkdir(parents=True,exist_ok=True);out.write_text(json.dumps(evidence,indent=2))

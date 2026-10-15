@@ -109,8 +109,7 @@ def setup(server, name: str) -> dict:
     scene = SCENES[name]
     from kernel import BridgeError, Kernel
     client, until = Kernel(timeout=120), time.monotonic() + 20
-    client.call("time.configure", healthDrop=False, healthBelow=-1, airBelow=-1, foodBelow=-1, burning=False, threatWithin=-1,
-                actionFailed=False, pauseOnDisconnect=False)  # no guard of a run before this one; the model sets its own
+    client.call("time.rules", replace=[]); client.call("time.configure", pauseOnDisconnect=False)  # no rule of a run before this one; the model sets its own
     if client.call("time.status")["state"].get("paused"): client.call("time.resume")
     while server.call(FIX + ".status")["player"]["dead"]:  # a body left dead (a course's last scene) respawns first
         if time.monotonic() > until: raise RuntimeError("the player did not respawn")

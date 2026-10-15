@@ -123,7 +123,7 @@ class Reply:
 
 class Kernel:
     body_gate: Callable[[Kernel, str], None] | None = None  # harness/tools/tasks.py: refuses a call that would move the body while a background task has it
-    around_action: Callable[[Kernel, str, float | None, dict], Any] | None = None  # harness/tools/reflexes.py: goes round each call, to answer a guard's pause with the reflex armed for it
+    around_action: Callable[[Kernel, str, float | None, dict], Any] | None = None  # harness/tools/reflexes.py: goes round each call, to answer a rule's pause with the rule's script
 
     def __init__(self, url: str | None = None, token: str | None = None, timeout: float = 60.0,
                  on_event: Callable[[dict], None] | None = None, connect_retries: int = 1, retry_delay: float = 2.0,
@@ -272,7 +272,7 @@ class Kernel:
         if armed:
             # The client resumes a paused world for the tool call's first action and runs that action on the first
             # resumed tick. Only that action carries the directive: a world that pauses later in the same tool call
-            # (a guard) is not resumed through. ticks N steps N ticks instead of resuming.
+            # (a rule's) is not resumed through. ticks N steps N ticks instead of resuming.
             params["_resume"] = wanted.get("ticks") or True; wanted["resumed"] = False
         r = self.call_reply(method, timeout, **params)
         if not r.ok and str((r.error or {}).get("msg", "")).startswith("pause has not settled") and self._await_settled():
@@ -287,7 +287,7 @@ class Kernel:
             r = self.call_reply(method, timeout, **params)
         if not r.ok:
             msg = (r.error or {}).get("msg", "")
-            if wanted is None and refused(r.error, "time_paused") and "by a guard" not in msg:  # a guard's pause is one to look at first
+            if wanted is None and refused(r.error, "time_paused") and "by a rule" not in msg:  # a rule's pause is one to look at first
                 msg += " (or call the tool again with resume=True: it resumes the world and acts in one step)"
             if isinstance(asked, dict) and asked.get("stayedPaused"):
                 msg += " (the action ended at once, so the world was not resumed: it is still paused)"

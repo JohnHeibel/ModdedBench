@@ -110,9 +110,7 @@ class Replay(Course):
     def setup(self):
         self.ensure_world()
         state = self.c.call("time.status")["state"]
-        self.previous_clock = state.get("conditions")
-        self.c.call("time.configure", healthDrop=False, healthBelow=-1, airBelow=-1, foodBelow=-1, burning=False,
-                    threatWithin=-1, actionFailed=False, pauseOnDisconnect=False)
+        self.previous_rules = mc.quiet(self.c)
         if state.get("paused"): self.c.call("time.resume")
         try: self.c.call("act.stop")
         except BridgeError: pass
@@ -132,7 +130,7 @@ class Replay(Course):
         for step in (lambda: self.c.call("act.stop"),
                      lambda: self.c.call("time.resume") if self.c.call("time.status")["state"].get("paused") else None,
                      lambda: work.mb_settings("set", values={k: v for k, v in self.previous_timeouts.items() if v is not None}),
-                     lambda: self.c.call("time.configure", **{**(self.previous_clock or {}), "pauseOnDisconnect": False})):
+                     lambda: mc.put_back(self.c, self.previous_rules)):
             try: step()
             except Exception as e: self.evidence.setdefault("teardownErrors", []).append(str(e))
 

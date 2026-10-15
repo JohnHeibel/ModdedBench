@@ -42,7 +42,7 @@ def test_without_resume_the_paused_refusal_stands():
 def test_a_guard_pause_refusal_does_not_offer_to_resume_through_it():
     k = FakeWorld()
     with pytest.raises(BridgeError, match="requested_pause.*resume=True"): k.call("act.input")
-    k.refusal = "time_paused: world paused by a guard (health_dropped): read mb_time status, decide, resume"
+    k.refusal = "time_paused: world paused by a rule (health_drop): read mb_time status, decide, resume"
     with pytest.raises(BridgeError, match="health_dropped") as e: k.call("act.input")
     assert "resume=True" not in e.value.msg
 

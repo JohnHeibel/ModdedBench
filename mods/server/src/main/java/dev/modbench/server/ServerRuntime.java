@@ -21,8 +21,8 @@ public final class ServerRuntime extends BridgeRuntime {
     public ServerRuntime(MinecraftServer server) {
         super("server"); this.server = server;
         clock=new ServerClock(server,this);
-        for(String method:new String[]{"time.status","time.pause","time.resume","time.step","time.configure","time.report_failure"})
-            register(method,"Dedicated simulation clock; step {ticks} runs N ticks then pauses, resume {ticks} likewise without waiting; configure {healthDrop,healthBelow,airBelow,foodBelow,burning,threatWithin,actionFailed,pauseOnDisconnect}; threatWithin N (-1 off, at most 32) pauses with reason threat when a mob takes you as its target within N blocks (2N in line of sight) or a creeper starts to swell, and status.threats lists them",
+        for(String method:new String[]{"time.status","time.pause","time.resume","time.step","time.configure","time.report_failure","time.rules"})
+            register(method,"Dedicated simulation clock; step {ticks} runs N ticks then pauses, resume {ticks} likewise without waiting; configure {pauseOnDisconnect}; rules {} reads the danger rules, {set:[{name,kind,level?,do?}],remove:[name],replace:[rule]} changes them (kinds health_drop, health_below, air_below, food_below, burning, hostile_within (blocks, twice that in line of sight; status.threats lists the mobs after you), action_failed (report_failure)); a rule freezes the world on crossing with reason kind or kind:name, do tell only adds to status.told",
                 method.equals("time.status")?"read":"interaction",r->clock.command(r));
         if(Boolean.getBoolean("modbench.devFixtures")) try {
             var fixtures=Class.forName("dev.modbench.server.DevFixtures").getDeclaredMethod("register",ServerRuntime.class,MinecraftServer.class);

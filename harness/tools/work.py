@@ -167,11 +167,11 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = Fal
     none is in sight within
     16 blocks and none of those within 32 when it began is in sight or within 16. It takes no
     entity_id or target.
-    While a fight runs, being hit does not trip the healthDrop guard, being set alight does not
-    trip burning, and a mob taking you as its target within 4 blocks (8 with hold or swarm) does
-    not trip threat: that is the fight you chose, and its own limits count the health it costs.
-    Every other guard (low health, air, food, a swelling creeper, a threat farther out) still
-    pauses the world. The fight is then held, not lost: the call returns state suspended with
+    While a fight runs, being hit does not cross your health_drop rules, being set alight does
+    not cross burning, and a mob taking you as its target within 4 blocks (8 with hold or swarm)
+    does not cross hostile_within: that is the fight you chose, and its own limits count the
+    health it costs. Every other rule (low health, air, food, a swelling creeper, a mob farther
+    out, your own checks) still crosses. The fight is then held, not lost: the call returns state suspended with
     pausedBy and a suspendedJobId, and mb_work_resume(job_id, resume=True) carries on with it.
     weapon_slot is the hotbar slot to fight with (default: whatever is in hand). leash is how far
     the fight may draw you from where you started (default: 16 blocks more than the mob's distance
@@ -188,7 +188,7 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = Fal
     what one of the fight leaves where it dies, such as a slime's halves, is part of it).
     Both hold in swarm mode. The call blocks until the fight ends, so these limits and
     duration_ticks are where you get to change your mind.
-    It stops, as a failure that the actionFailed guard turns into a pause, the moment the fight
+    It stops, as a failure that crosses your action_failed rules, the moment the fight
     gets worse than the one you chose: health_at_bail_line, health_lost, swarm_growing, outnumbered,
     beyond_leash, target_gone (it left the world with
     health left: it exploded, despawned or went out of sight range), target_lost,
@@ -975,9 +975,9 @@ def mb_work_status(job_id: str) -> Any:
 def mb_work_resume(job_id: str, options: dict | None = None) -> Any:
     """Resume a durable blocked/interrupted mining or build job, or wait again on a suspended one.
 
-    A job whose step ended, or that a guard's pause met (pausedBy names the guard), returns state
+    A job whose step ended, or that a rule's pause met (pausedBy names the rule), returns state
     "suspended" with a suspendedJobId. A suspended job of any kind (mine, build, goto, process, fight), or
-    a single action a guard met in progress (eating), is held where it stopped, break progress and path
+    a single action a rule's pause met in progress (eating), is held where it stopped, break progress and path
     kept, and runs on whenever the world runs; this call waits on it as it is, and returns at once with
     its outcome if it already finished. resume=True carries on with it, resume=N steps it. Any new
     action ends a held job.
