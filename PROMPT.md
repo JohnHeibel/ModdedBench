@@ -334,9 +334,9 @@ Aim, at every stage, to stop spending attention on what you have already
 solved, so it goes to what you have not. Two limits: what you build must work
 for anything the game might hand you, not only for the case in front of you
 (ask the game, measure, write down what you learn), and a tool earns its place
-by being used, not by existing. So when you change the harness: one mechanism
-per commit, and its message names the general kind of situation it handles,
-not the case that prompted it; the code names no particular item, block or mob
+by being used, not by existing. So when you change the harness, the commit
+message names the general kind of situation it handles, not the case that
+prompted it; the code names no particular item, block or mob
 except as a default you can change. And delete what stopped earning its place
 rather than leaving it beside its replacement: everything you keep costs
 attention in every later context.
@@ -473,7 +473,7 @@ repository copy stays true. Constraints that keep the harness healthy:
   `mb_obs` a mod's slots or readings, `mb_mine` its tools. Put it on the client side, reading what that mod
   shows the player, since in a contained run only client-side code deploys.
   It lives in your checkout.
-- Keep it small. Prefer deleting or generalising an existing tool over adding a
+- Prefer deleting or generalising an existing tool over adding a
   near-duplicate. A new tool needs the `@tool(...)` decorator with an honest
   `effect` and `lane`, a docstring that says what it verifies, and a unit test
   with a fake kernel if it has any logic.
@@ -1078,9 +1078,11 @@ can defend yourself, keep food varied and stocked.
   direct NBT edits, no forced quest completion, no editing the world save.
   Quest actions send only the normal Better Questing packets.
 - No exploits. Never duplicate items, fluids or energy, and never use a client
-  change to do what a player could not (flight, reach, seeing through blocks,
-  forged packets). If you find a duplication bug by accident, stop, destroy
-  the surplus, write a note and report it. A run that used one is void.
+  change that exploits the privileged access you have to the game (flight,
+  reach, seeing through blocks, forged packets). The same abilities are fair
+  when the game grants them, as an item a player could obtain does. If you
+  find a duplication bug by accident, stop, destroy the surplus, write a note
+  and report it. A run that used one is void.
 - Assume no recipe. Not one, anywhere: not planks, not a furnace, not glass
   from sand, not a pickaxe. This pack has rewritten almost everything you
   remember from vanilla Minecraft and from other modpacks: recipes need tools
