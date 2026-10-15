@@ -59,7 +59,7 @@ LINES = {  # tool -> line from (arguments, result); anything absent gets the gen
     "mb_quest_claim": lambda a, r: "claimed a quest", "mb_quest_detect": lambda a, r: "handing in a quest",
     "mb_quest_observe": lambda a, r: "reading a quest: " + str(r.get("title") or r.get("name") or ""), "mb_quest_lines": lambda a, r: "reading the quest book",
     "mb_quest_search": lambda a, r: "quest search: " + str(a.get("query")),
-    "mb_wait": lambda a, r: "waiting on the base" + (": woke" if r.get("woke") else ""), "mb_interrupt": lambda a, r: ("set a check: " if a.get("operation") == "add" else f"check {a.get('operation')}: ") + str(a.get("name", "")),
+    "mb_wait": lambda a, r: "waiting on the base" + (": woke" if r.get("woke") else ""),
     "mb_reflex": lambda a, r: ("dropped rule " if a.get("remove") else "rule: " if a.get("when") or a.get("do") else "reading its rules ") + str(a.get("name") or ""),
     "mb_run": lambda a, r: "script" + (f" {a['name']}" if a.get("name") else "") + (": stopped, " + str(r["stopped"])[:80] if r.get("stopped") else ""),
     "mb_wiki_search": lambda a, r: "wiki search: " + str(a.get("query")), "mb_wiki_read": lambda a, r: "wiki: " + str(a.get("title")),

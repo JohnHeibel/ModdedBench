@@ -66,11 +66,10 @@ def _held(result, depth=3):
 
 
 def _rule_call(name, args, kwargs):
-    """A call that may change the rules: mb_reflex or its old names (mb_interrupt, mb_time configure), or time.rules
-    through mb_call."""
+    """A call that may change the rules: mb_reflex, or time.rules through mb_call."""
     first = args[0] if args else kwargs.get("method")
     first = first.removeprefix("time.") if isinstance(first, str) else None
-    return name in ("mb_reflex", "mb_interrupt") or (name, first) in (("mb_call", "rules"), ("mb_time", "configure"))
+    return name == "mb_reflex" or (name, first) == ("mb_call", "rules")
 
 
 def _rules():

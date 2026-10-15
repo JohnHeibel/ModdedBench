@@ -167,8 +167,7 @@ bridge's read methods, fires `interrupt.fire` with native effects (`notify`,
 `cancel`, `pause`) and an optional prompt for the model, retries with the same
 event id if the fire is not confirmed, and re-arms the check rather than
 dropping it. Checks survive reconnects and, persisted in the journal's SQLite
-file, an MCP server restart. `mb_interrupt` and `mb_interrupt_events` are the
-checks' old names. A plain MCP connection cannot wake a model whose turn has
+file, an MCP server restart. A plain MCP connection cannot wake a model whose turn has
 ended, so a chat-style agent stays in its turn by blocking in `mb_wait`, which
 returns when the journal has an event that needs it, a rule tells, a script
 reports or a freeze waits for it; an ended turn is restarted by an outer loop

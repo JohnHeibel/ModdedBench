@@ -1208,13 +1208,6 @@ and list what is loaded, with load errors.
 | `mb_time` | Control GTNH world time: status, pause, resume, step, configure, report_failure |
 | `mb_memory` | Persistent server-world/dimension memory: status, get, waypoint, route, protect, remove, record |
 
-**`harness/tools/interrupts.py`**: Checks: the model's own rules on any read (mb_reflex, reflexes.py), polled here; and mb_interrupt, their old name.
-
-| Tool | What it does |
-| --- | --- |
-| `mb_interrupt` | The old name for checks (mb_reflex), kept for scripts written against it: add, remove, reload, status, ack |
-| `mb_interrupt_events` | Replay the checks' journal after a cursor (armed, triggered with data.eventId and data.payload, fault, disarmed, ...); non-consuming, gap reported |
-
 **`harness/tools/inventory.py`**: GUI and inventory tools plus ContainerSession, the guarded composition helper for model-written routines.
 
 | Tool | What it does |

@@ -269,7 +269,7 @@ class RuleTests(unittest.TestCase):
         self.assertEqual({k: sup.watches["lava"].spec[k] for k in ("effects", "oneShot", "edge")}, {"effects": ["pause"], "oneShot": False, "edge": True})
         self.w.value = 1; sup.poll()
         self.until(lambda: self.w.clock["paused"])
-        self.assertEqual((self.w.clock["reason"], self.w.latched), ("interrupt:lava", [self.w.fires[0]["eventId"]]))  # a freeze latches, as mb_interrupt's did
+        self.assertEqual((self.w.clock["reason"], self.w.latched), ("interrupt:lava", [self.w.fires[0]["eventId"]]))  # a freeze latches
         self.w.clock["paused"] = False; self.w.latched.clear()
         reflexes.mb_reflex("lava", do="def main(event):\n return event['reason']")  # the same check, now answered by a script
         self.assertEqual(self.walk("interrupt:lava")["state"], "succeeded")
@@ -288,39 +288,24 @@ class RuleTests(unittest.TestCase):
         self.assertEqual([m for m, _ in self.w.sent if m.startswith("interrupt.")][-1], "interrupt.ack")
         self.assertEqual(reflexes.deliver()[0]["result"], "out")
 
-    def test_the_old_names_work_on_the_same_checks(self):
-        spec = {**CHECK, "effects": ["notify", "cancel", "pause"], "oneShot": True, "latch": True}
-        interrupts.mb_interrupt("add", "Ender_scout_watch", spec)
-        with self.assertRaisesRegex(ValueError, "already exists"): interrupts.mb_interrupt("add", "Ender_scout_watch", spec)
-        interrupts.mb_interrupt("add", "Ender_scout_watch", spec, replace=True)
-        self.assertEqual([(r["when"], r["do"]) for r in reflexes.mb_reflex()["rules"] if r["name"] == "Ender_scout_watch"], [("check", "ask")])
+    def test_a_one_shot_check_latches_and_the_wait_hears_it(self):
+        reflexes.mb_reflex("ender_scout_watch", when={**CHECK, "effects": ["notify", "cancel", "pause"], "oneShot": True, "latch": True})
+        self.assertEqual([(r["when"], r["do"]) for r in reflexes.mb_reflex()["rules"] if r["name"] == "ender_scout_watch"], [("check", "ask")])
         self.w.value = 1; mbtool.state["interrupts"].poll()
         self.until(lambda: self.w.clock["paused"])
         eid = self.w.fires[0]["eventId"]
-        status = interrupts.mb_interrupt("status")
-        self.assertEqual((status["client"]["latched"], [w["armed"] for w in status["supervisor"]["watches"]]), ([eid], [False]))  # oneShot
-        self.assertEqual(reflexes.mb_reflex("Ender_scout_watch")["armed"], False)
-        interrupts.mb_interrupt("ack", event_id=eid); self.assertEqual(self.w.latched, [])
+        self.assertEqual((self.w.latched, reflexes.mb_reflex("ender_scout_watch")["armed"]), ([eid], False))  # oneShot
+        self.w.call("interrupt.ack", eventId=eid); self.assertEqual(self.w.latched, [])
         got = reflexes.mb_wait(after=0, timeout_s=1)
         self.assertEqual((got["woke"], "paused" in got, [e["kind"] for e in got["events"]]), (True, False, ["triggered"]))  # what woke it comes first
         self.assertEqual(got["events"][0]["data"]["eventId"], eid)
         self.assertEqual(reflexes.mb_wait(after=got["cursor"], timeout_s=1)["events"], [])
-        self.assertEqual([e["kind"] for e in interrupts.mb_interrupt_events(after=0)["events"]][:2], ["armed", "armed"])
-        self.assertEqual(interrupts.mb_interrupt("remove", "Ender_scout_watch"), {"removed": True})
+        reflexes.mb_reflex("ender_scout_watch", remove=True)
         self.assertEqual([r["name"] for r in reflexes.mb_reflex()["rules"]], [r["name"] for r in DEFAULTS])
 
-    def test_old_guard_settings_set_the_rules_named_for_their_kinds(self):
-        reflexes.mb_reflex("health_below", do="def main(event):\n pass")
-        core.mb_time("configure", {"threatWithin": -1, "healthBelow": 10, "burning": False, "pauseOnDisconnect": False})
-        self.assertEqual(self.w.sent[-1], ("time.configure", {"pauseOnDisconnect": False}))
-        rules = {r["name"]: r for r in self.w.table}
-        self.assertEqual((sorted(set(r["name"] for r in DEFAULTS) - set(rules)), rules["health_below"]["level"]), (["burning", "hostile_within"], 10))
-        self.assertIn("def main", rules["health_below"]["do"])  # its script stays
-        core.mb_time("configure", {"threatWithin": 12, "actionFailed": True})
-        conditions = core.mb_time("status")["state"]["conditions"]
-        self.assertEqual({k: conditions[k] for k in ("threatWithin", "healthBelow", "burning", "actionFailed", "airBelow")},
-                         {"threatWithin": 12, "healthBelow": 10, "burning": False, "actionFailed": True, "airBelow": 180})
-        with self.assertRaisesRegex(ValueError, "healthDrop"): core.mb_time("configure", {"healthDrop": 3})
+    def test_configure_leaves_the_rules_alone(self):
+        core.mb_time("configure", {"pauseOnDisconnect": False})
+        self.assertEqual((self.w.sent[-1], [r["name"] for r in self.w.table]), (("time.configure", {"pauseOnDisconnect": False}), [r["name"] for r in DEFAULTS]))
 
     def test_a_tell_rule_tells_once_and_wakes_the_wait(self):
         self.w.tell("burning")  # heard before the first look: history, not news

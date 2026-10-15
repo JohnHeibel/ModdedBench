@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
-"""Checks: the model's own rules on any read (mb_reflex, reflexes.py), polled here; and mb_interrupt, their old name.
+"""Checks: the model's own rules on any read (mb_reflex, reflexes.py), polled here.
 
 A check accepts either ``queries`` plus a declarative ``condition``, or a Python ``file`` whose
 ``evaluate(context)`` returns bool or ``{"match": bool, "payload": {...}}``. Conditions address
@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 import mbtool
-from mbtool import kernel, state, tool
+from mbtool import kernel, state
 from mbtools_gtnh.core import methods_map
 
 _OPS = {"eq": lambda a,b:a==b, "ne":lambda a,b:a!=b, "lt":lambda a,b:a<b,
@@ -404,32 +404,3 @@ def close_supervisor():
     if sup is not None: sup.close()
 
 mbtool.on_shutdown["interrupts"] = close_supervisor
-
-@tool(lane="control", coverage=["meta"])
-def mb_interrupt(operation: str, name: str = "", spec: dict | None = None, replace: bool = False, event_id: str = "") -> Any:
-    """The old name for checks (mb_reflex), kept for scripts written against it: add, remove, reload, status, ack.
-
-    add takes spec as an mb_reflex check takes when, with these defaults: effects ['notify'],
-    oneShot true, edge false; replace=True replaces one of that name. reload re-reads a file
-    check's code (a failed reload keeps the old). status returns {supervisor: {watches, transport}
-    or one watch, client: interrupt.status (latched eventIds, receipts)}. ack(event_id) clears
-    one latch without resuming time. Every check, made here or by mb_reflex, is in both.
-    """
-    if operation == "ack":
-        return kernel().call("interrupt.ack", eventId=event_id)
-    supervisor = get_supervisor()
-    if operation == "add": return supervisor.add(name, spec or {}, replace=replace)
-    if operation == "remove": return {"removed": supervisor.remove(name)}
-    if operation == "reload": return supervisor.reload(name)
-    if operation == "status": return {"supervisor": supervisor.status(name or None), "client": kernel().call("interrupt.status")}
-    raise ValueError("operation must be add, remove, reload, status or ack")
-
-
-@tool(lane="read", coverage=["meta"])
-def mb_interrupt_events(after: int = 0, limit: int = 100, wait_s: float = 0) -> Any:
-    """Replay the checks' journal after a cursor (armed, triggered with data.eventId and data.payload,
-    fault, disarmed, ...); non-consuming, gap reported. wait_s (0..30) long-polls without advancing world time.
-    """
-    if after < 0 or not 1 <= limit <= 1000 or not 0 <= wait_s <= 30:
-        raise ValueError("after>=0, limit 1..1000, wait_s 0..30 required")
-    return get_supervisor().events(after, limit, wait_s)

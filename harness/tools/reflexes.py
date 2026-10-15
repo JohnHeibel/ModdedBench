@@ -4,7 +4,7 @@
 
 A rule watches one kind of danger at its level, checked every tick by the server (SimulationClock, time.rules: that table
 is the world's and outlives this process), or is a check of the model's own on any read, polled by interrupts.py's
-supervisor (kept in its journal, so it too outlives a restart; mb_interrupt is the checks' old name). When it crosses,
+supervisor (kept in its journal, so it too outlives a restart). When it crosses,
 the world freezes for the model; or the rule only tells, and the world runs on; or a script the model wrote ahead of time
 answers the freeze. A script calls no model and has only the tools the model has. What tells and scripts did, and what
 stopped a check, is handed to the model once, on its next tool result (``reflexes``, through tasks.fields), and wakes
@@ -450,7 +450,7 @@ def mb_reflex(name: str | None = None, when: str | dict | None = None, do: str |
     payload, prompt?}, with context.values, previous, state, read(method, **params) and prompt(text,
     **observations). A check also takes effects (notify, cancel: stop the job in flight, pause),
     latch (default with cancel or pause: your next action is refused once with what it saw, or
-    mb_interrupt ack), oneShot (default false: off once it fires), edge (default true), consecutive,
+    interrupt.ack), oneShot (default false: off once it fires), edge (default true), consecutive,
     cooldown, timeout_s, operationScope, reason (its pause reads interrupt:<reason, default name>)
     and prompt. Setting a check again re-reads its file and re-arms it; a fault turns it off until
     then. Several rules may share a kind at different levels. Each crosses once, and again only
@@ -547,8 +547,7 @@ def mb_wait(after: int | None = None, timeout_s: float = 600) -> Any:
     of yours fires (reflexes on its result says what), or when a check's journal has news: events
     are those (triggered with data.eventId and data.payload, fault, stalled, a failed delivery,
     another world), cursor is where the next wait goes on from (after; without it, from your last
-    wait's; 0 replays what is kept), gap whether older ones were dropped (mb_interrupt_events
-    replays the whole journal). Nothing you wait for happens in a paused world, so a wait never sits
+    wait's; 0 replays what is kept), gap whether older ones were dropped. Nothing you wait for happens in a paused world, so a wait never sits
     in one: paused when you call or paused while you wait, it returns at once with paused: the
     reason, unless a script of yours is answering that pause.
     """

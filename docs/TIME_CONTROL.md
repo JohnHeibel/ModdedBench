@@ -177,9 +177,8 @@ running job. A latched crossing refuses the next acting call
 whose script answers it is acknowledged first. A check set through `mb_reflex`
 is not one-shot and crosses on its edge, like the kinds, unless it says
 otherwise. Setting it again re-reads its file and watches again. A check that
-faults, stalls or meets another world stops and is reported once. `mb_interrupt`
-(add, remove, reload, status, ack) and `mb_interrupt_events` are the checks'
-old names and work on the same checks; `mb_wait(after, timeout_s)` blocks until
+faults, stalls or meets another world stops and is reported once.
+`mb_wait(after, timeout_s)` blocks until
 the journal has an event for the model, a rule tells, a script reports, or a
 freeze no script answers comes, and returns the journal's events and its
 `cursor`. A background task cannot set or wait on checks.
@@ -214,12 +213,6 @@ A background task's rule changes are put back when it ends (`rulesRestored`,
 `rulesChanged`). A script does not run inside a background task's process: the
 pause ends the task, then the watcher answers it. A script that loops without
 calling a tool cannot be stopped. A call that was cut short is not sent again.
-
-`mb_time configure` still takes the old guard keys (`healthDrop`, `burning`,
-`actionFailed`: booleans; `healthBelow`, `airBelow`, `foodBelow`,
-`threatWithin`: levels, -1 for off), each setting or removing the rule named
-for its kind, and `mb_time status` reads them back as `conditions`. The bridge's
-own `time.configure` refuses them.
 
 Tests: `SimulationClockTest`, `harness/tests/test_reflexes.py` and
 `test_gtnh_interrupts.py` against fakes, and in the game the `reflex_*` scenes

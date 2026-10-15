@@ -330,30 +330,6 @@ def mb_stop() -> Any:
     return kernel().call("act.stop")
 
 
-GUARDS = {"healthDrop": "health_drop", "healthBelow": "health_below", "airBelow": "air_below", "foodBelow": "food_below",
-          "burning": "burning", "threatWithin": "hostile_within", "actionFailed": "action_failed"}  # configure's old guard keys, and the rule each names
-LEVELLED = ("healthBelow", "airBelow", "foodBelow", "threatWithin")
-
-
-def _guards(k, params: dict) -> dict:
-    """configure's old guard keys as a rule change: on, or a level, sets the rule named for the kind (its do kept); off or -1 removes it."""
-    table, change = {r["name"]: r for r in k.call("time.rules", timeout=10)["rules"]}, {"set": [], "remove": []}
-    for key, kind in GUARDS.items():
-        if key not in params: continue
-        v = params.pop(key)
-        if isinstance(v, bool) == (key in LEVELLED) or not isinstance(v, (int, float)):
-            raise ValueError(f"{key} is " + ("a number, -1 for off" if key in LEVELLED else "true or false"))
-        if v is False or v is not True and v < 0: change["remove"].append(kind)
-        else: change["set"].append({**table.get(kind, {}), "name": kind, "kind": kind, **({"level": v} if key in LEVELLED else {})})
-    return change
-
-
-def _conditions(state: dict) -> dict:
-    """The old guard settings, read off the rules named for their kinds."""
-    by = {r["name"]: r for r in state.get("rules") or []}
-    return {**{key: by.get(kind, {}).get("level", -1) if key in LEVELLED else kind in by for key, kind in GUARDS.items()}, "pauseOnDisconnect": state.get("pauseOnDisconnect")}
-
-
 @tool(lane=lambda kw: "read" if (kw.get("method") or "status").removeprefix("time.") == "status" else "control", coverage=["time"])
 def mb_time(method: str = "status", params: dict | None = None, timeout_s: float = 60.0) -> Any:
     """Control GTNH world time: status, pause, resume, step, configure, report_failure.
@@ -395,9 +371,6 @@ def mb_time(method: str = "status", params: dict | None = None, timeout_s: float
     agent-written tools can call report_failure to signal their own failures.
     configure {pauseOnDisconnect} defaults true; set false for a planned
     client restart with continued server production, then restore it after reconnect.
-    configure still takes the old guard keys (healthDrop, burning, actionFailed: booleans;
-    healthBelow, airBelow, foodBelow, threatWithin: levels, -1 for off): each sets or removes
-    the rule named for its kind, and status.conditions reads them back.
     A controlling session must stay connected; observation-only sessions do not own time.
     The reply keeps the three latest pause events; params {events:true} on status returns all 32.
     """
@@ -405,16 +378,11 @@ def mb_time(method: str = "status", params: dict | None = None, timeout_s: float
     if name not in {"status", "pause", "resume", "step", "configure", "report_failure"}:
         raise ValueError("unknown time method")
     params = dict(params or {}); every = params.pop("events", False); k = kernel()
-    if name == "configure":
-        change = _guards(k, params)
-        ruled = k.call("time.rules", timeout=10, **change) if change["set"] or change["remove"] else {}
-        return {**(k.call("time.configure", timeout=timeout_s, **params) if params or not ruled else {}), **ruled}
     if name == "step":  # 20 ticks a second when the server keeps up; the reply waits for the pause at the end
         timeout_s = max(timeout_s, int(params.get("ticks") or 0) / 10 + 30)
     out = k.call(f"time.{name}", timeout=timeout_s, **params)
     state = out.get("state") if isinstance(out, dict) else None
     if not every and isinstance(state, dict) and len(state.get("events") or []) > 3: state["events"] = state["events"][-3:]
-    if name == "status" and isinstance(state, dict) and "rules" in state: state["conditions"] = _conditions(state)
     return out
 
 

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
-"""Offline regressions of the checks' supervisor (mb_reflex checks, mb_interrupt); no bridge or game is required."""
+"""Offline regressions of the checks' supervisor (mb_reflex checks); no bridge or game is required."""
 from __future__ import annotations
 import asyncio, os, sys, tempfile, threading, time, unittest, unittest.mock
 from pathlib import Path

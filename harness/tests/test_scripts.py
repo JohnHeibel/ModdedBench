@@ -158,9 +158,9 @@ class ScriptRuleTests(unittest.TestCase):
         out = self.run_script(k, 'def main():\n mb_call("time.rules", {"remove": ["air_below"]})\n'
                                  ' mb_call("time.rules", {"set": [{"name": "air_below", "kind": "air_below", "level": 180}]})')
         self.assertNotIn('rulesChanged', out)
-        for name, args, changes in (('mb_reflex', (), True), ('mb_interrupt', ('add',), True), ('mb_time', ('configure', {'airBelow': -1}), True),
+        for name, args, changes in (('mb_reflex', (), True), ('mb_call', ('time.rules', {}), True), ('mb_time', ('configure', {'pauseOnDisconnect': False}), False),
                                     ('mb_time', ('status',), False), ('mb_hold', ({'id': 'x'},), False)):
-            self.assertEqual(scripts._rule_call(name, args, {}), changes, name)  # the old names change rules too
+            self.assertEqual(scripts._rule_call(name, args, {}), changes, name)
 
 
     def test_a_tool_called_with_a_dict_first_is_not_mistaken_for_a_configure(self):
