@@ -491,8 +491,12 @@ repository copy stays true. Constraints that keep the harness healthy:
   `launch-client`; if the server jar or `mods/core` changed, also
   `stop-server`, `install-server` / `install-core` (core goes to both
   sides), `start-server`. Wait for the bridge (`mb_status`), then
-  continue. Do not edit files under `mods/*/src/upstream` (pinned upstream
-  Baritone) unless there is no alternative, and say so in the commit.
+  continue.
+- `mods/baritone/src/upstream` is "upstream": the code the walker was ported
+  from (Baritone v1.2.19), the route search, moves and processes under every
+  job that moves the body. About half of it is already changed for this game.
+  It is yours to change like any other code, structural changes included;
+  say so in the commit.
 - **Contained runs** (`MODBENCH_OUTBOX` is set): you cannot reach the game
   install. Build with `./gradlew build --offline`, commit (a Baritone change
   is two commits: inside `mods/baritone`, then the root), then
