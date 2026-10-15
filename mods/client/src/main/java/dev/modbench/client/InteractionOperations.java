@@ -31,12 +31,21 @@ final class InteractionOperations {
     }
     JsonObject entity(Entity e) {
         JsonObject out=Json.object("entityId",e.getEntityId(),"handle",handle(e),"handleScope","client_instance",
-            "type",EntityList.getEntityString(e),"name",e.getCommandSenderName(),"pos",Json.array(e.posX,e.boundingBox.minY,e.posZ),
+            "type",EntityList.getEntityString(e),"name",e.getCommandSenderName(),"pos",Json.array(coordinate(e.posX),coordinate(e.boundingBox.minY),coordinate(e.posZ)),
             "distance",e.getDistanceToEntity(mc.thePlayer),"visible",mc.thePlayer.canEntityBeSeen(e),"hostile",hostile(e,mc.thePlayer),"dead",e.isDead);
         if(e instanceof EntityLivingBase living) {out.addProperty("health",finite(living.getHealth()));out.addProperty("maxHealth",finite(living.getMaxHealth()));out.addProperty("hurtTime",living.hurtTime);}
         if(e instanceof net.minecraft.entity.item.EntityItem drop) out.add("stack",Stacks.json(drop.getEntityItem()));
+        Entity[] parts=e.getParts();
+        if(parts!=null&&parts.length>0){JsonArray rows=new JsonArray();
+            for(int i=0;i<parts.length;i++){Entity p=parts[i];if(p==null)continue;var b=p.boundingBox;
+                rows.add(Json.object("index",i,"entityId",p.getEntityId(),"name",p.getCommandSenderName(),
+                    "pos",Json.array(coordinate(p.posX),coordinate(b.minY),coordinate(p.posZ)),
+                    "bounds",Json.object("min",Json.array(coordinate(b.minX),coordinate(b.minY),coordinate(b.minZ)),
+                        "max",Json.array(coordinate(b.maxX),coordinate(b.maxY),coordinate(b.maxZ)))));}
+            out.add("parts",rows);}
         return out;
     }
+    private static Double coordinate(double value){return Double.isFinite(value)?value:null;}
     JsonObject entities(JsonObject params) {
         if(mc.thePlayer==null||mc.theWorld==null) throw new IllegalArgumentException("player is not in a world");
         double radius=Json.number(params,"radius",32,1,128);int limit=Json.integer(params,"limit",128,1,256);

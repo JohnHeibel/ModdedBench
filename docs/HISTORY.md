@@ -37,3 +37,5 @@ fixes. The dated entries this file used to hold are in its own history
 session should know exists. One line each, newest first, with the date.
 
 - **2026-10-14.** Ranged fights recognize visible aiming points through partial cover even when a mob's eyes are hidden; projectile arcs must still clear the blocks.
+
+- Native entity observations expose multipart indices and bounds; fights accept targetPart (mb_fight part_index) to aim at a chosen part. Non-finite observed coordinates are null instead of breaking the whole entity list. This handles visible parts with different hit responses while preserving parent targeting by default.
