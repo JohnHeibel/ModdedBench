@@ -113,8 +113,11 @@ public final class SimulationClock {
      * LASTS ticks; a burning rule's crossing reports the burn's own ticks (onFire, the game's fire timer). A new kind, or a
      * hit by anything, is news: dragon run 3 fell into lava while alight and was not told. Pausing on every tick of a burn
      * made the model switch the hit guard off (dragon run 2, fortress trials 4 and 7).
+     * Death is news once, as health reaches 0; while the player stays dead no rule crosses, so a rule changed on the death
+     * screen cannot freeze the ticks the respawn button needs (dragon run 5).
      */
     public void observe(float health, int air, int food, boolean onFire) {
+        if(health<=0 && vitals!=null && vitals.get("health").getAsFloat()<=0) { hurtBy.clear(); newHurt=false; return; }
         boolean hit=lastHealth!=null && health<lastHealth && (newHurt || hurtBy.isEmpty());
         for(Rule r:rules.values()) {
             boolean on=switch(r.kind) { case "health_drop"->hit; case "health_below"->health<=r.level; case "air_below"->air<=r.level;

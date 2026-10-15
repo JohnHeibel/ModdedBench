@@ -322,11 +322,15 @@ public class BridgeRuntimeTest {
         Session session = new Session();
         List<JsonObject> replies = new ArrayList<>();
         runtime.dispatch(request(runtime, session, 10, "act.work", new JsonObject(), replies));
+        runtime.add("time.rules", request -> { calls.incrementAndGet(); return "set"; });
+        List<JsonObject> clockReplies = new ArrayList<>();
+        runtime.dispatch(request(runtime, session, 11, "time.rules", new JsonObject(), clockReplies));
 
         runtime.startTick(new Object());
 
-        assertEquals(0, calls.get());
+        assertEquals(1, calls.get()); // The clock's methods are not the world's: a rule changed as the player respawns lands.
         assertEquals("world_changed", replies.get(0).getAsJsonObject("error").get("code").getAsString());
+        assertFalse(clockReplies.get(0).has("error"));
         assertTrue(runtime.controls.contains("world_changed"));
     }
 

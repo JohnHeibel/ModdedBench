@@ -128,7 +128,9 @@ public abstract class BridgeRuntime {
             world = identity;
             worldEpoch++;
             controlsChanged("world_changed");
-            cancelQueue(queue, "world_changed");
+            // What was queued for the old world must not run in the new one. The clock's own methods (time.*) are not the
+            // world's: dragon run 5's respawn cancelled the edit that put its health rule back, and it ran 56 minutes without it.
+            for (Request pending : queue) if (!pending.method.startsWith("time.") && queue.remove(pending)) pending.fail("world_changed", "world changed before request execution");
         }
         maintainControls();
         drain(urgent, 64);

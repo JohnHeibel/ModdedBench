@@ -293,6 +293,21 @@ public class SimulationClockTest {
     }
 
     @Test
+    public void deathIsNewsOnceAndNoRuleFreezesTheDeathScreen() {
+        SimulationClock clock = with(rule("health_drop"), rule("health_below", "level", 8.0), rule("burning"));
+        clock.observe(20.0F, 300);
+        clock.observe(0.0F, 300, 20, true); // The killing hit.
+        assertEquals("health_drop", clock.reason());
+        clock.resume();
+        clock.rules(Json.object("set", Json.array(rule("health_below", "level", 0.0)))); // Changed on the death screen (dragon run 5).
+        for (int tick = 0; tick < 40; tick++) clock.observe(0.0F, 300, 20, true);
+        assertFalse(clock.paused());
+        clock.observe(20.0F, 300); // Respawned: the rules watch again.
+        clock.observe(19.0F, 300);
+        assertEquals("health_drop", clock.reason());
+    }
+
+    @Test
     public void twoRulesOfOneKindAtDifferentLevelsEachCrossInTurn() {
         SimulationClock clock = with(rule("food_below", "name", "eat", "level", 16), rule("food_below", "name", "starving", "level", 6));
         clock.observe(20.0F, 300, 17, false);

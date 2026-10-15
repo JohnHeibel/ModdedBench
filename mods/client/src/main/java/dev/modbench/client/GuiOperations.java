@@ -135,7 +135,7 @@ final class GuiOperations {
                             ||p.has("index")&&Json.integer(p,"index",0,0,all.size()-1)==i||p.has("text")&&Json.string(p,"text","").equals(UiWidgets.strip(b.displayString))) matches.add(b);
                     }
                     if(matches.size()!=1) throw new IllegalArgumentException("button selection must match exactly one button");
-                    GuiButton b=matches.get(0);if(!b.enabled||!b.visible) throw new IllegalArgumentException("button disabled or hidden");
+                    GuiButton b=matches.get(0);if(!b.visible) throw new IllegalArgumentException("button hidden");if(!b.enabled) throw new IllegalArgumentException("button disabled (a screen may enable it once ticks run)");
                     click(new int[]{b.xPosition+UiWidgets.width(b)/2,b.yPosition+UiWidgets.height(b)/2},0,1);break;
                 }
                 case "container_button": attempted=true;mc.playerController.sendEnchantPacket(container.windowId,Json.integer(p,"id",0,0,255));break;
