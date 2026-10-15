@@ -7,6 +7,9 @@ the combat course's box, guards off, the world running.
   fire_idle  standing in fire on netherrack (it never goes out) with nothing running: out of it within 2 seconds
   fire_goto  the same with a walk 12 blocks on just started: out of it within 2 seconds, by the walk or the reflex
   fire_hold  the same holding sneak (act.input, 100 ticks): the hold ends with stepped_out_of_fire, and the player is out
+  fire_stuck fire in a pit a block deep under a roof at head height: the step out finds the way up and cannot jump to it
+             (dragon run 5's lava pool). Holding sneak ends as in fire_hold; three seconds in, a second hold (20 ticks)
+             is the model's own way out and must run to its end: a step that is not getting the player out gives way to it.
   ledge_hit  on a platform 15 up over lava, the edge 1.6 blocks behind, a zombie coming from ahead and gone once it has hit
              (one hit; a zombie that keeps hitting is the fight's to beat, in combat_course): a hit's throw carries an
              unheld player about 2 blocks, so off it; held against, about 1. Won when the throw lands on the platform and
@@ -46,11 +49,14 @@ OUT = mc.ROOT / ".runtime" / "evidence" / "hazard-course.json"
 FIRE = [("minecraft:netherrack", (-1, -1, -1), (1, -1, 1))]
 LIGHT = [("minecraft:fire", (-1, 0, -1), (1, 0, 1))]   # lit after the job starts: on its own the player is out before then
 UP = 15   # the platform's top: the player stands at FLOOR + UP
+PIT = [(cc.STONE, (-1, 0, -1), (1, 0, -1)), (cc.STONE, (-1, 0, 1), (1, 0, 1)), (cc.STONE, (-1, 0, 0), (-1, 0, 0)), (cc.STONE, (1, 0, 0), (1, 0, 0)),
+       ("minecraft:netherrack", (0, -1, 0), (0, -1, 0)), (cc.STONE, (0, 2, 0), (0, 2, 0))]
 LEDGE = [(cc.STONE, (-2, 0, -3), (12, UP - 1, 3)), (cc.LAVA, (-10, 0, -10), (-3, 0, 10))]
 CASES = {
     "fire_idle": dict(ground=FIRE, light=LIGHT),
     "fire_goto": dict(ground=FIRE, light=LIGHT, goto=(12, 0, 0)),
     "fire_hold": dict(ground=FIRE, light=LIGHT, hold=["sneak"]),
+    "fire_stuck": dict(ground=PIT, light=[("minecraft:fire", (0, 0, 0), (0, 0, 0))], hold=["sneak"], stuck=True),
     "ledge_hit": dict(ground=LEDGE, at=(-.9, UP, 0), mobs=[("Zombie", 6, UP, 1)]),
     "ledge_paused": dict(ground=LEDGE, at=(-.9, UP, 0), mobs=[("Zombie", 6, UP, 1)], paused=True),
     "ledge_over": dict(ground=LEDGE, at=(-2.15, UP, 0), mobs=[("Zombie", 6, UP, 1)], probe=True),
@@ -119,7 +125,7 @@ def trial(s, c, name: str) -> dict:
     for boxes in cc.batches(case.get("light", [])): s.call(cc.FIX + ".fill", boxes=boxes)
     samples, first_hit, health0 = [], None, None
     t0 = time.time()
-    while time.time() - t0 < (12 if name.startswith("ledge") else 4):
+    while time.time() - t0 < (12 if name.startswith("ledge") else 5 if case.get("stuck") else 4):
         p = s.call(cc.FIX + ".status", radius=4)["player"]
         x, y, z = p["pos"]; health0 = p["health"] if health0 is None else health0
         samples.append([round(time.time() - t0, 1), round(x, 2), round(y, 2), round(z, 2), p["health"], p["dead"]])
@@ -139,11 +145,23 @@ def trial(s, c, name: str) -> dict:
                 try: job["probe"] = c.call("act.input", keys=["sneak"], ticks=10)
                 except BridgeError as e: job["probe"] = {"error": str(e)}
             threading.Thread(target=probe, daemon=True).start()
-        if first_hit and time.time() - first_hit > 1.5 and "fight" not in case: break
+        if case.get("stuck") and "late" not in job and time.time() - t0 > 3:
+            job["late"] = None
+            def late():
+                try: job["late"] = c.call("act.input", keys=["sneak"], ticks=20)
+                except BridgeError as e: job["late"] = {"error": str(e)}
+            threading.Thread(target=late, daemon=True).start()
+        if first_hit and time.time() - first_hit > 1.5 and "fight" not in case and not case.get("stuck"): break
         if p["dead"]: break
         time.sleep(.1)
     end = samples[-1]
-    if name.startswith("fire"):
+    if case.get("stuck"):
+        until = time.monotonic() + 5
+        while ("answer" not in job or not job.get("late")) and time.monotonic() < until: time.sleep(.1)
+        first, late = str(job.get("answer"))[:300], str(job.get("late"))[:300]
+        row.update(won="stepped_out_of_fire" in first and "duration_elapsed" in late, job=first, late=late,
+                   healthLost=round(samples[0][4] - min(r[4] for r in samples), 1), died=end[5])
+    elif name.startswith("fire"):
         fx, fz = int(end[1] // 1), int(end[3] // 1)
         out_of_fire = not (abs(fx - cc.X0) <= 1 and abs(fz - cc.Z0) <= 1)
         left = next((t for t, x, y, z, h, d in samples if not (abs(int(x // 1) - cc.X0) <= 1 and abs(int(z // 1) - cc.Z0) <= 1)), None)

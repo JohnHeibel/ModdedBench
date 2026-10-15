@@ -56,7 +56,7 @@ class Hold(cc.Combat):
         self.s.call(cc.FIX + ".arena", **cc.ARENA); self.s.call(cc.FIX + ".clear")
         self.s.call(cc.FIX + ".reset", empty=True, armor=cc.ARMOR, at=list(cc.START), yaw=-90, effects=cc.SIGHT,
                     stacks=cc.STACKS + [{"slot": BREAD, "id": "minecraft:bread", "count": 8}], **reset)
-        time.sleep(.5)
+        time.sleep(6)   # the last scene's hurt has no attacker: the same kind again within 100 ticks is lasting harm, not news
 
     def rule(self, kind: str, level: float | None = None, do: str | None = None, **more):
         """The scene's one rule, named for its kind: asking the model, or with do a script that answers it."""
@@ -241,7 +241,7 @@ def main():
     ap.add_argument("--case", action="append", choices=CASES)
     ap.add_argument("--keep", action="store_true")
     ap.add_argument("--server-host", default="127.0.0.1")
-    args = ap.parse_args(); args.seed, args.trials, args.guards, args.avoidance, args.aim_height = 1, 1, False, False, None
+    args = ap.parse_args(); args.seed, args.trials, args.guards, args.avoidance, args.aim_height, args.one_by_one = 1, 1, False, False, None, False
     t = Hold(args); t.setup()
     rows = {}
     try:
