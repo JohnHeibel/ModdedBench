@@ -30,6 +30,7 @@ fixes. The dated entries this file used to hold are in its own history
 
 ## Notes for future sessions
 
+- **2026-10-15.** Melee fights navigate toward nearby targets on ledges instead of waiting before trying a path; their follow radius now brings the player within one block of the target.
 - **2026-10-15.** Automatic hazard escape yields to explicit input and interactions, so a blocked escape step cannot cancel a player's bucket or movement recovery.
 
 `PROMPT.md` asks the playing agent to add a line here for anything a later
