@@ -17,7 +17,7 @@ def main():
     def check(name,ok,detail=None):
         if not ok: raise AssertionError(f'{name}: {detail}')
         evidence['checks'].append(name);print(name,flush=True)
-    with Kernel() as c, Kernel(url=bridge_url('server')) as s, tempfile.TemporaryDirectory() as tmp, ThreadPoolExecutor(2) as pool:
+    with Kernel() as c, Kernel(url=bridge_url('server'), token=os.environ.get('MB_SERVER_BRIDGE_TOKEN')) as s, tempfile.TemporaryDirectory() as tmp, ThreadPoolExecutor(2) as pool:
         sup=InterruptSupervisor(c,path=tmp)
         created=False
         def call(method,**kw):
@@ -42,7 +42,7 @@ def main():
             raise AssertionError('interrupt did not fire: '+name+' '+str(sup.events()))
         def settled_player():time.sleep(.25);return call('obs.player')
         try:
-            call('time.rules',remove=[r['name'] for r in call('time.rules')['rules'] if r['kind'] in ('health_drop','health_below','air_below','action_failed')])
+            call('time.rules',remove=[r['name'] for r in call('time.rules')['rules']])  # none, as before the rules (the old clock's guards were off unless set)
             call('time.configure',pauseOnDisconnect=True)
             call('time.pause');s.call('dev.interaction_fixture.restore');time.sleep(.2)
             base=next(p for p in s.call('obs.players') if p['name']==USER);arena=s.call('dev.interaction_fixture.create');created=True
@@ -113,7 +113,8 @@ def main():
             check('custom pause reason propagated',call('time.status')['state']['reason']=='interrupt:health changed during test')
             refuse('latch blocks stale new work','act.look',yaw=0,pitch=0)
             duplicate=call('interrupt.fire',eventId=receipt['eventId'],reason='ignored duplicate',effects=['cancel'],expectedContext={})
-            check('reaction retry idempotent',duplicate==receipt)
+            same=lambda r:{k:v for k,v in r.items() if k!='latched'}  # the refusal just above delivered the latch
+            check('reaction retry idempotent',same(duplicate)==same(receipt),[duplicate,receipt])
             call('interrupt.ack',eventId=receipt['eventId']);check('ack does not resume',call('time.status')['clientPaused'])
             stale=dict(receipt['context'],bridgeId='stale');refuse('stale bridge reaction refused','interrupt.fire',eventId=str(uuid.uuid4()),reason='late',effects=['cancel'],expectedContext=stale)
             cursor=sup.events()['cursor'];custom=Path(tmp)/'custom.py'
@@ -136,7 +137,7 @@ def main():
                 evidence['cleanupError']=str(cleanup);evidence['ok']=False
                 print('Cleanup needs journal recovery: '+str(cleanup),flush=True)
             finally:
-                path=ROOT/'.runtime/logs/interaction-smoke.json';path.write_text(json.dumps(evidence,indent=2,default=str))
+                path=ROOT/'.runtime/logs/interaction-smoke.json';path.parent.mkdir(parents=True,exist_ok=True);path.write_text(json.dumps(evidence,indent=2,default=str))
                 print(path,flush=True)
     return 0 if evidence['ok'] else 1
 

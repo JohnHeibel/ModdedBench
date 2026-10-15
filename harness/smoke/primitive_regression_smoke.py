@@ -2,7 +2,7 @@
 # Copyright (c) 2026 ModdedBench contributors
 """EBF primitive regressions in journalled fixtures; never operate on the user's machines."""
 from __future__ import annotations
-import json, math, sys, time
+import json, math, os, sys, time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -16,7 +16,7 @@ def main():
     def check(name,condition,detail=None):
         if not condition: raise AssertionError(f'{name}: {detail}')
         evidence['checks'].append(name);print(name,flush=True)
-    with Kernel(timeout=60) as c, Kernel(url=bridge_url('server')) as s:
+    with Kernel(timeout=60) as c, Kernel(url=bridge_url('server'), token=os.environ.get('MB_SERVER_BRIDGE_TOKEN')) as s:
         active=None
         config=c.call('time.status')['state'];rules=c.call('time.rules')['rules']
         evidence['previousClock']=config

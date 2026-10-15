@@ -2,7 +2,7 @@
 # Copyright (c) 2026 ModdedBench contributors
 """Batched native inventory/UI acceptance in the journaled development fixture."""
 from __future__ import annotations
-import json
+import json, os
 from pathlib import Path
 import sys
 import time
@@ -24,7 +24,7 @@ def main():
         evidence['checks'].append(name)
         print(name, flush=True)
 
-    with Kernel() as c, Kernel(url=bridge_url('server')) as s:
+    with Kernel() as c, Kernel(url=bridge_url('server'), token=os.environ.get('MB_SERVER_BRIDGE_TOKEN')) as s:
         def view(): return c.call('obs.container', detail='full')
         def slot(v, index): return next(e for e in v['slots'] if e['i'] == index)
         def count(v, index): return (slot(v, index).get('stack') or {}).get('count', 0)
@@ -75,7 +75,7 @@ def main():
                   and identity(sv.get('cursor'))==identity(v.get('cursor')), sv)
 
         try:
-            c.call('time.rules', remove=[r['name'] for r in c.call('time.rules')['rules'] if r['kind'] in ('health_drop', 'health_below', 'air_below', 'action_failed')])
+            c.call('time.rules', remove=[r['name'] for r in c.call('time.rules')['rules']])  # none, as before the rules
             c.call('time.configure', pauseOnDisconnect=True)
             c.call('time.pause')
             created=True
