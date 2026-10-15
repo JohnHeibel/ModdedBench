@@ -554,8 +554,9 @@ def set_server_properties(server: Path, accept_eula: bool, server_ip: str = "127
     properties = server / "server.properties"
     lines = properties.read_text(encoding="utf-8", errors="replace").splitlines() if properties.is_file() else []
     # The pack ships difficulty=3 (hard); runs are played on easy unless MB_DIFFICULTY says otherwise.
+    # It ships view-distance=8 too; 10 is 1.7.10's own, and past the server's view mobs stand frozen (dragon run 5).
     wanted = {"server-ip": server_ip, "server-port": "25575", "online-mode": "false", "white-list": "false", "enable-rcon": "false",
-              "difficulty": os.environ.get("MB_DIFFICULTY", "1")}
+              "difficulty": os.environ.get("MB_DIFFICULTY", "1"), "view-distance": "10"}
     if PACK == "vanilla": wanted |= {"level-type": "DEFAULT", "motd": "ModdedBench vanilla 1.7.10"}  # the pack's world type (rwg) is a mod's
     if max_players is not None: wanted["max-players"] = str(max_players)  # offline mode admits any name: the contained server has room for its one player only
     seen: set[str] = set()

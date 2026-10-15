@@ -147,7 +147,8 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = Fal
     moment it is in reach instead. A swing lands on a mob in sight, or on one unseen within 3
     blocks with nothing between your eye and where you aim on it (legs under a low roof).
     keep_away [selectors] names mobs it keeps away from, and so does any kind it sees go off
-    beside you (gone from the world with health left as you took a hit): the receipt's wentOff,
+    (gone from the world with health left where the server just told of an explosion, within 64
+    blocks, hurt or not): the receipt's wentOff,
     kept in notes/keep_away.json and passed to every fight after. One of those is fought at arm's
     length: struck as it comes into reach and backed away from while the next swing gathers; one
     that stands still within 4 blocks is run from, onto somewhere to stand, until it is 8 blocks
@@ -248,7 +249,7 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = Fal
     if allow_place: params["allowPlace"] = True
     if aim_height is not None: params["aimHeight"] = aim_height
     if leash is not None: params["leash"] = leash
-    kept_book = notes.notes_dir() / "keep_away.json"  # kinds seen to go off beside you: yours to read and correct
+    kept_book = notes.notes_dir() / "keep_away.json"  # kinds seen to go off: yours to read and correct
     kept = json.loads(kept_book.read_text()) if kept_book.is_file() else []
     keep = [*({"type": kind} for kind in kept), *(keep_away or [])]
     if keep: params["keepAway"] = keep
@@ -267,7 +268,7 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = Fal
 
 
 def _keep_went_off(book, kept: list, fight) -> Any:
-    """The kinds a fight saw go off beside you are kept away from in every fight after."""
+    """The kinds a fight saw go off are kept away from in every fight after."""
     result = {}
     try:
         result = fight(); return result

@@ -33,6 +33,8 @@ fixes. The dated entries this file used to hold are in its own history
 `PROMPT.md` asks the playing agent to add a line here for anything a later
 session should know exists. One line each, newest first, with the date.
 
+- **2026-10-15.** Servers run view-distance 10 in both packs (GTNH ships 8); past the server's view, mobs stand frozen.
+- **2026-10-15.** A fight learns a kind to keep away from when one leaves the world with health left within 3 blocks of an explosion the server reported (any within 64 blocks, hurt or not), instead of only one gone within 5 blocks as you lost health.
 - **2026-10-15.** Non-finite observed coordinates are null instead of breaking the whole entity list.
 - **2026-10-15.** Melee fights navigate toward nearby targets on ledges instead of waiting before trying a path; their follow radius now brings the player within one block of the target.
 - **2026-10-15.** Automatic hazard escape yields to explicit input and interactions, so a blocked escape step cannot cancel a player's bucket or movement recovery.

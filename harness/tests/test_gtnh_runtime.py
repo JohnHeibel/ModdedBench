@@ -447,9 +447,10 @@ class RuntimeTests(unittest.TestCase):
     def test_the_contained_server_has_room_for_its_one_player_and_a_local_one_keeps_the_packs_limit(self):
         with tempfile.TemporaryDirectory() as tmp:
             server = Path(tmp); properties = server / "server.properties"
-            properties.write_text("max-players=20\nmotd=pack\n", encoding="utf-8")
+            properties.write_text("max-players=20\nmotd=pack\nview-distance=8\n", encoding="utf-8")
             runtime.set_server_properties(server, True)
-            self.assertIn("max-players=20", properties.read_text(encoding="utf-8").splitlines())
+            lines = properties.read_text(encoding="utf-8").splitlines()
+            self.assertIn("max-players=20", lines); self.assertIn("view-distance=10", lines); self.assertNotIn("view-distance=8", lines)
             runtime.set_server_properties(server, True, server_ip="", max_players=1)
             lines = properties.read_text(encoding="utf-8").splitlines()
             self.assertIn("max-players=1", lines); self.assertNotIn("max-players=20", lines); self.assertIn("motd=pack", lines)
