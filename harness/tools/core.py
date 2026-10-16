@@ -235,6 +235,8 @@ def mb_act(method: str, params: dict | None = None, timeout_s: float = 60.0) -> 
     hostile=true, types=[exact entity type], entityId, stopWhenClear. Combat stays
     in place; compose navigation separately. Native acceptance isn't proof that a
     machine changed; inspect before/after receipts and your own postconditions.
+    use_block and use_entity click as the game does: a click the block or entity does not take
+    goes on as the held item's own use, as on air, and the receipt's itemFallback says so.
     eat is refused while the clock lists a threat (you cannot fight or run with food in
     your hand; the error's procedureReceipts list the threats); params {despiteThreat:true} eats anyway. use_block answers with `labels` when
     the spot lies in or beside a region note of yours.

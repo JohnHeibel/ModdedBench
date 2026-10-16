@@ -18,6 +18,7 @@ import net.minecraft.util.*;
 /** Native survival actions with bounded lifetimes, exact targets and shared input ownership. */
 final class InteractionOperations {
     static final String[] METHODS={"use_block","use_entity","attack_entity","use_item","eat","select_hotbar","combat"};
+    private static final String[] FACES={"bottom","top","north","south","west","east"};
     private final Minecraft mc=Minecraft.getMinecraft();
     private final Map<Entity,String> handles=new WeakHashMap<>();
     private Job active;
@@ -109,7 +110,9 @@ final class InteractionOperations {
         InputArbiter.Lease lease;
         Entity target;String targetHandle;
         Vec3 point;int x,y,z,face;
-        boolean blockTarget,fluidTarget,delivered,accepted,ownUse,delivering,finished,consumptionAcknowledged;
+        boolean blockTarget,fluidTarget,delivered,accepted,ownUse,delivering,finished,consumptionAcknowledged,itemReturn;
+        /** The item's own use after a click the block or entity did not take: whether the air event was cancelled, and sendUseItem's return. */
+        JsonObject fallback;
         int elapsed,deliveredAt,attacks,deaths,lastAttack=-1000,nativeUseTicks;
         String revokedDuringDelivery;
         final long refusalMark=ControlRegistry.memory().refusals();
@@ -208,7 +211,17 @@ final class InteractionOperations {
                 :hit.blockX==x&&hit.blockY==y&&hit.blockZ==z?"the look reached face "+hit.sideHit+" of the target, not face "+face
                 :"the look stopped at "+hit.blockX+","+hit.blockY+","+hit.blockZ+" ("+net.minecraft.block.Block.blockRegistry.getNameForObject(world.getBlock(hit.blockX,hit.blockY,hit.blockZ))+", face "+hit.sideHit+")";
             List<Integer> faces=new ArrayList<>();for(int f=0;f<6;f++)if(sees(f))faces.add(f);
-            return stopped+"; aimed at "+point+"; target centre "+dist+" blocks from the eye, reach "+reach+"; faces in sight from here: "+(faces.isEmpty()?"none":faces);
+            return cause(eye)+stopped+"; aimed at "+point+"; target centre "+dist+" blocks from the eye, reach "+reach+"; faces in sight from here: "+(faces.isEmpty()?"none":faces);
+        }
+        /** Why no look can land, when the target itself says so: it is air, or the face is turned away from the eye. */
+        String cause(Vec3 eye) {
+            if(world.getBlock(x,y,z).isAir(world,x,y,z))return "the target "+x+","+y+","+z+" is air and a click lands only on a block (to place into a cell, click a face of a block beside it); ";
+            if(fluidTarget||!kind.equals("use_block"))return ""; // use_item clicks no particular face
+            int axis=face/2;axis=axis==0?1:axis==1?2:0;char name="xyz".charAt(axis);
+            double plane=(axis==0?x:axis==1?y:z)+facePoint(face)[axis],at=axis==0?eye.xCoord:axis==1?eye.yCoord:eye.zCoord;
+            if(face%2==0?at<plane:at>plane)return "";
+            String toward=(face%2==0?"-":"+")+name;
+            return "face "+face+" ("+FACES[face]+", toward "+toward+") is turned away from the eye: the eye's "+name+" is "+Math.round(at*100)/100.0+" and the face's plane is at "+name+" "+Math.round(plane*1000)/1000.0+", so it shows only from the "+toward+" side of that plane; ";
         }
         // Forge 1.7's local player eyeHeight is an offset from its stance, not feet.
         // The native override includes that offset and matches Item's own ray.
@@ -259,13 +272,13 @@ final class InteractionOperations {
                         if(hit==null||hit.typeOfHit!=MovingObjectPosition.MovingObjectType.BLOCK||hit.blockX!=x||hit.blockY!=y||hit.blockZ!=z||kind.equals("use_block")&&hit.sideHit!=face)throw new Refusal("target_not_visible",""+unseen(hit));
                         if(kind.equals("use_block")) {
                             if(hit.hitVec.distanceTo(point)>.03)throw new Refusal("target_not_visible","requested hit point is not on the visible surface");
-                            accepted=mc.playerController.onPlayerRightClick(player,world,player.getHeldItem(),x,y,z,face,hit.hitVec);if(accepted)player.swingItem();
+                            clickBlock(hit);
                         }
                         else useItem();
                     } else if(target!=null) {
                         if(!entityInReach())throw new Refusal("target_not_visible","entity lost, obstructed or out of reach");
                         if(kind.equals("attack_entity")){mc.playerController.attackEntity(player,target);player.swingItem();accepted=true;attacks++;}
-                        else {accepted=mc.playerController.interactWithEntitySendPacket(player,target);if(accepted)player.swingItem();}
+                        else {accepted=mc.playerController.interactWithEntitySendPacket(player,target);if(accepted)player.swingItem();else fallBack();}
                     } else useItem();
                     delivered=true;deliveredAt=elapsed;
                 } finally {delivering=false;}
@@ -287,16 +300,45 @@ final class InteractionOperations {
                 finish("completed",null);
             }
         }
-        void useItem() {
-            if(player.getHeldItem()==null)throw new IllegalArgumentException("held item required");
-            // Match vanilla's air-use event and key state before invoking the item.
-            // Pack hooks may veto or initialize use here; sendUseItem alone skips them.
+        /**
+         * A right click on a block as the game makes one (Minecraft.func_147121_ag): the block event pack hooks may veto, the
+         * block's or the held item's use on it, a used-up stack cleared from the hand; and when neither took the click and an
+         * item is held, the item's own use, as on air (a bucket, a wand's own ray).
+         */
+        void clickBlock(MovingObjectPosition hit) {
+            ItemStack held=player.getHeldItem();int count=held==null?0:held.stackSize;
+            accepted=!net.minecraftforge.event.ForgeEventFactory.onPlayerInteract(player,net.minecraftforge.event.entity.player.PlayerInteractEvent.Action.RIGHT_CLICK_BLOCK,x,y,z,face,world).isCanceled()
+                &&mc.playerController.onPlayerRightClick(player,world,held,x,y,z,face,hit.hitVec);
+            if(accepted)player.swingItem();
+            if(held==null)return;
+            if(held.stackSize==0)player.inventory.mainInventory[player.inventory.currentItem]=null;
+            else if(held.stackSize!=count||mc.playerController.isInCreativeMode())mc.entityRenderer.itemRenderer.resetEquippedProgress();
+            if(!accepted)fallBack();
+        }
+        /** The click the block or entity did not take goes on as one on air, as the game's does; the receipt says so. */
+        void fallBack() {
+            boolean allowed=useOnAir();
+            fallback=Json.object("cancelled",!allowed,"nativeReturn",allowed&&itemReturn);
+        }
+        /**
+         * The held item's own use, with vanilla's key state and air-use event first: pack hooks may veto or initialize use
+         * there, and sendUseItem alone skips them. False when the event was cancelled.
+         */
+        boolean useOnAir() {
             Set<Integer> keys=new LinkedHashSet<>();keys.add(mc.gameSettings.keyBindUseItem.getKeyCode());if(sneak)keys.add(mc.gameSettings.keyBindSneak.getKeyCode());lease.setKeys(keys);
             if(net.minecraftforge.event.ForgeEventFactory.onPlayerInteract(player,
                 net.minecraftforge.event.entity.player.PlayerInteractEvent.Action.RIGHT_CLICK_AIR,
-                0,0,0,-1,world).isCanceled())throw new IllegalArgumentException("native item-use event cancelled");
-            accepted=mc.playerController.sendUseItem(player,world,player.getHeldItem());ownUse=player.isUsingItem();
-            nativeUseTicks=ownUse?player.getItemInUseCount():0;
+                0,0,0,-1,world).isCanceled())return false;
+            ItemStack held=player.getHeldItem();
+            itemReturn=held!=null&&mc.playerController.sendUseItem(player,world,held);
+            if(itemReturn)mc.entityRenderer.itemRenderer.resetEquippedProgress2();
+            ownUse=player.isUsingItem();nativeUseTicks=ownUse?player.getItemInUseCount():0;
+            return true;
+        }
+        void useItem() {
+            if(player.getHeldItem()==null)throw new IllegalArgumentException("held item required");
+            if(!useOnAir())throw new IllegalArgumentException("native item-use event cancelled");
+            accepted=itemReturn;
             if(kind.equals("eat")&&ownUse&&nativeUseTicks>duration-elapsed)
                 throw new Refusal("native_use_duration_exceeds_budget","item requires "+nativeUseTicks+" ticks, remaining budget "+(duration-elapsed)+"; choose another food or explicitly increase ticks");
             if(!ownUse&&kind.equals("eat"))throw new IllegalArgumentException("item did not start consumption: food="+player.getFoodStats().getFoodLevel()+", invulnerable="+player.capabilities.disableDamage+", canEat="+player.canEat(false)+"; native item rules apply");
@@ -342,7 +384,7 @@ final class InteractionOperations {
             // sendUseItem's boolean only tracks stack reference/count changes;
             // in-place NBT changes may return false despite a successful use.
             JsonObject out=Json.object("state",state,"action",kind,"outcome",outcome,"error",error,"elapsedTicks",elapsed,
-                "nativeReturn",accepted,"serverAcknowledged",consumptionAcknowledged,"nativeUseTicks",nativeUseTicks,"tickBudget",duration,"before",before,"after",after,"observedChanges",changes,"attackAttempts",attacks,"observedDeaths",deaths);
+                "nativeReturn",accepted,"itemFallback",fallback,"serverAcknowledged",consumptionAcknowledged,"nativeUseTicks",nativeUseTicks,"tickBudget",duration,"before",before,"after",after,"observedChanges",changes,"attackAttempts",attacks,"observedDeaths",deaths);
             ControlRegistry.memory().refusedSince(refusalMark).forEach((k,v)->out.add(k,Json.GSON.toJsonTree(v)));
             return out;
         }

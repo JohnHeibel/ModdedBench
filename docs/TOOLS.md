@@ -61,7 +61,10 @@ are skipped) is a tool module, re-imported when any file there changes.
 Actions need running time, so resume first or pass `resume`.
 
 - `use_block {x,y,z,face,hit?,sneak?,expected?,expectedHeld?}` checks reach,
-  face and obstruction by ray and never falls back to plain item use.
+  face and obstruction by ray, then clicks as the game does: the block's
+  event and use, and when the block takes no click with an item in hand, the
+  item's own use, as on air (a bucket, a wand). The receipt's `itemFallback`
+  says when that ran. `use_entity` falls back the same way.
   `use_entity` and `attack_entity` take `entityId` plus the `expectedHandle`
   from `obs.entities`; attack range is 3 blocks and players need
   `allowPlayers: true`.
