@@ -21,6 +21,13 @@ final class GuiPointer {
         try { display=Class.forName("org.lwjglx.opengl.Display"); }
         catch(ClassNotFoundException legacy) { /* Original LWJGL uses bottom-left cursor coordinates. */ }
         Point actual=new Point(-1,-1);
+        if(display!=null) {
+            // lwjgl3ify 2.1.16 sets two moves aside to ignore whenever the cursor is released (a screen opened from play) and
+            // spends one on its own re-centring; the other waits for GLFW's echo of it, which comes only to a focused window.
+            // The client usually runs without focus, so one is left over per screen opened, and the backlog swallowed the
+            // moves below (every miss in the 2026-10-15 run read the window centre). Nothing else moves this cursor.
+            var ignored=Class.forName("org.lwjglx.input.Mouse").getDeclaredField("ignoreNextMove");ignored.setAccessible(true);ignored.setInt(null,0);
+        }
         for(int attempt=0;attempt<3;attempt++) {
             if(display!=null) {
                 // lwjgl3ify 2.1.16's legacy setter uses GLFW's top-left origin and applies DPI twice.
