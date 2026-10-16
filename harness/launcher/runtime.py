@@ -206,6 +206,22 @@ def extract_zip(archive_path: Path, target: Path, *, strip_root: bool = False) -
                 shutil.copyfileobj(source, out)
 
 
+def extract_pack_mods(archive: Path, target: Path) -> None:
+    """The pack's own mods folder, unzipped once for the agent container, which mounts it read-only at ``/mods`` to read
+    and decompile (compose ``PACK_MODS``). Vanilla has no pack mods to read."""
+    if PACK == "vanilla" or target.exists(): return
+    partial = target.with_name(target.name + ".partial")
+    shutil.rmtree(partial, ignore_errors=True)
+    with zipfile.ZipFile(archive) as zf:
+        for info, relative in safe_zip_members(zf, strip_root=True):
+            if relative.parts[1:2] != ("mods",): continue
+            destination = partial.joinpath(*relative.parts[2:])
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(info) as source, destination.open("wb") as out:
+                shutil.copyfileobj(source, out)
+    partial.rename(target)
+
+
 def strip_pack(game: Path) -> None:
     """MB_PACK=vanilla, on a freshly extracted pack: everything in ``mods`` goes except the loader that runs Java 17 mods
     (LOADER_MODS), and the pack's configs and scripts go with it, so Forge and the three kept mods run on their defaults.
@@ -355,6 +371,7 @@ def prepare(args: argparse.Namespace) -> None:
     if not (client / MARKER).is_file():
         extract_zip(Path(cfg["clientZip"]), client, strip_root=True); strip_pack(client_game_dir(client))
         save_json(client / MARKER, {"managedBy": "modbench", "kind": "prism-instance"})
+    extract_pack_mods(Path(cfg["clientZip"]), runtime / "pack-mods")
     write_instance_config(client, java, int(cfg["memoryMiB"]), cfg.get("window", ""))
     set_client_options(client_game_dir(client))
     save_json(config_path(runtime), cfg)
