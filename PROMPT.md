@@ -308,9 +308,10 @@ Key facts about the runtime:
 - **The pack's files** are unzipped, read-only, in `/pack`: `mods` holds every
   jar this pack runs, `config` the settings they read at startup. `javap` and
   the Fernflower decompiler in your Gradle cache
-  (`~/.gradle/caches/retro_futura_gradle/mcp/fernflower.jar`) open the jars.
-  When the wiki, the quest book and the game's own screens do not say how
-  something works, the mod's code and its config do.
+  (`~/.gradle/caches/retro_futura_gradle/mcp/fernflower.jar`) open the jars,
+  and `mb_probe` reads their live objects in the running game, fields only,
+  with no deploy. When the wiki, the quest book and the game's own screens do
+  not say how something works, the mod's code and its config do.
 - **The map** (`mb_map`) is JourneyMap, the pack's map mod, as a picture: every
   chunk this client has had loaded, one pixel per block, north up, with
   labelled x/z grid lines so you can read coordinates straight off it. Black is
@@ -1212,6 +1213,7 @@ and list what is loaded, with load errors.
 | `mb_keys` | Key bindings: list (obs.keys) or press {name,ticks:1..200} (act.press_key) |
 | `mb_screenshot` | Capture sys.screenshot, which returns PNG base64 plus width and height |
 | `mb_map` | JourneyMap's overhead map as a picture: what this client has seen, one pixel per block before scaling |
+| `mb_probe` | Read the live game's own Java objects, fields only: follow a path of field names from a start and get what is there as JSON, in one call, without a deploy |
 | `mb_stop` | Stop the active GTNH bridge action via act.stop |
 | `mb_time` | Control GTNH world time: status, pause, resume, step, configure, report_failure |
 | `mb_memory` | Persistent server-world/dimension memory: status, get, waypoint, route, protect, remove, record |

@@ -26,7 +26,7 @@ from mcp.types import ImageContent
 
 TOOLS = {
     "mb_wait", "mb_wiki_search", "mb_wiki_read", "mb_goal", "mb_move_items", "mb_hold", "mb_craft", "mb_run",
-    "mb_act", "mb_call", "mb_cost", "mb_gui", "mb_keys", "mb_map", "mb_methods", "mb_obs", "mb_screenshot", "mb_status", "mb_stop", "mb_time",
+    "mb_act", "mb_call", "mb_cost", "mb_gui", "mb_keys", "mb_map", "mb_probe", "mb_methods", "mb_obs", "mb_screenshot", "mb_status", "mb_stop", "mb_time",
     "mb_recipe_status", "mb_item_search", "mb_item_info", "mb_recipes", "mb_fluid_search", "mb_recipe_handlers", "mb_recipe_view", "mb_recipe_inspect",
     "mb_memory", "mb_route", "mb_inventory", "mb_find", "mb_transfer", "mb_click_slot", "mb_notes", "mb_note_new", "mb_note_append",
     "mb_follow", "mb_fight", "mb_view", "mb_process", "mb_settings", "mb_route_rules", "mb_cache",
@@ -121,6 +121,19 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertEqual(ran, [])
         self.assertFalse(asyncio.run(srv.call_tool("mb_clock_probe", {"method": "pause"})).isError); self.assertEqual(ran, ["pause"])
 
+    def test_probe_writes_and_reads_minecraft_fields_by_their_mcp_names(self):
+        core = module_with(self.loaded(), "mb_probe")
+        home = tempfile.TemporaryDirectory(); self.addCleanup(home.cleanup)
+        csv_dir = Path(home.name) / ".gradle/caches/minecraft/de/oceanlabs/mcp/mcp_stable/12"; csv_dir.mkdir(parents=True)
+        (csv_dir / "fields.csv").write_text("searge,name,side,desc\nfield_71071_by,inventory,2,\nfield_70165_t,posX,2,\nfield_75164_h,posX,2,\n")
+        reply = {"class": "net.minecraft.entity.player.InventoryPlayer", "value": {"@class": "x", "field_70165_t": 1.5, "posX": 2, "aspects": [{"field_71071_by": 3}]}}
+        fake = self.use(FakeKernel(lambda method, params: reply))
+        with patch.dict(mbtool.state), patch.object(Path, "home", return_value=Path(home.name)):
+            mbtool.state.pop("srg", None)
+            out = core.mb_probe("player", "inventory.mainInventory.0")
+        self.assertEqual(fake.calls, [("obs.probe", {"from": "player", "path": [["inventory", "field_71071_by"], "mainInventory", "0"], "depth": 2, "limit": 32})])
+        self.assertEqual(out["value"], {"@class": "x", "field_70165_t": 1.5, "posX": 2, "aspects": [{"inventory": 3}]})  # a name already there is never overwritten
+
     def test_modified_input_primes_pose_and_preserves_click_parameters(self):
         core = module_with(self.loaded(), "mb_act")
         fake = self.use(FakeKernel(lambda method, params: {"completed": True}))
@@ -181,7 +194,7 @@ class GTNHProfileTests(unittest.TestCase):
         self.assertTrue(registered.annotations.readOnlyHint)
         self.assertFalse(srv._tool_manager._tools["mb_build"].annotations.readOnlyHint)
         status = srv._tool_manager._tools["mb_tools_status"].fn()
-        self.assertEqual(sum(len(m["tools"]) for m in status["modules"]), 65)
+        self.assertEqual(sum(len(m["tools"]) for m in status["modules"]), 66)
         json.dumps(status)
 
     def test_worker_picks_pool_from_lane_metadata(self):

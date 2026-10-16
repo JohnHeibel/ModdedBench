@@ -5,8 +5,10 @@
 from __future__ import annotations
 
 import base64
+import csv
 import json
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -322,6 +324,59 @@ def mb_map(center: list[int] | None = None, radius: int = 128, layer: str = "day
     view = kernel().call("map.view", **({"center": center} if center else {}), radius=radius, layer=layer)
     png = view.pop("png")
     return CallToolResult(content=[TextContent(type="text", text=json.dumps(view)), ImageContent(type="image", data=png, mimeType="image/png")])
+
+
+SRG_FIELD = re.compile(r"field_\d+_[A-Za-z]+")
+
+
+def srg_names() -> tuple[dict[str, list[str]], dict[str, str]]:
+    """MCP's names for Minecraft's own fields, which the running game calls field_<n>_<x>: from the Gradle cache, empty without it."""
+    if "srg" not in state:
+        to_srg: dict[str, list[str]] = {}; to_mcp: dict[str, str] = {}
+        for found in sorted(Path.home().glob(".gradle/caches/minecraft/de/oceanlabs/mcp/*/*/fields.csv"))[:1]:
+            with found.open(newline="", encoding="utf-8") as f:
+                for row in csv.DictReader(f):
+                    to_mcp[row["searge"]] = row["name"]; to_srg.setdefault(row["name"], []).append(row["searge"])
+        state["srg"] = (to_srg, to_mcp)
+    return state["srg"]
+
+
+def mcp_keys(value: Any, to_mcp: dict[str, str]) -> Any:
+    if isinstance(value, list):
+        return [mcp_keys(v, to_mcp) for v in value]
+    if not isinstance(value, dict):
+        return value
+    return {(to_mcp[k] if SRG_FIELD.fullmatch(k) and k in to_mcp and to_mcp[k] not in value else k): mcp_keys(v, to_mcp) for k, v in value.items()}
+
+
+@tool(lane="read", coverage=["meta"])
+def mb_probe(start: str = "looking", path: str | list = "", pos: list[int] | None = None, entity_id: int | None = None,
+             class_name: str = "", depth: int = 2, limit: int = 32) -> Any:
+    """Read the live game's own Java objects, fields only: follow a path of field names from a start and get what is there as JSON, in one call, without a deploy.
+
+    start: looking (what your crosshair is on: its tile entity, else the entity or
+    block), tile (at pos), entity (entity_id, as mb_obs entities lists them), screen
+    (the open GUI; its container is usually a field), player, world, mc (the whole
+    client), or class (class_name: its static fields, such as a mod's registries).
+    path: field names joined by dots, or a list whose steps may be numbers (an
+    index into a list or array), map keys, or lists of alternative names. depth
+    0..5 is how many levels of objects open; an unopened one shows only @class,
+    and a longer path opens it. limit 1..256 items per list or map. A step that
+    is not there answers with the fields that are. Minecraft's own fields run
+    under names like field_70165_t: write MCP's names (posX) and they come back
+    as MCP's names. A mod's fields keep their own names, as in its jar under
+    /pack/mods. It never writes or calls a method. It reads the client's copy,
+    which for many machines and mobs is partial or stale; the server decides what
+    actually happens.
+    """
+    to_srg, to_mcp = srg_names()
+    steps = [s for s in path.split(".") if s] if isinstance(path, str) else list(path)
+    steps = [[s, *to_srg[s]] if isinstance(s, str) and s in to_srg else s for s in steps]
+    params: dict[str, Any] = {"from": start, "path": steps, "depth": depth, "limit": limit}
+    if pos is not None: params["pos"] = pos
+    if entity_id is not None: params["entityId"] = entity_id
+    if class_name: params["name"] = class_name
+    return mcp_keys(kernel().call("obs.probe", **params), to_mcp)
 
 
 @tool(lane="control", coverage=["move"])
