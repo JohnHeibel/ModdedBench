@@ -2,6 +2,7 @@
 # Copyright (c) 2026 ModdedBench contributors
 """Offline safety tests for the GTNH runtime supervisor."""
 from __future__ import annotations
+import gzip
 import os
 import sys
 import tempfile
@@ -201,6 +202,18 @@ class RuntimeTests(unittest.TestCase):
             text = dream.read_text()
             self.assertIn("savedVersion=2.7.268", text)
             self.assertIn("showConfirmExitWindow=false", text)
+            (instance / ".minecraft/options.txt").write_text("guiScale:0\noverrideWidth:0\n")
+            runtime.set_client_options(runtime.client_game_dir(instance), "1280x720")
+            text = (instance / ".minecraft/options.txt").read_text().splitlines()
+            self.assertEqual(sorted(text), ["guiScale:2", "overrideHeight:720", "overrideWidth:1280", "pauseOnLostFocus:false"])
+
+    def test_saved_nei_search_is_cleared(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            game = Path(tmp); saved = game / "saves/NEI/remote/127.0.0.1~25575/NEI.dat"; saved.parent.mkdir(parents=True)
+            after = b"\x0a\x00\x10collapsibleitems\x00\x00"
+            saved.write_bytes(gzip.compress(b"\x0a\x00\x00\x08\x00\x06search\x00\x04heal" + after))
+            runtime.clear_nei_search(game)
+            self.assertEqual(gzip.decompress(saved.read_bytes()), b"\x0a\x00\x00\x08\x00\x06search\x00\x00" + after)
 
     def test_client_install_uses_game_mods_and_process_guard(self):
         with tempfile.TemporaryDirectory() as tmp:

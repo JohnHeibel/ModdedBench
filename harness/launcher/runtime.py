@@ -9,6 +9,7 @@ installs.  Run it from the repository with ``python harness/launcher/runtime.py 
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import json
 import os
@@ -262,9 +263,9 @@ def write_instance_config(path: Path, java: str, memory: int, window: str = "") 
         "OverrideConsole": "true",
         "ShowConsole": "false",
     }
-    if window:  # "1920x1080"; Prism otherwise opens 854x480, which is too small to record or to read GUIs from
+    if window:  # "1280x720"; the game itself ignores this size, so set_client_options writes it to options.txt too
         width, _, height = window.lower().partition("x")
-        if not (width.isdigit() and height.isdigit()): raise RuntimeError_("window must look like 1920x1080")
+        if not (width.isdigit() and height.isdigit()): raise RuntimeError_("window must look like 1280x720")
         values |= {"OverrideWindow": "true", "LaunchMaximized": "false", "MinecraftWinWidth": width, "MinecraftWinHeight": height}
     cfg = path / "instance.cfg"
     original = cfg.read_text(encoding="utf-8", errors="replace").splitlines() if cfg.is_file() else []
@@ -302,21 +303,28 @@ def client_game_dir(instance: Path) -> Path:
     return instance / ".minecraft"
 
 
-def set_client_options(game: Path) -> None:
+def set_client_options(game: Path, window: str = "") -> None:
     """Preserve user options while preparing unattended local development."""
     game.mkdir(parents=True, exist_ok=True)
     options = game / "options.txt"
     lines = options.read_text(encoding="utf-8", errors="replace").splitlines() if options.is_file() else []
-    key, value, seen = "pauseOnLostFocus", "false", False
+    values = {"pauseOnLostFocus": "false"}
+    if window:
+        # The game ignores Prism's window size and opens 854x480 unless these
+        # are set. Automatic GUI scale keeps the GUI about 240 units tall at any
+        # size, which cuts off tall mod screens; scale 2 gives 640x360 at 1280x720.
+        width, _, height = window.lower().partition("x")
+        values |= {"overrideWidth": width, "overrideHeight": height, "guiScale": "2"}
+    seen: set[str] = set()
     output = []
     for line in lines:
-        if line.partition(":")[0] == key:
-            output.append(f"{key}:{value}")
-            seen = True
+        key = line.partition(":")[0]
+        if key in values:
+            output.append(f"{key}:{values[key]}")
+            seen.add(key)
         else:
             output.append(line)
-    if not seen:
-        output.append(f"{key}:{value}")
+    output.extend(f"{key}:{value}" for key, value in values.items() if key not in seen)
     options.write_text("\n".join(output) + "\n", encoding="utf-8")
     # GTNH's DreamCoreMod replaces Minecraft's normal shutdown with a native
     # confirmation unless this pack setting is disabled.
@@ -334,6 +342,23 @@ def set_client_options(game: Path) -> None:
     if not seen:
         output.append(f"{key}={value}")
     dream.write_text("\n".join(output) + "\n", encoding="utf-8")
+
+
+def clear_nei_search(game: Path) -> None:
+    """NEI saves its search text per server and shows it again at every start; start empty."""
+    tag = b"\x08\x00\x06search"  # the NBT string named "search"
+    for path in (game / "saves" / "NEI" / "remote").glob("*/NEI.dat"):
+        try:
+            data = gzip.decompress(path.read_bytes())
+        except (OSError, EOFError):
+            continue
+        at = data.find(tag)
+        if at < 0:
+            continue
+        start = at + len(tag)
+        size = int.from_bytes(data[start:start + 2], "big")
+        if size:
+            path.write_bytes(gzip.compress(data[:start] + b"\0\0" + data[start + 2 + size:]))
 
 
 def prepare(args: argparse.Namespace) -> None:
@@ -373,7 +398,7 @@ def prepare(args: argparse.Namespace) -> None:
         save_json(client / MARKER, {"managedBy": "modbench", "kind": "prism-instance"})
     extract_pack_mods(Path(cfg["clientZip"]), runtime / "pack-mods")
     write_instance_config(client, java, int(cfg["memoryMiB"]), cfg.get("window", ""))
-    set_client_options(client_game_dir(client))
+    set_client_options(client_game_dir(client), cfg.get("window", ""))
     save_json(config_path(runtime), cfg)
     print(json.dumps({"runtime": str(runtime), "server": str(server), "instance": str(client)}, indent=2))
 
@@ -814,6 +839,7 @@ def launch_client(args: argparse.Namespace) -> None:
     username = args.username or cfg.get("username", "ModbenchDev")
     if not username:
         raise RuntimeError_("username must not be empty")
+    clear_nei_search(client_game_dir(path))
     # Do not use Prism's --server: that route can bypass FML's setup in this
     # legacy pack. The authenticated bridge connects after the title screen.
     subprocess.Popen([prism, "--dir", str(cfg["prismData"]), "-l", INSTANCE_NAME, "--offline", username], env=game_env(), creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0)
@@ -845,7 +871,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--runtime", default=str(RUNTIME))
     sub = parser.add_subparsers(dest="command", required=True)
-    p = sub.add_parser("prepare"); p.add_argument("--client-zip"); p.add_argument("--server-zip"); p.add_argument("--prism"); p.add_argument("--prism-data"); p.add_argument("--java"); p.add_argument("--username"); p.add_argument("--memory", type=int); p.add_argument("--server-memory", type=int); p.add_argument("--window", help="client window size, e.g. 1920x1080"); p.set_defaults(func=prepare)
+    p = sub.add_parser("prepare"); p.add_argument("--client-zip"); p.add_argument("--server-zip"); p.add_argument("--prism"); p.add_argument("--prism-data"); p.add_argument("--java"); p.add_argument("--username"); p.add_argument("--memory", type=int); p.add_argument("--server-memory", type=int); p.add_argument("--window", help="client window size, e.g. 1280x720"); p.set_defaults(func=prepare)
     sub.add_parser("status").set_defaults(func=status)
     p = sub.add_parser("start-server"); p.add_argument("--accept-eula", action="store_true"); p.add_argument("--dev-fixtures", action="store_true", help="enable privileged, journaled development fixtures for smoke tests"); p.set_defaults(func=start_server)
     p = sub.add_parser("stop-server"); p.add_argument("--timeout", type=float, default=30); p.set_defaults(func=stop_server)

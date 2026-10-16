@@ -112,8 +112,10 @@ out of git), which the agent container mounts read-only at `/mods`; re-run
 `prepare` to make it for a runtime prepared before that.
 
 `--java` must be a JDK 17 to 25; `prepare` refuses anything older. Add
-`--window 1920x1080` to set the client window size (Prism otherwise opens
-854x480); re-run `prepare` with only that flag to change it later.
+`--window 1280x720` to set the client window size; it also fixes GUI scale 2,
+so the GUI is 640x360 units (the game otherwise opens 854x480 with a 427x240
+GUI, which cuts off tall mod screens). Re-run `prepare` with only that flag to
+change it later.
 
 ```bash
 python harness/launcher/runtime.py build
@@ -156,7 +158,8 @@ installed `client` and `core` jars match the local build or a set that joined
 before.
 
 The managed server is bound to `127.0.0.1:25575`, offline mode, no RCON, 4 GiB
-heap; the client gets 6 GiB, pause-on-focus-loss disabled. Full pack startup
+heap; the client gets 6 GiB, pause-on-focus-loss disabled, and starts with an
+empty NEI search box (NEI would restore the last one). Full pack startup
 takes a few minutes.
 
 ## Java change cycle
