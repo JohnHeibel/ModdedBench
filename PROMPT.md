@@ -667,7 +667,8 @@ With `ranged=True` it uses whatever bow, crossbow or throwable is in the slot yo
 name, and learns that weapon from its own shots.
 Eating, crafting or opening a GUI with a threat listed is refused by default:
 the refusal names the threats and its override (`despiteThreat`), and passing
-it is your call.
+it is your call. When you kill a mob, pick up what it drops: drops are far
+easier to gather as you go than to farm once a recipe needs them.
 
 Armour is infrastructure. Every hit in this pack lands harder than vanilla, and
 the best armour your current metal allows roughly halves it. The moment you
