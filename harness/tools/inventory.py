@@ -381,6 +381,16 @@ def _shift(session, slot):
     return direction * (_held(session.observe(), stack) - before)
 
 
+def _short(session, want, need, moved):
+    """A take that fell short stops with how many it got and which of the two causes holds; the moves so far, not every click's receipt."""
+    view = session.observe(); left = sum(s["stack"]["count"] for s in view["slots"] if s["kind"] == "container" and _matches(s.get("stack"), want))
+    free = sum(1 for s in _player(view) if s["kind"] in ("main", "hotbar") and not s.get("stack"))
+    selector = {k: want[k] for k in ("id", "meta", "nbt_hash", "nbt", "name") if k in want}
+    why = (f"{left} more there did not move: no room in your inventory ({free} free slots)" if left
+           else "no more there" if want["count"] > need else "nothing there matches it")
+    raise ProcedureStopped(f"took {want['count'] - need} of {want['count']} {selector}: {why}", [{k: moved[k] for k in ("put", "took")}])
+
+
 @tool(coverage=["inventory"])
 def mb_move_items(at: list[int] | None = None, put: list[dict] | str | None = None, keep: list[dict] | None = None,
                   take: list[dict] | None = None, drop: list[dict] | None = None, despite_threat: bool = False,
@@ -399,8 +409,9 @@ def mb_move_items(at: list[int] | None = None, put: list[dict] | str | None = No
     A selector is {id?, meta?, nbt_hash?, nbt?, name?}: every field given must match (name: part of the display
     name, any case); give id or name. put: selectors of stacks to move in, or "all" for everything outside your
     hotbar; keep: selectors never moved by put. take: selectors with count? for whole stacks to bring out until at
-    least count (all of it without count). drop: selectors of stacks to throw on the ground in front of you: for
-    junk, which you may discard freely (walk away from it, or it comes back). A stack that carries NBT or is
+    least count (all of it without count; short of it, the call stops and says how many it got and why).
+    drop: selectors of stacks to throw on the ground in front of you: for junk, which you may discard freely
+    (walk away from it, or it comes back). A stack that carries NBT or is
     damaged (a tool that keeps its state in NBT, anything named or enchanted) is not dropped unless its selector picks it by
     nbt_hash, nbt or name, or says withNbt:true; it is listed in skipped with why. Order: put, take, drop.
     Returns {put, took, dropped, unmoved, skipped, free: {you, there}}: unmoved is what found no room, free counts
@@ -433,7 +444,7 @@ def mb_move_items(at: list[int] | None = None, put: list[dict] | str | None = No
                 if s["kind"] != "container" or not _matches(s.get("stack"), want) or need is not None and need <= 0: continue
                 count = _shift(session, s); note("took", s["stack"], count); note("unmoved", s["stack"], max(0, s["stack"]["count"] - count))
                 if need is not None: need -= count
-            if need is not None and need > 0: raise ProcedureStopped(f"{need} {want.get('id') or want['name']} short: not there, or no room in your inventory", session.receipts)
+            if need is not None and need > 0: _short(session, want, need, moved)
         for s in _player(session.observe()) if drop else []:
             hit = next((w for w in drop if _matches(s.get("stack"), w)), None)
             if hit is None: continue

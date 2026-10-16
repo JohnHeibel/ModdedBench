@@ -88,6 +88,16 @@ class MoveItemsTests(unittest.TestCase):
         self.assertEqual(sum(m == 'gui.click_slot' for m, _ in k.calls), 1)
         self.assertFalse(k.open)
 
+    def test_a_short_take_says_how_many_it_got_and_which_cause_holds(self):
+        def short(k, want):
+            with self.assertRaises(inventory.ProcedureStopped) as caught: self.run_tool(k, at=[1, 64, 1], take=[want])
+            return str(caught.exception)
+        self.assertIn("took 0 of 4 {'id': 'coal', 'meta': 1}: nothing there matches it", short(ChestKernel(), dict(id='coal', meta=1, count=4)))
+        stopped = short(ChestKernel(), dict(id='coal', count=12))
+        self.assertIn("took 8 of 12 {'id': 'coal'}: no more there", stopped); self.assertNotIn("state", stopped)  # the moves, not each click's receipt
+        k = ChestKernel(); k.slots[5]['stack'] = dict(id='sand', meta=0, count=64)
+        self.assertIn("took 0 of 4 {'id': 'coal'}: 8 more there did not move: no room in your inventory (0 free slots)", short(k, dict(id='coal', count=4)))
+
     def test_drop_works_in_your_own_inventory_and_put_there_is_refused(self):
         k = ChestKernel('net.minecraft.inventory.ContainerPlayer'); out = self.run_tool(k, drop=[dict(id='dye', meta=3)])
         self.assertEqual(out['dropped'], [dict(id='dye', meta=3, count=5)])
