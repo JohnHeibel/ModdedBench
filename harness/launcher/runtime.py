@@ -207,16 +207,16 @@ def extract_zip(archive_path: Path, target: Path, *, strip_root: bool = False) -
                 shutil.copyfileobj(source, out)
 
 
-def extract_pack_mods(archive: Path, target: Path) -> None:
-    """The pack's own mods folder, unzipped once for the agent container, which mounts it read-only at ``/mods`` to read
-    and decompile (compose ``PACK_MODS``). Vanilla has no pack mods to read."""
+def extract_pack_files(archive: Path, target: Path) -> None:
+    """The pack's own ``mods`` and ``config`` folders as a player has them on disk, unzipped once for the agent container,
+    which mounts them read-only at ``/pack`` to read and decompile (compose ``PACK_FILES``). Vanilla has no pack to read."""
     if PACK == "vanilla" or target.exists(): return
     partial = target.with_name(target.name + ".partial")
     shutil.rmtree(partial, ignore_errors=True)
     with zipfile.ZipFile(archive) as zf:
         for info, relative in safe_zip_members(zf, strip_root=True):
-            if relative.parts[1:2] != ("mods",): continue
-            destination = partial.joinpath(*relative.parts[2:])
+            if relative.parts[1:2] not in (("mods",), ("config",)): continue
+            destination = partial.joinpath(*relative.parts[1:])
             destination.parent.mkdir(parents=True, exist_ok=True)
             with zf.open(info) as source, destination.open("wb") as out:
                 shutil.copyfileobj(source, out)
@@ -396,7 +396,7 @@ def prepare(args: argparse.Namespace) -> None:
     if not (client / MARKER).is_file():
         extract_zip(Path(cfg["clientZip"]), client, strip_root=True); strip_pack(client_game_dir(client))
         save_json(client / MARKER, {"managedBy": "modbench", "kind": "prism-instance"})
-    extract_pack_mods(Path(cfg["clientZip"]), runtime / "pack-mods")
+    extract_pack_files(Path(cfg["clientZip"]), runtime / "pack-files")
     write_instance_config(client, java, int(cfg["memoryMiB"]), cfg.get("window", ""))
     set_client_options(client_game_dir(client), cfg.get("window", ""))
     save_json(config_path(runtime), cfg)

@@ -107,9 +107,9 @@ python harness/launcher/runtime.py prepare --client-zip <client.zip> --server-zi
 `%APPDATA%\PrismLauncher`. `prepare` needs both archives, also when the server
 will run in a container, and writes its settings to `.runtime/config.json`,
 which every other `runtime.py` command reads. For the GTNH pack it also unzips
-the client pack's `mods` folder into `.runtime/pack-mods` (about 430 MiB, kept
-out of git), which the agent container mounts read-only at `/mods`; re-run
-`prepare` to make it for a runtime prepared before that.
+the client pack's `mods` and `config` folders into `.runtime/pack-files` (about
+670 MiB, kept out of git), which the agent container mounts read-only at
+`/pack`; re-run `prepare` to make it for a runtime prepared before that.
 
 `--java` must be a JDK 17 to 25; `prepare` refuses anything older. Add
 `--window 1280x720` to set the client window size; it also fixes GUI scale 2,

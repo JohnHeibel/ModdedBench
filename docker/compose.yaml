@@ -29,7 +29,7 @@ services:
       - ${OUTBOX:-../.runtime/outbox}:/outbox
       - ${BRIEF:-../.runtime/brief}:/brief:ro  # the run's PROMPT.md: mission and rules the agent can read but not rewrite
       - ${WIKI:-../.runtime/wiki}:/wiki:ro  # harness/wiki/fetch.py makes the snapshot on the host
-      - ${PACK_MODS:-../.runtime/pack-mods}:/mods:ro  # the pack's own mod jars, unzipped by runtime.py prepare, to read and decompile
+      - ${PACK_FILES:-../.runtime/pack-files}:/pack:ro  # the pack's own mods and config, unzipped by runtime.py prepare, to read and decompile
       - ${BRIDGE_TOKENS:?folder holding bridge-47223.token, normally %USERPROFILE%/.moddedbench}:/run/bridge:ro
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]

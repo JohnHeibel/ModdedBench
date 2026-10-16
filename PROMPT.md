@@ -305,11 +305,12 @@ Key facts about the runtime:
   what that tool actually does. A long page answers with an outline first;
   the advice is usually in a late section (Tips, Tools), not the first table. It follows the newest pack version and can be ahead of this one:
   the quest book and NEI (`mb_recipes`) decide exact recipes and requirements.
-- **The pack's mods** are unzipped, read-only, in `/mods`: every jar this pack
-  runs. `javap` and the Fernflower decompiler in your Gradle cache
-  (`~/.gradle/caches/retro_futura_gradle/mcp/fernflower.jar`) open them. When
-  the wiki, the quest book and the game's own screens do not say how something
-  works, the mod's code does.
+- **The pack's files** are unzipped, read-only, in `/pack`: `mods` holds every
+  jar this pack runs, `config` the settings they read at startup. `javap` and
+  the Fernflower decompiler in your Gradle cache
+  (`~/.gradle/caches/retro_futura_gradle/mcp/fernflower.jar`) open the jars.
+  When the wiki, the quest book and the game's own screens do not say how
+  something works, the mod's code and its config do.
 - **The map** (`mb_map`) is JourneyMap, the pack's map mod, as a picture: every
   chunk this client has had loaded, one pixel per block, north up, with
   labelled x/z grid lines so you can read coordinates straight off it. Black is
