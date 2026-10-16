@@ -145,14 +145,19 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = Fal
     or placing), and in reach blocks with a sword between swings and times each swing to land while
     falling, a critical hit at the fastest rate the game counts; a mob coming at you is hit the
     moment it is in reach instead. A swing lands on a mob in sight, or on one unseen within 3
-    blocks with nothing between your eye and where you aim on it (legs under a low roof).
+    blocks with nothing between your eye and where you aim on it (legs under a low roof). The
+    swing has no cooldown, only each mob: one hurt shrugs off a hit no stronger for half its hurt
+    time (10 ticks for most, read from the mob), so while the one you chose would, another hostile
+    in reach that would not is struck meanwhile (in a swarm any, else one that has come at you;
+    struckAside counts them).
     keep_away [selectors] names mobs it keeps away from, and so does any kind it sees go off
     (gone from the world with health left where the server just told of an explosion, within 64
     blocks, hurt or not): the receipt's wentOff,
-    kept in notes/keep_away.json and passed to every fight after. One of those is fought at arm's
-    length: struck as it comes into reach and backed away from while the next swing gathers; one
-    that stands still within 4 blocks is run from, onto somewhere to stand, until it is 8 blocks
-    off or comes at you again (struck where it is when there is nowhere to go). An entity made of parts is
+    kept in notes/keep_away.json and passed to every fight after. One of those that is after you
+    is let come, not walked to, struck from where you stand as it comes into reach and backed away
+    from while the next swing gathers; once hit, or still within 4 blocks (8 once it has come at
+    you), it is run from, onto somewhere to stand, until it is 8 blocks off (struck where it is,
+    block raised between, when there is nowhere to go). An entity made of parts is
     hit on the part nearest you. A mob coming at you is met where you stand, not walked to, and a
     hostile that has come at you and stands in reach while the mob you chose does not is struck
     where it stands, not walked past. hold=True never moves: it
@@ -160,8 +165,7 @@ def mb_fight(entity_id: int | None = None, hold: bool = False, swarm: bool = Fal
     whenever one comes into reach, and succeeds once none is in sight. It never chooses to chase
     a different mob.
     swarm=True is for many mobs at once (a pack, a spawner): it fights whichever hostile is
-    nearest (one of a kind kept away from within 6 blocks first; one in reach is finished before
-    the next), going to it (with hold=True too it stands), never stops as outnumbered, passes over one it cannot get at (3 seconds beside it
+    nearest (one in reach is finished before the next), going to it (with hold=True too it stands), never stops as outnumbered, passes over one it cannot get at (3 seconds beside it
     out of reach, or 5 without a hit since it took it up; passedOver counts them), defaults crit
     and block off so every swing lands at the weapon's full rate, fails cannot_reach_target when
     only passed-over ones are left, and succeeds (reason clear, naming any left out of sight) once
