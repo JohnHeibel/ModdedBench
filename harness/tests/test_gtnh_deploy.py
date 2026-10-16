@@ -50,6 +50,26 @@ class DeployTests(unittest.TestCase):
         self.assertEqual(calls, [("install", "core", "client"), ("install", "client", "client"), "launch",
                                  ("rollback", "client", "client"), ("rollback", "core", "client"), "launch"])
 
+    def test_a_failed_deploy_answers_with_the_crash_report_else_the_end_of_the_log(self):
+        import os, time
+        with tempfile.TemporaryDirectory() as tmp:
+            game = Path(tmp) / ".minecraft"; (game / "crash-reports").mkdir(parents=True); (game / "logs").mkdir()
+            old = game / "crash-reports" / "crash-old-client.txt"; old.write_text("an earlier crash"); os.utime(old, (1, 1))
+            (game / "logs" / "fml-client-latest.log").write_text("\n".join([f"[t] [Client thread/INFO] [FML/]: line {i}" for i in range(100)]
+                                                                         + ["[t] [Client thread/DEBUG] [FML/]: noise", "\tat x.Y.z(Y.java:1)"]))
+            with patch.object(runtime, "instance_dir", return_value=Path(tmp)):
+                lines = deploy.client_evidence({}, since=2)["clientLog"].splitlines()
+                self.assertEqual((len(lines), lines[0], lines[-1]), (deploy.LOG_LINES, "[t] [Client thread/INFO] [FML/]: line 41", "\tat x.Y.z(Y.java:1)"))
+                (game / "crash-reports" / "crash-new-client.txt").write_text("---- Minecraft Crash Report ----\nDescription: Unexpected error\n\n"
+                                                                             "java.lang.NoSuchFieldError: aspects\n\n\nA detailed walkthrough of the error\n-- Head --")
+                self.assertEqual(deploy.client_evidence({}, since=2), {"crashReport": "---- Minecraft Crash Report ----\nDescription: Unexpected error\n\njava.lang.NoSuchFieldError: aspects"})
+                self.assertEqual(deploy.client_evidence({}, since=time.time() + 60), {})  # nothing written since the deploy began
+        def launch(args): raise runtime.RuntimeError_("client reached GuiErrorScreen")
+        with patch.object(runtime, "load_config", return_value={}), patch.object(runtime, "instance_dir", return_value=Path(".")), \
+             patch.object(runtime, "client_instance_is_running", return_value=False), patch.object(runtime, "launch_client", launch), \
+             patch.object(deploy, "client_evidence", return_value={"crashReport": "boom"}):
+            self.assertEqual(deploy.deploy({}, Path("."), 1), {"ok": False, "error": "client reached GuiErrorScreen", "rollbackError": "client reached GuiErrorScreen", "crashReport": "boom"})
+
     def test_a_client_that_does_not_stop_in_time_is_stopped_again_and_relaunched_as_it_was(self):
         calls = []
         def stop(args):

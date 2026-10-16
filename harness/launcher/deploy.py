@@ -20,6 +20,7 @@ COMPONENTS = ("core", "baritone", "client")
 MAX_JAR = 64 << 20
 JOIN_S, STOP_S = 420, 60  # what the supervisor gives a launched client to join the world, and a running one to shut down
 WORST_S = 2 * (STOP_S + JOIN_S) + 120  # stop, launch, and when that fails stop (or terminate), roll back and launch again: a request waits this long for its verdict
+CRASH_LINES, LOG_LINES, LINE_CHARS = 40, 60, 400  # what a failed deploy brings back: the crash report's head, else the log's tail
 
 
 def outbox() -> Path:
@@ -78,8 +79,29 @@ def accept(req: dict, box: Path, archive: Path) -> dict[str, Path]:
     return jars
 
 
+def client_evidence(cfg: dict, since: float) -> dict:
+    """What a player would see of a client that failed: the crash report it wrote since ``since``, else the end of its
+    log without DEBUG and TRACE lines. Read before the rollback launch, which starts a new log."""
+    def clip(lines): return "\n".join(line[:LINE_CHARS] for line in lines)
+    try:
+        game = runtime.client_game_dir(runtime.instance_dir(cfg))
+        reports = sorted((p for p in (game / "crash-reports").glob("crash-*-client.txt") if p.stat().st_mtime >= since), key=lambda p: p.stat().st_mtime)
+        if reports:
+            head = reports[-1].read_text(encoding="utf-8", errors="replace").split("A detailed walkthrough")[0].strip()
+            return {"crashReport": clip(head.splitlines()[:CRASH_LINES])}
+        log = game / "logs" / "fml-client-latest.log"
+        if log.is_file() and log.stat().st_mtime >= since:
+            with log.open("rb") as f:
+                f.seek(max(0, log.stat().st_size - (256 << 10))); tail = f.read().decode("utf-8", "replace").splitlines()
+            return {"clientLog": clip([line for line in tail if "/DEBUG]" not in line and "/TRACE]" not in line][-LOG_LINES:])}
+    except OSError:
+        pass
+    return {}
+
+
 def deploy(jars: dict[str, Path], root: Path, timeout: float) -> dict:
     cfg = runtime.load_config(root)
+    started = time.time()
     launch = SimpleNamespace(runtime=str(root), username="", timeout=timeout, installed_as_is=True)
     stop = SimpleNamespace(runtime=str(root), timeout=STOP_S)
     installed = []
@@ -90,15 +112,16 @@ def deploy(jars: dict[str, Path], root: Path, timeout: float) -> dict:
         runtime.launch_client(launch)
         return {"ok": True, "deployed": installed}
     except Exception as failure:
+        seen = client_evidence(cfg, started)
         try:
             if runtime.client_instance_is_running(runtime.instance_dir(cfg)):
                 try: runtime.stop_client(stop)
                 except Exception: runtime.kill_client(runtime.instance_dir(cfg))  # the deploy may have broken the bridge a stop goes through: the way back must not need it
             for kind in reversed(installed): runtime.rollback_jar(kind, root, "client")
             runtime.launch_client(launch)
-            return {"ok": False, "error": str(failure), "rolledBack": installed}
+            return {"ok": False, "error": str(failure), "rolledBack": installed, **seen}
         except Exception as second:
-            return {"ok": False, "error": str(failure), "rollbackError": str(second)}
+            return {"ok": False, "error": str(failure), "rollbackError": str(second), **seen}
 
 
 def claim(box: Path) -> bool:
