@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ModdedBench contributors
 """agent_loop against a fake agent command, as Codex and as Claude Code; no model is ever called."""
-import base64, contextlib, io, json, os, sys, tempfile, unittest, unittest.mock
+import base64, contextlib, io, json, os, sys, tempfile, time, unittest, unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runner"))
@@ -35,7 +35,9 @@ class AgentLoopTests(unittest.TestCase):
         # The agent's own container sets MODBENCH_OUTBOX to the folder a live run's overlay is written to:
         # a test run there would overwrite the feed a viewer is watching, and then not find its own.
         self.outbox = os.environ.pop("MODBENCH_OUTBOX", None)
+        self.codex = unittest.mock.patch.dict(os.environ, {"CODEX_HOME": str(self.repo / "codex")}); self.codex.start()  # never this machine's own Codex sessions
     def tearDown(self):
+        self.codex.stop()
         if self.outbox is not None: os.environ["MODBENCH_OUTBOX"] = self.outbox
         self.tmp.cleanup()
     def loop(self, plan, **kw):
@@ -97,6 +99,30 @@ class AgentLoopTests(unittest.TestCase):
             self.assertEqual(cut, f.billed())
             fed(f, {"type": "turn.completed", "usage": {"input_tokens": 100}})
             self.assertEqual(cut + 100, f.billed())
+
+    def test_codex_usage_is_read_call_by_call_from_its_record_and_a_resumed_threads_earlier_calls_stay_out(self):
+        from feed import Feed
+        def count(when, total, last=0, info=True):
+            u = lambda i: {"input_tokens": i, "cached_input_tokens": i * 9 // 10, "output_tokens": i // 100}
+            return json.dumps({"timestamp": when, "type": "event_msg", "payload": {"type": "token_count", "info": {"total_token_usage": u(total), "last_token_usage": u(last), "model_context_window": 475000} if info else None}}) + "\n"
+        with tempfile.TemporaryDirectory() as d, unittest.mock.patch.dict(os.environ, {"CODEX_HOME": d}):
+            day = Path(d, "sessions", "2026", "10", "16"); day.mkdir(parents=True)
+            record = day / "rollout-2026-10-16T05-26-16-T-1.jsonl"
+            record.write_text(count("2026-01-01T00:00:00Z", 1000, 1000))  # an earlier launch of this thread: already billed then
+            f, p = Feed(Path(d, "out")), rt_codex.Parser()
+            now = lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(p.began + 1))
+            feed = lambda e: [f.event(ev) or ev for ev in p.events(e)]
+            feed({"type": "thread.started", "thread_id": "T-1"}); feed({"type": "turn.started"})
+            self.assertEqual(0, f.billed())
+            with record.open("a") as w: w.write(count(now(), 1500, 500) + count(now(), 1500, info=False) + count(now(), 2000, 500)[:40])  # a call, a rate-limit update, a line half written
+            evs = feed({"type": "item.completed", "item": {"type": "mcp_tool_call", "tool": "mb_obs", "result": {"content": [{"type": "text", "text": "x" * 40000}]}}})
+            self.assertEqual([("usage", 500, 450, 5, 500)], [(e["type"], e["input"], e["cached"], e["output"], e["context"]) for e in evs if e["type"] == "usage"])
+            self.assertFalse(any("size" in e for e in evs))  # counted exactly: no estimate on top
+            self.assertEqual(500, f.billed()); self.assertEqual(475000, f.live["context"]["window"])
+            with record.open("a") as w: w.write(count(now(), 2000, 500)[40:])
+            feed({"type": "turn.completed", "usage": {"input_tokens": 2100, "cached_input_tokens": 1890, "output_tokens": 21}})  # the thread's total, earlier launches included
+            self.assertEqual(1100, f.billed())  # the second call, and the 100 the record had not shown yet
+            self.assertEqual(1100 * 9 // 10, f.live["stats"]["tokens"]["cached"])
 
     def test_the_overlay_clock_runs_only_inside_turns(self):
         from feed import Feed

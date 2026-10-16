@@ -8,8 +8,8 @@ the events the loop and the feed read. ``--model`` and ``--effort`` are passed o
 
 MCP cannot push, so inside a turn the agent blocks in ``mb_wait``; this loop only restarts a turn that
 ended. A turn is not a unit of the run: the agent is told not to stop, one turn can last hours, and a new turn is
-recovery after it did. The run's size is ``--max-minutes`` and ``--max-tokens`` (input tokens including cached ones, about 100k a call once the context is full; estimated
-while a turn runs from what has streamed, exact at its end), enforced mid-turn by ending the agent's process; the
+recovery after it did. The run's size is ``--max-minutes`` and ``--max-tokens`` (input tokens including cached ones, every call billed for its whole context; exact call by
+call from the runtime: Codex's own record of the thread, estimated from what has streamed only without it), enforced mid-turn by ending the agent's process; the
 thread stays resumable. Both count from the start that names them and are kept in ``.state/run.json`` as the run's end and cap:
 a later start that names none continues to the same end (delete that file for a run without them). It also stops on a ``MISSION COMPLETE`` line in a turn's last message, on
 ``<repo>/.state/STOP``, after ``--max-turns``, or after 12 failed turns in a row (a turn that ran over ten minutes starts
@@ -203,7 +203,7 @@ def main(argv=None):
     ap.add_argument("--runtime", choices=sorted(RUNTIMES), default="codex"); ap.add_argument("--model", default=""); ap.add_argument("--effort", default="")
     ap.add_argument("--max-turns", type=int, default=50)
     ap.add_argument("--max-minutes", type=float, help="wall-clock budget from this start; the turn is ended where it stands. Without it the run's stored end (.state/run.json) stays")
-    ap.add_argument("--max-tokens", type=int, help="input tokens from this start, cached ones included (~100k a call at full context), estimated mid-turn. Without it the run's stored cap stays")
+    ap.add_argument("--max-tokens", type=int, help="input tokens from this start, cached ones included (every call bills its whole context), counted call by call. Without it the run's stored cap stays")
     a = ap.parse_args(argv[:argv.index("--")] if "--" in argv else argv)
     try: reason = run(a.repo, a.prompt, a.max_turns, a.state, extra=extra, max_minutes=a.max_minutes, max_tokens=a.max_tokens, runtime=a.runtime, model=a.model, effort=a.effort)
     except BaseException: print("# %s agent_loop died:" % time.strftime("%Y-%m-%dT%H:%M:%S"), file=sys.stderr); raise  # the console sends stderr to .state/agent-loop.err

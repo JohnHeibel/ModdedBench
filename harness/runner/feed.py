@@ -220,11 +220,13 @@ class Feed:
             for key in ("input", "cached", "output"): stats["tokens"][key] += int((e.get("usage") or {}).get(key) or 0)
             stats["tokens"]["estimated"] = 0  # the exact count has replaced it
             self.status("between_turns")
-        elif kind == "usage":  # exact, call by call: nothing to estimate
+        elif kind == "usage":  # exact, call by call: nothing to estimate, and what was estimated before the first is now counted
             for key in ("input", "cached", "output"): stats["tokens"][key] += int(e.get(key) or 0)
+            stats["tokens"]["estimated"] = 0
             self.live["context"] = {**(self.live.get("context") or {}), **{k: e[k] for k in ("context", "window") if e.get(k)}}  # tokens in it now; its size, once said
         if "size" in e:
-            # Codex reports usage only when a turn ends, and a turn can last hours. Every call is billed for the whole context
+            # A runtime that reports usage only when a turn ends (Codex without its record of the thread: rt_codex.Parser)
+            # leaves the bill unknown for hours, and a turn can last that long. Every call is billed for the whole context
             # again (mostly cached), so the bill grows with context x calls: this estimate is that sum, with the context
             # held at the size Codex compacts it to. Roughly right for gpt-6 (~4 characters a token); the turn's end corrects it.
             self.context = min((self.context or BASE) + e["size"] // 4, 120000)
