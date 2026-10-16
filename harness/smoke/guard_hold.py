@@ -57,6 +57,7 @@ class Hold(cc.Combat):
         self.s.call(cc.FIX + ".reset", empty=True, armor=cc.ARMOR, at=list(cc.START), yaw=-90, effects=cc.SIGHT,
                     stacks=cc.STACKS + [{"slot": BREAD, "id": "minecraft:bread", "count": 8}], **reset)
         time.sleep(6)   # the last scene's hurt has no attacker: the same kind again within 100 ticks is lasting harm, not news
+        self.full = self.player()["health"]   # the pack's own: 20 in vanilla, more where a mod adds to it
 
     def rule(self, kind: str, level: float | None = None, do: str | None = None, **more):
         """The scene's one rule, named for its kind: asking the model, or with do a script that answers it."""
@@ -114,7 +115,7 @@ class Hold(cc.Combat):
     def fight(self):
         self.ready(); self.s.call(cc.FIX + ".clear")
         mob = self.s.call(cc.FIX + ".summon", type="Zombie", x=cc.START[0] + 10, y=cc.FLOOR, z=cc.START[2])["summoned"][0]
-        self.seen({mob["entityId"]}); self.rule("health_below", 17)
+        self.seen({mob["entityId"]}); self.rule("health_below", self.full - 3)
         self.hurt_in(1.0, amount=5)
         got = self.call(work.mb_fight, entity_id=mob["entityId"], weapon_slot=cc.SWORD, timeout_s=90)
         wrong = self.held(got, "health_below")
@@ -170,7 +171,7 @@ class Hold(cc.Combat):
         got, wrong = self.call(work.mb_process, "goal", goal={"type": "block", "pos": FAR}), []
         time.sleep(.5); end = self.player()
         if got.get("state") != "succeeded" or abs(end["pos"][0] - (FAR[0] + .5)) > 1: wrong.append(f"the walk: state {got.get('state')!r} {got.get('error')}, at {end['pos']}")
-        if end["health"] > 18: wrong.append("the player was never hurt: no rule was there to answer")
+        if end["health"] > self.full - 2: wrong.append("the player was never hurt: no rule was there to answer")
         fired = self.fired(wrong, when="health_drop", work="carried_on", world="running")
         return wrong, {"walk": got.get("state"), "fired": fired}
 
@@ -178,7 +179,7 @@ class Hold(cc.Combat):
         self.ready(food=8); self.s.call(cc.FIX + ".clear")
         mob = self.s.call(cc.FIX + ".summon", type="Zombie", x=cc.START[0] + 10, y=cc.FLOOR, z=cc.START[2])["summoned"][0]
         self.seen({mob["entityId"]})
-        self.rule("health_below", 17, f"def main(event):\n mb_act('select_hotbar', {{'slot': {BREAD}}})\n return mb_act('eat').get('state')")
+        self.rule("health_below", self.full - 3, f"def main(event):\n mb_act('select_hotbar', {{'slot': {BREAD}}})\n return mb_act('eat').get('state')")
         self.hurt_in(1.0, amount=5)
         got, wrong = self.call(work.mb_fight, entity_id=mob["entityId"], weapon_slot=cc.SWORD, timeout_s=90), []
         time.sleep(2); end = (self.player()["food"], self.bread())
@@ -228,7 +229,7 @@ class Hold(cc.Combat):
         out, wrong = scripts.mb_run(code=f"def main():\n return mb_process('goal', goal={{'type': 'block', 'pos': {FAR}}})['state']"), []
         time.sleep(.5); end = self.player()
         if out.get("result") != "succeeded" or "interrupted" in out or abs(end["pos"][0] - (FAR[0] + .5)) > 1: wrong.append(f"the script did not run through the rule's pause: {json.dumps(out)[:400]}, at {end['pos']}")
-        if end["health"] > 18: wrong.append("the player was never hurt: no rule was there to answer")
+        if end["health"] > self.full - 2: wrong.append("the player was never hurt: no rule was there to answer")
         fired = self.fired(wrong, when="health_drop", work="carried_on", world="running")
         return wrong, {"script": out.get("result"), "fired": fired}
 

@@ -359,7 +359,10 @@ class Combat(Course):
                    crowdedS=round(sum(.2 for _, me, _, around, *_ in watch.trace if sum(math.dist(me, at) <= 3 for _, at, _ in around) >= 2), 1),
                    difficulty=self.difficulty if "difficulty" in case else None, watchError=watch.error,
                    lineBlockedAt=(receipt.get("target") or {}).get("lineBlockedAt"), shotBlockedBy=(receipt.get("target") or {}).get("shotBlockedBy"))
-        if spared: row["provoked"] = sum(watch.spared[m["uuid"]] < m["health"] for m in spared)   # struck, or hit by anything: not left alone
+        if spared:
+            hurt = [m for m in spared if watch.spared[m["uuid"]] < watch.whole[m["uuid"]]]
+            row["provoked"] = len(hurt)   # struck, or hit by anything: not left alone
+            if hurt: row["bystanders"] = [[m["entityId"], m["type"], watch.spared[m["uuid"]], watch.whole[m["uuid"]], m["uuid"] in watch.burnt] for m in hurt]
         self.traces.setdefault(name, []).append(watch.trace); self.looks.setdefault(name, []).append(watch.looks)
         if self.args.guards: row["pauses"] = pauses
         row["ok"] = row["killed"] == row["mobs"] and not row["died"] and (bool(each) or row.get("state") == "succeeded") and not row.get("provoked")
@@ -402,6 +405,8 @@ class Watch(threading.Thread):
         self.server, self.halt = server, threading.Event()
         self.lowest = {m["uuid"]: m.get("health") for m in mobs}
         self.spared = {m["uuid"]: m.get("health") for m in spare}
+        self.whole = dict(self.spared)   # a bystander's full health: a pack may lower its max health just after it spawns (GTNH by a tenth)
+        self.burnt: set = set()          # bystanders seen burning: fire is harm the player may not have done
         self.later, self.added, self.error = sorted(later, key=lambda w: w[0]), [], None   # a wave is summoned here: this thread owns the server session
         self.now, self.at, self.started = None, 0.0, time.monotonic()
         # [seconds, player [x, z], player health, [[entityId, [x, z], health] of each summoned mob alive], and with bystanders the same of them]
@@ -419,6 +424,8 @@ class Watch(threading.Thread):
                 for seen in (self.lowest, self.spared):
                     if e["uuid"] in seen and e.get("health") is not None:
                         was = seen[e["uuid"]]; seen[e["uuid"]] = e["health"] if was is None else min(was, e["health"])
+                if e["uuid"] in self.whole and e.get("maxHealth") is not None: self.whole[e["uuid"]] = min(self.whole[e["uuid"]] or e["maxHealth"], e["maxHealth"])
+                if e["uuid"] in self.whole and e.get("burning"): self.burnt.add(e["uuid"])
             self.now, self.at = now, time.monotonic()
             pos = lambda e: [round(e["pos"][0], 1), round(e["pos"][2], 1)]
             row = [round(self.at - self.started, 1), pos(now["player"]), now["player"]["health"],
