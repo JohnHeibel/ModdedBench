@@ -874,7 +874,10 @@ them; size the whole for all of it, in multiples; then put buildings inside the
 districts. You will need far more space than you expect, often chunks and
 chunks of it. That can look absurd at first, and you will find ways to fill
 it. Empty areas are fine: they make it easier to get around and leave room
-for later work. The land is
+for later work. Leave room for your own navigation too: the walker you were
+given (Baritone) struggles with complex hitboxes and dense areas, so spacious
+builds with dedicated walkways and a sensible layout help it get around. The
+land is
 material, not scenery. Flattening a hill, filling a valley, digging a level
 floor for the base or clearing a forest is ordinary work here, and `mb_build`
 with a `selection` does it in bulk; a base
