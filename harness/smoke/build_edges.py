@@ -2,7 +2,7 @@
 # Copyright (c) 2026 ModdedBench contributors
 """Builds that try to break the stepped build order, the check that a build is done, and the scaffold cleanup: one
 mb_build call each, judged by the cells the server reads back. Every row says what a good builder does (passed), what
-main 9616351 did when the row was first run (predicted, asPredicted; first written for the local-order branch's order,
+main 737490e did when the row was first run (predicted, asPredicted; first written for the local-order branch's order,
 here fitted to main's) and why; a row that fails as predicted is a finding, not a broken suite. A row that ends built
 with a plan cell wrong never passes.
 
@@ -29,8 +29,9 @@ with a plan cell wrong never passes.
   room_from_middle     walls three high round 21 x 21 and a roof, started from the middle: the roof cells more than 4
                        from a wall come at once and the source keeps the 101 nearest (main: most of it built, then
                        no_route on a roof cell)
-  tower_line           a row of 9 nine up between two stone posts, allow_place: it is reached from scaffold pillars,
-                       and every pillar is gone at the end (the 2026-10-16 base run left 29 scaffold blocks)
+  tower_line           a row of 9 nine up between two stone posts, allow_place: it is reached from a scaffold pillar under
+                       one of its cells, and the player ends on the row. Good is no pillar left; main and the pre-run branch
+                       leave all 9 and say so (scaffoldLeft)
   roofed_box           a closed box 5 x 5, walls five high and a roof, from outside with allow_place: no scaffold left
 
 The pack's (only when named, --only NAME): ids as faceclick_course uses them, and AE2's as AeTerminalFixture does.
@@ -139,9 +140,8 @@ def oven_floating() -> dict:
 def hut_then_outside() -> dict:
     shell = [cell(c["pos"], DIRT) for c in bs.shell(False)]
     path = [cell((x, 0, -2), DIRT, 1) for x in range(7)]
-    predict = {"end": ("no_route", "stalled"), "left": 7, "inside": True,
-               "note": "shuts() asks only the current step: with the last shell cells all that is left of stage 0 and room inside the finished plan "
-                       "(BuildSteps.room), they go in from inside; stage 1 is outside a closed shell"}
+    predict = {"end": ("no_route", "stalled"), "left": 7, "inside": False,
+               "note": "main builds the shell and leaves the player outside it, then stops on the first path cell as no_route"}
     return scenario(shell + path, start=(3, 0, 3), box=((-2, 0, -4), (8, 5, 8)), inside=[(x, 0, z) for x in range(1, 6) for z in range(1, 6)], predict=predict)
 
 
@@ -172,7 +172,8 @@ def tower_line() -> dict:
     """x 0..8 at y 9, z 3, between stone posts at x -1 and 9: no cell is in reach from the floor, so the source pillars."""
     posts = {(x, y, 3): STONE for x in (-1, 9) for y in range(10)}
     good = {"end": ("built",), "left": [], "strays": 0}
-    predict = {"end": ("built",), "note": "not run on main before this file: the row is built from pillars; whether any is left standing is the question"}
+    predict = {"end": ("built",), "strays": 9, "note": "the row is built from a pillar under one of its cells and the player ends on the row, 10 up: no stance sees "
+                                                       "the pillar's top under the row, and no walk comes down 10 blocks, so the pillar stays (scaffoldLeft 9)"}
     return scenario([cell((x, 9, 3), DIRT) for x in range(9)], terrain=posts, kit=[(DIRT, 64), (DIRT, 64)], start=(4, 0, 0), box=((-2, 0, -1), (10, 11, 7)),
                     good=good, predict=predict, timeout=6000, allow_place=True)
 
