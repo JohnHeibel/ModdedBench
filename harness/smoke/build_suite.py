@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 import threading
@@ -315,6 +316,22 @@ class Suite(bs.Shells):
                       f"cells/min={row['cellsPerMinute']} wrong={len(wrong)} lowest={low} overBudget={[(c or {}).get('overBudget') for c in row['costs']]} "
                       f"tickNsMean={[(c or {}).get('tickNsMean') for c in row['costs']]} tickNsMax={[(c or {}).get('tickNsMax') for c in row['costs']]} order={row['order']}")
         return row
+
+    def tracked(self, build):
+        """build(), and how far the player went meanwhile as the server saw it, sampled twice a second."""
+        walked = {"blocks": 0.0}; done = threading.Event()
+
+        def watch():
+            try:
+                server = mc.server_kernel(30); last = None
+                while not done.wait(.5):
+                    at = server.call("dev.replay.status")["pos"]
+                    if last: walked["blocks"] += math.dist(at, last)
+                    last = at
+            except Exception as e: walked["error"] = str(e)
+        thread = threading.Thread(target=watch, daemon=True); thread.start()
+        try: return build(), walked
+        finally: done.set(); thread.join(10); walked["blocks"] = round(walked["blocks"], 1)
 
     def shell_case(self, name):
         row = self.trial(name); r = row.get("receipt") or {}

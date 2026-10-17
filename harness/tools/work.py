@@ -748,7 +748,7 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
                       "expect": [{"method": "obs.block", "path": "meta", "changed": True}]}])
 
     Receipt. state succeeded (reason schematic_verified) means every cell was looked at again and
-    matches. Every receipt has jobId, placed, removed, left {count, first: up to 8 cells still
+    matched for a second on end, also after the scaffolds came out. Every receipt has jobId, placed, removed, left {count, first: up to 8 cells still
     wrong}, step {stage, y, index, of, left, first} (where the order stands: the index-th of `of`
     steps, `left` cells of it and of earlier steps still wrong), symptoms (what happened to you, as
     in mb_mine), and labels (the region notes of yours the build touches). cost.overBudget {tickMsMax,
@@ -769,9 +769,12 @@ def mb_build(cells: list[dict] | None = None, selection: dict | None = None,
                          `occupied` {count, first: up to 8}.
       missing_materials  nothing you carry goes into any cell the order allows now; pos is one such
                          cell and `missing` lists {selector, needed, allocated, missing}.
-      attempt_limit      8 clicks the game took into pos without the block appearing there.
+      attempt_limit      8 clicks the game took into pos without the block staying there (sand or
+                         gravel with nothing under it falls).
       mismatch           what is at pos, or what the click would make there, is another variant than
                          the plan's (a facing): give the cell a click with a look, or leave its meta out.
+                         Also: pos matched when the job ended and no longer did once the scaffolds were
+                         out (a block that stood on one fell).
       no_stance          no standing spot from which a face to place pos against is in view; often
                          there is nothing to place it against yet (stage it later, or allow_place).
                          Where pos holds a block to remove, none from which that block is in view:
