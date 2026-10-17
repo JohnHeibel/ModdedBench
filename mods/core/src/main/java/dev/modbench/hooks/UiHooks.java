@@ -11,12 +11,28 @@ import org.lwjgl.input.Mouse;
 public final class UiHooks {
     private UiHooks() {}
     private static java.lang.reflect.Method keyTyped;
+    private static java.lang.reflect.Method containerManager,containerKeyTyped;
+    private static boolean checkedContainerKeys;
     /** Native GUI event dispatch for synthetic input, independent of GLFW's private queue. */
     public static void handleKeyboardInput(Object target) {
         var screen=(net.minecraft.client.gui.GuiScreen)target;var event=UiInput.key();
         if(event==null){screen.handleKeyboardInput();return;}
         try {
             if(event.down()){
+                if(!checkedContainerKeys){
+                    checkedContainerKeys=true;
+                    try{
+                        Class<?> manager=Class.forName("codechicken.nei.guihook.GuiContainerManager");
+                        containerManager=manager.getMethod("getManager",net.minecraft.client.gui.inventory.GuiContainer.class);
+                        containerKeyTyped=manager.getMethod("keyTyped",char.class,int.class);
+                    }catch(ClassNotFoundException|NoSuchMethodException absent){containerManager=null;}
+                }
+                // NEI owns the container's keyboard entry point, including search
+                // fields and shortcuts, before forwarding unhandled keys to the screen.
+                if(containerKey(screen,event.character(),event.key(),containerManager,containerKeyTyped)){
+                    Minecraft.getMinecraft().func_152348_aa();
+                    return;
+                }
                 if(keyTyped==null){
                     for(String name:new String[]{"func_73869_a","keyTyped"})try{
                         keyTyped=net.minecraft.client.gui.GuiScreen.class.getDeclaredMethod(name,char.class,int.class);
@@ -33,6 +49,13 @@ public final class UiHooks {
             if(error.getCause() instanceof Error cause)throw cause;
             throw new IllegalStateException(error.getCause());
         }catch(ReflectiveOperationException error){throw new IllegalStateException("native GUI key dispatch failed",error);}
+    }
+    static boolean containerKey(Object screen,char character,int key,java.lang.reflect.Method getter,java.lang.reflect.Method dispatcher) throws ReflectiveOperationException {
+        if(getter==null||!getter.getParameterTypes()[0].isInstance(screen))return false;
+        Object manager=getter.invoke(null,screen);
+        if(manager==null)return false;
+        dispatcher.invoke(manager,character,key);
+        return true;
     }
     public static boolean keyDown(int key) {return UiInput.keyDown(key)||Keyboard.isKeyDown(key);}
     public static boolean buttonDown(int button) {return UiInput.buttonDown(button)||Mouse.isButtonDown(button);}
