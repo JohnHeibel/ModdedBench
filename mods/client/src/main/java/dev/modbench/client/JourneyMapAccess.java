@@ -47,7 +47,8 @@ final class JourneyMapAccess {
         catch(ClassNotFoundException e) { return out; }
         java.util.Set<Long> seen=new java.util.HashSet<>();
         for(int cx=minX>>4;cx<=(minX+span-1)>>4;cx++) for(int cz=minZ>>4;cz<=(minZ+span-1)>>4;cz++) {
-            Object vein=get.invoke(null,dimension,cx,cz);Class<?> c=vein.getClass();Object type=c.getField("veinType").get(vein);
+            // getOreVein takes block coordinates and finds their chunk itself.
+            Object vein=get.invoke(null,dimension,cx<<4,cz<<4);Class<?> c=vein.getClass();Object type=c.getField("veinType").get(vein);
             int vx=c.getField("chunkX").getInt(vein),vz=c.getField("chunkZ").getInt(vein);
             String name=(String)type.getClass().getMethod("getVeinName").invoke(type);
             if(type==type.getClass().getField("NO_VEIN").get(null)||!seen.add(((long)vx<<32)^(vz&0xFFFFFFFFL))) continue;
